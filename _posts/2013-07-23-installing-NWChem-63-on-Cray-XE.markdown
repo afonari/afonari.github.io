@@ -15,7 +15,7 @@ title: Installing NWChem 6.3 on Cray XE
  1. Check that correct modules are loaded (see below)
  1. Change directory to *src*: `cd src/`
  1. Run: `make 64_to_32`
- 1. Run (`NWCHEM_CONFIG` file will be created automatically): `make >& make.log`
+ 1. Run (*NWCHEM_CONFIG`* file will be created automatically): `make >& make.log`
 
 ### Running NWChem
 
@@ -31,12 +31,14 @@ Example of PBS script:
 #PBS -m abe
 #PBS -M firstame.lastname@email.com
 
+# nwchem vars
 export NWCHEM_TOP=/home/user/nwchem-6.3-src.2013-05-28
 export NWCHEM_TARGET=LINUX64
 export NWCHEM_BASIS_LIBRARY=$NWCHEM_TOP/src/basis/libraries/
 export SCRATCH_DIR=/scratch/user
 export MPI_DSM_DISTRIBUTE=1
 
+# hugepages vars
 export HUGETLB_MORECORE=yes
 export HUGETLB_ELFMAP=W
 export HUGETLB_FORCE_ELFMAP=yes+
