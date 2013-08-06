@@ -15,7 +15,7 @@ title: Installing NWChem 6.3 on Cray XE
  1. Check that correct modules are loaded (see below)
  1. Change directory to *src*: `cd src/`
  1. Run: `make 64_to_32`
- 1. Run (*NWCHEM_CONFIG* file will be created automatically): `make >& make.log`
+ 1. Run (*NWCHEM_CONFIG* file will be created automatically): `gmake >& make.log`
 
 ### Running NWChem
 
