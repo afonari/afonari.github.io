@@ -5,7 +5,7 @@ title: Resume @ Alexandr Fonari
 
 # Alexandr Fonari
 Graduate Student, Department of Chemistry, Georgia Institute of Technology, Atlanta, GA, 30332-0400.  
-Email: firstname.lastname@gatech.edu;
+Email: firstname.lastname@gatech.edu; Website: http://alexandr-fonari.github.io
 
 ## EDUCATION:
  
