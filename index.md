@@ -11,11 +11,12 @@ I apply mathematical models (implemented in computer programs) to solve physical
 My [resume](resume.html).
 
 ### Research projects
- - [Effective mass calculator for semiconductors](emc/)
+ - [Effective mass calculator for semiconductors](emc/):  
+Python script that allows to evaluate effective mass on the band extrema using **CRYSTAL** or **VASP** codes. **Quantum Espresso** is coming soon!
 
-### Notes on the things related to my research
+### Random notes
 
 {% for post in site.posts %}
- - {{ post.date | date_to_string }} [{{ post.title }}]({{ post.url }})
+ - [{{ post.date | date_to_string }}]: [{{ post.title }}]({{ post.url }})
 {% endfor %}
 
