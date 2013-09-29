@@ -11,8 +11,8 @@ I apply mathematical models (implemented in computer programs) to solve physical
 My [resume](resume.html).
 
 ### Research projects
- - [Effective mass calculator for semiconductors](emc/):  
-Python script that allows to evaluate effective mass on the band extrema using **CRYSTAL** or **VASP** codes. **Quantum Espresso** is coming soon!
+ - [Effective mass calculator for semiconductors](emc/)  
+Python script that allows to evaluate [effective mass](http://ecee.colorado.edu/~bart/book/effmass.htm) in the band extrema using *CRYSTAL* or *VASP* codes. **Quantum Espresso** support is coming soon!
 
 ### Random notes
 
