@@ -36,8 +36,10 @@ Email: firstname.lastname@gatech.edu; Website: http://alexandr-fonari.github.io
 
 ## PEER-REVIEWED PUBLICATIONS:
 
+1. 1. A. O. El-Ballouli, R. S. Khnayzer, J. C. Khalife, **A. Fonari** *et al.*, *Diarylpyrenes vs. diaryltetrahydropyrenes: Crystal structures,
+ﬂuorescence, and upconversion photochemistry*, J. Photochem. Photobiol. A (**2013**): [10.1016/j.jphotochem.2013.07.018](http://dx.doi.org/10.1016/j.jphotochem.2013.07.018)
 1. E. S. Leonova, N. S. Makarov, **A. Fonari** *et al.*, *Synthesis, structure, and one- and two-photon absorption properties of N-substituted 3,5-bisarylidenepropenpiperidin-4-ones*, J. Mol. Struct. (**2013**): [10.1016/j.molstruc.2012.12.034](http://dx.doi.org/10.1016/j.molstruc.2012.12.034).
-1. A. O. El-Ballouli, R. S. Khnayzer, J. C. Khalife, **A. Fonari** *et al.*, *Diarylpyrenes vs. Diaryltetrahydropyrenes: Synthesis, Crystal Structures, Fluorescence, and Upconversion Photochemistry*. J. Mater. Chem. C (**2012**): [10.1039/c2tc00474g](http://dx.doi.org/10.1039/c2tc00474g).
+1. B. R. Kaafarani, A. O. El-Ballouli, R. Trattnig, **A. Fonari** *et al.*, *Bis(carbazolyl) derivatives of pyrene and tetrahydropyrene: synthesis, structures, optical properties, electrochemistry, and electroluminescence*. J. Mater. Chem. C (**2013**): [10.1039/c2tc00474g](http://dx.doi.org/10.1039/c2tc00474g).
 1. I. V. Magedov, N. M. Evdokimov, A. S. Peretti, M. Karki, D. T. Lima, L. Frolova, M. R. Reisenauer, A. E. Romero, P. Tongwa, **A. Fonari** *et al.*, *Reengineered Epipodophyllotoxin*. ChemComm (**2012**): [10.1039/C2CC35044K](http://dx.doi.org/10.1039/C2CC35044K).
 1. L. E. Polander, L. Pandey, A. Romanov, **A. Fonari** *et al.*, *2,6-Diacylnaphthalene-1,8:4,5-Bis(dicarboximides): Synthesis, Reduction Potentials, and Core Extension*. JOC (**2012**): [10.1021/jo3006232](http://dx.doi.org/10.1021/jo3006232).
 1. I. V. Kosilkin, E. A. Hillenbrand, P. Tongwa, **A. Fonari** *et al.*, *Synthesis, structure, thermal and nonlinear optical properties of a series of novel D-pi-A chromophores with varying alkoxy substituents*. J. Mol. Struct. (**2011**): [10.1016/j.molstruc.2011.09.032](http://dx.doi.org/10.1016/j.molstruc.2011.09.032).
