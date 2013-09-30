@@ -14,7 +14,7 @@ My [resume](resume.html).
  - [Effective mass calculator for semiconductors](emc/)  
 Python script that allows to evaluate [effective mass](http://ecee.colorado.edu/~bart/book/effmass.htm) in the band extrema using *CRYSTAL* or *VASP* codes. *Quantum Espresso* support is coming soon!
 
-### Random notes
+### Research-related notes
 
 {% for post in site.posts %}
  - [{{ post.date | date_to_string }}]: [{{ post.title }}]({{ post.url }})
