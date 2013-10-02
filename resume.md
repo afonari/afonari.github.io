@@ -4,37 +4,26 @@ title: Resume @ Alexandr Fonari
 ---
 
 # Alexandr Fonari
-Graduate Student, Department of Chemistry, Georgia Institute of Technology, Atlanta, GA, 30332-0400.  
-Email: firstname.lastname@gatech.edu; Website: http://alexandr-fonari.github.io
 
-## EDUCATION:
+Graduate Student, Department of Chemistry, Georgia Institute of Technology,  
+Atlanta, GA, 30332-0400.  
+Email: firstname.lastname@gatech.edu; Website: alexandr-fonari.github.io
+
+I develop software to solve scientific problems. I have more than five years of experience with Perl, Python and Fortran languages. I use HPC technologies like OpenMPI and GlobalArrays on a day-by-day basis. My scientific expertise includes: Condensed Matter Physics, Simulation of the Electronic Devices, Software Developing.
+
+I have made contributions to quantum chemistry and condensed matter software packages: NWChem (5M lines) and Quantum Espresso (500K lines). I have implemented effective mass calculator for the semiconducting materials using Python and Fortran. I have 10+ peer reviewed articles either published or in preparation.
+
+I am looking for a full-time internship for 3-6 months at a National Lab or Research/Software company.
+
+## Education:
  
  * Ph. D. Chemistry from Georgia Institute of Technology (2011 - *2016*).
- * M. Sc. Chemistry from  New Mexico Highlands University (2009 - 2011). GPA: 3.88/4.00. Thesis: *X-Ray Diffraction and Computational Studies of Materials for Photonics and Electronic Applications*.
- * B. Sc. Physics from Moldova State University (2006 - 2009). GPA: 8.4/10. Thesis: *Theoretical Investigations of Crossover Effects in Fe(II) Ions*. 
+ * M. Sc. Chemistry from  New Mexico Highlands University (2009 - 2011). GPA: 3.88/4.00.  
+ Thesis: *X-Ray Diffraction and Computational Studies of Materials for Photonics and Electronic Applications*.
+ * B. Sc. Physics from Moldova State University (2006 - 2009). GPA: 8.4/10.  
+ Thesis: *Theoretical Investigations of Crossover Effects in Fe(II) Ions*.
 
-## RESEARCH EXPERIENCE:
-
- * Georgia Institute of Technology:
-    - Theoretical investigation of the charge transport in organic single-crystal field effect transistors (SC-OFET).
-    - Evaluation of the importance of the electron-phonon coupling for transport characteristics.
- * New Mexico Highlands University (2006 - 2009):
-    - Single crystal X-ray diffraction (XRD) studies of organic, organometallic compounds, and metal-organic frameworks. 
-    - High resolution XRD investigations yielding experimental charge-density distribution of organic and organometallic compounds.
-
-## SKILLS:
-
- * Quantum chemistry codes (usage and modification):
-    - NWChem, Gaussian, TURBOMOLE.
- * Condensed matter codes (periodic boundary conditions):
-    - Quantum Espresso, VASP, CRYSTAL.
- * Programming experience (creation and modification of the existing codes):
-    - FORTRAN, Perl, Python.
- * Usage and support of Bruker SMART APEX II three-axial single-crystal diffractometer.
- * Refinement of crystal structures using direct and Patterson methods
- * Modeling disorder of guest and solvent molecules in metal-organic frameworks.
-
-## PEER-REVIEWED PUBLICATIONS:
+## Peer reviewed articles:
 
 1. 1. A. O. El-Ballouli, R. S. Khnayzer, J. C. Khalife, **A. Fonari** *et al.*, *Diarylpyrenes vs. diaryltetrahydropyrenes: Crystal structures,
 ﬂuorescence, and upconversion photochemistry*, J. Photochem. Photobiol. A (**2013**): [10.1016/j.jphotochem.2013.07.018](http://dx.doi.org/10.1016/j.jphotochem.2013.07.018)
@@ -48,22 +37,22 @@ Email: firstname.lastname@gatech.edu; Website: http://alexandr-fonari.github.io
 1. **A. Fonari** *et al.*, *On justification of Cu(II) environment in mononuclear complexes: Joint X-ray and AIM studies*. Polyhedron (**2011**): [10.1016/j.poly.2011.04.002](http://dx.doi.org/10.1016/j.poly.2011.04.002).
 1. E. S. Leonova, M. V. Makarov, E. Y. Rybalkina, S. L. Nayani, P. Tongwa, **A. Fonari** *et al.*, *Structure-cytotoxicity relationship in a series of N-phosphorus substituted E,E-3,5-bis(3-pyridinylmethylene)- and E,E-3,5-bis(4-pyridinylmethylene) piperid-4-ones*. Eur. J. Med. Chem (**2010**): [10.1016/j.ejmech.2010.09.058](http://dx.doi.org/10.1016/j.ejmech.2010.09.058).
 
-## AWARDS:
+## Awards:
 
- * Second best poster award at the Southeast Theoretical Chemistry Association (SETCA) Annual Meeting (University of Georgia, Athens, GA, May 17-19, 2012).
- * Phi Kappa Phi Honor Society member.
+ - Second best poster award at the Southeast Theoretical Chemistry Association (SETCA) Annual Meeting (University of Georgia, Athens, GA, May 17-19, 2012).
+ - Phi Kappa Phi Honor Society member.
 
-## APPOINTMENTS:
+## Internships:
 
- * 2011 - Present: Research Assistant, Bredas research group, GT.
- * Fall, 2011: Teaching Assistant, General Chemistry (101), GT.
- * 2010 - 2011: Research Assistant, X-Ray facility, New Mexico Highlands University (NMHU).
- * Fall, 2009: Teaching Assistant, Quantitative Analysis (321), NMHU.
+ - Summer, 2010: Summer school *Hooked on Photonics* sponsored by National Science Foundation.
+ - Summer, 2009: Summer school at X-Ray Structural Center, Russian Academy of Sciences, Moscow, Russia.
+
+## Appointments:
+
+ * 2011 - Present: Research Assistant, Georgia Tech.
+ * Fall, 2011: Teaching Assistant, General Chemistry (101), Georgia Tech.
+ * 2010 - 2011: Research Assistant, X-Ray facility, New Mexico Highlands University.
+ * Fall, 2009: Teaching Assistant, Quantitative Analysis (321), New Mexico Highlands University.
  * 2008 - 2009: Teaching Assistant, Computer Science (101), Moldova State University.
  * 2008 - 2009: High School Physics Teacher, Republic of Moldova.
-
-## INTERNSHIPS:
-
- * Summer, 2010: Summer school *Hooked on Photonics* sponsored by NSF, Bredas research group (GT).
- * Summer, 2009: Summer school at X-Ray Structural Center, Chemistry and Material Sciences Division of Russian Academy of Sciences, Moscow, Russia, Antipin research group.
 
