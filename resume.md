@@ -25,7 +25,7 @@ I am looking for a full-time internship for 3-6 months at a National Lab or Rese
 
 ## Peer reviewed articles:
 
-1. 1. A. O. El-Ballouli, R. S. Khnayzer, J. C. Khalife, **A. Fonari** *et al.*, *Diarylpyrenes vs. diaryltetrahydropyrenes: Crystal structures,
+1. A. O. El-Ballouli, R. S. Khnayzer, J. C. Khalife, **A. Fonari** *et al.*, *Diarylpyrenes vs. diaryltetrahydropyrenes: Crystal structures,
 ﬂuorescence, and upconversion photochemistry*, J. Photochem. Photobiol. A (**2013**): [10.1016/j.jphotochem.2013.07.018](http://dx.doi.org/10.1016/j.jphotochem.2013.07.018)
 1. E. S. Leonova, N. S. Makarov, **A. Fonari** *et al.*, *Synthesis, structure, and one- and two-photon absorption properties of N-substituted 3,5-bisarylidenepropenpiperidin-4-ones*, J. Mol. Struct. (**2013**): [10.1016/j.molstruc.2012.12.034](http://dx.doi.org/10.1016/j.molstruc.2012.12.034).
 1. B. R. Kaafarani, A. O. El-Ballouli, R. Trattnig, **A. Fonari** *et al.*, *Bis(carbazolyl) derivatives of pyrene and tetrahydropyrene: synthesis, structures, optical properties, electrochemistry, and electroluminescence*. J. Mater. Chem. C (**2013**): [10.1039/c2tc00474g](http://dx.doi.org/10.1039/c2tc00474g).
