@@ -34,6 +34,7 @@ Run NWChem as:
 ### Some helpful reference data
 
 Contents of the `vars.sh`:
+
 ```bash
 #!/bin/bash
 
@@ -60,6 +61,7 @@ export LARGE_FILES=TRUE
 ```
 
 GCC version used:
+
 ```bash
 $ gcc -v
 Using built-in specs.
@@ -72,6 +74,7 @@ gcc version 4.8.1 20130404 (prerelease) (GCC)
 ```
 
 Gforgran version used:
+
 ```bash
 $ gfortran -v
 Using built-in specs.
