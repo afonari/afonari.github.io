@@ -4,7 +4,7 @@ title: Alexandr Fonari
 ---
 
 ## Alexandr Fonari (firstname.lastname@gatech.edu)
-Graduate Student, Department of Chemistry  
+Graduate Student, Department of Chemistry,  
 Georgia Institute of Technology (GT), Atlanta, GA, 30332-0400.
 
 I develop software to solve scientific problems. I have more than five years of experience with Perl, Python and Fortran languages. I use HPC technologies like OpenMPI and GlobalArrays on a day-by-day basis. My scientific expertise includes: condensed matter physics, simulation of the electronic devices, software seveloping.
