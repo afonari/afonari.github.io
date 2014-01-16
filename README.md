@@ -1,1 +1,1 @@
-Please see: [alexandr-fonari.github.com](http://alexandr-fonari.github.com)
+Please see: [alexandr-fonari.github.io](http://alexandr-fonari.github.io)
