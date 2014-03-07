@@ -97,7 +97,7 @@ program hessfreq_read
     do i = 1,nat*3
        do na = 1,nat
           do j = 1,3
-             fc((na-1)*3+j,i) = fc((na-1)*3+j,i) / sqrt(mass(na))
+             fc((na-1)*3+j,i) = fc((na-1)*3+j,i)! / sqrt(mass(na))
           end do
        end do
     end do

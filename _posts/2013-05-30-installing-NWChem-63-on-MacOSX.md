@@ -23,7 +23,7 @@ See [here](https://sites.google.com/site/dwhipp/tutorials/installing-open-mpi-on
  1. Download NWChem ([version](http://www.nwchem-sw.org/images/Nwchem-6.3.revision1-src.2013-05-28.tar.gz) used in this tutorial).
  1. Unpack it: ```tar -zxvf Nwchem-6.3.revision1-src.2013-05-28.tar.gz```
  1. Change directory to `nwchem-6.3-src.2013-05-28/`
- 1. Define environment variables: `source vars.sh` (see below contents of the vars.sh file)
+ 1. Define environment variables (see below contents of the vars.sh file)
  1. Charge directory to `src/`
  1. Run `make nwchem_config`
  1. Run `make &> make.log`
@@ -36,9 +36,7 @@ Run NWChem as:
 Contents of the `vars.sh`:
 
 ```bash
-#!/bin/bash
-
-export NWCHEM_TOP=/Users/user/nwchem-6.3-src.2013-05-28
+export NWCHEM_TOP=`pwd`
 export NWCHEM_TARGET=MACX64
 export NWCHEM_MODULES="qm"
 
