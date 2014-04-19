@@ -11,7 +11,7 @@ I develop software to solve scientific problems with more than five years of exp
 
 I have made contributions to quantum chemistry and condensed matter software packages: NWChem (5M+ lines) and Quantum Espresso (500K+ lines). I have 10+ peer reviewed articles published.
 
-My [resume](alexandr-fonari-resume.pdf).
+My [resume](afonari_resume.pdf).
 
 ### Research projects
  - [Effective mass calculator for semiconductors](emc/)  
