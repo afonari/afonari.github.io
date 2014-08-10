@@ -14,8 +14,8 @@ title: Installing NWChem 6.3 on Cray XE
  1. Define environment variables and check that correct modules are loaded (see below).  
  For the generic Linux cluster with Intel ifort use these variables instead.
  1. Change directory to *src*: `cd src/`
- 1. Run: `make 64_to_32`
- 1. Run (*NWCHEM_CONFIG* file will be created automatically): `gmake &> make.log`
+ 1. Run: `gmake 64_to_32`
+ 1. Run (*NWCHEM_CONFIG* will be created automatically): `gmake &> make.log`.
 
 #### Environment variables: Cray XE
 
@@ -90,8 +90,8 @@ export FC=ifort
 ```
 #### Notes
 
- * Instead of `all`, other strings can be used in `NWCHEM_MODULES` keyword to compile only desired modules (*e.g.* `qm` for quantum chemistry only). See NWChem's `INSTALL` file for a complete description.
- * Also see this [thread](https://groups.google.com/forum/#!topic/hpctools/ZvHgljFkYWg) for `ARMCI_NETWORK` type discussion for Cray XE machines.
+ * Instead of `NWCHEM_MODULES="all"`, other strings can be used in `NWCHEM_MODULES` keyword to compile only desired modules (*e.g.* `qm` for quantum chemistry only). See NWChem's `INSTALL` file for a complete description.
+ * Also see this [thread](https://groups.google.com/forum/#!topic/hpctools/ZvHgljFkYWg) about `ARMCI_NETWORK` discussion for Cray XE machines.
 
 ### Running NWChem
 
@@ -122,7 +122,7 @@ export HUGETLB_FORCE_ELFMAP=yes+
 cd $PBS_O_WORKDIR
 nwchem_exe=${NWCHEM_TOP}/bin/${NWCHEM_TARGET}/nwchem
 
-job_name=ethylene-dimer
+nwchem_input=ethylene-dimer
 
-aprun -B $nwchem_exe $job_name.nw > $job_name.out
+aprun -B $nwchem_exe $nwchem_input.nw > $job_name.out
 ```
