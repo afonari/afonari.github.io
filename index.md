@@ -17,6 +17,10 @@ My [resume](afonari_resume.pdf).
  - [Effective mass calculator for semiconductors](emc/)  
 Python script that allows to evaluate [effective mass](http://ecee.colorado.edu/~bart/book/effmass.htm) in the band extrema using *CRYSTAL* or *VASP* codes. *Quantum Espresso* support is coming soon!
 
+### Useful one-liners
+ - Install a locally stored pypi package in the user directory even if the package has been installed system-wise:  
+`pip install --user --upgrade -e /path/to/un-tarred/folder`
+
 ### Research-related notes
 
 {% for post in site.posts %}
