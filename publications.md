@@ -3,8 +3,6 @@ layout: default
 title: Publications
 ---
 
-## Alexandr Fonari (firstname.lastname@gatech.edu)
-
 ### Publications
 
 Total: 21 peer-reviewed publications, cited 122 times, h-index is 6: [Google Scholar profile](http://scholar.google.com/citations?user=ZkBvorAAAAAJ)
