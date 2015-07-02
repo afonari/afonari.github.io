@@ -3,6 +3,8 @@ layout: default
 title: Alexandr Fonari
 ---
 
+### Summary
+
 Graduate Student, Department of Chemistry,  
 Georgia Institute of Technology, Atlanta, GA, 30332
 
