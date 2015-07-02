@@ -3,7 +3,7 @@ layout: default
 title: Alexandr Fonari
 ---
 
-#### Summary
+### Summary
 
 Graduate Student, Department of Chemistry,  
 Georgia Institute of Technology, Atlanta, GA, 30332
@@ -16,7 +16,7 @@ I have made contributions to quantum chemistry and condensed matter software pac
 
 My [resume](afonari_resume.pdf) (updated 07/2015).
 
-#### News
+### News
 
  - [2 Jul 2015]: Added list of publications (top menu &uarr;)
  - [5 Jun 2015]: *Mode-selective vibrational modulation of charge transport* manuscript accepted to Nature Communications!
@@ -29,7 +29,7 @@ Python script that allows to evaluate [effective mass](http://ecee.colorado.edu/
  - Install a locally stored pypi package in the user directory even if the package has been installed system-wise:  
 `pip install --user --upgrade -e /path/to/un-tarred/folder`
 
-### Research-related notes
+### Notes
 
 {% for post in site.posts %}
  - [{{ post.date | date_to_string }}]: [{{ post.title }}]({{ post.url }})
