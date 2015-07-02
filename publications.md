@@ -44,3 +44,7 @@ Total: 21 peer-reviewed publications, cited 122 times, h-index is 6: [Google Sch
 1. **A. Fonari** *et al.*, &ldquo;Experimental and Theoretical Structural Study of (3E,5E)-3,5-bis-(benzylidene)-4-oxopiperidinium Mono- and (3E,5E)-3,5-bis-(4-N,N-dialkylammonio)benzylidene)-4-oxopiperidinium Trications&rdquo;, J. Mol. Struct. (2011): [10.1016/j.molstruc.2011.06.020](http://doi.org/10.1016/j.molstruc.2011.06.020)
 
 1. **A. Fonari** *et al.*, &ldquo;Two Polymorphs of Phenanthro[4,5-*abc*]phenazine-18-crown-6: Preparation, X-ray Diffraction and DFT Studies&rdquo;, J. Mol. Struct. (2011): [10.1016/j.molstruc.2011.04.039](http://doi.org/10.1016/j.molstruc.2011.04.039)
+
+1. **A. Fonari** *et al.*, &ldquo;On Justification of Cu(II) Environment in Mononuclear Complexes: Joint X-ray and AIM Studies&rdquo;, Polyhedron (2011): [10.1016/j.poly.2011.04.002](http://doi.org/10.1016/j.poly.2011.04.002)
+
+1. E. S. Leonova, M. V. Makarov, E. Y. Rybalkina, S. L. Nayani, P. Tongwa, **A. Fonari**, *et al.*, &ldquo;Structure-Cytotoxicity Relationship in a Series of N-phosphorus Substituted *E,E*-3,5-bis(3-pyridinylmethylene)- and *E,E*-3,5-bis(4-pyridinylmethylene)piperid-4-ones&rdquo;, Eur. J. Med. Chem (2010): [10.1016/j.ejmech.2010.09.058](http://doi.org/10.1016/j.ejmech.2010.09.058)
