@@ -3,7 +3,6 @@ layout: default
 title: Alexandr Fonari
 ---
 
-## Alexandr Fonari (firstname.lastname@gatech.edu)
 Graduate Student, Department of Chemistry,  
 Georgia Institute of Technology, Atlanta, GA, 30332
 
