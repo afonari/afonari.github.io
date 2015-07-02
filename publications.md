@@ -21,7 +21,7 @@ title: Publications
 
 1. L. Zhu, Y. Yi, **A. Fonari**, *et al.*, &ldquo;Electronic Properties of Mixed-Stack Organic Charge-Transfer Crystals&rdquo;, J. Phys. Chem. C (2014): [10.1021/jp502411u](http://doi.org/10.1021/jp502411u)
 
-1/ V. N. Khrustalev, B. Sandhu, S. Bentum, **A. Fonari**, *et al.*, &ldquo;Absolute Configuration and Polymorphism of 2-Phenylbutyramide and $\alpha$-Methyl-$\alpha$-phenylsuccinimide&rdquo;, Cryst. Growth Des. (2014): [10.1021/cg500284q](http://doi.org/10.1021/cg500284q)
+1. V. N. Khrustalev, B. Sandhu, S. Bentum, **A. Fonari**, *et al.*, &ldquo;Absolute Configuration and Polymorphism of 2-Phenylbutyramide and $\alpha$-Methyl-$\alpha$-phenylsuccinimide&rdquo;, Cryst. Growth Des. (2014): [10.1021/cg500284q](http://doi.org/10.1021/cg500284q)
 
 1. L. Zhang, **A. Fonari**, *et al.*, &ldquo;Bistetracene: An Air-Stable, High-Mobility Organic Semiconductor with Extended Conjugation&rdquo;, Journal of the American Chemical Society (2014): [10.1021/ja503643s](http://doi.org/10.1021/ja503643s). [Front cover](http://pubs.acs.org/action/showLargeCover?jcode=jacsat&vol=136&issue=26)
 
