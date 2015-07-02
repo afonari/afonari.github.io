@@ -16,14 +16,14 @@ I have made contributions to quantum chemistry and condensed matter software pac
 
 My [resume](afonari_resume.pdf) (updated 07/2015).
 
-### Research projects
- - [Effective mass calculator for semiconductors](emc/)  
-Python script that allows to evaluate [effective mass](http://ecee.colorado.edu/~bart/book/effmass.htm) in the band extrema using *CRYSTAL* or *VASP* codes. *Quantum Espresso* support is coming soon!
-
 ### Short News
 
  - [2 Jul 2015]: Added list of publications (top menu &uarr;)
- - [5 Jun 2015]: *Mode-selective vibrational modulation of charge transport* manuscript accepted to Nat. Commun. !
+ - [5 Jun 2015]: *Mode-selective vibrational modulation of charge transport* manuscript accepted to Nature Communications!
+
+### Research projects
+ - [Effective mass calculator for semiconductors](emc/)  
+Python script that allows to evaluate [effective mass](http://ecee.colorado.edu/~bart/book/effmass.htm) in the band extrema using *CRYSTAL* or *VASP* codes. *Quantum Espresso* support is coming soon!
 
 ### Useful one-liners
  - Install a locally stored pypi package in the user directory even if the package has been installed system-wise:  
