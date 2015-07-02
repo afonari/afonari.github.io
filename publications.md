@@ -21,7 +21,7 @@ Total: 21 peer-reviewed publications, cited 122 times, h-index is 6: [Google Sch
 
 1. L. Zhu, Y. Yi, **A. Fonari**, *et al.*, &ldquo;Electronic Properties of Mixed-Stack Organic Charge-Transfer Crystals&rdquo;, J. Phys. Chem. C (2014): [10.1021/jp502411u](http://doi.org/10.1021/jp502411u)
 
-1. V. N. Khrustalev, B. Sandhu, S. Bentum, **A. Fonari**, *et al.*, &ldquo;Absolute Configuration and Polymorphism of 2-Phenylbutyramide and $\alpha$-Methyl-$\alpha$-phenylsuccinimide&rdquo;, Cryst. Growth Des. (2014): [10.1021/cg500284q](http://doi.org/10.1021/cg500284q)
+1. V. N. Khrustalev, B. Sandhu, S. Bentum, **A. Fonari**, *et al.*, &ldquo;Absolute Configuration and Polymorphism of 2-Phenylbutyramide and &alpha;-Methyl-&alpha;-phenylsuccinimide&rdquo;, Cryst. Growth Des. (2014): [10.1021/cg500284q](http://doi.org/10.1021/cg500284q)
 
 1. L. Zhang, **A. Fonari**, *et al.*, &ldquo;Bistetracene: An Air-Stable, High-Mobility Organic Semiconductor with Extended Conjugation&rdquo;, Journal of the American Chemical Society (2014): [10.1021/ja503643s](http://doi.org/10.1021/ja503643s). [Front cover](http://pubs.acs.org/action/showLargeCover?jcode=jacsat&vol=136&issue=26)
 
@@ -39,7 +39,7 @@ Total: 21 peer-reviewed publications, cited 122 times, h-index is 6: [Google Sch
 
 1. L. E. Polander, L. Pandey, A. Romanov, **A. Fonari**, *et al.*, &ldquo;2,6-Diacylnaphthalene-1,8:4,5-Bis(dicarboximides): Synthesis, Reduction Potentials, and Core Extension&rdquo;, J. Org. Chem. (2012): [10.1021/jo3006232](http://doi.org/10.1021/jo3006232)
 
-1. I. V. Kosilkin, E. A. Hillenbrand, P. Tongwa, **A. Fonari**, *et al.*, &ldquo;Synthesis, Structure, Thermal and Nonlinear Optical Properties of a Series of Novel D-$\pi$-A Chromophores with Varying Alkoxy Substituents&rdquo;, J. Mol. Struct. (2011): [10.1016/j.molstruc.2011.09.032](http://doi.org/10.1016/j.molstruc.2011.09.032)
+1. I. V. Kosilkin, E. A. Hillenbrand, P. Tongwa, **A. Fonari**, *et al.*, &ldquo;Synthesis, Structure, Thermal and Nonlinear Optical Properties of a Series of Novel D-&pi;-A Chromophores with Varying Alkoxy Substituents&rdquo;, J. Mol. Struct. (2011): [10.1016/j.molstruc.2011.09.032](http://doi.org/10.1016/j.molstruc.2011.09.032)
 
 1. **A. Fonari** *et al.*, &ldquo;Experimental and Theoretical Structural Study of (3E,5E)-3,5-bis-(benzylidene)-4-oxopiperidinium Mono- and (3E,5E)-3,5-bis-(4-N,N-dialkylammonio)benzylidene)-4-oxopiperidinium Trications&rdquo;, J. Mol. Struct. (2011): [10.1016/j.molstruc.2011.06.020](http://doi.org/10.1016/j.molstruc.2011.06.020)
 
