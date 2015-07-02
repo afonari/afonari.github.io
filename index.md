@@ -8,7 +8,7 @@ title: Alexandr Fonari
 Graduate Student, Department of Chemistry,  
 Georgia Institute of Technology, Atlanta, GA, 30332
 
-![Me](me.jpg)
+![](me.jpg)
 
 I develop software to solve scientific problems with more than five years of experience with Perl, Python and Fortran languages. I use HPC technologies like OpenMPI and GlobalArrays on a day-by-day basis. My scientific expertise includes: condensed matter physics, simulation of the electronic devices and software developing.
 
@@ -16,7 +16,7 @@ I have made contributions to quantum chemistry and condensed matter software pac
 
 My [resume](afonari_resume.pdf) (updated 07/2015).
 
-### Short News
+### News
 
  - [2 Jul 2015]: Added list of publications (top menu &uarr;)
  - [5 Jun 2015]: *Mode-selective vibrational modulation of charge transport* manuscript accepted to Nature Communications!
