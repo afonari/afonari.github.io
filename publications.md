@@ -33,7 +33,7 @@ Total: 21 peer-reviewed publications, cited 122 times, h-index is 6: [Google Sch
 
 1. A. O. El-Ballouli, R. S. Khnayzer, J. C. Khalife, **A. Fonari**, *et al.*, &ldquo;Diarylpyrenes *vs.* Diaryltetrahydropyrenes: Crystal Structures, Fluorescence, and Upconversion Photochemistry&rdquo;, J. Photochem. Photobiol. A (2013): [10.1016/j.jphotochem.2013.07.018](http://doi.org/10.1016/j.jphotochem.2013.07.018)
 
-1. B. R. Kaafarani, A. O. El-Ballouli, R. Trattnig, **A. Fonari**, *et al.*, &ldquo;Bis(carbazolyl) Derivatives of Pyrene and Tetrahydropyrene: Synthesis, Structures, Optical Properties, Electrochemistry, and Electroluminescence&rdquo;, J. Mater. Chem. C (2013): [10.1039/c2tc00474g](http://doi.org/10.1039/c2tc00474g)}. [Most Accessed Manuscripts for J. Mater. Chem. C in 2013](http://pubs.rsc.org/en/journals/articlecollectionlanding?sercode=tc&themeid=59adffea-1d41-42eb-ada5-08ed90ff84ed)
+1. B. R. Kaafarani, A. O. El-Ballouli, R. Trattnig, **A. Fonari**, *et al.*, &ldquo;Bis(carbazolyl) Derivatives of Pyrene and Tetrahydropyrene: Synthesis, Structures, Optical Properties, Electrochemistry, and Electroluminescence&rdquo;, J. Mater. Chem. C (2013): [10.1039/c2tc00474g](http://doi.org/10.1039/c2tc00474g).
 
 1. I. V. Magedov, N. M. Evdokimov, A. S. Peretti, M. Karki, D. T. Lima, L. Frolova, M. R. Reisenauer, A. E. Romero, P. Tongwa, **A. Fonari**, *et al.*, &ldquo;Reengineered Epipodophyllotoxin&rdquo;, Chem. Commun. (2012): [10.1039/c2cc35044k](http://doi.org/10.1039/c2cc35044k)
 
