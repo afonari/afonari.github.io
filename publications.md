@@ -48,3 +48,20 @@ Total: 21 peer-reviewed publications, cited 122 times, h-index is 6: [Google Sch
 1. **A. Fonari** *et al.*, &ldquo;On Justification of Cu(II) Environment in Mononuclear Complexes: Joint X-ray and AIM Studies&rdquo;, Polyhedron (2011): [10.1016/j.poly.2011.04.002](http://doi.org/10.1016/j.poly.2011.04.002)
 
 1. E. S. Leonova, M. V. Makarov, E. Y. Rybalkina, S. L. Nayani, P. Tongwa, **A. Fonari**, *et al.*, &ldquo;Structure-Cytotoxicity Relationship in a Series of N-phosphorus Substituted *E,E*-3,5-bis(3-pyridinylmethylene)- and *E,E*-3,5-bis(4-pyridinylmethylene)piperid-4-ones&rdquo;, Eur. J. Med. Chem (2010): [10.1016/j.ejmech.2010.09.058](http://doi.org/10.1016/j.ejmech.2010.09.058)
+
+### Oral Presentations
+
+1. **A. Fonari** *et al.*, &ldquo;Joint Mean-Field and Ab Initio Study of the Exciton Dynamics Due to Low-Energy Phonons in Rubrene Single Crystal&rdquo;, Materials Research Society (MRS) Fall Meeting, Nov. 30 - Dec. 5, 2014, Boston, MA, USA
+
+1. **A. Fonari** *et al.*, &ldquo;The Impact of Exact Exchange Energy in Describing the Charge-Transport Properties in Organic Charge-Transfer Semiconductors&rdquo;, International Conference on the Physics of Semiconductors (ICPS), Aug. 10-15, 2014, Austin, TX, USA
+
+1. **A. Fonari** *et al.*, &ldquo;The Influence of the Hartree-Fock Exchange on the Charge-Transport Characteristics in Organic Crystalline Semiconductors&rdquo;, Southeast Theoretical Chemistry Association Meeting (SETCA), May 15-17, 2014, Atlanta, GA, USA
+
+### Theses
+
+1. **Ph.D.** Thesis: &ldquo;Theoretical Description of Charge Transport and Exciton Fission in Single-Component and Bimolecular Charge-Transfer Organic Semiconductors&rdquo;, co-advisors: Veaceslav Coropceanu and Jean-Luc Bredas
+
+1. **M.Sc.** Thesis: &ldquo;X-Ray Diffraction and Computational Studies of Materials for Photonics and Electronic Applications&rdquo;, co-advisors: Mikhail Yu. Antipin and Tatiana V. Timofeeva
+
+1. **B.Sc.** Thesis: &ldquo;Theoretical Investigations of Crossover Effects in Fe(II) Ions&rdquo;, advisor: Sophia I. Klokishner
+
