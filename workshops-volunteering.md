@@ -7,8 +7,8 @@ title: Workshops/Volunteering
 
 1. &ldquo;Extended Software Development Workshop&rdquo; at CECAM-EPFL (Summer 2014, Lausanne, Switzerland)
 
-1. &ldquo;BerkeleyGW 2013 Training&ldquo; at NERSC (Fall 2013, Oakland, CA, USA)
+1. &ldquo;BerkeleyGW 2013 Training&rdquo; at NERSC (Fall 2013, Oakland, CA, USA)
 
-1. &ldquo;Advanced Quantum-ESPRESSO Developer Training&ldquo; at SISSA (Winter 2013, Trieste, Italy)
+1. &ldquo;Advanced Quantum-ESPRESSO Developer Training&rdquo; at SISSA (Winter 2013, Trieste, Italy)
 
 
