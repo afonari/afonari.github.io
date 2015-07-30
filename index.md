@@ -16,8 +16,9 @@ I have made contributions to quantum chemistry and condensed matter software pac
 
 ### News
 
- - [2 Jul 2015]: Added list of publications (top menu &uarr;)
- - [5 Jun 2015]: *Mode-selective vibrational modulation of charge transport* manuscript accepted to Nature Communications!
+ - [29 Jul 2015]: Got my PhD!
+ - [02 Jul 2015]: Added list of publications (top menu &uarr;)
+ - [05 Jun 2015]: *Mode-selective vibrational modulation of charge transport* manuscript accepted to Nature Communications!
 
 ### Research projects
 
