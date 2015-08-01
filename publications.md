@@ -1,6 +1,6 @@
 ---
 layout: default
-title: Alexandr Fonari :: Publications
+title: Publications
 ---
 
 ### Publications
