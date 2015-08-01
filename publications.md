@@ -1,6 +1,6 @@
 ---
 layout: default
-title: Publications
+title: Alexandr Fonari :: Publications
 ---
 
 ### Publications
@@ -61,7 +61,7 @@ Total: 22 peer-reviewed publications, cited 131 times, h-index is 6: [Google Sch
 
 ### Theses
 
-1. **Ph.D.** Thesis: &ldquo;Theoretical Description of Charge Transport and Exciton Fission in Single-Component and Bimolecular Charge-Transfer Organic Semiconductors&rdquo;, co-advisors: Veaceslav Coropceanu and Jean-Luc Bredas
+1. **Ph.D.** Thesis: &ldquo;Theoretical Description of Charge-Transport and Charge-Generation Parameters in Single-Component and Bimolecular Charge-Transfer Organic Semiconductors&rdquo;, co-advisors: Veaceslav Coropceanu and Jean-Luc Bredas
 
 1. **M.Sc.** Thesis: &ldquo;X-Ray Diffraction and Computational Studies of Materials for Photonics and Electronic Applications&rdquo;, co-advisors: Mikhail Yu. Antipin and Tatiana V. Timofeeva
 
