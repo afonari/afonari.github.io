@@ -7,7 +7,7 @@ title: Publications
 
 Total: 22 peer-reviewed publications, cited 131 times, h-index is 6: [Google Scholar profile](http://scholar.google.com/citations?user=ZkBvorAAAAAJ)
 
-1. R. Castaneda, V. N. Khrustalev, **A. Fonari**, *et al.*, &ldquo;Mixed-Stack Architecture and Solvatomorphism of Trimeric Perfluoro-*ortho*-Phenylene Mercury complexes with Dithieno[3,2-*b*:2',3'-*d*]thiophene&rdquo;, Journal of Molecular Structure (2015): *accepted*
+1. R. Castaneda, V. N. Khrustalev, **A. Fonari**, *et al.*, &ldquo;Mixed-Stack Architecture and Solvatomorphism of Trimeric Perfluoro-*ortho*-Phenylene Mercury complexes with Dithieno[3,2-*b*:2',3'-*d*]thiophene&rdquo;, Journal of Molecular Structure (2015): [10.1016/j.molstruc.2015.07.053](http://doi.org/10.1016/j.molstruc.2015.07.053)
 
 1. A. A. Bakulin, R. Lovrincic, Y. Xi, O. Selig, H. J. Bakker, Y. L.A. Rezus, P. K. Nayak, **A. Fonari**, *et al.*, &ldquo;Mode-selective vibrational modulation of charge transport in organic electronic devices&rdquo;, Nature Communications (2015): *accepted* ([arXiv/1503.00777](http://arxiv.org/abs/1503.00777))
 
