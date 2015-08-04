@@ -16,7 +16,7 @@ I have made contributions to quantum chemistry and condensed matter software pac
 
 ### News
 
- - [29 Jul 2015]: Got my PhD!
+ - [29 Jul 2015]: Got my PhD! Thesis is here: http://afonari.com/FONARI-DISSERTATION-2015.pdf
  - [02 Jul 2015]: Added list of publications (top menu &uarr;)
  - [05 Jun 2015]: *Mode-selective vibrational modulation of charge transport* manuscript accepted to Nature Communications!
 
