@@ -9,7 +9,7 @@ Total: 22 peer-reviewed publications, cited 131 times, h-index is 6: [Google Sch
 
 1. R. Castaneda, V. N. Khrustalev, **A. Fonari**, *et al.*, &ldquo;Mixed-Stack Architecture and Solvatomorphism of Trimeric Perfluoro-*ortho*-Phenylene Mercury complexes with Dithieno[3,2-*b*:2',3'-*d*]thiophene&rdquo;, Journal of Molecular Structure (2015): [10.1016/j.molstruc.2015.07.053](http://doi.org/10.1016/j.molstruc.2015.07.053)
 
-1. A. A. Bakulin, R. Lovrincic, Y. Xi, O. Selig, H. J. Bakker, Y. L.A. Rezus, P. K. Nayak, **A. Fonari**, *et al.*, &ldquo;Mode-selective vibrational modulation of charge transport in organic electronic devices&rdquo;, Nature Communications (2015): *accepted* ([arXiv/1503.00777](http://arxiv.org/abs/1503.00777))
+1. A. A. Bakulin, R. Lovrincic, Y. Xi, O. Selig, H. J. Bakker, Y. L.A. Rezus, P. K. Nayak, **A. Fonari**, *et al.*, &ldquo;Mode-selective vibrational modulation of charge transport in organic electronic devices&rdquo;, Nature Communications (2015): [10.1038/ncomms8880](http://doi.org/10.1038/ncomms8880)
 
 1. L. Stevens, K. Goetz, **A. Fonari**, *et al.*, &ldquo;Temperature Mediated Polymorphism in Molecular Crystals: The Impact on Crystal Packing and Charge Transport&rdquo;, Chemistry of Materials (2015): [10.1021/cm503439r](http://doi.org/10.1021/cm503439r)
 
