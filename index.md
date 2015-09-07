@@ -5,9 +5,6 @@ title: Alexandr Fonari
 
 ### Summary
 
-Associate Developer, Materials Science at Schr&ouml;dinger,  
-New York, NY
-
 ![](me.jpg)
 
  - I develop software to solve scientific problems in the field of materials science.
