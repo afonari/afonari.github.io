@@ -14,6 +14,11 @@ title: Alexandr Fonari
  - 20+ peer-reviewed publications, cited 140+ times, h-index 7: [Google Scholar profile](https://scholar.google.com/citations?user=ZkBvorAAAAAJ).
  - Permanent resident of United States
 
+### Quote of the day
+
+- [17 Dec 2015]: *We hire athletes and cross-train them.* (Marne Levine, Instagram COO / http://bloom.bg/1P7DkXA)
+- [16 Dec 2015]: *Every program attempts to expand until it has an app store. Those programs which cannot so expand are replaced by ones which can.* (abrkn @ news.ycombinator / news.ycombinator.com/item?id=10741954)
+
 ### News
 
  - [15 Dec 2015]: Paper on *Vibrational properties of organic donor-acceptor molecular crystals* is on the [JCP website](http://dx.doi.org/10.1063/1.4936965)
