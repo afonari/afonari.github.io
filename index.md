@@ -16,12 +16,12 @@ title: Alexandr Fonari
 
 ### Quote of the day
 
-- [17 Dec 2015]: *We hire athletes and cross-train them.* (Marne Levine, Instagram COO / http://bloom.bg/1P7DkXA)
-- [16 Dec 2015]: *Every program attempts to expand until it has an app store. Those programs which cannot so expand are replaced by ones which can.* (abrkn @ news.ycombinator / news.ycombinator.com/item?id=10741954)
+- [17 Dec 2015]: *We hire athletes and cross-train them.* ([Marne Levine, Instagram COO](http://bloom.bg/1P7DkXA))
+- [16 Dec 2015]: *Every program attempts to expand until it has an app store. Those programs which cannot so expand are replaced by ones which can.* ([abrkn @ news.ycombinator](https://news.ycombinator.com/item?id=10741954))
 
 ### News
 
- - [15 Dec 2015]: Paper on *Vibrational properties of organic donor-acceptor molecular crystals* is on the [JCP website](http://dx.doi.org/10.1063/1.4936965)
+ - [15 Dec 2015]: Paper on *Vibrational properties of organic donor-acceptor molecular crystals* is on the [JCP website](http://dx.doi.org/10.1063/1.4936965).
  - [18 Aug 2015]: Joined [Schr&ouml;dinger](http://www.schrodinger.com/materials/)!
  - [29 Jul 2015]: Got my PhD! [Thesis PDF](http://afonari.com/FONARI-DISSERTATION-2015.pdf).
  - [02 Jul 2015]: Added list of publications (top menu &uarr;)
