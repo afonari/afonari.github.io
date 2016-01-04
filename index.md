@@ -16,8 +16,9 @@ title: Alexandr Fonari
 
 ### Quote of the day
 
+- [02 Jan 2016]: *Why place something on the heap if it can live on the stack?* ([petke @ news.yc](https://news.ycombinator.com/item?id=10826635))
 - [17 Dec 2015]: *We hire athletes and cross-train them.* ([Marne Levine, Instagram COO](http://bloom.bg/1P7DkXA))
-- [16 Dec 2015]: *Every program attempts to expand until it has an app store. Those programs which cannot so expand are replaced by ones which can.* ([abrkn @ news.ycombinator](https://news.ycombinator.com/item?id=10741954))
+- [16 Dec 2015]: *Every program attempts to expand until it has an app store. Those programs which cannot so expand are replaced by ones which can.* ([abrkn @ news.yc](https://news.ycombinator.com/item?id=10741954))
 
 ### News
 
@@ -26,4 +27,3 @@ title: Alexandr Fonari
  - [29 Jul 2015]: Got my PhD! [Thesis PDF](http://afonari.com/FONARI-DISSERTATION-2015.pdf).
  - [02 Jul 2015]: Added list of publications (top menu &uarr;)
  - [05 Jun 2015]: *Mode-selective vibrational modulation of charge transport* manuscript accepted to Nature Communications!
-
