@@ -22,6 +22,7 @@ title: Alexandr Fonari
 
 ### News
 
+ - [07 Jan 2016]: Fonari Scholarship is **[up](/scholarship.html)**!
  - [15 Dec 2015]: Paper on *Vibrational properties of organic donor-acceptor molecular crystals* is on the [JCP website](http://dx.doi.org/10.1063/1.4936965).
  - [18 Aug 2015]: Joined [Schr&ouml;dinger](http://www.schrodinger.com/materials/)!
  - [29 Jul 2015]: Got my PhD! [Thesis PDF](http://afonari.com/FONARI-DISSERTATION-2015.pdf).
