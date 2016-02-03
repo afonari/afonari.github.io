@@ -1,1 +1,1 @@
-Please see: [alexandr-fonari.github.io](http://alexandr-fonari.github.io)
+Live version: [afonari.com](http://afonari.com)
