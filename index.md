@@ -11,7 +11,7 @@ title: Alexandr Fonari
  - More than five years of experience with Perl, Python and Fortran languages.
  - Contributed to several quantum chemistry and condensed matter software packages:
     - NWChem (5M+ lines), Quantum Espresso (500K+ lines), *etc.*
- - 20+ peer-reviewed publications, cited 200+ times, h-index 9: [Google Scholar profile](https://scholar.google.com/citations?user=ZkBvorAAAAAJ).
+ - 20+ peer-reviewed publications, cited 180+ times, h-index 8: [Google Scholar profile](https://scholar.google.com/citations?user=ZkBvorAAAAAJ).
  - Permanent resident of United States
 
 ### Quote of the day
