@@ -1,0 +1,662 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>pqrformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Copyright (C) 2008 Geoffrey R. Hutchison</a>
+<a name="ln3">Some portions Copyright (C) 2004 by Chris Morley</a>
+<a name="ln4"> </a>
+<a name="ln5">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln6">it under the terms of the GNU General Public License as published by</a>
+<a name="ln7">the Free Software Foundation version 2 of the License.</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is distributed in the hope that it will be useful,</a>
+<a name="ln10">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln11">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln12">GNU General Public License for more details.</a>
+<a name="ln13">***********************************************************************/</a>
+<a name="ln14"> </a>
+<a name="ln15">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln16">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln17">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln18">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/data.h&gt;</a>
+<a name="ln23"> </a>
+<a name="ln24"> </a>
+<a name="ln25"> </a>
+<a name="ln26">#include &lt;vector&gt;</a>
+<a name="ln27">#include &lt;map&gt;</a>
+<a name="ln28"> </a>
+<a name="ln29">#include &lt;sstream&gt;</a>
+<a name="ln30">#include &lt;cstdlib&gt;</a>
+<a name="ln31"> </a>
+<a name="ln32">using namespace std;</a>
+<a name="ln33">namespace OpenBabel</a>
+<a name="ln34">{</a>
+<a name="ln35"> </a>
+<a name="ln36">  class PQRFormat : public OBMoleculeFormat</a>
+<a name="ln37">  {</a>
+<a name="ln38">  public:</a>
+<a name="ln39">    //Register this format type ID</a>
+<a name="ln40">    PQRFormat()</a>
+<a name="ln41">    {</a>
+<a name="ln42">      OBConversion::RegisterFormat(&quot;pqr&quot;,this, &quot;chemical/x-pqr&quot;);</a>
+<a name="ln43">    }</a>
+<a name="ln44"> </a>
+<a name="ln45">    virtual const char* Description() //required</a>
+<a name="ln46">    {</a>
+<a name="ln47">      return</a>
+<a name="ln48">        &quot;PQR format\n&quot;</a>
+<a name="ln49">        &quot;Read Options e.g. -as\n&quot;</a>
+<a name="ln50">        &quot;  s  Output single bonds only\n&quot;</a>
+<a name="ln51">        &quot;  b  Disable bonding entirely\n\n&quot;;</a>
+<a name="ln52">    };</a>
+<a name="ln53"> </a>
+<a name="ln54">    virtual const char* SpecificationURL()</a>
+<a name="ln55">    { return &quot;&quot;;};</a>
+<a name="ln56"> </a>
+<a name="ln57">    virtual const char* GetMIMEType()</a>
+<a name="ln58">    { return &quot;chemical/x-pqr&quot;; };</a>
+<a name="ln59"> </a>
+<a name="ln60">    //*** This section identical for most OBMol conversions ***</a>
+<a name="ln61">    ////////////////////////////////////////////////////</a>
+<a name="ln62">    /// The &quot;API&quot; interface functions</a>
+<a name="ln63">    virtual int SkipObjects(int n, OBConversion* pConv);</a>
+<a name="ln64">    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln65">    virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln66"> </a>
+<a name="ln67">  };</a>
+<a name="ln68">  //***</a>
+<a name="ln69"> </a>
+<a name="ln70">  //Make an instance of the format class</a>
+<a name="ln71">  PQRFormat thePQRFormat;</a>
+<a name="ln72"> </a>
+<a name="ln73">  ////////////////////////////////////////////////////////////////</a>
+<a name="ln74">  /// Utility functions</a>
+<a name="ln75">  static bool parseAtomRecord(char *buffer, OBMol &amp;mol,int /*chainNum*/);</a>
+<a name="ln76">  static double parseAtomRadius(char *buffer, OBMol &amp;mol);</a>
+<a name="ln77">  static double parseAtomCharge(char *buffer, OBMol &amp;mol);</a>
+<a name="ln78"> </a>
+<a name="ln79">  /////////////////////////////////////////////////////////////////</a>
+<a name="ln80">  int PQRFormat::SkipObjects(int n, OBConversion* pConv)</a>
+<a name="ln81">  {</a>
+<a name="ln82">    if (n == 0)</a>
+<a name="ln83">      ++ n;</a>
+<a name="ln84">    istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln85">    char buffer[BUFF_SIZE];</a>
+<a name="ln86">    while (n &amp;&amp; ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln87">      {</a>
+<a name="ln88">        if (EQn(buffer,&quot;ENDMDL&quot;,6))</a>
+<a name="ln89">          -- n;</a>
+<a name="ln90">      }</a>
+<a name="ln91"> </a>
+<a name="ln92">    return ifs.good() ? 1 : -1;</a>
+<a name="ln93">  }</a>
+<a name="ln94">  /////////////////////////////////////////////////////////////////</a>
+<a name="ln95">  bool PQRFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln96">  {</a>
+<a name="ln97"> </a>
+<a name="ln98">    OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln99">    if (pmol == nullptr)</a>
+<a name="ln100">      return false;</a>
+<a name="ln101"> </a>
+<a name="ln102">    //Define some references so we can use the old parameter names</a>
+<a name="ln103">    istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln104">    OBMol &amp;mol = *pmol;</a>
+<a name="ln105">    const char* title = pConv-&gt;GetTitle();</a>
+<a name="ln106"> </a>
+<a name="ln107">    int chainNum = 1;</a>
+<a name="ln108">    char buffer[BUFF_SIZE];</a>
+<a name="ln109">    vector&lt;double&gt; charges, radii;</a>
+<a name="ln110">    string line, key, value;</a>
+<a name="ln111"> </a>
+<a name="ln112">    mol.SetTitle(title);</a>
+<a name="ln113">    mol.SetChainsPerceived(); // It's a PDB-like file, we read all chain/res info.</a>
+<a name="ln114"> </a>
+<a name="ln115">    mol.BeginModify();</a>
+<a name="ln116">    while (ifs.good() &amp;&amp; ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln117">      {</a>
+<a name="ln118">        if (EQn(buffer,&quot;ENDMDL&quot;,6))</a>
+<a name="ln119">          break;</a>
+<a name="ln120">        if (EQn(buffer,&quot;END&quot;,3)) {</a>
+<a name="ln121">          // eat anything until the next ENDMDL</a>
+<a name="ln122">          while (ifs.getline(buffer,BUFF_SIZE) &amp;&amp; !EQn(buffer,&quot;ENDMDL&quot;,6));</a>
+<a name="ln123">          break;</a>
+<a name="ln124">        }</a>
+<a name="ln125">        if (EQn(buffer,&quot;TER&quot;,3)) {</a>
+<a name="ln126">          chainNum++;</a>
+<a name="ln127">          continue;</a>
+<a name="ln128">        }</a>
+<a name="ln129">        if (EQn(buffer,&quot;ATOM&quot;,4) || EQn(buffer,&quot;HETATM&quot;,6))</a>
+<a name="ln130">          {</a>
+<a name="ln131">            if( ! parseAtomRecord(buffer,mol,chainNum))</a>
+<a name="ln132">              {</a>
+<a name="ln133">                stringstream errorMsg;</a>
+<a name="ln134">                errorMsg &lt;&lt; &quot;WARNING: Problems reading a PQR file\n&quot;</a>
+<a name="ln135">                         &lt;&lt; &quot;  Problems reading a ATOM/HETATM record.\n&quot;;</a>
+<a name="ln136">                obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() , obError);</a>
+<a name="ln137">              }</a>
+<a name="ln138"> </a>
+<a name="ln139">            // Read in the partial charge and radius too</a>
+<a name="ln140">            charges.push_back( parseAtomCharge(buffer, mol) );</a>
+<a name="ln141">            radii.push_back( parseAtomRadius(buffer, mol) );</a>
+<a name="ln142">            continue;</a>
+<a name="ln143">          }</a>
+<a name="ln144">        }</a>
+<a name="ln145"> </a>
+<a name="ln146">    if (!mol.NumAtoms()) { // skip the rest of this processing</a>
+<a name="ln147">      mol.EndModify();</a>
+<a name="ln148">      return(false);</a>
+<a name="ln149">    }</a>
+<a name="ln150"> </a>
+<a name="ln151">    // Use residue definitions to assign bond orders</a>
+<a name="ln152">    resdat.AssignBonds(mol);</a>
+<a name="ln153"> </a>
+<a name="ln154">    mol.EndModify();</a>
+<a name="ln155"> </a>
+<a name="ln156">    /*Now assign hetatm bonds based on distance*/</a>
+<a name="ln157">    if (!pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln158">      mol.ConnectTheDots();</a>
+<a name="ln159"> </a>
+<a name="ln160">    if (!pConv-&gt;IsOption(&quot;s&quot;,OBConversion::INOPTIONS) &amp;&amp; !pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln161">      mol.PerceiveBondOrders();</a>
+<a name="ln162"> </a>
+<a name="ln163">    FOR_ATOMS_OF_MOL(a, mol) {</a>
+<a name="ln164">      // WARNING: Atom index issue here</a>
+<a name="ln165">      a-&gt;SetPartialCharge(charges[a-&gt;GetIdx() - 1]);</a>
+<a name="ln166"> </a>
+<a name="ln167">      cerr &lt;&lt; &quot; charge : &quot; &lt;&lt; charges[a-&gt;GetIdx() - 1] &lt;&lt; endl;</a>
+<a name="ln168"> </a>
+<a name="ln169">      if (!a-&gt;HasData(&quot;Radius&quot;)) {</a>
+<a name="ln170">        std::ostringstream s;</a>
+<a name="ln171">        s &lt;&lt; radii[ a-&gt;GetIdx()-1 ];</a>
+<a name="ln172">        OBPairData *p = new OBPairData;</a>
+<a name="ln173">        p-&gt;SetAttribute(&quot;Radius&quot;);</a>
+<a name="ln174">        p-&gt;SetValue( s.str() );</a>
+<a name="ln175">        a-&gt;SetData(p);</a>
+<a name="ln176">      }</a>
+<a name="ln177"> </a>
+<a name="ln178">      cerr &lt;&lt; &quot; radius : &quot; &lt;&lt; radii[a-&gt;GetIdx() - 1] &lt;&lt; endl;</a>
+<a name="ln179"> </a>
+<a name="ln180">    }</a>
+<a name="ln181">    mol.SetPartialChargesPerceived();</a>
+<a name="ln182">    mol.SetChainsPerceived();</a>
+<a name="ln183"> </a>
+<a name="ln184">    // clean out remaining blank lines</a>
+<a name="ln185">    std::streampos ipos;</a>
+<a name="ln186">    do</a>
+<a name="ln187">    {</a>
+<a name="ln188">      ipos = ifs.tellg();</a>
+<a name="ln189">      ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln190">    }</a>
+<a name="ln191">    while(strlen(buffer) == 0 &amp;&amp; !ifs.eof() );</a>
+<a name="ln192">    ifs.seekg(ipos);</a>
+<a name="ln193"> </a>
+<a name="ln194">    return(true);</a>
+<a name="ln195">  }</a>
+<a name="ln196"> </a>
+<a name="ln197">  static double parseAtomCharge(char *buffer, OBMol &amp;mol)</a>
+<a name="ln198">  // In PQR format, either:</a>
+<a name="ln199">  // Field name, atom number, atom name, residue name, residue number</a>
+<a name="ln200">  //    x y z charge radius element</a>
+<a name="ln201">  // OR</a>
+<a name="ln202">  // Field, atom number, atom name, chain id, residue number, X, Y, Z, chg, rad, ele</a>
+<a name="ln203">  {</a>
+<a name="ln204">    vector&lt;string&gt; vs;</a>
+<a name="ln205">    tokenize(vs,buffer);</a>
+<a name="ln206"> </a>
+<a name="ln207">    OBAtom *atom = mol.GetAtom(mol.NumAtoms());</a>
+<a name="ln208"> </a>
+<a name="ln209">    if (vs.size() == 11)//add element, Zhixiong Zhao</a>
+<a name="ln210">      return atof(vs[8].c_str());</a>
+<a name="ln211">    else if (vs.size() == 12)</a>
+<a name="ln212">      return atof(vs[9].c_str());</a>
+<a name="ln213"> </a>
+<a name="ln214">    return 0.0;</a>
+<a name="ln215">  }</a>
+<a name="ln216"> </a>
+<a name="ln217">  static double parseAtomRadius(char *buffer, OBMol &amp;mol)</a>
+<a name="ln218">  {</a>
+<a name="ln219">    vector&lt;string&gt; vs;</a>
+<a name="ln220">    tokenize(vs,buffer);</a>
+<a name="ln221"> </a>
+<a name="ln222">    OBAtom *atom = mol.GetAtom(mol.NumAtoms());</a>
+<a name="ln223"> </a>
+<a name="ln224">    if (vs.size() == 11)</a>
+<a name="ln225">      return atof(vs[9].c_str());</a>
+<a name="ln226">    else if (vs.size() == 12)</a>
+<a name="ln227">      return atof(vs[10].c_str());</a>
+<a name="ln228"> </a>
+<a name="ln229">    return 0.0;</a>
+<a name="ln230">  }</a>
+<a name="ln231"> </a>
+<a name="ln232">  static bool parseAtomRecord(char *buffer, OBMol &amp;mol,int /*chainNum*/)</a>
+<a name="ln233">  /* ATOMFORMAT &quot;(i5,1x,a4,a1,a3,1x,a1,i4,a1,3x,3f8.3,2f6.2,1x,i3)&quot; */</a>
+<a name="ln234">  {</a>
+<a name="ln235">    string sbuf = &amp;buffer[6];</a>
+<a name="ln236">    if (sbuf.size() &lt; 48)</a>
+<a name="ln237">      return(false);</a>
+<a name="ln238"> </a>
+<a name="ln239">    bool hetatm = (EQn(buffer,&quot;HETATM&quot;,6)) ? true : false;</a>
+<a name="ln240"> </a>
+<a name="ln241">    /* serial number */</a>
+<a name="ln242">    string serno = sbuf.substr(0,5);</a>
+<a name="ln243">    //SerialNum(the_atom) = atoi(tmp_str);</a>
+<a name="ln244"> </a>
+<a name="ln245">    /* atom name */</a>
+<a name="ln246">    string atmid = sbuf.substr(6,4);</a>
+<a name="ln247"> </a>
+<a name="ln248">    /* chain */</a>
+<a name="ln249">    char chain = sbuf.substr(15,1)[0];</a>
+<a name="ln250"> </a>
+<a name="ln251">    /* element */</a>
+<a name="ln252">    string element;</a>
+<a name="ln253">    if (sbuf.size() &gt; 71)</a>
+<a name="ln254">      element = sbuf.substr(70,2);</a>
+<a name="ln255">    else</a>
+<a name="ln256">      element = &quot;  &quot;;</a>
+<a name="ln257"> </a>
+<a name="ln258">    //trim spaces on the right and left sides</a>
+<a name="ln259">    while (!atmid.empty() &amp;&amp; atmid[0] == ' ')</a>
+<a name="ln260">      atmid = atmid.substr(1,atmid.size()-1);</a>
+<a name="ln261"> </a>
+<a name="ln262">    while (!atmid.empty() &amp;&amp; atmid[atmid.size()-1] == ' ')</a>
+<a name="ln263">      atmid = atmid.substr(0,atmid.size()-1);</a>
+<a name="ln264"> </a>
+<a name="ln265">    /* residue name */</a>
+<a name="ln266"> </a>
+<a name="ln267">    string resname = sbuf.substr(11,3);</a>
+<a name="ln268">    if (resname == &quot;   &quot;)</a>
+<a name="ln269">      resname = &quot;UNK&quot;;</a>
+<a name="ln270">    else</a>
+<a name="ln271">      {</a>
+<a name="ln272">        while (!resname.empty() &amp;&amp; resname[0] == ' ')</a>
+<a name="ln273">          resname = resname.substr(1,resname.size()-1);</a>
+<a name="ln274"> </a>
+<a name="ln275">        while (!resname.empty() &amp;&amp; resname[resname.size()-1] == ' ')</a>
+<a name="ln276">          resname = resname.substr(0,resname.size()-1);</a>
+<a name="ln277">      }</a>
+<a name="ln278"> </a>
+<a name="ln279">    string type;</a>
+<a name="ln280">    if (EQn(buffer,&quot;ATOM&quot;,4))</a>
+<a name="ln281">      {</a>
+<a name="ln282">        type = atmid.substr(0,2);</a>
+<a name="ln283">        if (isdigit(type[0])) {</a>
+<a name="ln284">          // sometimes non-standard files have, e.g 11HH</a>
+<a name="ln285">          if (!isdigit(type[1])) type = atmid.substr(1,1);</a>
+<a name="ln286">          else type = atmid.substr(2,1);</a>
+<a name="ln287">        } else if ((sbuf[6] == ' ' &amp;&amp;</a>
+<a name="ln288">                    strncasecmp(type.c_str(), &quot;Zn&quot;, 2) != 0 &amp;&amp;</a>
+<a name="ln289">                    strncasecmp(type.c_str(), &quot;Fe&quot;, 2) != 0) ||</a>
+<a name="ln290">                   isdigit(type[1]))    //type[1] is digit in Platon</a>
+<a name="ln291">          type = atmid.substr(0,1);     // one-character element</a>
+<a name="ln292"> </a>
+<a name="ln293"> </a>
+<a name="ln294">        if (resname.substr(0,2) == &quot;AS&quot; || resname[0] == 'N')</a>
+<a name="ln295">          {</a>
+<a name="ln296">            if (atmid == &quot;AD1&quot;)</a>
+<a name="ln297">              type = &quot;O&quot;;</a>
+<a name="ln298">            if (atmid == &quot;AD2&quot;)</a>
+<a name="ln299">              type = &quot;N&quot;;</a>
+<a name="ln300">          }</a>
+<a name="ln301">        if (resname.substr(0,3) == &quot;HIS&quot; || resname[0] == 'H')</a>
+<a name="ln302">          {</a>
+<a name="ln303">            if (atmid == &quot;AD1&quot; || atmid == &quot;AE2&quot;)</a>
+<a name="ln304">              type = &quot;N&quot;;</a>
+<a name="ln305">            if (atmid == &quot;AE1&quot; || atmid == &quot;AD2&quot;)</a>
+<a name="ln306">              type = &quot;C&quot;;</a>
+<a name="ln307">          }</a>
+<a name="ln308">        if (resname.substr(0,2) == &quot;GL&quot; || resname[0] == 'Q')</a>
+<a name="ln309">          {</a>
+<a name="ln310">            if (atmid == &quot;AE1&quot;)</a>
+<a name="ln311">              type = &quot;O&quot;;</a>
+<a name="ln312">            if (atmid == &quot;AE2&quot;)</a>
+<a name="ln313">              type = &quot;N&quot;;</a>
+<a name="ln314">          }</a>
+<a name="ln315">        // fix: #2002557</a>
+<a name="ln316">        if (atmid[0] == 'H' &amp;&amp;</a>
+<a name="ln317">            (atmid[1] == 'D' || atmid[1] == 'E' ||</a>
+<a name="ln318">             atmid[1] == 'G' || atmid[1] == 'H')) // HD, HE, HG, HH, ..</a>
+<a name="ln319">          type = &quot;H&quot;;</a>
+<a name="ln320">      }</a>
+<a name="ln321">    else //must be hetatm record</a>
+<a name="ln322">      {</a>
+<a name="ln323">        if (isalpha(element[1]) &amp;&amp; (isalpha(element[0]) || (element[0] == ' ')))</a>
+<a name="ln324">          {</a>
+<a name="ln325">            if (isalpha(element[0]))</a>
+<a name="ln326">              type = element.substr(0,2);</a>
+<a name="ln327">            else</a>
+<a name="ln328">              type = element.substr(1,1);</a>
+<a name="ln329">            if (type.size() == 2)</a>
+<a name="ln330">              type[1] = tolower(type[1]);</a>
+<a name="ln331">          }</a>
+<a name="ln332">        else</a>
+<a name="ln333">          {</a>
+<a name="ln334">            if (isalpha(atmid[0]))</a>
+<a name="ln335">              {</a>
+<a name="ln336">              if (atmid.size() &gt; 2 &amp;&amp; (atmid[2] == '\0' || atmid[2] == ' '))</a>
+<a name="ln337">                type = atmid.substr(0,2);</a>
+<a name="ln338">              else if (atmid[0] == 'A') // alpha prefix</a>
+<a name="ln339">                type = atmid.substr(1, atmid.size() - 1);</a>
+<a name="ln340">              else</a>
+<a name="ln341">                type = atmid.substr(0,1);</a>
+<a name="ln342">              }</a>
+<a name="ln343">            else if (atmid[0] == ' ')</a>
+<a name="ln344">              type = atmid.substr(1,1); // one char element</a>
+<a name="ln345">            else</a>
+<a name="ln346">              type = atmid.substr(1,2);</a>
+<a name="ln347"> </a>
+<a name="ln348">            // Some cleanup steps</a>
+<a name="ln349">            if (atmid == resname)</a>
+<a name="ln350">              {</a>
+<a name="ln351">                type = atmid;</a>
+<a name="ln352">                if (type.size() == 2)</a>
+<a name="ln353">                  type[1] = tolower(type[1]);</a>
+<a name="ln354">              }</a>
+<a name="ln355">            else</a>
+<a name="ln356">              if (resname == &quot;ADR&quot; || resname == &quot;COA&quot; || resname == &quot;FAD&quot; ||</a>
+<a name="ln357">                  resname == &quot;GPG&quot; || resname == &quot;NAD&quot; || resname == &quot;NAL&quot; ||</a>
+<a name="ln358">                  resname == &quot;NDP&quot; || resname == &quot;ABA&quot;)</a>
+<a name="ln359">                {</a>
+<a name="ln360">                  if (type.size() &gt; 1)</a>
+<a name="ln361">                    type = type.substr(0,1);</a>
+<a name="ln362">                  //type.erase(1,type.size()-1);</a>
+<a name="ln363">                }</a>
+<a name="ln364">              else</a>
+<a name="ln365">                if (isdigit(type[0]))</a>
+<a name="ln366">                  {</a>
+<a name="ln367">                    type = type.substr(1,1);</a>
+<a name="ln368">                  }</a>
+<a name="ln369">                else</a>
+<a name="ln370">                  if (type.size() &gt; 1 &amp;&amp; isdigit(type[1]))</a>
+<a name="ln371">                    type = type.substr(0,1);</a>
+<a name="ln372">                  else</a>
+<a name="ln373">                    if (type.size() &gt; 1 &amp;&amp; isalpha(type[1])) {</a>
+<a name="ln374">                      if (type[0] == 'O' &amp;&amp; type[1] == 'H')</a>
+<a name="ln375">                        type = type.substr(0,1); // no &quot;Oh&quot; element (e.g. 1MBN)</a>
+<a name="ln376">                      else if(isupper(type[1]))</a>
+<a name="ln377">                        {</a>
+<a name="ln378">                          type[1] = tolower(type[1]);</a>
+<a name="ln379">                        }</a>
+<a name="ln380">                    }</a>
+<a name="ln381">          }</a>
+<a name="ln382"> </a>
+<a name="ln383">      }</a>
+<a name="ln384"> </a>
+<a name="ln385">    OBAtom atom;</a>
+<a name="ln386">    /* X, Y, Z */</a>
+<a name="ln387">    string xstr = sbuf.substr(24,8);</a>
+<a name="ln388">    string ystr = sbuf.substr(32,8);</a>
+<a name="ln389">    string zstr = sbuf.substr(40,8);</a>
+<a name="ln390">    vector3 v(atof(xstr.c_str()),atof(ystr.c_str()),atof(zstr.c_str()));</a>
+<a name="ln391">    atom.SetVector(v);</a>
+<a name="ln392"> </a>
+<a name="ln393">    // useful for debugging unknown atom types (e.g., PR#1577238)</a>
+<a name="ln394">    //    cout &lt;&lt; mol.NumAtoms() + 1 &lt;&lt; &quot; &quot; &lt;&lt; atmid &lt;&lt; &quot; type: &quot; &lt;&lt; type &lt;&lt; endl;</a>
+<a name="ln395">    atom.SetAtomicNum(OBElements::GetAtomicNum(type.c_str()));</a>
+<a name="ln396"> </a>
+<a name="ln397">    /* residue sequence number */</a>
+<a name="ln398">    string resnum = sbuf.substr(16,4);</a>
+<a name="ln399">    OBResidue *res  = mol.NumResidues() &gt; 0 ? mol.GetResidue(mol.NumResidues()-1) : nullptr;</a>
+<a name="ln400">    if (res == nullptr || res-&gt;GetName() != resname</a>
+<a name="ln401">        || res-&gt;GetNumString() != resnum)</a>
+<a name="ln402">      {</a>
+<a name="ln403">        vector&lt;OBResidue*&gt;::iterator ri;</a>
+<a name="ln404">        for (res = mol.BeginResidue(ri) ; res ; res = mol.NextResidue(ri))</a>
+<a name="ln405">          if (res-&gt;GetName() == resname</a>
+<a name="ln406">              &amp;&amp; res-&gt;GetNumString() == resnum</a>
+<a name="ln407">              &amp;&amp; static_cast&lt;int&gt;(res-&gt;GetChain()) == chain)</a>
+<a name="ln408">            break;</a>
+<a name="ln409"> </a>
+<a name="ln410">        if (res == nullptr)</a>
+<a name="ln411">          {</a>
+<a name="ln412">            res = mol.NewResidue();</a>
+<a name="ln413">            res-&gt;SetChain(chain);</a>
+<a name="ln414">            res-&gt;SetName(resname);</a>
+<a name="ln415">            res-&gt;SetNum(resnum);</a>
+<a name="ln416">          }</a>
+<a name="ln417">      }</a>
+<a name="ln418"> </a>
+<a name="ln419">    if (!mol.AddAtom(atom))</a>
+<a name="ln420">      return(false);</a>
+<a name="ln421">    else</a>
+<a name="ln422">      {</a>
+<a name="ln423">        OBAtom *atom = mol.GetAtom(mol.NumAtoms());</a>
+<a name="ln424"> </a>
+<a name="ln425">        res-&gt;AddAtom(atom);</a>
+<a name="ln426">        res-&gt;SetSerialNum(atom, atoi(serno.c_str()));</a>
+<a name="ln427">        res-&gt;SetAtomID(atom, sbuf.substr(6,4));</a>
+<a name="ln428">        res-&gt;SetHetAtom(atom, hetatm);</a>
+<a name="ln429"> </a>
+<a name="ln430">        return(true);</a>
+<a name="ln431">      }</a>
+<a name="ln432">  }</a>
+<a name="ln433"> </a>
+<a name="ln434">  bool PQRFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln435">  {</a>
+<a name="ln436">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln437">    if (pmol == nullptr)</a>
+<a name="ln438">      return false;</a>
+<a name="ln439"> </a>
+<a name="ln440">    //Define some references so we can use the old parameter names</a>
+<a name="ln441">    ostream &amp;ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln442">    OBMol &amp;mol = *pmol;</a>
+<a name="ln443"> </a>
+<a name="ln444">    unsigned int i;</a>
+<a name="ln445">    char buffer[BUFF_SIZE];</a>
+<a name="ln446">    char type_name[10], padded_name[10];</a>
+<a name="ln447">    char the_res[10];</a>
+<a name="ln448">    char the_chain = ' ';</a>
+<a name="ln449">    const char *element_name;</a>
+<a name="ln450">    int res_num;</a>
+<a name="ln451">    bool het=true;</a>
+<a name="ln452">    int model_num = 0;</a>
+<a name="ln453">    if (!pConv-&gt;IsLast() || pConv-&gt;GetOutputIndex() &gt; 1)</a>
+<a name="ln454">      { // More than one molecule record</a>
+<a name="ln455">      model_num = pConv-&gt;GetOutputIndex(); // MODEL 1-based index</a>
+<a name="ln456">      snprintf(buffer, BUFF_SIZE, &quot;MODEL %8d&quot;, model_num);</a>
+<a name="ln457">      ofs &lt;&lt; buffer &lt;&lt; endl;</a>
+<a name="ln458">      }</a>
+<a name="ln459"> </a>
+<a name="ln460">    if (strlen(mol.GetTitle()) &gt; 0)</a>
+<a name="ln461">      snprintf(buffer, BUFF_SIZE, &quot;COMPND    %s &quot;,mol.GetTitle());</a>
+<a name="ln462">    else</a>
+<a name="ln463">      snprintf(buffer, BUFF_SIZE, &quot;COMPND    UNNAMED&quot;);</a>
+<a name="ln464">    ofs &lt;&lt; buffer &lt;&lt; endl;</a>
+<a name="ln465"> </a>
+<a name="ln466">    snprintf(buffer, BUFF_SIZE, &quot;AUTHOR    GENERATED BY OPEN BABEL %s&quot;,BABEL_VERSION);</a>
+<a name="ln467">    ofs &lt;&lt; buffer &lt;&lt; endl;</a>
+<a name="ln468"> </a>
+<a name="ln469">    // before we write any records, we should check to see if any coord &lt; -1000</a>
+<a name="ln470">    // which will cause errors in the formatting</a>
+<a name="ln471"> </a>
+<a name="ln472">    double minX, minY, minZ;</a>
+<a name="ln473">    minX = minY = minZ = -999.0f;</a>
+<a name="ln474">    FOR_ATOMS_OF_MOL(a, mol)</a>
+<a name="ln475">      {</a>
+<a name="ln476">        if (a-&gt;GetX() &lt; minX)</a>
+<a name="ln477">          minX = a-&gt;GetX();</a>
+<a name="ln478">        if (a-&gt;GetY() &lt; minY)</a>
+<a name="ln479">          minY = a-&gt;GetY();</a>
+<a name="ln480">        if (a-&gt;GetZ() &lt; minZ)</a>
+<a name="ln481">          minZ = a-&gt;GetZ();</a>
+<a name="ln482">      }</a>
+<a name="ln483"> </a>
+<a name="ln484">    vector3 transV = VZero;</a>
+<a name="ln485">    if (minX &lt; -999.0)</a>
+<a name="ln486">      transV.SetX( -1.0*minX - 900.0 );</a>
+<a name="ln487">    if (minY &lt; -999.0)</a>
+<a name="ln488">      transV.SetY( -1.0*minY - 900.0 );</a>
+<a name="ln489">    if (minZ &lt; -999.0)</a>
+<a name="ln490">      transV.SetZ( -1.0*minZ - 900.0 );</a>
+<a name="ln491"> </a>
+<a name="ln492">    // if minX, minY, or minZ was never changed, shift will be 0.0f</a>
+<a name="ln493">    // otherwise, move enough so that smallest coord is &gt; -999.0f</a>
+<a name="ln494">    mol.Translate(transV);</a>
+<a name="ln495"> </a>
+<a name="ln496">    OBAtom *atom;</a>
+<a name="ln497">    OBResidue *res;</a>
+<a name="ln498">    for (i = 1; i &lt;= mol.NumAtoms(); i++)</a>
+<a name="ln499">      {</a>
+<a name="ln500">        atom = mol.GetAtom(i);</a>
+<a name="ln501">        strncpy(type_name, OBElements::GetSymbol(atom-&gt;GetAtomicNum()), sizeof(type_name));</a>
+<a name="ln502">        type_name[sizeof(type_name) - 1] = '\0';</a>
+<a name="ln503"> </a>
+<a name="ln504">        //two char. elements are on position 13 and 14 one char. start at 14</a>
+<a name="ln505">        if (strlen(type_name) &gt; 1)</a>
+<a name="ln506">          type_name[1] = toupper(type_name[1]);</a>
+<a name="ln507">        else</a>
+<a name="ln508">          {</a>
+<a name="ln509">            char tmp[10];</a>
+<a name="ln510">            strncpy(tmp, type_name, 9); // make sure to null-terminate</a>
+<a name="ln511">            snprintf(type_name, sizeof(type_name), &quot; %-3s&quot;, tmp);</a>
+<a name="ln512">          }</a>
+<a name="ln513"> </a>
+<a name="ln514">        if ((res = atom-&gt;GetResidue()) != nullptr)</a>
+<a name="ln515">          {</a>
+<a name="ln516">            het = res-&gt;IsHetAtom(atom);</a>
+<a name="ln517">            snprintf(the_res,4,&quot;%s&quot;,(char*)res-&gt;GetName().c_str());</a>
+<a name="ln518">            snprintf(type_name,5,&quot;%s&quot;,(char*)res-&gt;GetAtomID(atom).c_str());</a>
+<a name="ln519">            the_chain = res-&gt;GetChain();</a>
+<a name="ln520"> </a>
+<a name="ln521">            //two char. elements are on position 13 and 14 one char. start at 14</a>
+<a name="ln522">            if (strlen(OBElements::GetSymbol(atom-&gt;GetAtomicNum())) == 1)</a>
+<a name="ln523">              {</a>
+<a name="ln524">                if (strlen(type_name) &lt; 4)</a>
+<a name="ln525">                  {</a>
+<a name="ln526">                    char tmp[16];</a>
+<a name="ln527">                    strncpy(tmp, type_name, 15); // make sure to null-terminate</a>
+<a name="ln528">                    snprintf(padded_name, sizeof(padded_name), &quot; %-3s&quot;, tmp);</a>
+<a name="ln529">                    strncpy(type_name,padded_name,4);</a>
+<a name="ln530">                    type_name[4] = '\0';</a>
+<a name="ln531">                  }</a>
+<a name="ln532">                else</a>
+<a name="ln533">                  {</a>
+<a name="ln534">                    type_name[4] = '\0';</a>
+<a name="ln535">                  }</a>
+<a name="ln536">              }</a>
+<a name="ln537">            res_num = res-&gt;GetNum();</a>
+<a name="ln538">          }</a>
+<a name="ln539">        else</a>
+<a name="ln540">          {</a>
+<a name="ln541">            strcpy(the_res,&quot;UNK&quot;);</a>
+<a name="ln542">            snprintf(padded_name,sizeof(padded_name), &quot;%s&quot;,type_name);</a>
+<a name="ln543">            strncpy(type_name,padded_name,4);</a>
+<a name="ln544">            type_name[4] = '\0';</a>
+<a name="ln545">            res_num = 1;</a>
+<a name="ln546">          }</a>
+<a name="ln547"> </a>
+<a name="ln548">        element_name = OBElements::GetSymbol(atom-&gt;GetAtomicNum());</a>
+<a name="ln549">        //snprintf(buffer, BUFF_SIZE, &quot;%s%5d %-4s %-3s %c%4d    %8.3f%8.3f%8.3f  1.00  0.00          %2s  \n&quot;,</a>
+<a name="ln550">        snprintf(buffer, BUFF_SIZE, &quot;%s%5d %-4s %-3s %c%4d    %8.3f%8.3f%8.3f %11.8f%8.3f %2s  \n&quot;,</a>
+<a name="ln551">                 het?&quot;HETATM&quot;:&quot;ATOM  &quot;,</a>
+<a name="ln552">                 i,</a>
+<a name="ln553">                 type_name,</a>
+<a name="ln554">                 the_res,</a>
+<a name="ln555">		 the_chain,</a>
+<a name="ln556">                 res_num,</a>
+<a name="ln557">                 atom-&gt;GetX(),</a>
+<a name="ln558">                 atom-&gt;GetY(),</a>
+<a name="ln559">                 atom-&gt;GetZ(),</a>
+<a name="ln560">                 atom-&gt;GetPartialCharge(),</a>
+<a name="ln561">                 atom-&gt;HasData(&quot;Radius&quot;)//use atom radius data,Zhixiong Zhao</a>
+<a name="ln562">				 	?atof(atom-&gt;GetData(&quot;Radius&quot;)-&gt;GetValue().c_str())</a>
+<a name="ln563">					:OBElements::GetVdwRad(atom-&gt;GetAtomicNum()),</a>
+<a name="ln564">                 element_name);</a>
+<a name="ln565">        ofs &lt;&lt; buffer;</a>
+<a name="ln566">      }</a>
+<a name="ln567"> </a>
+<a name="ln568">    OBAtom *nbr;</a>
+<a name="ln569">    vector&lt;OBBond*&gt;::iterator k;</a>
+<a name="ln570">    for (i = 1; i &lt;= mol.NumAtoms(); i ++)</a>
+<a name="ln571">      {</a>
+<a name="ln572">        atom = mol.GetAtom(i);</a>
+<a name="ln573">        if (atom-&gt;GetExplicitDegree() == 0)</a>
+<a name="ln574">          continue; // no need to write a CONECT record -- no bonds</a>
+<a name="ln575"> </a>
+<a name="ln576">        snprintf(buffer, BUFF_SIZE, &quot;CONECT%5d&quot;, i);</a>
+<a name="ln577">        ofs &lt;&lt; buffer;</a>
+<a name="ln578">        // Write out up to 4 real bonds per line PR#1711154</a>
+<a name="ln579">        int currentValence = 0;</a>
+<a name="ln580">        for (nbr = atom-&gt;BeginNbrAtom(k);nbr;nbr = atom-&gt;NextNbrAtom(k))</a>
+<a name="ln581">          {</a>
+<a name="ln582">            snprintf(buffer, BUFF_SIZE, &quot;%5d&quot;, nbr-&gt;GetIdx());</a>
+<a name="ln583">            ofs &lt;&lt; buffer;</a>
+<a name="ln584">            if (++currentValence % 4 == 0) {</a>
+<a name="ln585">              // Add the trailing space to finish this record</a>
+<a name="ln586">              ofs &lt;&lt; &quot;                                       \n&quot;;</a>
+<a name="ln587">              // write the start of a new CONECT record</a>
+<a name="ln588">              snprintf(buffer, BUFF_SIZE, &quot;CONECT%5d&quot;, i);</a>
+<a name="ln589">              ofs &lt;&lt; buffer;</a>
+<a name="ln590">            }</a>
+<a name="ln591">          }</a>
+<a name="ln592"> </a>
+<a name="ln593">        // Add trailing spaces</a>
+<a name="ln594">        int remainingValence = atom-&gt;GetExplicitDegree() % 4;</a>
+<a name="ln595">        for (int count = 0; count &lt; (4 - remainingValence); count++) {</a>
+<a name="ln596">          snprintf(buffer, BUFF_SIZE, &quot;     &quot;);</a>
+<a name="ln597">          ofs &lt;&lt; buffer;</a>
+<a name="ln598">        }</a>
+<a name="ln599">        ofs &lt;&lt; &quot;                                       \n&quot;;</a>
+<a name="ln600">      }</a>
+<a name="ln601"> </a>
+<a name="ln602">    snprintf(buffer, BUFF_SIZE, &quot;MASTER        0    0    0    0    0    0    0    0 &quot;);</a>
+<a name="ln603">    ofs &lt;&lt; buffer;</a>
+<a name="ln604">    snprintf(buffer, BUFF_SIZE, &quot;%4d    0 %4d    0\n&quot;,mol.NumAtoms(),mol.NumAtoms());</a>
+<a name="ln605">    ofs &lt;&lt; buffer;</a>
+<a name="ln606"> </a>
+<a name="ln607">    ofs &lt;&lt; &quot;END\n&quot;;</a>
+<a name="ln608">    if (model_num) {</a>
+<a name="ln609">      ofs &lt;&lt; &quot;ENDMDL&quot; &lt;&lt; endl;</a>
+<a name="ln610">    }</a>
+<a name="ln611"> </a>
+<a name="ln612">    return(true);</a>
+<a name="ln613">  }</a>
+<a name="ln614"> </a>
+<a name="ln615"> </a>
+<a name="ln616">} //namespace OpenBabel</a>
+
+</code></pre>
+<div class="balloon" rel="186"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v663/" target="_blank">V663</a> Infinite loop is possible. The 'cin.eof()' condition is insufficient to break from the loop. Consider adding the 'cin.fail()' function call to the conditional expression.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

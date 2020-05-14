@@ -1,0 +1,331 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>forcefield.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">forcefield.cpp - A OBOp to calculate and minimize the energy using a</a>
+<a name="ln3">                 forcefield (re-wrap of obminimize and obenergy)</a>
+<a name="ln4"> </a>
+<a name="ln5">Copyright (C) 2006-2007 by Tim Vandermeersch</a>
+<a name="ln6">          (C) 2009 by Chris Morley</a>
+<a name="ln7"> </a>
+<a name="ln8">This file is part of the Open Babel project.</a>
+<a name="ln9">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln10"> </a>
+<a name="ln11">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln12">it under the terms of the GNU General Public License as published by</a>
+<a name="ln13">the Free Software Foundation version 2 of the License.</a>
+<a name="ln14"> </a>
+<a name="ln15">This program is distributed in the hope that it will be useful,</a>
+<a name="ln16">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln17">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln18">GNU General Public License for more details.</a>
+<a name="ln19">***********************************************************************/</a>
+<a name="ln20"> </a>
+<a name="ln21">/******************************************************************************</a>
+<a name="ln22">**** CURRENTLY ONLY SUITABLE FOR USE WITH THE OBABEL COMMANDLINE INTERFACE ****</a>
+<a name="ln23">This allows options to have parameters, e.g. --ff Ghemical</a>
+<a name="ln24">Compile with tools/obabel.cpp rather than tools/babel.cpp</a>
+<a name="ln25"> </a>
+<a name="ln26">*******************************************************************************/</a>
+<a name="ln27"> </a>
+<a name="ln28">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln29">#include &lt;iostream&gt;</a>
+<a name="ln30">#include &lt;cstdlib&gt;</a>
+<a name="ln31">#include&lt;openbabel/op.h&gt;</a>
+<a name="ln32">#include&lt;openbabel/mol.h&gt;</a>
+<a name="ln33">#include&lt;openbabel/forcefield.h&gt;</a>
+<a name="ln34">#include&lt;openbabel/generic.h&gt;</a>
+<a name="ln35"> </a>
+<a name="ln36">namespace OpenBabel</a>
+<a name="ln37">{</a>
+<a name="ln38">  using namespace std;</a>
+<a name="ln39"> </a>
+<a name="ln40">  //////////////////////////////////////////////////////////</a>
+<a name="ln41">  //</a>
+<a name="ln42">  //  OpEnergy</a>
+<a name="ln43">  //</a>
+<a name="ln44">  //////////////////////////////////////////////////////////</a>
+<a name="ln45"> </a>
+<a name="ln46">  class OpEnergy : public OBOp</a>
+<a name="ln47">  {</a>
+<a name="ln48">    public:</a>
+<a name="ln49">      OpEnergy(const char *ID) : OBOp(ID, false) {}</a>
+<a name="ln50"> </a>
+<a name="ln51">      const char* Description()</a>
+<a name="ln52">      {</a>
+<a name="ln53">        return &quot;ForceField Energy Evaluation (not displayed in GUI)\n&quot;</a>
+<a name="ln54">          &quot;Typical usage: obabel infile.xxx -O outfile.yy --energy --log\n&quot;</a>
+<a name="ln55">          &quot; options:         description\n&quot;</a>
+<a name="ln56">          &quot; --log        output a log of the energies (default = no log)\n&quot;</a>
+<a name="ln57">          &quot; --epsilon #  set the dielectric constant for electrostatics\n&quot;</a>
+<a name="ln58">          &quot; --noh        don't add explicit hydrogens (default = make explicit)\n&quot;</a>
+<a name="ln59">          &quot; --ff #       select a forcefield (default = MMFF94)\n&quot;</a>
+<a name="ln60">          &quot; The hydrogens are made explicit by default before energy evaluation.\n&quot;</a>
+<a name="ln61">          &quot; The energy is put in an OBPairData object \&quot;Energy\&quot; which is\n&quot;</a>
+<a name="ln62">          &quot;   accessible via an SDF or CML property or --append (to title).\n&quot;</a>
+<a name="ln63">          ;</a>
+<a name="ln64">      }</a>
+<a name="ln65"> </a>
+<a name="ln66">      virtual bool WorksWith(OBBase* pOb) const</a>
+<a name="ln67">      {</a>
+<a name="ln68">        return dynamic_cast&lt;OBMol*&gt;(pOb) != nullptr;</a>
+<a name="ln69">      }</a>
+<a name="ln70">      virtual bool Do(OBBase* pOb, const char* OptionText, OpMap* pmap, OBConversion*);</a>
+<a name="ln71">  };</a>
+<a name="ln72"> </a>
+<a name="ln73">  //////////////////////////////////////////////////////////</a>
+<a name="ln74">  OpEnergy theOpEnergy(&quot;energy&quot;); //Global instance</a>
+<a name="ln75"> </a>
+<a name="ln76">  //////////////////////////////////////////////////////////</a>
+<a name="ln77">  bool OpEnergy::Do(OBBase* pOb, const char* OptionText, OpMap* pmap, OBConversion*)</a>
+<a name="ln78">  {</a>
+<a name="ln79">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln80">    if(!pmol)</a>
+<a name="ln81">      return false;</a>
+<a name="ln82"> </a>
+<a name="ln83">    bool log = false;</a>
+<a name="ln84">    bool addh = true;</a>
+<a name="ln85"> </a>
+<a name="ln86">    string ff = &quot;MMFF94&quot;;</a>
+<a name="ln87">    double epsilon = 1.0;</a>
+<a name="ln88">    OpMap::const_iterator iter = pmap-&gt;find(&quot;ff&quot;);</a>
+<a name="ln89">    if(iter!=pmap-&gt;end())</a>
+<a name="ln90">      ff = iter-&gt;second;</a>
+<a name="ln91">    OBForceField* pFF = OBForceField::FindForceField(ff);</a>
+<a name="ln92">    iter = pmap-&gt;find(&quot;epsilon&quot;);</a>
+<a name="ln93">    if (iter!=pmap-&gt;end())</a>
+<a name="ln94">      epsilon = atof(iter-&gt;second.c_str());</a>
+<a name="ln95"> </a>
+<a name="ln96">    iter = pmap-&gt;find(&quot;log&quot;);</a>
+<a name="ln97">    if(iter!=pmap-&gt;end())</a>
+<a name="ln98">      log=true;</a>
+<a name="ln99"> </a>
+<a name="ln100">    iter = pmap-&gt;find(&quot;noh&quot;);</a>
+<a name="ln101">    if(iter!=pmap-&gt;end())</a>
+<a name="ln102">      addh=false;</a>
+<a name="ln103"> </a>
+<a name="ln104">    if (addh)</a>
+<a name="ln105">      pmol-&gt;AddHydrogens(false, false);</a>
+<a name="ln106"> </a>
+<a name="ln107">    // set some force field variables</a>
+<a name="ln108">    pFF-&gt;SetLogFile(&amp;clog);</a>
+<a name="ln109">    pFF-&gt;SetLogLevel(log ? OBFF_LOGLVL_MEDIUM : OBFF_LOGLVL_NONE);</a>
+<a name="ln110"> </a>
+<a name="ln111">    pFF-&gt;SetDielectricConstant(epsilon);</a>
+<a name="ln112">    if (!pFF-&gt;Setup(*pmol)) {</a>
+<a name="ln113">      cerr  &lt;&lt; &quot;Could not setup force field.&quot; &lt;&lt; endl;</a>
+<a name="ln114">      return false;</a>
+<a name="ln115">    }</a>
+<a name="ln116"> </a>
+<a name="ln117">    //Put the energy in a OBPairData object</a>
+<a name="ln118">    OBPairData *dp = new OBPairData;</a>
+<a name="ln119">    dp-&gt;SetAttribute(&quot;Energy&quot;);</a>
+<a name="ln120">    stringstream ss;</a>
+<a name="ln121">    ss &lt;&lt; pFF-&gt;Energy(false);</a>
+<a name="ln122">    dp-&gt;SetValue(ss.str());</a>
+<a name="ln123">    dp-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln124">    pmol-&gt;SetData(dp);</a>
+<a name="ln125"> </a>
+<a name="ln126">    return true;</a>
+<a name="ln127">  }</a>
+<a name="ln128"> </a>
+<a name="ln129">  //////////////////////////////////////////////////////////</a>
+<a name="ln130">  //</a>
+<a name="ln131">  //  OpMinimize</a>
+<a name="ln132">  //</a>
+<a name="ln133">  //////////////////////////////////////////////////////////</a>
+<a name="ln134"> </a>
+<a name="ln135">  class OpMinimize : public OBOp</a>
+<a name="ln136">  {</a>
+<a name="ln137">    public:</a>
+<a name="ln138">      OpMinimize(const char* ID) : OBOp(ID, false) {}</a>
+<a name="ln139"> </a>
+<a name="ln140">      const char* Description()</a>
+<a name="ln141">      {</a>
+<a name="ln142">        return &quot;ForceField Energy Minimization (not displayed in GUI)\n&quot;</a>
+<a name="ln143">          &quot;Typical usage: obabel infile.xxx -O outfile.yyy --minimize --steps 1500 --sd\n&quot;</a>
+<a name="ln144">          &quot; options:         description:\n&quot;</a>
+<a name="ln145">          &quot; --log        output a log of the minimization process(default= no log)\n&quot;</a>
+<a name="ln146">          &quot; --crit #     set convergence criteria (default=1e-6)\n&quot;</a>
+<a name="ln147">          &quot; --sd         use steepest descent algorithm (default = conjugate gradient)\n&quot;</a>
+<a name="ln148">          &quot; --newton     use Newton2Num linesearch (default = Simple)\n&quot;</a>
+<a name="ln149">          &quot; --ff #       select a forcefield (default = Ghemical)\n&quot;</a>
+<a name="ln150">          &quot; --steps #    specify the maximum number of steps (default = 2500)\n&quot;</a>
+<a name="ln151">          &quot; --cut        use cut-off (default = don't use cut-off)\n&quot;</a>
+<a name="ln152">          &quot; --noh        don't add explicit hydrogens (default = make explicit)\n&quot;</a>
+<a name="ln153">          &quot; --epsilon #  relative dielectric constant (default = 1.0)\n&quot;</a>
+<a name="ln154">          &quot; --rvdw #     specify the VDW cut-off distance (default = 6.0)\n&quot;</a>
+<a name="ln155">          &quot; --rele #     specify the Electrostatic cut-off distance (default = 10.0)\n&quot;</a>
+<a name="ln156">          &quot; --freq #     specify the frequency to update the non-bonded pairs (default = 10)\n&quot;</a>
+<a name="ln157">          &quot; The hydrogens are made explicit before minimization by default.\n&quot;</a>
+<a name="ln158">          &quot; The energy is put in an OBPairData object \&quot;Energy\&quot; which is\n&quot;</a>
+<a name="ln159">          &quot;   accessible via an SDF or CML property or --append (to title).\n&quot;</a>
+<a name="ln160">          ;</a>
+<a name="ln161">      }</a>
+<a name="ln162"> </a>
+<a name="ln163">      virtual bool WorksWith(OBBase* pOb) const</a>
+<a name="ln164">      {</a>
+<a name="ln165">        return dynamic_cast&lt;OBMol*&gt;(pOb) != nullptr;</a>
+<a name="ln166">      }</a>
+<a name="ln167">      virtual bool Do(OBBase* pOb, const char* OptionText, OpMap* pmap, OBConversion*);</a>
+<a name="ln168">  };</a>
+<a name="ln169"> </a>
+<a name="ln170">  //////////////////////////////////////////////////////////</a>
+<a name="ln171">  OpMinimize theOpMinimize(&quot;minimize&quot;); //Global instance</a>
+<a name="ln172"> </a>
+<a name="ln173">  //////////////////////////////////////////////////////////</a>
+<a name="ln174">  bool OpMinimize::Do(OBBase* pOb, const char* OptionText, OpMap* pmap, OBConversion*)</a>
+<a name="ln175">  {</a>
+<a name="ln176">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln177">    if(!pmol)</a>
+<a name="ln178">      return false;</a>
+<a name="ln179"> </a>
+<a name="ln180">    int steps = 2500;</a>
+<a name="ln181">    double crit = 1e-6;</a>
+<a name="ln182">    bool sd = false;</a>
+<a name="ln183">    bool cut = false;</a>
+<a name="ln184">    bool addh = true;</a>
+<a name="ln185">    bool newton = true;</a>
+<a name="ln186">    double epsilon = 1.0;</a>
+<a name="ln187">    double rvdw = 6.0;</a>
+<a name="ln188">    double rele = 10.0;</a>
+<a name="ln189">    int freq = 10;</a>
+<a name="ln190">    bool log = false;</a>
+<a name="ln191"> </a>
+<a name="ln192">    string ff = &quot;MMFF94&quot;;</a>
+<a name="ln193">    OpMap::const_iterator iter = pmap-&gt;find(&quot;ff&quot;);</a>
+<a name="ln194">    if(iter!=pmap-&gt;end())</a>
+<a name="ln195">      ff = iter-&gt;second;</a>
+<a name="ln196">    OBForceField* pFF = OBForceField::FindForceField(ff);</a>
+<a name="ln197"> </a>
+<a name="ln198">    iter = pmap-&gt;find(&quot;sd&quot;);</a>
+<a name="ln199">    if(iter!=pmap-&gt;end())</a>
+<a name="ln200">      sd=true;</a>
+<a name="ln201"> </a>
+<a name="ln202">    iter = pmap-&gt;find(&quot;newton&quot;);</a>
+<a name="ln203">    if(iter!=pmap-&gt;end())</a>
+<a name="ln204">      newton=true;</a>
+<a name="ln205"> </a>
+<a name="ln206">    iter = pmap-&gt;find(&quot;cut&quot;);</a>
+<a name="ln207">    if(iter!=pmap-&gt;end())</a>
+<a name="ln208">      cut=true;</a>
+<a name="ln209"> </a>
+<a name="ln210">    iter = pmap-&gt;find(&quot;noh&quot;);</a>
+<a name="ln211">    if(iter!=pmap-&gt;end())</a>
+<a name="ln212">      addh=false;</a>
+<a name="ln213"> </a>
+<a name="ln214">    iter = pmap-&gt;find(&quot;crit&quot;);</a>
+<a name="ln215">    if(iter!=pmap-&gt;end())</a>
+<a name="ln216">      crit = atof(iter-&gt;second.c_str());</a>
+<a name="ln217"> </a>
+<a name="ln218">    iter = pmap-&gt;find(&quot;steps&quot;);</a>
+<a name="ln219">    if(iter!=pmap-&gt;end())</a>
+<a name="ln220">      steps = atoi(iter-&gt;second.c_str());</a>
+<a name="ln221"> </a>
+<a name="ln222">    iter = pmap-&gt;find(&quot;epsilon&quot;);</a>
+<a name="ln223">    if(iter!=pmap-&gt;end())</a>
+<a name="ln224">      epsilon = atof(iter-&gt;second.c_str());</a>
+<a name="ln225"> </a>
+<a name="ln226">    iter = pmap-&gt;find(&quot;rvdw&quot;);</a>
+<a name="ln227">    if(iter!=pmap-&gt;end())</a>
+<a name="ln228">      rvdw = atof(iter-&gt;second.c_str());</a>
+<a name="ln229"> </a>
+<a name="ln230">    iter = pmap-&gt;find(&quot;rele&quot;);</a>
+<a name="ln231">    if(iter!=pmap-&gt;end())</a>
+<a name="ln232">      rele = atof(iter-&gt;second.c_str());</a>
+<a name="ln233"> </a>
+<a name="ln234">    iter = pmap-&gt;find(&quot;pf&quot;);</a>
+<a name="ln235">    if(iter!=pmap-&gt;end()) {</a>
+<a name="ln236">      freq = atoi(iter-&gt;second.c_str());</a>
+<a name="ln237">      if (freq &lt; 1)</a>
+<a name="ln238">        freq = 10; // don't divide by zero</a>
+<a name="ln239">    }</a>
+<a name="ln240"> </a>
+<a name="ln241">    iter = pmap-&gt;find(&quot;log&quot;);</a>
+<a name="ln242">    if(iter!=pmap-&gt;end())</a>
+<a name="ln243">      log=true;</a>
+<a name="ln244"> </a>
+<a name="ln245">    if (newton)</a>
+<a name="ln246">      pFF-&gt;SetLineSearchType(LineSearchType::Newton2Num);</a>
+<a name="ln247"> </a>
+<a name="ln248">    // set some force field variables</a>
+<a name="ln249">    pFF-&gt;SetLogFile(&amp;clog);</a>
+<a name="ln250">    pFF-&gt;SetLogLevel(log ? OBFF_LOGLVL_LOW : OBFF_LOGLVL_NONE);</a>
+<a name="ln251">    pFF-&gt;SetVDWCutOff(rvdw);</a>
+<a name="ln252">    pFF-&gt;SetElectrostaticCutOff(rele);</a>
+<a name="ln253">    pFF-&gt;SetUpdateFrequency(freq);</a>
+<a name="ln254">    pFF-&gt;SetDielectricConstant(epsilon);</a>
+<a name="ln255">    pFF-&gt;EnableCutOff(cut);</a>
+<a name="ln256"> </a>
+<a name="ln257">    if (addh)</a>
+<a name="ln258">      pmol-&gt;AddHydrogens(false, false);</a>
+<a name="ln259"> </a>
+<a name="ln260">    if (!pFF-&gt;Setup(*pmol)) {</a>
+<a name="ln261">      cerr  &lt;&lt; &quot;Could not setup force field.&quot; &lt;&lt; endl;</a>
+<a name="ln262">      return false;</a>
+<a name="ln263">    }</a>
+<a name="ln264"> </a>
+<a name="ln265">    bool done = true;</a>
+<a name="ln266">    if (sd)</a>
+<a name="ln267">      pFF-&gt;SteepestDescent(steps, crit);</a>
+<a name="ln268">    else</a>
+<a name="ln269">      pFF-&gt;ConjugateGradients(steps, crit);</a>
+<a name="ln270"> </a>
+<a name="ln271">    pFF-&gt;GetCoordinates(*pmol);</a>
+<a name="ln272"> </a>
+<a name="ln273">    //Put the energy in a OBPairData object</a>
+<a name="ln274">    OBPairData *dp = new OBPairData;</a>
+<a name="ln275">    dp-&gt;SetAttribute(&quot;Energy&quot;);</a>
+<a name="ln276">    stringstream ss;</a>
+<a name="ln277">    ss &lt;&lt; pFF-&gt;Energy(false);</a>
+<a name="ln278">    dp-&gt;SetValue(ss.str());</a>
+<a name="ln279">    dp-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln280">    pmol-&gt;SetData(dp);</a>
+<a name="ln281"> </a>
+<a name="ln282">    return true;</a>
+<a name="ln283">  }</a>
+<a name="ln284"> </a>
+<a name="ln285">}//namespace</a>
+
+</code></pre>
+<div class="balloon" rel="245"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'newton' is always true.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

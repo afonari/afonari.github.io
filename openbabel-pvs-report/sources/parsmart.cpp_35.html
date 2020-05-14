@@ -1,0 +1,2582 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>parsmart.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">parsmart.cpp - SMARTS parser.</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 1998-2001 by OpenEye Scientific Software, Inc.</a>
+<a name="ln5">Some portions Copyright (C) 2001-2006 by Geoffrey R. Hutchison</a>
+<a name="ln6"> </a>
+<a name="ln7">This file is part of the Open Babel project.</a>
+<a name="ln8">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln11">it under the terms of the GNU General Public License as published by</a>
+<a name="ln12">the Free Software Foundation version 2 of the License.</a>
+<a name="ln13"> </a>
+<a name="ln14">This program is distributed in the hope that it will be useful,</a>
+<a name="ln15">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln16">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln17">GNU General Public License for more details.</a>
+<a name="ln18">***********************************************************************/</a>
+<a name="ln19">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln20"> </a>
+<a name="ln21">#include &lt;ctype.h&gt;</a>
+<a name="ln22">#include &lt;iomanip&gt;</a>
+<a name="ln23">#include &lt;cstring&gt;</a>
+<a name="ln24"> </a>
+<a name="ln25">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln26">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln27">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln28">#include &lt;openbabel/parsmart.h&gt;</a>
+<a name="ln29">#include &lt;openbabel/stereo/stereo.h&gt;</a>
+<a name="ln30">#include &lt;openbabel/stereo/tetrahedral.h&gt;</a>
+<a name="ln31"> </a>
+<a name="ln32">using namespace std;</a>
+<a name="ln33"> </a>
+<a name="ln34">namespace OpenBabel</a>
+<a name="ln35">{</a>
+<a name="ln36">  /*! \class OBSmartsPattern parsmart.h &lt;openbabel/parsmart.h&gt;</a>
+<a name="ln37"> </a>
+<a name="ln38">    Substructure search is an incredibly useful tool in the context of a</a>
+<a name="ln39">    small molecule programming library. Having an efficient substructure</a>
+<a name="ln40">    search engine reduces the amount of hard code needed for molecule</a>
+<a name="ln41">    perception, as well as increases the flexibility of certain</a>
+<a name="ln42">    operations. For instance, atom typing can be easily performed based on</a>
+<a name="ln43">    hard coded rules of element type and bond orders (or</a>
+<a name="ln44">    hybridization). Alternatively, atom typing can also be done by</a>
+<a name="ln45">    matching a set of substructure rules read at run time. In the latter</a>
+<a name="ln46">    case customization based on application (such as changing the pH)</a>
+<a name="ln47">    becomes a facile operation. Fortunately for Open Babel and its users,</a>
+<a name="ln48">    Roger Sayle donated a SMARTS parser which became the basis for SMARTS</a>
+<a name="ln49">    matching in Open Babel.</a>
+<a name="ln50"> </a>
+<a name="ln51">    For more information on the SMARTS support in Open Babel, see the wiki page:</a>
+<a name="ln52">    http://openbabel.org/wiki/SMARTS</a>
+<a name="ln53"> </a>
+<a name="ln54">    The SMARTS matcher, or OBSmartsPattern, is a separate object which can</a>
+<a name="ln55">    match patterns in the OBMol class. The following code demonstrates how</a>
+<a name="ln56">    to use the OBSmartsPattern class:</a>
+<a name="ln57">    \code</a>
+<a name="ln58">    OBMol mol;</a>
+<a name="ln59">    ...</a>
+<a name="ln60">    OBSmartsPattern sp;</a>
+<a name="ln61">    sp.Init(&quot;CC&quot;);</a>
+<a name="ln62">    sp.Match(mol);</a>
+<a name="ln63">    vector&lt;vector&lt;int&gt; &gt; maplist;</a>
+<a name="ln64">    maplist = sp.GetMapList();</a>
+<a name="ln65">    //or maplist = sp.GetUMapList();</a>
+<a name="ln66">    //print out the results</a>
+<a name="ln67">    vector&lt;vector&lt;int&gt; &gt;::iterator i;</a>
+<a name="ln68">    vector&lt;int&gt;::iterator j;</a>
+<a name="ln69">    for (i = maplist.begin();i != maplist.end();++i)</a>
+<a name="ln70">    {</a>
+<a name="ln71">    for (j = i-&gt;begin();j != i-&gt;end();++j)</a>
+<a name="ln72">    cout &lt;&lt; j &lt;&lt; ' `;</a>
+<a name="ln73">    cout &lt;&lt; endl;</a>
+<a name="ln74">    }</a>
+<a name="ln75">    \endcode</a>
+<a name="ln76"> </a>
+<a name="ln77">    The preceding code reads in a molecule, initializes a SMARTS pattern</a>
+<a name="ln78">    of two single-bonded carbons, and locates all instances of the</a>
+<a name="ln79">    pattern in the molecule. Note that calling the Match() function</a>
+<a name="ln80">    does not return the results of the substructure match. The results</a>
+<a name="ln81">    from a match are stored in the OBSmartsPattern, and a call to</a>
+<a name="ln82">    GetMapList() or GetUMapList() must be made to extract the</a>
+<a name="ln83">    results. The function GetMapList() returns all matches of a</a>
+<a name="ln84">    particular pattern while GetUMapList() returns only the unique</a>
+<a name="ln85">    matches. For instance, the pattern [OD1]~C~[OD1] describes a</a>
+<a name="ln86">    carboxylate group. This pattern will match both atom number</a>
+<a name="ln87">    permutations of the carboxylate, and if GetMapList() is called, both</a>
+<a name="ln88">    matches will be returned. If GetUMapList() is called only unique</a>
+<a name="ln89">    matches of the pattern will be returned. A unique match is defined as</a>
+<a name="ln90">    one which does not cover the identical atoms that a previous match</a>
+<a name="ln91">    has covered.</a>
+<a name="ln92"> </a>
+<a name="ln93">  */</a>
+<a name="ln94"> </a>
+<a name="ln95">#define ATOMPOOL      1</a>
+<a name="ln96">#define BONDPOOL      1</a>
+<a name="ln97"> </a>
+<a name="ln98">#define AE_ANDHI        1</a>
+<a name="ln99">#define AE_ANDLO        2</a>
+<a name="ln100">#define AE_OR           3</a>
+<a name="ln101">#define AE_RECUR        4</a>
+<a name="ln102">#define AE_NOT          5</a>
+<a name="ln103">#define AE_TRUE         6</a>
+<a name="ln104">#define AE_FALSE        7</a>
+<a name="ln105">#define AE_AROMATIC     8</a>
+<a name="ln106">#define AE_ALIPHATIC    9</a>
+<a name="ln107">#define AE_CYCLIC       10</a>
+<a name="ln108">#define AE_ACYCLIC      11</a>
+<a name="ln109">#define AE_MASS         12</a>
+<a name="ln110">#define AE_ELEM         13</a>
+<a name="ln111">#define AE_AROMELEM     14</a>
+<a name="ln112">#define AE_ALIPHELEM    15</a>
+<a name="ln113">#define AE_HCOUNT       16</a>
+<a name="ln114">#define AE_CHARGE       17</a>
+<a name="ln115">#define AE_CONNECT      18</a>
+<a name="ln116">#define AE_DEGREE       19</a>
+<a name="ln117">#define AE_IMPLICIT     20</a>
+<a name="ln118">#define AE_RINGS        21</a>
+<a name="ln119">#define AE_SIZE         22</a>
+<a name="ln120">#define AE_VALENCE      23</a>
+<a name="ln121">#define AE_CHIRAL       24</a>
+<a name="ln122">#define AE_HYB          25</a>
+<a name="ln123">#define AE_RINGCONNECT  26</a>
+<a name="ln124"> </a>
+<a name="ln125">#define AL_CLOCKWISE      1</a>
+<a name="ln126">#define AL_ANTICLOCKWISE  2</a>
+<a name="ln127">#define AL_UNSPECIFIED    0</a>
+<a name="ln128"> </a>
+<a name="ln129">/* Each BondExpr node is identified by an integer type field</a>
+<a name="ln130">   selected from the list of BE_ codes below.  BE_ANDHI,</a>
+<a name="ln131">   BE_ANDLO and BE_OR are binary nodes of type BondExpr.bin,</a>
+<a name="ln132">   BE_NOT is unary node of type BondExpr.mon, and the remaining</a>
+<a name="ln133">   code are all leaf nodes.  */</a>
+<a name="ln134"> </a>
+<a name="ln135">#define BE_ANDHI        1</a>
+<a name="ln136">#define BE_ANDLO        2</a>
+<a name="ln137">#define BE_OR           3</a>
+<a name="ln138">#define BE_NOT          4</a>
+<a name="ln139">#define BE_ANY          5</a>
+<a name="ln140">#define BE_DEFAULT      6</a>
+<a name="ln141">#define BE_SINGLE       7</a>
+<a name="ln142">#define BE_DOUBLE       8</a>
+<a name="ln143">#define BE_TRIPLE       9</a>
+<a name="ln144">#define BE_QUAD         10</a>
+<a name="ln145">#define BE_AROM         11</a>
+<a name="ln146">#define BE_RING         12</a>
+<a name="ln147">#define BE_UP           13</a>
+<a name="ln148">#define BE_DOWN         14</a>
+<a name="ln149">#define BE_UPUNSPEC     15</a>
+<a name="ln150">#define BE_DOWNUNSPEC   16</a>
+<a name="ln151"> </a>
+<a name="ln152"> </a>
+<a name="ln153">  static int CreateAtom(Pattern*,AtomExpr*,int,int vb=0);</a>
+<a name="ln154"> </a>
+<a name="ln155">  const int SmartsImplicitRef = -9999; // Used as a placeholder when recording atom nbrs for chiral atoms</a>
+<a name="ln156"> </a>
+<a name="ln157"> </a>
+<a name="ln158">  /*=============================*/</a>
+<a name="ln159">  /*  Standard Utility Routines  */</a>
+<a name="ln160">  /*=============================*/</a>
+<a name="ln161"> </a>
+<a name="ln162">  static void FatalAllocationError( const char *ptr )</a>
+<a name="ln163">  {</a>
+<a name="ln164">    stringstream errorMsg;</a>
+<a name="ln165">    errorMsg &lt;&lt; &quot;Error: Unable to allocate&quot; &lt;&lt; ptr &lt;&lt; endl;</a>
+<a name="ln166">    obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obError);</a>
+<a name="ln167">  }</a>
+<a name="ln168"> </a>
+<a name="ln169">  /*================================*/</a>
+<a name="ln170">  /*  Atom Expression Manipulation  */</a>
+<a name="ln171">  /*================================*/</a>
+<a name="ln172"> </a>
+<a name="ln173">  static void FreePattern( Pattern* );</a>
+<a name="ln174">  static Pattern *CopyPattern( Pattern* );</a>
+<a name="ln175"> </a>
+<a name="ln176">  static AtomExpr *CopyAtomExpr( AtomExpr *expr )</a>
+<a name="ln177">  {</a>
+<a name="ln178">    AtomExpr *result;</a>
+<a name="ln179"> </a>
+<a name="ln180">    result = new AtomExpr;</a>
+<a name="ln181">    result-&gt;type = expr-&gt;type;</a>
+<a name="ln182">    switch( expr-&gt;type )</a>
+<a name="ln183">      {</a>
+<a name="ln184">      case AE_ANDHI:</a>
+<a name="ln185">      case AE_ANDLO:</a>
+<a name="ln186">      case AE_OR:</a>
+<a name="ln187">        result-&gt;bin.lft = CopyAtomExpr(expr-&gt;bin.lft);</a>
+<a name="ln188">        result-&gt;bin.rgt = CopyAtomExpr(expr-&gt;bin.rgt);</a>
+<a name="ln189">        break;</a>
+<a name="ln190"> </a>
+<a name="ln191">      case AE_NOT:</a>
+<a name="ln192">        result-&gt;mon.arg = CopyAtomExpr(expr-&gt;mon.arg);</a>
+<a name="ln193">        break;</a>
+<a name="ln194"> </a>
+<a name="ln195">      case AE_RECUR:</a>
+<a name="ln196">        result-&gt;recur.recur = CopyPattern((Pattern*)expr-&gt;recur.recur);</a>
+<a name="ln197">        break;</a>
+<a name="ln198"> </a>
+<a name="ln199">      default:</a>
+<a name="ln200">        result-&gt;leaf.value = expr-&gt;leaf.value;</a>
+<a name="ln201">        break;</a>
+<a name="ln202">      }</a>
+<a name="ln203">    return result;</a>
+<a name="ln204">  }</a>
+<a name="ln205"> </a>
+<a name="ln206">  static void FreeAtomExpr( AtomExpr *expr )</a>
+<a name="ln207">  {</a>
+<a name="ln208">    if( expr )</a>
+<a name="ln209">      {</a>
+<a name="ln210">        switch( expr-&gt;type )</a>
+<a name="ln211">          {</a>
+<a name="ln212">          case AE_ANDHI:</a>
+<a name="ln213">          case AE_ANDLO:</a>
+<a name="ln214">          case AE_OR:</a>
+<a name="ln215">            FreeAtomExpr(expr-&gt;bin.lft);</a>
+<a name="ln216">            FreeAtomExpr(expr-&gt;bin.rgt);</a>
+<a name="ln217">            break;</a>
+<a name="ln218"> </a>
+<a name="ln219">          case AE_NOT:</a>
+<a name="ln220">            FreeAtomExpr(expr-&gt;mon.arg);</a>
+<a name="ln221">            break;</a>
+<a name="ln222"> </a>
+<a name="ln223">          case AE_RECUR:</a>
+<a name="ln224">            FreePattern((Pattern*)expr-&gt;recur.recur);</a>
+<a name="ln225">            break;</a>
+<a name="ln226">          }</a>
+<a name="ln227"> </a>
+<a name="ln228">        delete expr;</a>
+<a name="ln229">      }</a>
+<a name="ln230">  }</a>
+<a name="ln231"> </a>
+<a name="ln232">  static AtomExpr *BuildAtomPred( int type )</a>
+<a name="ln233">  {</a>
+<a name="ln234">    AtomExpr *result;</a>
+<a name="ln235"> </a>
+<a name="ln236">    result = new AtomExpr;</a>
+<a name="ln237">    result-&gt;leaf.type = type;</a>
+<a name="ln238">    result-&gt;leaf.value = 0;</a>
+<a name="ln239">    return result;</a>
+<a name="ln240">  }</a>
+<a name="ln241"> </a>
+<a name="ln242">  static AtomExpr *BuildAtomLeaf( int type, int val )</a>
+<a name="ln243">  {</a>
+<a name="ln244">    AtomExpr *result;</a>
+<a name="ln245"> </a>
+<a name="ln246">    result = new AtomExpr;</a>
+<a name="ln247">    result-&gt;leaf.type = type;</a>
+<a name="ln248">    result-&gt;leaf.value = val;</a>
+<a name="ln249">    return result;</a>
+<a name="ln250">  }</a>
+<a name="ln251"> </a>
+<a name="ln252">  static AtomExpr *BuildAtomNot( AtomExpr *expr )</a>
+<a name="ln253">  {</a>
+<a name="ln254">    AtomExpr *result;</a>
+<a name="ln255"> </a>
+<a name="ln256">    result = new AtomExpr;</a>
+<a name="ln257">    result-&gt;mon.type = AE_NOT;</a>
+<a name="ln258">    result-&gt;mon.arg = expr;</a>
+<a name="ln259">    return result;</a>
+<a name="ln260">  }</a>
+<a name="ln261"> </a>
+<a name="ln262">  static AtomExpr *BuildAtomBin( int op, AtomExpr *lft, AtomExpr *rgt )</a>
+<a name="ln263">  {</a>
+<a name="ln264">    AtomExpr *result;</a>
+<a name="ln265"> </a>
+<a name="ln266">    result = new AtomExpr;</a>
+<a name="ln267">    result-&gt;bin.type = op;</a>
+<a name="ln268">    result-&gt;bin.lft = lft;</a>
+<a name="ln269">    result-&gt;bin.rgt = rgt;</a>
+<a name="ln270">    return result;</a>
+<a name="ln271">  }</a>
+<a name="ln272"> </a>
+<a name="ln273">  static AtomExpr *BuildAtomRecurs( Pattern *pat )</a>
+<a name="ln274">  {</a>
+<a name="ln275">    AtomExpr *result;</a>
+<a name="ln276"> </a>
+<a name="ln277">    result = new AtomExpr;</a>
+<a name="ln278">    result-&gt;recur.type = AE_RECUR;</a>
+<a name="ln279">    result-&gt;recur.recur = (void*)pat;</a>
+<a name="ln280">    return result;</a>
+<a name="ln281">  }</a>
+<a name="ln282"> </a>
+<a name="ln283">  static AtomExpr *GenerateElement( int elem )</a>
+<a name="ln284">  {</a>
+<a name="ln285">    return BuildAtomLeaf(AE_ELEM,elem);</a>
+<a name="ln286">  }</a>
+<a name="ln287"> </a>
+<a name="ln288">  static AtomExpr *GenerateAromElem( int elem, int flag )</a>
+<a name="ln289">  {</a>
+<a name="ln290">    return flag ? BuildAtomLeaf(AE_AROMELEM,elem)</a>
+<a name="ln291">                : BuildAtomLeaf(AE_ALIPHELEM,elem);</a>
+<a name="ln292">  }</a>
+<a name="ln293"> </a>
+<a name="ln294">  /*================================*/</a>
+<a name="ln295">  /*  Bond Expression Manipulation  */</a>
+<a name="ln296">  /*================================*/</a>
+<a name="ln297"> </a>
+<a name="ln298">  static BondExpr *CopyBondExpr( BondExpr *expr )</a>
+<a name="ln299">  {</a>
+<a name="ln300">    BondExpr *result;</a>
+<a name="ln301"> </a>
+<a name="ln302">    result = new BondExpr;</a>
+<a name="ln303">    result-&gt;type = expr-&gt;type;</a>
+<a name="ln304">    switch( expr-&gt;type )</a>
+<a name="ln305">      {</a>
+<a name="ln306">      case BE_ANDHI:</a>
+<a name="ln307">      case BE_ANDLO:</a>
+<a name="ln308">      case BE_OR:</a>
+<a name="ln309">        result-&gt;bin.lft = CopyBondExpr(expr-&gt;bin.lft);</a>
+<a name="ln310">        result-&gt;bin.rgt = CopyBondExpr(expr-&gt;bin.rgt);</a>
+<a name="ln311">        break;</a>
+<a name="ln312"> </a>
+<a name="ln313">      case BE_NOT:</a>
+<a name="ln314">        result-&gt;mon.arg = CopyBondExpr(expr-&gt;mon.arg);</a>
+<a name="ln315">        break;</a>
+<a name="ln316">      }</a>
+<a name="ln317">    return result;</a>
+<a name="ln318">  }</a>
+<a name="ln319"> </a>
+<a name="ln320">  /**</a>
+<a name="ln321">   * Check if two BondExpr objects are the same. This is used for ring closures</a>
+<a name="ln322">   * to identify invalid SMARTS like:</a>
+<a name="ln323">   *</a>
+<a name="ln324">   *   C-1CCCCC#1</a>
+<a name="ln325">   *   C=1CCCCC:1</a>
+<a name="ln326">   *</a>
+<a name="ln327">   * However, the SMARTS below are valid and the bond expression next to the the</a>
+<a name="ln328">   * second closure digit is used.</a>
+<a name="ln329">   *</a>
+<a name="ln330">   *   C1CCCCC#1</a>
+<a name="ln331">   *   C1CCCCC=1</a>
+<a name="ln332">   */</a>
+<a name="ln333">  static bool EquivalentBondExpr( BondExpr *expr1, BondExpr *expr2 )</a>
+<a name="ln334">  {</a>
+<a name="ln335">    if (expr1 == nullptr &amp;&amp; expr2 == nullptr)</a>
+<a name="ln336">      return true;</a>
+<a name="ln337">    if (expr1 == nullptr &amp;&amp; expr2 != nullptr)</a>
+<a name="ln338">      return false;</a>
+<a name="ln339">    if (expr1 != nullptr &amp;&amp; expr2 == nullptr)</a>
+<a name="ln340">      return false;</a>
+<a name="ln341"> </a>
+<a name="ln342">    if (expr1-&gt;type != expr2-&gt;type)</a>
+<a name="ln343">      return false;</a>
+<a name="ln344"> </a>
+<a name="ln345">    switch( expr1-&gt;type )</a>
+<a name="ln346">      {</a>
+<a name="ln347">      case BE_ANDHI:</a>
+<a name="ln348">      case BE_ANDLO:</a>
+<a name="ln349">      case BE_OR:</a>
+<a name="ln350">        return EquivalentBondExpr(expr1-&gt;bin.lft, expr2-&gt;bin.lft) &amp;&amp;</a>
+<a name="ln351">               EquivalentBondExpr(expr1-&gt;bin.rgt, expr2-&gt;bin.rgt);</a>
+<a name="ln352"> </a>
+<a name="ln353">      case BE_NOT:</a>
+<a name="ln354">        return EquivalentBondExpr(expr1-&gt;mon.arg, expr2-&gt;mon.arg);</a>
+<a name="ln355">      }</a>
+<a name="ln356">    return true;</a>
+<a name="ln357">  }</a>
+<a name="ln358"> </a>
+<a name="ln359">  static void FreeBondExpr( BondExpr *expr )</a>
+<a name="ln360">  {</a>
+<a name="ln361">    if( expr )</a>
+<a name="ln362">      {</a>
+<a name="ln363">        switch( expr-&gt;type )</a>
+<a name="ln364">          {</a>
+<a name="ln365">          case BE_ANDHI:</a>
+<a name="ln366">          case BE_ANDLO:</a>
+<a name="ln367">          case BE_OR:</a>
+<a name="ln368">            FreeBondExpr(expr-&gt;bin.lft);</a>
+<a name="ln369">            FreeBondExpr(expr-&gt;bin.rgt);</a>
+<a name="ln370">            break;</a>
+<a name="ln371"> </a>
+<a name="ln372">          case BE_NOT:</a>
+<a name="ln373">            FreeBondExpr(expr-&gt;mon.arg);</a>
+<a name="ln374">            break;</a>
+<a name="ln375">          }</a>
+<a name="ln376"> </a>
+<a name="ln377">        delete expr;</a>
+<a name="ln378">      }</a>
+<a name="ln379">  }</a>
+<a name="ln380"> </a>
+<a name="ln381">  static BondExpr *BuildBondLeaf( int type )</a>
+<a name="ln382">  {</a>
+<a name="ln383">    BondExpr *result;</a>
+<a name="ln384"> </a>
+<a name="ln385">    result = new BondExpr;</a>
+<a name="ln386">    result-&gt;type = type;</a>
+<a name="ln387">    return result;</a>
+<a name="ln388">  }</a>
+<a name="ln389"> </a>
+<a name="ln390">  static BondExpr *BuildBondNot( BondExpr *expr )</a>
+<a name="ln391">  {</a>
+<a name="ln392">    BondExpr *result;</a>
+<a name="ln393"> </a>
+<a name="ln394">    result = new BondExpr;</a>
+<a name="ln395">    result-&gt;mon.type = BE_NOT;</a>
+<a name="ln396">    result-&gt;mon.arg = expr;</a>
+<a name="ln397">    return result;</a>
+<a name="ln398">  }</a>
+<a name="ln399"> </a>
+<a name="ln400">  static BondExpr *BuildBondBin( int op, BondExpr *lft, BondExpr *rgt )</a>
+<a name="ln401">  {</a>
+<a name="ln402">    BondExpr *result;</a>
+<a name="ln403"> </a>
+<a name="ln404">    result = new BondExpr;</a>
+<a name="ln405">    result-&gt;bin.type = op;</a>
+<a name="ln406">    result-&gt;bin.lft = lft;</a>
+<a name="ln407">    result-&gt;bin.rgt = rgt;</a>
+<a name="ln408">    return result;</a>
+<a name="ln409">  }</a>
+<a name="ln410"> </a>
+<a name="ln411">  static BondExpr *GenerateDefaultBond( void )</a>
+<a name="ln412">  {</a>
+<a name="ln413">    return BuildBondLeaf(BE_DEFAULT);</a>
+<a name="ln414">  }</a>
+<a name="ln415"> </a>
+<a name="ln416">  /*===============================*/</a>
+<a name="ln417">  /*  SMARTS Pattern Manipulation  */</a>
+<a name="ln418">  /*===============================*/</a>
+<a name="ln419"> </a>
+<a name="ln420">  static Pattern *AllocPattern( void )</a>
+<a name="ln421">  {</a>
+<a name="ln422">    Pattern *ptr;</a>
+<a name="ln423"> </a>
+<a name="ln424">    ptr = new Pattern;</a>
+<a name="ln425">    if( !ptr ) {</a>
+<a name="ln426">      FatalAllocationError(&quot;pattern&quot;);</a>
+<a name="ln427">      return nullptr;</a>
+<a name="ln428">    }</a>
+<a name="ln429"> </a>
+<a name="ln430">    ptr-&gt;atom = nullptr;</a>
+<a name="ln431">    ptr-&gt;aalloc = 0;</a>
+<a name="ln432">    ptr-&gt;acount = 0;</a>
+<a name="ln433"> </a>
+<a name="ln434">    ptr-&gt;bond = nullptr;</a>
+<a name="ln435">    ptr-&gt;balloc = 0;</a>
+<a name="ln436">    ptr-&gt;bcount = 0;</a>
+<a name="ln437"> </a>
+<a name="ln438">    ptr-&gt;parts = 1;</a>
+<a name="ln439"> </a>
+<a name="ln440">    ptr-&gt;hasExplicitH=false;</a>
+<a name="ln441">    return ptr;</a>
+<a name="ln442">  }</a>
+<a name="ln443"> </a>
+<a name="ln444">  static int CreateAtom( Pattern *pat, AtomExpr *expr, int part,int vb)</a>
+<a name="ln445">  {</a>
+<a name="ln446">    int index,size;</a>
+<a name="ln447"> </a>
+<a name="ln448">    if (!pat)</a>
+<a name="ln449">      return -1; // should never happen</a>
+<a name="ln450"> </a>
+<a name="ln451">    if( pat-&gt;acount == pat-&gt;aalloc )</a>
+<a name="ln452">      {</a>
+<a name="ln453">        pat-&gt;aalloc += ATOMPOOL;</a>
+<a name="ln454">        size = (int)(pat-&gt;aalloc*sizeof(AtomSpec));</a>
+<a name="ln455">        if( pat-&gt;atom )</a>
+<a name="ln456">          {</a>
+<a name="ln457">            AtomSpec *tmp = new AtomSpec[pat-&gt;aalloc];</a>
+<a name="ln458">            copy(pat-&gt;atom, pat-&gt;atom + pat-&gt;aalloc - ATOMPOOL, tmp);</a>
+<a name="ln459">            delete [] pat-&gt;atom;</a>
+<a name="ln460">            pat-&gt;atom = tmp;</a>
+<a name="ln461">          }</a>
+<a name="ln462">        else</a>
+<a name="ln463">          pat-&gt;atom = new AtomSpec[pat-&gt;aalloc];</a>
+<a name="ln464">        if( !pat-&gt;atom )</a>
+<a name="ln465">          FatalAllocationError(&quot;atom pool&quot;);</a>
+<a name="ln466">      }</a>
+<a name="ln467"> </a>
+<a name="ln468">    index = pat-&gt;acount++;</a>
+<a name="ln469">    pat-&gt;atom[index].part = part;</a>
+<a name="ln470">    pat-&gt;atom[index].expr = expr;</a>
+<a name="ln471">    pat-&gt;atom[index].vb = vb; //std::vector binding</a>
+<a name="ln472"> </a>
+<a name="ln473">    return index;</a>
+<a name="ln474">  }</a>
+<a name="ln475"> </a>
+<a name="ln476">  static int CreateBond( Pattern *pat, BondExpr *expr, int src, int dst )</a>
+<a name="ln477">  {</a>
+<a name="ln478">    int index,size;</a>
+<a name="ln479"> </a>
+<a name="ln480">    if (!pat)</a>
+<a name="ln481">      return -1; // should never happen</a>
+<a name="ln482"> </a>
+<a name="ln483">    if( pat-&gt;bcount == pat-&gt;balloc )</a>
+<a name="ln484">      {</a>
+<a name="ln485">        pat-&gt;balloc += BONDPOOL;</a>
+<a name="ln486">        size = (int)(pat-&gt;balloc*sizeof(BondSpec));</a>
+<a name="ln487">        if( pat-&gt;bond )</a>
+<a name="ln488">          {</a>
+<a name="ln489">            BondSpec *tmp = new BondSpec[pat-&gt;balloc];</a>
+<a name="ln490">            copy(pat-&gt;bond, pat-&gt;bond + pat-&gt;balloc - BONDPOOL, tmp);</a>
+<a name="ln491">            delete [] pat-&gt;bond;</a>
+<a name="ln492">            pat-&gt;bond = tmp;</a>
+<a name="ln493">          }</a>
+<a name="ln494">        else</a>
+<a name="ln495">          pat-&gt;bond = new BondSpec[pat-&gt;balloc];</a>
+<a name="ln496">        if( !pat-&gt;bond )</a>
+<a name="ln497">          FatalAllocationError(&quot;bond pool&quot;);</a>
+<a name="ln498">      }</a>
+<a name="ln499"> </a>
+<a name="ln500">    index = pat-&gt;bcount++;</a>
+<a name="ln501">    pat-&gt;bond[index].expr = expr;</a>
+<a name="ln502">    pat-&gt;bond[index].src = src;</a>
+<a name="ln503">    pat-&gt;bond[index].dst = dst;</a>
+<a name="ln504">    return(index);</a>
+<a name="ln505">  }</a>
+<a name="ln506"> </a>
+<a name="ln507">  static Pattern *CopyPattern( Pattern *pat )</a>
+<a name="ln508">  {</a>
+<a name="ln509">    Pattern *result;</a>
+<a name="ln510">    AtomExpr *aexpr;</a>
+<a name="ln511">    BondExpr *bexpr;</a>
+<a name="ln512">    int i;</a>
+<a name="ln513"> </a>
+<a name="ln514">    result = AllocPattern();</a>
+<a name="ln515">    result-&gt;parts = pat-&gt;parts;</a>
+<a name="ln516">    for( i=0; i&lt;pat-&gt;acount; i++ )</a>
+<a name="ln517">      {</a>
+<a name="ln518">        aexpr = CopyAtomExpr(pat-&gt;atom[i].expr);</a>
+<a name="ln519">        CreateAtom(result,aexpr,pat-&gt;atom[i].part);</a>
+<a name="ln520">      }</a>
+<a name="ln521"> </a>
+<a name="ln522">    for( i=0; i&lt;pat-&gt;bcount; i++ )</a>
+<a name="ln523">      {</a>
+<a name="ln524">        bexpr = CopyBondExpr(pat-&gt;bond[i].expr);</a>
+<a name="ln525">        CreateBond(result,bexpr,pat-&gt;bond[i].src,pat-&gt;bond[i].dst);</a>
+<a name="ln526">      }</a>
+<a name="ln527"> </a>
+<a name="ln528">    return result;</a>
+<a name="ln529">  }</a>
+<a name="ln530"> </a>
+<a name="ln531">  static void FreePattern( Pattern *pat )</a>
+<a name="ln532">  {</a>
+<a name="ln533">    int i;</a>
+<a name="ln534"> </a>
+<a name="ln535">    if( pat )</a>
+<a name="ln536">      {</a>
+<a name="ln537">        if( pat-&gt;aalloc )</a>
+<a name="ln538">          {</a>
+<a name="ln539">            for( i=0; i&lt;pat-&gt;acount; i++ )</a>
+<a name="ln540">              FreeAtomExpr(pat-&gt;atom[i].expr);</a>
+<a name="ln541">            if (pat-&gt;atom != nullptr) {</a>
+<a name="ln542">              //free(pat-&gt;atom);</a>
+<a name="ln543">              delete [] pat-&gt;atom;</a>
+<a name="ln544">              pat-&gt;atom = nullptr;</a>
+<a name="ln545">            }</a>
+<a name="ln546">          }</a>
+<a name="ln547"> </a>
+<a name="ln548">        if( pat-&gt;balloc )</a>
+<a name="ln549">          {</a>
+<a name="ln550">            for( i=0; i&lt;pat-&gt;bcount; i++ )</a>
+<a name="ln551">              FreeBondExpr(pat-&gt;bond[i].expr);</a>
+<a name="ln552">            if (pat-&gt;bond != nullptr) {</a>
+<a name="ln553">              //free(pat-&gt;bond);</a>
+<a name="ln554">              delete [] pat-&gt;bond;</a>
+<a name="ln555">              pat-&gt;bond = nullptr;</a>
+<a name="ln556">            }</a>
+<a name="ln557">          }</a>
+<a name="ln558">        delete pat;</a>
+<a name="ln559">        pat = nullptr;</a>
+<a name="ln560">      }</a>
+<a name="ln561">  }</a>
+<a name="ln562"> </a>
+<a name="ln563">  /*=========================*/</a>
+<a name="ln564">  /*  SMARTS Syntax Parsing  */</a>
+<a name="ln565">  /*=========================*/</a>
+<a name="ln566"> </a>
+<a name="ln567"> </a>
+<a name="ln568">  Pattern *OBSmartsPattern::SMARTSError( Pattern *pat )</a>
+<a name="ln569">  {</a>
+<a name="ln570">    stringstream errorMsg;</a>
+<a name="ln571">    errorMsg &lt;&lt; &quot;SMARTS Error:\n&quot; &lt;&lt; MainPtr &lt;&lt; endl;</a>
+<a name="ln572">    errorMsg &lt;&lt; setw(LexPtr-MainPtr+1) &lt;&lt; '^' &lt;&lt; endl;</a>
+<a name="ln573">    obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obError, onceOnly);</a>
+<a name="ln574"> </a>
+<a name="ln575">    FreePattern(pat);</a>
+<a name="ln576">    return nullptr;</a>
+<a name="ln577">  }</a>
+<a name="ln578"> </a>
+<a name="ln579">  AtomExpr *OBSmartsPattern::ParseSimpleAtomPrimitive( void )</a>
+<a name="ln580">  {</a>
+<a name="ln581">    switch( *LexPtr++ )</a>
+<a name="ln582">      {</a>
+<a name="ln583">      case '*':</a>
+<a name="ln584">        return BuildAtomPred(AE_TRUE);</a>
+<a name="ln585">      case 'A':</a>
+<a name="ln586">        return BuildAtomPred(AE_ALIPHATIC);</a>
+<a name="ln587">      case 'B':</a>
+<a name="ln588">        if( *LexPtr == 'r' )</a>
+<a name="ln589">          {</a>
+<a name="ln590">            LexPtr++;</a>
+<a name="ln591">            return GenerateElement(35);</a>
+<a name="ln592">          }</a>
+<a name="ln593">        return GenerateElement(5);</a>
+<a name="ln594">      case 'C':</a>
+<a name="ln595">        if( *LexPtr == 'l' )</a>
+<a name="ln596">          {</a>
+<a name="ln597">            LexPtr++;</a>
+<a name="ln598">            return GenerateElement(17);</a>
+<a name="ln599">          }</a>
+<a name="ln600">        return GenerateAromElem(6,false);</a>
+<a name="ln601">      case 'F':</a>
+<a name="ln602">        return GenerateElement( 9);</a>
+<a name="ln603">      case 'I':</a>
+<a name="ln604">        return GenerateElement(53);</a>
+<a name="ln605">      case 'N':</a>
+<a name="ln606">        return GenerateAromElem(7,false);</a>
+<a name="ln607">      case 'O':</a>
+<a name="ln608">        return GenerateAromElem(8,false);</a>
+<a name="ln609">      case 'P':</a>
+<a name="ln610">        return GenerateAromElem(15, false);</a>
+<a name="ln611">      case 'S':</a>
+<a name="ln612">        return GenerateAromElem(16,false);</a>
+<a name="ln613">      case 'a':</a>
+<a name="ln614">        if( *LexPtr == 's' )</a>
+<a name="ln615">          {</a>
+<a name="ln616">            LexPtr++;</a>
+<a name="ln617">            return GenerateAromElem(33, true);</a>
+<a name="ln618">          }</a>
+<a name="ln619">        return BuildAtomPred(AE_AROMATIC);</a>
+<a name="ln620">      case 'c':</a>
+<a name="ln621">        return GenerateAromElem( 6,true);</a>
+<a name="ln622">      case 'n':</a>
+<a name="ln623">        return GenerateAromElem( 7,true);</a>
+<a name="ln624">      case 'o':</a>
+<a name="ln625">        return GenerateAromElem( 8,true);</a>
+<a name="ln626">      case 'p':</a>
+<a name="ln627">        return GenerateAromElem(15,true);</a>
+<a name="ln628">      case 's':</a>
+<a name="ln629">        if( *LexPtr == 'e' )</a>
+<a name="ln630">          {</a>
+<a name="ln631">            LexPtr++;</a>
+<a name="ln632">            return GenerateAromElem(34, true);</a>
+<a name="ln633">          }</a>
+<a name="ln634">        return GenerateAromElem(16,true);</a>
+<a name="ln635">      }</a>
+<a name="ln636">    LexPtr--;</a>
+<a name="ln637">    return nullptr;</a>
+<a name="ln638">  }</a>
+<a name="ln639"> </a>
+<a name="ln640">  AtomExpr *OBSmartsPattern::ParseComplexAtomPrimitive( void )</a>
+<a name="ln641">  {</a>
+<a name="ln642">    Pattern *pat;</a>
+<a name="ln643">    int index;</a>
+<a name="ln644"> </a>
+<a name="ln645">    switch( *LexPtr++ )</a>
+<a name="ln646">      {</a>
+<a name="ln647">      case('#'):</a>
+<a name="ln648">        if( !isdigit(*LexPtr) )</a>
+<a name="ln649">          return nullptr;</a>
+<a name="ln650"> </a>
+<a name="ln651">        index = 0;</a>
+<a name="ln652">        while( isdigit(*LexPtr) )</a>
+<a name="ln653">          index = index*10 + ((*LexPtr++)-'0');</a>
+<a name="ln654">        if( index &gt; 255 )</a>
+<a name="ln655">          {</a>
+<a name="ln656">            LexPtr--;</a>
+<a name="ln657">            return nullptr;</a>
+<a name="ln658">          }</a>
+<a name="ln659">        return( GenerateElement(index) );</a>
+<a name="ln660"> </a>
+<a name="ln661">      case('$'):</a>
+<a name="ln662">        if( *LexPtr != '(' )</a>
+<a name="ln663">          return nullptr;</a>
+<a name="ln664">        LexPtr++;</a>
+<a name="ln665">        pat = ParseSMARTSPattern();</a>
+<a name="ln666"> </a>
+<a name="ln667">        if( !pat )</a>
+<a name="ln668">          return nullptr;</a>
+<a name="ln669">        if( *LexPtr != ')' )</a>
+<a name="ln670">          {</a>
+<a name="ln671">            FreePattern(pat);</a>
+<a name="ln672">            return nullptr;</a>
+<a name="ln673">          }</a>
+<a name="ln674">        LexPtr++;</a>
+<a name="ln675">        return( BuildAtomRecurs(pat) );</a>
+<a name="ln676"> </a>
+<a name="ln677">      case('*'):</a>
+<a name="ln678">        return BuildAtomPred(AE_TRUE);</a>
+<a name="ln679"> </a>
+<a name="ln680">      case('+'):</a>
+<a name="ln681">        if( isdigit(*LexPtr) )</a>
+<a name="ln682">          {</a>
+<a name="ln683">            index = 0;</a>
+<a name="ln684">            while( isdigit(*LexPtr) )</a>
+<a name="ln685">              index = index*10 + ((*LexPtr++)-'0');</a>
+<a name="ln686">          }</a>
+<a name="ln687">        else</a>
+<a name="ln688">          {</a>
+<a name="ln689">            index = 1;</a>
+<a name="ln690">            while( *LexPtr == '+' )</a>
+<a name="ln691">              {</a>
+<a name="ln692">                LexPtr++;</a>
+<a name="ln693">                index++;</a>
+<a name="ln694">              }</a>
+<a name="ln695">          }</a>
+<a name="ln696">        return BuildAtomLeaf(AE_CHARGE,index);</a>
+<a name="ln697"> </a>
+<a name="ln698">      case('-'):</a>
+<a name="ln699">        if( isdigit(*LexPtr) )</a>
+<a name="ln700">          {</a>
+<a name="ln701">            index = 0;</a>
+<a name="ln702">            while( isdigit(*LexPtr) )</a>
+<a name="ln703">              index = index*10 + ((*LexPtr++)-'0');</a>
+<a name="ln704">          }</a>
+<a name="ln705">        else</a>
+<a name="ln706">          {</a>
+<a name="ln707">            index = 1;</a>
+<a name="ln708">            while( *LexPtr == '-' )</a>
+<a name="ln709">              {</a>
+<a name="ln710">                LexPtr++;</a>
+<a name="ln711">                index++;</a>
+<a name="ln712">              }</a>
+<a name="ln713">          }</a>
+<a name="ln714">        return BuildAtomLeaf(AE_CHARGE,-index);</a>
+<a name="ln715"> </a>
+<a name="ln716">      case '@':</a>
+<a name="ln717">        if (*LexPtr == '?')</a>
+<a name="ln718">          {</a>
+<a name="ln719">            LexPtr++;</a>
+<a name="ln720">            return BuildAtomLeaf(AE_CHIRAL,AL_UNSPECIFIED); // unspecified</a>
+<a name="ln721">          }</a>
+<a name="ln722">        else if (*LexPtr != '@')</a>
+<a name="ln723">          return BuildAtomLeaf(AE_CHIRAL,AL_ANTICLOCKWISE);</a>
+<a name="ln724">        else</a>
+<a name="ln725">          {</a>
+<a name="ln726">            LexPtr++;</a>
+<a name="ln727">            return BuildAtomLeaf(AE_CHIRAL,AL_CLOCKWISE);</a>
+<a name="ln728">          }</a>
+<a name="ln729"> </a>
+<a name="ln730">      case '^':</a>
+<a name="ln731">        if (isdigit(*LexPtr))</a>
+<a name="ln732">          {</a>
+<a name="ln733">            index = 0;</a>
+<a name="ln734">            while( isdigit(*LexPtr) )</a>
+<a name="ln735">              index = index*10 + ((*LexPtr++)-'0');</a>
+<a name="ln736">            return BuildAtomLeaf(AE_HYB,index);</a>
+<a name="ln737">          }</a>
+<a name="ln738">        else</a>
+<a name="ln739">          return BuildAtomLeaf(AE_HYB,1);</a>
+<a name="ln740"> </a>
+<a name="ln741">      case('0'): case('1'): case('2'): case('3'): case('4'):</a>
+<a name="ln742">      case('5'): case('6'): case('7'): case('8'): case('9'):</a>
+<a name="ln743">        index = LexPtr[-1]-'0';</a>
+<a name="ln744">        while( isdigit(*LexPtr) )</a>
+<a name="ln745">          index = index*10 + ((*LexPtr++)-'0');</a>
+<a name="ln746">        return BuildAtomLeaf(AE_MASS,index);</a>
+<a name="ln747"> </a>
+<a name="ln748">      case('A'):</a>
+<a name="ln749">        switch( *LexPtr++ )</a>
+<a name="ln750">          {</a>
+<a name="ln751">          case('c'):  return GenerateElement(89);</a>
+<a name="ln752">          case('g'):  return GenerateElement(47);</a>
+<a name="ln753">          case('l'):  return GenerateElement(13);</a>
+<a name="ln754">          case('m'):  return GenerateElement(95);</a>
+<a name="ln755">          case('r'):  return GenerateElement(18);</a>
+<a name="ln756">          case('s'):  return GenerateElement(33);</a>
+<a name="ln757">          case('t'):  return GenerateElement(85);</a>
+<a name="ln758">          case('u'):  return GenerateElement(79);</a>
+<a name="ln759">          }</a>
+<a name="ln760">        LexPtr--;</a>
+<a name="ln761">        return BuildAtomPred(AE_ALIPHATIC);</a>
+<a name="ln762"> </a>
+<a name="ln763">      case('B'):</a>
+<a name="ln764">        switch( *LexPtr++ )</a>
+<a name="ln765">          {</a>
+<a name="ln766">          case('a'):  return GenerateElement(56);</a>
+<a name="ln767">          case('e'):  return GenerateElement( 4);</a>
+<a name="ln768">          case('i'):  return GenerateElement(83);</a>
+<a name="ln769">          case('k'):  return GenerateElement(97);</a>
+<a name="ln770">          case('r'):  return GenerateElement(35);</a>
+<a name="ln771">          }</a>
+<a name="ln772">        LexPtr--;</a>
+<a name="ln773">        return GenerateElement(5);</a>
+<a name="ln774"> </a>
+<a name="ln775">      case('C'):</a>
+<a name="ln776">        switch( *LexPtr++ )</a>
+<a name="ln777">          {</a>
+<a name="ln778">          case('a'):  return GenerateElement(20);</a>
+<a name="ln779">          case('d'):  return GenerateElement(48);</a>
+<a name="ln780">          case('e'):  return GenerateElement(58);</a>
+<a name="ln781">          case('f'):  return GenerateElement(98);</a>
+<a name="ln782">          case('l'):  return GenerateElement(17);</a>
+<a name="ln783">          case('m'):  return GenerateElement(96);</a>
+<a name="ln784">          case('o'):  return GenerateElement(27);</a>
+<a name="ln785">          case('r'):  return GenerateElement(24);</a>
+<a name="ln786">          case('s'):  return GenerateElement(55);</a>
+<a name="ln787">          case('u'):  return GenerateElement(29);</a>
+<a name="ln788">          }</a>
+<a name="ln789">        LexPtr--;</a>
+<a name="ln790">        return GenerateAromElem(6,false);</a>
+<a name="ln791"> </a>
+<a name="ln792">      case('D'):</a>
+<a name="ln793">        if( *LexPtr == 'y' )</a>
+<a name="ln794">          {</a>
+<a name="ln795">            LexPtr++;</a>
+<a name="ln796">            return GenerateElement(66);</a>
+<a name="ln797">          }</a>
+<a name="ln798">        else if( isdigit(*LexPtr) )</a>
+<a name="ln799">          {</a>
+<a name="ln800">            index = 0;</a>
+<a name="ln801">            while( isdigit(*LexPtr) )</a>
+<a name="ln802">              index = index*10 + ((*LexPtr++)-'0');</a>
+<a name="ln803">            return BuildAtomLeaf(AE_DEGREE,index);</a>
+<a name="ln804">          }</a>
+<a name="ln805">        return BuildAtomLeaf(AE_DEGREE,1);</a>
+<a name="ln806"> </a>
+<a name="ln807">      case('E'):</a>
+<a name="ln808">        if( *LexPtr == 'r' )</a>
+<a name="ln809">          {</a>
+<a name="ln810">            LexPtr++;</a>
+<a name="ln811">            return GenerateElement(68);</a>
+<a name="ln812">          }</a>
+<a name="ln813">        else if( *LexPtr == 's' )</a>
+<a name="ln814">          {</a>
+<a name="ln815">            LexPtr++;</a>
+<a name="ln816">            return GenerateElement(99);</a>
+<a name="ln817">          }</a>
+<a name="ln818">        else if( *LexPtr == 'u' )</a>
+<a name="ln819">          {</a>
+<a name="ln820">            LexPtr++;</a>
+<a name="ln821">            return GenerateElement(63);</a>
+<a name="ln822">          }</a>
+<a name="ln823">        break;</a>
+<a name="ln824"> </a>
+<a name="ln825">      case('F'):</a>
+<a name="ln826">        if( *LexPtr == 'e' )</a>
+<a name="ln827">          {</a>
+<a name="ln828">            LexPtr++;</a>
+<a name="ln829">            return GenerateElement(26);</a>
+<a name="ln830">          }</a>
+<a name="ln831">        else if( *LexPtr == 'm' )</a>
+<a name="ln832">          {</a>
+<a name="ln833">            LexPtr++;</a>
+<a name="ln834">            return GenerateElement(100);</a>
+<a name="ln835">          }</a>
+<a name="ln836">        else if( *LexPtr == 'r' )</a>
+<a name="ln837">          {</a>
+<a name="ln838">            LexPtr++;</a>
+<a name="ln839">            return GenerateElement(87);</a>
+<a name="ln840">          }</a>
+<a name="ln841">        return GenerateElement(9);</a>
+<a name="ln842"> </a>
+<a name="ln843">      case('G'):</a>
+<a name="ln844">        if( *LexPtr == 'a' )</a>
+<a name="ln845">          {</a>
+<a name="ln846">            LexPtr++;</a>
+<a name="ln847">            return( GenerateElement(31) );</a>
+<a name="ln848">          }</a>
+<a name="ln849">        else if( *LexPtr == 'd' )</a>
+<a name="ln850">          {</a>
+<a name="ln851">            LexPtr++;</a>
+<a name="ln852">            return( GenerateElement(64) );</a>
+<a name="ln853">          }</a>
+<a name="ln854">        else if( *LexPtr == 'e' )</a>
+<a name="ln855">          {</a>
+<a name="ln856">            LexPtr++;</a>
+<a name="ln857">            return( GenerateElement(32) );</a>
+<a name="ln858">          }</a>
+<a name="ln859">        break;</a>
+<a name="ln860"> </a>
+<a name="ln861">      case('H'):</a>
+<a name="ln862">        if( *LexPtr == 'e' )</a>
+<a name="ln863">          {</a>
+<a name="ln864">            LexPtr++;</a>
+<a name="ln865">            return( GenerateElement( 2) );</a>
+<a name="ln866">          }</a>
+<a name="ln867">        else if( *LexPtr == 'f' )</a>
+<a name="ln868">          {</a>
+<a name="ln869">            LexPtr++;</a>
+<a name="ln870">            return( GenerateElement(72) );</a>
+<a name="ln871">          }</a>
+<a name="ln872">        else if( *LexPtr == 'g' )</a>
+<a name="ln873">          {</a>
+<a name="ln874">            LexPtr++;</a>
+<a name="ln875">            return( GenerateElement(80) );</a>
+<a name="ln876">          }</a>
+<a name="ln877">        else if( *LexPtr == 'o' )</a>
+<a name="ln878">          {</a>
+<a name="ln879">            LexPtr++;</a>
+<a name="ln880">            return( GenerateElement(67) );</a>
+<a name="ln881">          }</a>
+<a name="ln882">        else if( isdigit(*LexPtr) )</a>
+<a name="ln883">          {</a>
+<a name="ln884">            index = 0;</a>
+<a name="ln885">            while( isdigit(*LexPtr) )</a>
+<a name="ln886">              index = index*10 + ((*LexPtr++)-'0');</a>
+<a name="ln887">            return BuildAtomLeaf(AE_HCOUNT,index);</a>
+<a name="ln888">          }</a>
+<a name="ln889">        return BuildAtomLeaf(AE_HCOUNT,1);</a>
+<a name="ln890"> </a>
+<a name="ln891">      case('I'):</a>
+<a name="ln892">        if( *LexPtr == 'n' )</a>
+<a name="ln893">          {</a>
+<a name="ln894">            LexPtr++;</a>
+<a name="ln895">            return( GenerateElement(49) );</a>
+<a name="ln896">          }</a>
+<a name="ln897">        else if( *LexPtr == 'r' )</a>
+<a name="ln898">          {</a>
+<a name="ln899">            LexPtr++;</a>
+<a name="ln900">            return( GenerateElement(77) );</a>
+<a name="ln901">          }</a>
+<a name="ln902">        return( GenerateElement(53) );</a>
+<a name="ln903"> </a>
+<a name="ln904">      case('K'):</a>
+<a name="ln905">        if( *LexPtr == 'r' )</a>
+<a name="ln906">          {</a>
+<a name="ln907">            LexPtr++;</a>
+<a name="ln908">            return( GenerateElement(36) );</a>
+<a name="ln909">          }</a>
+<a name="ln910">        return( GenerateElement(19) );</a>
+<a name="ln911"> </a>
+<a name="ln912">      case('L'):</a>
+<a name="ln913">        if( *LexPtr == 'a' )</a>
+<a name="ln914">          {</a>
+<a name="ln915">            LexPtr++;</a>
+<a name="ln916">            return( GenerateElement( 57) );</a>
+<a name="ln917">          }</a>
+<a name="ln918">        else if( *LexPtr == 'i' )</a>
+<a name="ln919">          {</a>
+<a name="ln920">            LexPtr++;</a>
+<a name="ln921">            return( GenerateElement(  3) );</a>
+<a name="ln922">          }</a>
+<a name="ln923">        else if( *LexPtr == 'r' )</a>
+<a name="ln924">          {</a>
+<a name="ln925">            LexPtr++;</a>
+<a name="ln926">            return( GenerateElement(103) );</a>
+<a name="ln927">          }</a>
+<a name="ln928">        else if( *LexPtr == 'u' )</a>
+<a name="ln929">          {</a>
+<a name="ln930">            LexPtr++;</a>
+<a name="ln931">            return( GenerateElement( 71) );</a>
+<a name="ln932">          }</a>
+<a name="ln933">        break;</a>
+<a name="ln934"> </a>
+<a name="ln935">      case('M'):</a>
+<a name="ln936">        if( *LexPtr == 'd' )</a>
+<a name="ln937">          {</a>
+<a name="ln938">            LexPtr++;</a>
+<a name="ln939">            return( GenerateElement(101) );</a>
+<a name="ln940">          }</a>
+<a name="ln941">        else if( *LexPtr == 'g' )</a>
+<a name="ln942">          {</a>
+<a name="ln943">            LexPtr++;</a>
+<a name="ln944">            return( GenerateElement( 12) );</a>
+<a name="ln945">          }</a>
+<a name="ln946">        else if( *LexPtr == 'n' )</a>
+<a name="ln947">          {</a>
+<a name="ln948">            LexPtr++;</a>
+<a name="ln949">            return( GenerateElement( 25) );</a>
+<a name="ln950">          }</a>
+<a name="ln951">        else if( *LexPtr == 'o' )</a>
+<a name="ln952">          {</a>
+<a name="ln953">            LexPtr++;</a>
+<a name="ln954">            return( GenerateElement( 42) );</a>
+<a name="ln955">          }</a>
+<a name="ln956">        break;</a>
+<a name="ln957"> </a>
+<a name="ln958">      case('N'):</a>
+<a name="ln959">        switch( *LexPtr++ )</a>
+<a name="ln960">          {</a>
+<a name="ln961">          case('a'):  return( GenerateElement( 11) );</a>
+<a name="ln962">          case('b'):  return( GenerateElement( 41) );</a>
+<a name="ln963">          case('d'):  return( GenerateElement( 60) );</a>
+<a name="ln964">          case('e'):  return( GenerateElement( 10) );</a>
+<a name="ln965">          case('i'):  return( GenerateElement( 28) );</a>
+<a name="ln966">          case('o'):  return( GenerateElement(102) );</a>
+<a name="ln967">          case('p'):  return( GenerateElement( 93) );</a>
+<a name="ln968">          }</a>
+<a name="ln969">        LexPtr--;</a>
+<a name="ln970">        return( GenerateAromElem(7,false) );</a>
+<a name="ln971"> </a>
+<a name="ln972">      case('O'):</a>
+<a name="ln973">        if( *LexPtr == 's' )</a>
+<a name="ln974">          {</a>
+<a name="ln975">            LexPtr++;</a>
+<a name="ln976">            return( GenerateElement(76) );</a>
+<a name="ln977">          }</a>
+<a name="ln978">        return( GenerateAromElem(8,false) );</a>
+<a name="ln979"> </a>
+<a name="ln980">      case('P'):</a>
+<a name="ln981">        switch( *LexPtr++ )</a>
+<a name="ln982">          {</a>
+<a name="ln983">          case('a'):  return( GenerateElement(91) );</a>
+<a name="ln984">          case('b'):  return( GenerateElement(82) );</a>
+<a name="ln985">          case('d'):  return( GenerateElement(46) );</a>
+<a name="ln986">          case('m'):  return( GenerateElement(61) );</a>
+<a name="ln987">          case('o'):  return( GenerateElement(84) );</a>
+<a name="ln988">          case('r'):  return( GenerateElement(59) );</a>
+<a name="ln989">          case('t'):  return( GenerateElement(78) );</a>
+<a name="ln990">          case('u'):  return( GenerateElement(94) );</a>
+<a name="ln991">          }</a>
+<a name="ln992">        LexPtr--;</a>
+<a name="ln993">        return( GenerateElement(15) );</a>
+<a name="ln994"> </a>
+<a name="ln995">      case('R'):</a>
+<a name="ln996">        switch( *LexPtr++ )</a>
+<a name="ln997">          {</a>
+<a name="ln998">          case('a'):  return( GenerateElement(88) );</a>
+<a name="ln999">          case('b'):  return( GenerateElement(37) );</a>
+<a name="ln1000">          case('e'):  return( GenerateElement(75) );</a>
+<a name="ln1001">          case('h'):  return( GenerateElement(45) );</a>
+<a name="ln1002">          case('n'):  return( GenerateElement(86) );</a>
+<a name="ln1003">          case('u'):  return( GenerateElement(44) );</a>
+<a name="ln1004">          }</a>
+<a name="ln1005">        LexPtr--;</a>
+<a name="ln1006">        if( isdigit(*LexPtr) )</a>
+<a name="ln1007">          {</a>
+<a name="ln1008">            index = 0;</a>
+<a name="ln1009">            while( isdigit(*LexPtr) )</a>
+<a name="ln1010">              index = index*10 + ((*LexPtr++)-'0');</a>
+<a name="ln1011">            if( index == 0 )</a>
+<a name="ln1012">              return BuildAtomPred(AE_ACYCLIC);</a>
+<a name="ln1013">            return BuildAtomLeaf(AE_RINGS,index);</a>
+<a name="ln1014">          }</a>
+<a name="ln1015">        return BuildAtomPred(AE_CYCLIC);</a>
+<a name="ln1016"> </a>
+<a name="ln1017">      case('S'):</a>
+<a name="ln1018">        switch( *LexPtr++ )</a>
+<a name="ln1019">          {</a>
+<a name="ln1020">          case('b'):  return( GenerateElement(51) );</a>
+<a name="ln1021">          case('c'):  return( GenerateElement(21) );</a>
+<a name="ln1022">          case('e'):  return( GenerateElement(34) );</a>
+<a name="ln1023">          case('i'):  return( GenerateElement(14) );</a>
+<a name="ln1024">          case('m'):  return( GenerateElement(62) );</a>
+<a name="ln1025">          case('n'):  return( GenerateElement(50) );</a>
+<a name="ln1026">          case('r'):  return( GenerateElement(38) );</a>
+<a name="ln1027">          }</a>
+<a name="ln1028">        LexPtr--;</a>
+<a name="ln1029">        return( GenerateAromElem(16,false) );</a>
+<a name="ln1030"> </a>
+<a name="ln1031">      case('T'):</a>
+<a name="ln1032">        switch( *LexPtr++ )</a>
+<a name="ln1033">          {</a>
+<a name="ln1034">          case('a'):  return( GenerateElement(73) );</a>
+<a name="ln1035">          case('b'):  return( GenerateElement(65) );</a>
+<a name="ln1036">          case('c'):  return( GenerateElement(43) );</a>
+<a name="ln1037">          case('e'):  return( GenerateElement(52) );</a>
+<a name="ln1038">          case('h'):  return( GenerateElement(90) );</a>
+<a name="ln1039">          case('i'):  return( GenerateElement(22) );</a>
+<a name="ln1040">          case('l'):  return( GenerateElement(81) );</a>
+<a name="ln1041">          case('m'):  return( GenerateElement(69) );</a>
+<a name="ln1042">          }</a>
+<a name="ln1043">        LexPtr--;</a>
+<a name="ln1044">        break;</a>
+<a name="ln1045"> </a>
+<a name="ln1046">      case('U'):  return( GenerateElement(92) );</a>
+<a name="ln1047">      case('V'):  return( GenerateElement(23) );</a>
+<a name="ln1048">      case('W'):  return( GenerateElement(74) );</a>
+<a name="ln1049"> </a>
+<a name="ln1050">      case('X'):</a>
+<a name="ln1051">        if( *LexPtr == 'e' )</a>
+<a name="ln1052">          {</a>
+<a name="ln1053">            LexPtr++;</a>
+<a name="ln1054">            return( GenerateElement(54) );</a>
+<a name="ln1055">          }</a>
+<a name="ln1056">        else if( isdigit(*LexPtr) )</a>
+<a name="ln1057">          {</a>
+<a name="ln1058">            index = 0;</a>
+<a name="ln1059">            while( isdigit(*LexPtr) )</a>
+<a name="ln1060">              index = index*10 + ((*LexPtr++)-'0');</a>
+<a name="ln1061">            if (index == 0) // default to 1 (if no number present)</a>
+<a name="ln1062">              index = 1;</a>
+<a name="ln1063">            return BuildAtomLeaf(AE_CONNECT,index);</a>
+<a name="ln1064">          }</a>
+<a name="ln1065">        return BuildAtomLeaf(AE_CONNECT,1);</a>
+<a name="ln1066"> </a>
+<a name="ln1067">      case('Y'):</a>
+<a name="ln1068">        if( *LexPtr == 'b' )</a>
+<a name="ln1069">          {</a>
+<a name="ln1070">            LexPtr++;</a>
+<a name="ln1071">            return( GenerateElement(70) );</a>
+<a name="ln1072">          }</a>
+<a name="ln1073">        return( GenerateElement(39) );</a>
+<a name="ln1074"> </a>
+<a name="ln1075">      case('Z'):</a>
+<a name="ln1076">        if( *LexPtr == 'n' )</a>
+<a name="ln1077">          {</a>
+<a name="ln1078">            LexPtr++;</a>
+<a name="ln1079">            return GenerateElement(30);</a>
+<a name="ln1080">          }</a>
+<a name="ln1081">        else if( *LexPtr == 'r' )</a>
+<a name="ln1082">          {</a>
+<a name="ln1083">            LexPtr++;</a>
+<a name="ln1084">            return GenerateElement(40);</a>
+<a name="ln1085">          }</a>
+<a name="ln1086">        break;</a>
+<a name="ln1087"> </a>
+<a name="ln1088">      case('a'):</a>
+<a name="ln1089">        if( *LexPtr == 's' )</a>
+<a name="ln1090">          {</a>
+<a name="ln1091">            LexPtr++;</a>
+<a name="ln1092">            return GenerateAromElem(33,true);</a>
+<a name="ln1093">          }</a>
+<a name="ln1094">        return BuildAtomPred(AE_AROMATIC);</a>
+<a name="ln1095"> </a>
+<a name="ln1096">      case('c'):</a>
+<a name="ln1097">        return GenerateAromElem(6,true);</a>
+<a name="ln1098"> </a>
+<a name="ln1099">      case('h'):</a>
+<a name="ln1100">        if( isdigit(*LexPtr) )</a>
+<a name="ln1101">          {</a>
+<a name="ln1102">            index = 0;</a>
+<a name="ln1103">            while( isdigit(*LexPtr) )</a>
+<a name="ln1104">              index = index*10 + ((*LexPtr++)-'0');</a>
+<a name="ln1105">          }</a>
+<a name="ln1106">        else</a>
+<a name="ln1107">          index = 1;</a>
+<a name="ln1108">        return BuildAtomLeaf(AE_IMPLICIT,index);</a>
+<a name="ln1109"> </a>
+<a name="ln1110">      case('n'):  return GenerateAromElem(7,true);</a>
+<a name="ln1111">      case('o'):  return GenerateAromElem(8,true);</a>
+<a name="ln1112">      case('p'):  return GenerateAromElem(15,true);</a>
+<a name="ln1113"> </a>
+<a name="ln1114">      case('r'):</a>
+<a name="ln1115">        if( isdigit(*LexPtr) )</a>
+<a name="ln1116">          {</a>
+<a name="ln1117">            index = 0;</a>
+<a name="ln1118">            while( isdigit(*LexPtr) )</a>
+<a name="ln1119">              index = index*10 + ((*LexPtr++)-'0');</a>
+<a name="ln1120">            if( index == 0 )</a>
+<a name="ln1121">              return BuildAtomPred(AE_ACYCLIC);</a>
+<a name="ln1122">            return BuildAtomLeaf(AE_SIZE,index);</a>
+<a name="ln1123">          }</a>
+<a name="ln1124">        return BuildAtomPred(AE_CYCLIC);</a>
+<a name="ln1125"> </a>
+<a name="ln1126">      case('s'):</a>
+<a name="ln1127">        if( *LexPtr == 'e' )</a>
+<a name="ln1128">          {</a>
+<a name="ln1129">            LexPtr++;</a>
+<a name="ln1130">            return GenerateAromElem(34,true);</a>
+<a name="ln1131">          }</a>
+<a name="ln1132">        return GenerateAromElem(16,true);</a>
+<a name="ln1133"> </a>
+<a name="ln1134">      case('v'):</a>
+<a name="ln1135">        if( isdigit(*LexPtr) )</a>
+<a name="ln1136">          {</a>
+<a name="ln1137">            index = 0;</a>
+<a name="ln1138">            while( isdigit(*LexPtr) )</a>
+<a name="ln1139">              index = index*10 + ((*LexPtr++)-'0');</a>
+<a name="ln1140">            return BuildAtomLeaf(AE_VALENCE,index);</a>
+<a name="ln1141">          }</a>
+<a name="ln1142">        return BuildAtomLeaf(AE_VALENCE,1);</a>
+<a name="ln1143"> </a>
+<a name="ln1144">      case('x'):</a>
+<a name="ln1145">        if( isdigit(*LexPtr) )</a>
+<a name="ln1146">          {</a>
+<a name="ln1147">            index = 0;</a>
+<a name="ln1148">            while( isdigit(*LexPtr) )</a>
+<a name="ln1149">              index = index*10 + ((*LexPtr++)-'0');</a>
+<a name="ln1150">            return BuildAtomLeaf(AE_RINGCONNECT,index);</a>
+<a name="ln1151">          }</a>
+<a name="ln1152">        return BuildAtomPred(AE_CYCLIC);</a>
+<a name="ln1153">      }</a>
+<a name="ln1154">    LexPtr--;</a>
+<a name="ln1155">    return nullptr;</a>
+<a name="ln1156">  }</a>
+<a name="ln1157"> </a>
+<a name="ln1158">  AtomExpr *OBSmartsPattern::ParseAtomExpr( int level )</a>
+<a name="ln1159">  {</a>
+<a name="ln1160">    AtomExpr *expr1 = nullptr;</a>
+<a name="ln1161">    AtomExpr *expr2 = nullptr;</a>
+<a name="ln1162">    char *prev;</a>
+<a name="ln1163"> </a>
+<a name="ln1164">    switch( level )</a>
+<a name="ln1165">      {</a>
+<a name="ln1166">      case(0): /* Low Precedence Conjunction */</a>
+<a name="ln1167">        if( !(expr1=ParseAtomExpr(1)) )</a>
+<a name="ln1168">          return nullptr;</a>
+<a name="ln1169"> </a>
+<a name="ln1170">        while( *LexPtr == ';' )</a>
+<a name="ln1171">          {</a>
+<a name="ln1172">            LexPtr++;</a>
+<a name="ln1173">            if( !(expr2=ParseAtomExpr(1)) )</a>
+<a name="ln1174">              {</a>
+<a name="ln1175">                FreeAtomExpr(expr1);</a>
+<a name="ln1176">                return nullptr;</a>
+<a name="ln1177">              }</a>
+<a name="ln1178">            expr1 = BuildAtomBin(AE_ANDLO,expr1,expr2);</a>
+<a name="ln1179">          }</a>
+<a name="ln1180">        return expr1;</a>
+<a name="ln1181"> </a>
+<a name="ln1182">      case(1): /* Disjunction */</a>
+<a name="ln1183">        if( !(expr1=ParseAtomExpr(2)) )</a>
+<a name="ln1184">          return nullptr;</a>
+<a name="ln1185"> </a>
+<a name="ln1186">        while( *LexPtr == ',' )</a>
+<a name="ln1187">          {</a>
+<a name="ln1188">            LexPtr++;</a>
+<a name="ln1189">            if( !(expr2=ParseAtomExpr(2)) )</a>
+<a name="ln1190">              {</a>
+<a name="ln1191">                FreeAtomExpr(expr1);</a>
+<a name="ln1192">                return nullptr;</a>
+<a name="ln1193">              }</a>
+<a name="ln1194">            expr1 = BuildAtomBin(AE_OR,expr1,expr2);</a>
+<a name="ln1195">          }</a>
+<a name="ln1196">        return( expr1 );</a>
+<a name="ln1197"> </a>
+<a name="ln1198">      case(2): /* High Precedence Conjunction */</a>
+<a name="ln1199">        if( !(expr1=ParseAtomExpr(3)) )</a>
+<a name="ln1200">          return nullptr;</a>
+<a name="ln1201"> </a>
+<a name="ln1202">        while( (*LexPtr!=']') &amp;&amp; (*LexPtr!=';') &amp;&amp;</a>
+<a name="ln1203">               (*LexPtr!=',') &amp;&amp; *LexPtr )</a>
+<a name="ln1204">          {</a>
+<a name="ln1205">            if( *LexPtr=='&amp;' )</a>
+<a name="ln1206">              LexPtr++;</a>
+<a name="ln1207">            prev = LexPtr;</a>
+<a name="ln1208">            if( !(expr2=ParseAtomExpr(3)) )</a>
+<a name="ln1209">              {</a>
+<a name="ln1210">                if( prev != LexPtr )</a>
+<a name="ln1211">                  {</a>
+<a name="ln1212">                    FreeAtomExpr(expr1);</a>
+<a name="ln1213">                    return nullptr;</a>
+<a name="ln1214">                  }</a>
+<a name="ln1215">                else</a>
+<a name="ln1216">                  return( expr1 );</a>
+<a name="ln1217">              }</a>
+<a name="ln1218">            expr1 = BuildAtomBin(AE_ANDHI,expr1,expr2);</a>
+<a name="ln1219">          }</a>
+<a name="ln1220">        return( expr1 );</a>
+<a name="ln1221"> </a>
+<a name="ln1222">      case(3): /* Negation or Primitive */</a>
+<a name="ln1223">        if( *LexPtr == '!' )</a>
+<a name="ln1224">          {</a>
+<a name="ln1225">            LexPtr++;</a>
+<a name="ln1226">            if( !(expr1=ParseAtomExpr(3)) )</a>
+<a name="ln1227">              return nullptr;</a>
+<a name="ln1228">            return( BuildAtomNot(expr1) );</a>
+<a name="ln1229">          }</a>
+<a name="ln1230">        return( ParseComplexAtomPrimitive() );</a>
+<a name="ln1231">      }</a>
+<a name="ln1232">    return nullptr;</a>
+<a name="ln1233">  }</a>
+<a name="ln1234"> </a>
+<a name="ln1235">  BondExpr *OBSmartsPattern::ParseBondPrimitive( void )</a>
+<a name="ln1236">  {</a>
+<a name="ln1237">    char bsym = *LexPtr++;</a>
+<a name="ln1238"> </a>
+<a name="ln1239">    switch(bsym)</a>
+<a name="ln1240">      {</a>
+<a name="ln1241">      case '-':  return BuildBondLeaf(BE_SINGLE);</a>
+<a name="ln1242">      case '=':  return BuildBondLeaf(BE_DOUBLE);</a>
+<a name="ln1243">      case '#':  return BuildBondLeaf(BE_TRIPLE);</a>
+<a name="ln1244">      case '$':  return BuildBondLeaf(BE_QUAD);</a>
+<a name="ln1245">      case ':':  return BuildBondLeaf(BE_AROM);</a>
+<a name="ln1246">      case '@':  return BuildBondLeaf(BE_RING);</a>
+<a name="ln1247">      case '~':  return BuildBondLeaf(BE_ANY);</a>
+<a name="ln1248"> </a>
+<a name="ln1249">      // return BuildBondLeaf(*LexPtr == '?' ? BE_UPUNSPEC : BE_UP);</a>
+<a name="ln1250">      case '/':  return BuildBondLeaf(BE_SINGLE);</a>
+<a name="ln1251">      // return BuildBondLeaf(*LexPtr == '?' ? BE_DOWNUNSPEC : BE_DOWN);</a>
+<a name="ln1252">      case '\\': return BuildBondLeaf(BE_SINGLE);</a>
+<a name="ln1253">      }</a>
+<a name="ln1254">    LexPtr--;</a>
+<a name="ln1255">    return nullptr;</a>
+<a name="ln1256">  }</a>
+<a name="ln1257"> </a>
+<a name="ln1258">  BondExpr *OBSmartsPattern::ParseBondExpr( int level )</a>
+<a name="ln1259">  {</a>
+<a name="ln1260">    BondExpr *expr1 = nullptr;</a>
+<a name="ln1261">    BondExpr *expr2 = nullptr;</a>
+<a name="ln1262">    char *prev;</a>
+<a name="ln1263"> </a>
+<a name="ln1264">    switch( level )</a>
+<a name="ln1265">      {</a>
+<a name="ln1266">      case(0): /* Low Precedence Conjunction */</a>
+<a name="ln1267">        if( !(expr1=ParseBondExpr(1)) )</a>
+<a name="ln1268">          return nullptr;</a>
+<a name="ln1269"> </a>
+<a name="ln1270">        while( *LexPtr == ';' )</a>
+<a name="ln1271">          {</a>
+<a name="ln1272">            LexPtr++;</a>
+<a name="ln1273">            if( !(expr2=ParseBondExpr(1)) )</a>
+<a name="ln1274">              {</a>
+<a name="ln1275">                FreeBondExpr(expr1);</a>
+<a name="ln1276">                return nullptr;</a>
+<a name="ln1277">              }</a>
+<a name="ln1278">            expr1 = BuildBondBin(BE_ANDLO,expr1,expr2);</a>
+<a name="ln1279">          }</a>
+<a name="ln1280">        return expr1;</a>
+<a name="ln1281"> </a>
+<a name="ln1282">      case(1): /* Disjunction */</a>
+<a name="ln1283">        if( !(expr1=ParseBondExpr(2)) )</a>
+<a name="ln1284">          return nullptr;</a>
+<a name="ln1285"> </a>
+<a name="ln1286">        while( *LexPtr == ',' )</a>
+<a name="ln1287">          {</a>
+<a name="ln1288">            LexPtr++;</a>
+<a name="ln1289">            if( !(expr2=ParseBondExpr(2)) )</a>
+<a name="ln1290">              {</a>
+<a name="ln1291">                FreeBondExpr(expr1);</a>
+<a name="ln1292">                return nullptr;</a>
+<a name="ln1293">              }</a>
+<a name="ln1294">            expr1 = BuildBondBin(BE_OR,expr1,expr2);</a>
+<a name="ln1295">          }</a>
+<a name="ln1296">        return expr1;</a>
+<a name="ln1297"> </a>
+<a name="ln1298">      case(2): /* High Precedence Conjunction */</a>
+<a name="ln1299">        if( !(expr1=ParseBondExpr(3)) )</a>
+<a name="ln1300">          return nullptr;</a>
+<a name="ln1301"> </a>
+<a name="ln1302">        while( (*LexPtr!=']') &amp;&amp; (*LexPtr!=';') &amp;&amp;</a>
+<a name="ln1303">               (*LexPtr!=',') &amp;&amp; *LexPtr )</a>
+<a name="ln1304">          {</a>
+<a name="ln1305">            if( *LexPtr == '&amp;' )</a>
+<a name="ln1306">              LexPtr++;</a>
+<a name="ln1307">            prev = LexPtr;</a>
+<a name="ln1308">            if( !(expr2=ParseBondExpr(3)) )</a>
+<a name="ln1309">              {</a>
+<a name="ln1310">                if( prev != LexPtr )</a>
+<a name="ln1311">                  {</a>
+<a name="ln1312">                    FreeBondExpr(expr1);</a>
+<a name="ln1313">                    return nullptr;</a>
+<a name="ln1314">                  }</a>
+<a name="ln1315">                else</a>
+<a name="ln1316">                  return expr1;</a>
+<a name="ln1317">              }</a>
+<a name="ln1318">            expr1 = BuildBondBin(BE_ANDHI,expr1,expr2);</a>
+<a name="ln1319">          }</a>
+<a name="ln1320">        return expr1;</a>
+<a name="ln1321"> </a>
+<a name="ln1322">      case(3): /* Negation or Primitive */</a>
+<a name="ln1323">        if( *LexPtr == '!' )</a>
+<a name="ln1324">          {</a>
+<a name="ln1325">            LexPtr++;</a>
+<a name="ln1326">            if( !(expr1=ParseBondExpr(3)) )</a>
+<a name="ln1327">              return nullptr;</a>
+<a name="ln1328">            return BuildBondNot(expr1);</a>
+<a name="ln1329">          }</a>
+<a name="ln1330">        return ParseBondPrimitive();</a>
+<a name="ln1331">      }</a>
+<a name="ln1332">    return nullptr;</a>
+<a name="ln1333">  }</a>
+<a name="ln1334"> </a>
+<a name="ln1335">  int OBSmartsPattern::GetVectorBinding()</a>
+<a name="ln1336">  {</a>
+<a name="ln1337">    int vb=0;</a>
+<a name="ln1338"> </a>
+<a name="ln1339">    LexPtr++; //skip colon</a>
+<a name="ln1340">    if(isdigit(*LexPtr))</a>
+<a name="ln1341">      {</a>
+<a name="ln1342">        vb = 0;</a>
+<a name="ln1343">        while( isdigit(*LexPtr) )</a>
+<a name="ln1344">          vb = vb*10 + ((*LexPtr++)-'0');</a>
+<a name="ln1345">      }</a>
+<a name="ln1346"> </a>
+<a name="ln1347">    return(vb);</a>
+<a name="ln1348">  }</a>
+<a name="ln1349"> </a>
+<a name="ln1350">  Pattern *OBSmartsPattern::ParseSMARTSError( Pattern *pat, BondExpr *expr )</a>
+<a name="ln1351">  {</a>
+<a name="ln1352">    if( expr )</a>
+<a name="ln1353">      FreeBondExpr(expr);</a>
+<a name="ln1354">    return SMARTSError(pat);</a>
+<a name="ln1355">  }</a>
+<a name="ln1356"> </a>
+<a name="ln1357">  Pattern *OBSmartsPattern::SMARTSParser( Pattern *pat, ParseState *stat,</a>
+<a name="ln1358">                                int prev, int part )</a>
+<a name="ln1359">  {</a>
+<a name="ln1360">    int vb = 0;</a>
+<a name="ln1361">    AtomExpr *aexpr;</a>
+<a name="ln1362">    BondExpr *bexpr;</a>
+<a name="ln1363">    int index;</a>
+<a name="ln1364"> </a>
+<a name="ln1365">    bexpr = nullptr;</a>
+<a name="ln1366"> </a>
+<a name="ln1367">    while( *LexPtr )</a>
+<a name="ln1368">      {</a>
+<a name="ln1369">        switch( *LexPtr++ )</a>
+<a name="ln1370">          {</a>
+<a name="ln1371">          case('.'):</a>
+<a name="ln1372">            return ParseSMARTSError(pat,bexpr);</a>
+<a name="ln1373"> </a>
+<a name="ln1374">          case('-'):  case('='):  case('#'): case('$'):</a>
+<a name="ln1375">          case(':'):  case('~'):  case('@'):</a>
+<a name="ln1376">          case('/'):  case('\\'): case('!'):</a>
+<a name="ln1377">            LexPtr--;</a>
+<a name="ln1378">            if( (prev==-1) || bexpr )</a>
+<a name="ln1379">              return ParseSMARTSError(pat,bexpr);</a>
+<a name="ln1380">            if( !(bexpr=ParseBondExpr(0)) )</a>
+<a name="ln1381">              return ParseSMARTSError(pat,bexpr);</a>
+<a name="ln1382">            break;</a>
+<a name="ln1383"> </a>
+<a name="ln1384">          case('('):</a>
+<a name="ln1385">            if( bexpr )</a>
+<a name="ln1386">              {</a>
+<a name="ln1387">                LexPtr--;</a>
+<a name="ln1388">                return ParseSMARTSError(pat,bexpr);</a>
+<a name="ln1389">              }</a>
+<a name="ln1390">            if( prev == -1 )</a>
+<a name="ln1391">              {</a>
+<a name="ln1392">                index = pat-&gt;acount;</a>
+<a name="ln1393">                pat = SMARTSParser(pat,stat,-1,part);</a>
+<a name="ln1394">                if( !pat )</a>
+<a name="ln1395">                  return nullptr;</a>
+<a name="ln1396">                if( index == pat-&gt;acount )</a>
+<a name="ln1397">                  return ParseSMARTSError(pat,bexpr);</a>
+<a name="ln1398">                prev = index;</a>
+<a name="ln1399">              }</a>
+<a name="ln1400">            else</a>
+<a name="ln1401">              {</a>
+<a name="ln1402">                pat = SMARTSParser(pat,stat,prev,part);</a>
+<a name="ln1403">                if( !pat )</a>
+<a name="ln1404">                  return nullptr;</a>
+<a name="ln1405">              }</a>
+<a name="ln1406"> </a>
+<a name="ln1407">            if( *LexPtr != ')' )</a>
+<a name="ln1408">              return ParseSMARTSError(pat,bexpr);</a>
+<a name="ln1409">            LexPtr++;</a>
+<a name="ln1410">            break;</a>
+<a name="ln1411"> </a>
+<a name="ln1412">          case(')'):  LexPtr--;</a>
+<a name="ln1413">            if( (prev==-1) || bexpr )</a>
+<a name="ln1414">              return ParseSMARTSError(pat,bexpr);</a>
+<a name="ln1415">            return pat;</a>
+<a name="ln1416"> </a>
+<a name="ln1417">          case('%'):  if( prev == -1 )</a>
+<a name="ln1418">              {</a>
+<a name="ln1419">                LexPtr--;</a>
+<a name="ln1420">                return ParseSMARTSError(pat,bexpr);</a>
+<a name="ln1421">              }</a>
+<a name="ln1422"> </a>
+<a name="ln1423">            if( isdigit(LexPtr[0]) &amp;&amp; isdigit(LexPtr[1]) )</a>
+<a name="ln1424">              {</a>
+<a name="ln1425">                index = 10*(LexPtr[0]-'0') + (LexPtr[1]-'0');</a>
+<a name="ln1426">                LexPtr += 2;</a>
+<a name="ln1427">              }</a>
+<a name="ln1428">            else</a>
+<a name="ln1429">              return ParseSMARTSError(pat,bexpr);</a>
+<a name="ln1430"> </a>
+<a name="ln1431">            if( stat-&gt;closure[index] == -1 )</a>
+<a name="ln1432">              {</a>
+<a name="ln1433">                stat-&gt;closord[index] = bexpr;</a>
+<a name="ln1434">                stat-&gt;closure[index] = prev;</a>
+<a name="ln1435">              }</a>
+<a name="ln1436">            else if( stat-&gt;closure[index] != prev )</a>
+<a name="ln1437">              {</a>
+<a name="ln1438">                if( !bexpr ) {</a>
+<a name="ln1439">                  if (!stat-&gt;closord[index]) {</a>
+<a name="ln1440">                    bexpr = GenerateDefaultBond();</a>
+<a name="ln1441">                    FreeBondExpr(stat-&gt;closord[index]);</a>
+<a name="ln1442">                  } else</a>
+<a name="ln1443">                    bexpr = stat-&gt;closord[index];</a>
+<a name="ln1444">                } else if (stat-&gt;closord[index] &amp;&amp; !EquivalentBondExpr(bexpr, stat-&gt;closord[index]))</a>
+<a name="ln1445">                  return ParseSMARTSError(pat,bexpr);</a>
+<a name="ln1446"> </a>
+<a name="ln1447">                CreateBond(pat,bexpr,prev,stat-&gt;closure[index]);</a>
+<a name="ln1448">                stat-&gt;closure[index] = -1;</a>
+<a name="ln1449">                bexpr = nullptr;</a>
+<a name="ln1450">              }</a>
+<a name="ln1451">            else</a>
+<a name="ln1452">              return ParseSMARTSError(pat,bexpr);</a>
+<a name="ln1453">            break;</a>
+<a name="ln1454"> </a>
+<a name="ln1455">          case('0'):  case('1'):  case('2'):</a>
+<a name="ln1456">          case('3'):  case('4'):  case('5'):</a>
+<a name="ln1457">          case('6'):  case('7'):  case('8'):</a>
+<a name="ln1458">          case('9'):  LexPtr--;</a>
+<a name="ln1459">            if( prev == -1 )</a>
+<a name="ln1460">              return ParseSMARTSError(pat,bexpr);</a>
+<a name="ln1461">            index = (*LexPtr++)-'0';</a>
+<a name="ln1462"> </a>
+<a name="ln1463">            if( stat-&gt;closure[index] == -1 )</a>
+<a name="ln1464">              { // Ring opening</a>
+<a name="ln1465">                stat-&gt;closord[index] = bexpr;</a>
+<a name="ln1466">                stat-&gt;closure[index] = prev;</a>
+<a name="ln1467">                pat-&gt;atom[prev].nbrs.push_back(-index); // Store the BC idx as a -ve</a>
+<a name="ln1468">                bexpr = nullptr;</a>
+<a name="ln1469">              }</a>
+<a name="ln1470">            else if( stat-&gt;closure[index] != prev )</a>
+<a name="ln1471">              { // Ring closure</a>
+<a name="ln1472">                if( !bexpr ) {</a>
+<a name="ln1473">                  if (!stat-&gt;closord[index]) {</a>
+<a name="ln1474">                    bexpr = GenerateDefaultBond();</a>
+<a name="ln1475">                    FreeBondExpr(stat-&gt;closord[index]);</a>
+<a name="ln1476">                  } else</a>
+<a name="ln1477">                    bexpr = stat-&gt;closord[index];</a>
+<a name="ln1478">                } else if (stat-&gt;closord[index] &amp;&amp; !EquivalentBondExpr(bexpr, stat-&gt;closord[index]))</a>
+<a name="ln1479">                  return ParseSMARTSError(pat,bexpr);</a>
+<a name="ln1480"> </a>
+<a name="ln1481">                CreateBond(pat,bexpr,prev,stat-&gt;closure[index]);</a>
+<a name="ln1482">                pat-&gt;atom[prev].nbrs.push_back(stat-&gt;closure[index]);</a>
+<a name="ln1483">                for (unsigned int nbr_idx=0; nbr_idx &lt; pat-&gt;atom[stat-&gt;closure[index]].nbrs.size(); ++nbr_idx) {</a>
+<a name="ln1484">                  if (pat-&gt;atom[stat-&gt;closure[index]].nbrs[nbr_idx] == -index)</a>
+<a name="ln1485">                    pat-&gt;atom[stat-&gt;closure[index]].nbrs[nbr_idx] = prev;</a>
+<a name="ln1486">                }</a>
+<a name="ln1487">                stat-&gt;closure[index] = -1;</a>
+<a name="ln1488">                bexpr = nullptr;</a>
+<a name="ln1489">              }</a>
+<a name="ln1490">            else</a>
+<a name="ln1491">              return ParseSMARTSError(pat,bexpr);</a>
+<a name="ln1492">            break;</a>
+<a name="ln1493"> </a>
+<a name="ln1494">          case('['):</a>
+<a name="ln1495">            // shortcut for '[H]' primitive (PR#1463791)</a>
+<a name="ln1496">            if (*LexPtr == 'H' &amp;&amp; *(LexPtr+1) == ']')</a>
+<a name="ln1497">              {</a>
+<a name="ln1498">                aexpr = GenerateElement(1);</a>
+<a name="ln1499">                LexPtr++; // skip the 'H'</a>
+<a name="ln1500">                pat-&gt;hasExplicitH = true;</a>
+<a name="ln1501">              }</a>
+<a name="ln1502">            else</a>
+<a name="ln1503">              aexpr = ParseAtomExpr(0);</a>
+<a name="ln1504">            vb = (*LexPtr == ':') ? GetVectorBinding():0;</a>
+<a name="ln1505">            if( !aexpr || (*LexPtr!=']') )</a>
+<a name="ln1506">              return ParseSMARTSError(pat,bexpr);</a>
+<a name="ln1507">            index = CreateAtom(pat,aexpr,part,vb);</a>
+<a name="ln1508">            if( prev != -1 )</a>
+<a name="ln1509">              {</a>
+<a name="ln1510">                if( !bexpr )</a>
+<a name="ln1511">                  bexpr = GenerateDefaultBond();</a>
+<a name="ln1512">                CreateBond(pat,bexpr,prev,index);</a>
+<a name="ln1513">                pat-&gt;atom[index].nbrs.push_back(prev);</a>
+<a name="ln1514">                pat-&gt;atom[prev].nbrs.push_back(index);</a>
+<a name="ln1515">                bexpr = nullptr;</a>
+<a name="ln1516">              }</a>
+<a name="ln1517">            if(*(LexPtr-1) == 'H' &amp;&amp; *(LexPtr-2) == '@' ) { // i.e. [C@H] or [C@@H]</a>
+<a name="ln1518">              pat-&gt;atom[index].nbrs.push_back(SmartsImplicitRef);</a>
+<a name="ln1519">            }</a>
+<a name="ln1520">            prev = index;</a>
+<a name="ln1521">            LexPtr++;</a>
+<a name="ln1522">            break;</a>
+<a name="ln1523"> </a>
+<a name="ln1524">          default:</a>
+<a name="ln1525">            LexPtr--;</a>
+<a name="ln1526">            aexpr = ParseSimpleAtomPrimitive();</a>
+<a name="ln1527">            if( !aexpr )</a>
+<a name="ln1528">              return ParseSMARTSError(pat,bexpr);</a>
+<a name="ln1529">            index = CreateAtom(pat,aexpr,part);</a>
+<a name="ln1530">            if( prev != -1 )</a>
+<a name="ln1531">              {</a>
+<a name="ln1532">                if( !bexpr )</a>
+<a name="ln1533">                  bexpr = GenerateDefaultBond();</a>
+<a name="ln1534">                CreateBond(pat,bexpr,prev,index);</a>
+<a name="ln1535">                pat-&gt;atom[index].nbrs.push_back(prev);</a>
+<a name="ln1536">                pat-&gt;atom[prev].nbrs.push_back(index);</a>
+<a name="ln1537">                bexpr = nullptr;</a>
+<a name="ln1538">              }</a>
+<a name="ln1539">            prev = index;</a>
+<a name="ln1540">          }</a>
+<a name="ln1541">      }</a>
+<a name="ln1542"> </a>
+<a name="ln1543">    if( (prev==-1) || bexpr )</a>
+<a name="ln1544">      return ParseSMARTSError(pat,bexpr);</a>
+<a name="ln1545"> </a>
+<a name="ln1546">    return pat;</a>
+<a name="ln1547">  }</a>
+<a name="ln1548"> </a>
+<a name="ln1549">  static void MarkGrowBonds(Pattern *pat)</a>
+<a name="ln1550">  {</a>
+<a name="ln1551">    int i;</a>
+<a name="ln1552">    OBBitVec bv;</a>
+<a name="ln1553"> </a>
+<a name="ln1554">    for (i = 0;i &lt; pat-&gt;bcount;++i)</a>
+<a name="ln1555">      {</a>
+<a name="ln1556">        pat-&gt;bond[i].grow = (bv[pat-&gt;bond[i].src] &amp;&amp; bv[pat-&gt;bond[i].dst])?</a>
+<a name="ln1557">          false:true;</a>
+<a name="ln1558"> </a>
+<a name="ln1559">        bv.SetBitOn(pat-&gt;bond[i].src);</a>
+<a name="ln1560">        bv.SetBitOn(pat-&gt;bond[i].dst);</a>
+<a name="ln1561">      }</a>
+<a name="ln1562">  }</a>
+<a name="ln1563"> </a>
+<a name="ln1564">  static int GetChiralFlag(AtomExpr *expr)</a>
+<a name="ln1565">  {</a>
+<a name="ln1566">    int tmp1,tmp2;</a>
+<a name="ln1567"> </a>
+<a name="ln1568">    switch (expr-&gt;type)</a>
+<a name="ln1569">      {</a>
+<a name="ln1570">        case AE_CHIRAL:</a>
+<a name="ln1571">          return expr-&gt;leaf.value;</a>
+<a name="ln1572"> </a>
+<a name="ln1573">        case AE_ANDHI:</a>
+<a name="ln1574">        case AE_ANDLO:</a>
+<a name="ln1575">          tmp1 = GetChiralFlag(expr-&gt;bin.lft);</a>
+<a name="ln1576">          tmp2 = GetChiralFlag(expr-&gt;bin.rgt);</a>
+<a name="ln1577">          if (tmp1 == 0) return tmp2;</a>
+<a name="ln1578">          if (tmp2 == 0) return tmp1;</a>
+<a name="ln1579">          if (tmp1 == tmp2) return tmp1;</a>
+<a name="ln1580">          break;</a>
+<a name="ln1581"> </a>
+<a name="ln1582">        case AE_OR:</a>
+<a name="ln1583">          tmp1 = GetChiralFlag(expr-&gt;bin.lft);</a>
+<a name="ln1584">          tmp2 = GetChiralFlag(expr-&gt;bin.rgt);</a>
+<a name="ln1585">          if (tmp1 == 0 || tmp2 == 0) return 0;</a>
+<a name="ln1586">          if (tmp1 == tmp2) return tmp1;</a>
+<a name="ln1587">          break;</a>
+<a name="ln1588"> </a>
+<a name="ln1589">        case AE_NOT:</a>
+<a name="ln1590">          // Treat [!@] as [@@], and [!@@] as [@]</a>
+<a name="ln1591">          tmp1 = GetChiralFlag(expr-&gt;mon.arg);</a>
+<a name="ln1592">          if (tmp1 == AL_ANTICLOCKWISE) return AL_CLOCKWISE;</a>
+<a name="ln1593">          if (tmp1 == AL_CLOCKWISE) return AL_ANTICLOCKWISE;</a>
+<a name="ln1594">          break;</a>
+<a name="ln1595">      }</a>
+<a name="ln1596"> </a>
+<a name="ln1597">    return 0;</a>
+<a name="ln1598">  }</a>
+<a name="ln1599"> </a>
+<a name="ln1600">  Pattern *OBSmartsPattern::ParseSMARTSPart( Pattern *result, int part )</a>
+<a name="ln1601">  {</a>
+<a name="ln1602">    ParseState stat;</a>
+<a name="ln1603">    int i,flag;</a>
+<a name="ln1604"> </a>
+<a name="ln1605">    for( i=0; i&lt;100; i++ )</a>
+<a name="ln1606">      stat.closure[i] = -1;</a>
+<a name="ln1607"> </a>
+<a name="ln1608">    result = SMARTSParser(result,&amp;stat,-1,part);</a>
+<a name="ln1609"> </a>
+<a name="ln1610">    flag = false;</a>
+<a name="ln1611">    for( i=0; i&lt;100; i++ )</a>
+<a name="ln1612">      if( stat.closure[i] != -1 )</a>
+<a name="ln1613">        {</a>
+<a name="ln1614">          FreeBondExpr(stat.closord[i]);</a>
+<a name="ln1615">          flag = true;</a>
+<a name="ln1616">        }</a>
+<a name="ln1617"> </a>
+<a name="ln1618">    if( result )</a>
+<a name="ln1619">      {</a>
+<a name="ln1620">        if( flag )</a>
+<a name="ln1621">          return(SMARTSError(result));</a>
+<a name="ln1622">        else</a>
+<a name="ln1623">          {</a>
+<a name="ln1624">            MarkGrowBonds(result);</a>
+<a name="ln1625">            result-&gt;ischiral = false;</a>
+<a name="ln1626">            for (i = 0;i &lt; result-&gt;acount;++i)</a>
+<a name="ln1627">              {</a>
+<a name="ln1628">                result-&gt;atom[i].chiral_flag = GetChiralFlag(result-&gt;atom[i].expr);</a>
+<a name="ln1629">                if (result-&gt;atom[i].chiral_flag)</a>
+<a name="ln1630">                  result-&gt;ischiral = true;</a>
+<a name="ln1631">              }</a>
+<a name="ln1632">            return(result);</a>
+<a name="ln1633">          }</a>
+<a name="ln1634">      }</a>
+<a name="ln1635">    else</a>
+<a name="ln1636">      return nullptr;</a>
+<a name="ln1637">  }</a>
+<a name="ln1638"> </a>
+<a name="ln1639"> </a>
+<a name="ln1640">  Pattern *OBSmartsPattern::ParseSMARTSPattern( void )</a>
+<a name="ln1641">  {</a>
+<a name="ln1642">    Pattern *result;</a>
+<a name="ln1643">    result = AllocPattern();</a>
+<a name="ln1644"> </a>
+<a name="ln1645">    while( *LexPtr == '(' )</a>
+<a name="ln1646">      {</a>
+<a name="ln1647">        if (!result)</a>
+<a name="ln1648">          return nullptr; // ensure we don't get a null dereference</a>
+<a name="ln1649"> </a>
+<a name="ln1650">        LexPtr++;</a>
+<a name="ln1651">        result = ParseSMARTSPart(result,result-&gt;parts);</a>
+<a name="ln1652">        if( !result )</a>
+<a name="ln1653">          return nullptr;</a>
+<a name="ln1654">        result-&gt;parts++;</a>
+<a name="ln1655"> </a>
+<a name="ln1656">        if( *LexPtr != ')' )</a>
+<a name="ln1657">          return SMARTSError(result);</a>
+<a name="ln1658">        LexPtr++;</a>
+<a name="ln1659"> </a>
+<a name="ln1660">        if( !*LexPtr || (*LexPtr==')') )</a>
+<a name="ln1661">          return result;</a>
+<a name="ln1662"> </a>
+<a name="ln1663">        if( *LexPtr != '.' )</a>
+<a name="ln1664">          return SMARTSError(result);</a>
+<a name="ln1665"> </a>
+<a name="ln1666">        // Here's where we'd handle fragments</a>
+<a name="ln1667">        //        cerr &lt;&lt; &quot; conjunction &quot; &lt;&lt; LexPtr[0] &lt;&lt; endl;</a>
+<a name="ln1668">        LexPtr++;</a>
+<a name="ln1669">      }</a>
+<a name="ln1670"> </a>
+<a name="ln1671">    return ParseSMARTSPart(result,0);</a>
+<a name="ln1672">  }</a>
+<a name="ln1673"> </a>
+<a name="ln1674">  Pattern *OBSmartsPattern::ParseSMARTSString( char *ptr )</a>
+<a name="ln1675">  {</a>
+<a name="ln1676">    Pattern *result;</a>
+<a name="ln1677"> </a>
+<a name="ln1678">    if( !ptr || !*ptr )</a>
+<a name="ln1679">      return nullptr;</a>
+<a name="ln1680"> </a>
+<a name="ln1681">    LexPtr = MainPtr = ptr;</a>
+<a name="ln1682">    result = ParseSMARTSPattern();</a>
+<a name="ln1683">    if( result &amp;&amp; *LexPtr )</a>
+<a name="ln1684">      return SMARTSError(result);</a>
+<a name="ln1685">    return result;</a>
+<a name="ln1686">  }</a>
+<a name="ln1687"> </a>
+<a name="ln1688">  Pattern *OBSmartsPattern::ParseSMARTSRecord( char *ptr )</a>
+<a name="ln1689">  {</a>
+<a name="ln1690">    char *src;</a>
+<a name="ln1691"> </a>
+<a name="ln1692">    src = ptr;</a>
+<a name="ln1693">    while( *src &amp;&amp; !isspace(*src) )</a>
+<a name="ln1694">      src++;</a>
+<a name="ln1695"> </a>
+<a name="ln1696">    if( isspace(*src) )</a>
+<a name="ln1697">      {</a>
+<a name="ln1698">        *src++ = '\0';</a>
+<a name="ln1699">        while( isspace(*src) )</a>
+<a name="ln1700">          src++;</a>
+<a name="ln1701">      }</a>
+<a name="ln1702"> </a>
+<a name="ln1703">    return ParseSMARTSString(ptr);</a>
+<a name="ln1704">  }</a>
+<a name="ln1705"> </a>
+<a name="ln1706">  //**********************************</a>
+<a name="ln1707">  //********Pattern Matching**********</a>
+<a name="ln1708">  //**********************************</a>
+<a name="ln1709"> </a>
+<a name="ln1710">  bool OBSmartsPattern::Init(const char *buffer)</a>
+<a name="ln1711">  {</a>
+<a name="ln1712">    if (_buffer != nullptr)</a>
+<a name="ln1713">      delete[] _buffer;</a>
+<a name="ln1714">    _buffer = new char[strlen(buffer) + 1];</a>
+<a name="ln1715">    strcpy(_buffer,buffer);</a>
+<a name="ln1716"> </a>
+<a name="ln1717">    if (_pat != nullptr)</a>
+<a name="ln1718">      FreePattern(_pat);</a>
+<a name="ln1719">    _pat = ParseSMARTSRecord(_buffer);</a>
+<a name="ln1720">    _str = _buffer;</a>
+<a name="ln1721"> </a>
+<a name="ln1722">    return _pat != nullptr;</a>
+<a name="ln1723">  }</a>
+<a name="ln1724"> </a>
+<a name="ln1725">  bool OBSmartsPattern::Init(const std::string &amp;s)</a>
+<a name="ln1726">  {</a>
+<a name="ln1727">    if (_buffer != nullptr)</a>
+<a name="ln1728">      delete[] _buffer;</a>
+<a name="ln1729">    _buffer = new char[s.length() + 1];</a>
+<a name="ln1730">    strcpy(_buffer, s.c_str());</a>
+<a name="ln1731"> </a>
+<a name="ln1732">    if (_pat != nullptr)</a>
+<a name="ln1733">      FreePattern(_pat);</a>
+<a name="ln1734">    _pat = ParseSMARTSRecord(_buffer);</a>
+<a name="ln1735">    _str = s;</a>
+<a name="ln1736"> </a>
+<a name="ln1737">    return _pat != nullptr;</a>
+<a name="ln1738">  }</a>
+<a name="ln1739"> </a>
+<a name="ln1740">  OBSmartsPattern::~OBSmartsPattern()</a>
+<a name="ln1741">  {</a>
+<a name="ln1742">    if (_pat)</a>
+<a name="ln1743">      FreePattern(_pat);</a>
+<a name="ln1744">    if(_buffer)</a>
+<a name="ln1745">    	delete [] _buffer;</a>
+<a name="ln1746">  }</a>
+<a name="ln1747"> </a>
+<a name="ln1748">  bool OBSmartsPattern::Match(OBMol &amp;mol,bool single)</a>
+<a name="ln1749">  {</a>
+<a name="ln1750">	OBSmartsMatcher matcher;</a>
+<a name="ln1751">	if (_pat == nullptr)</a>
+<a name="ln1752">      return false;</a>
+<a name="ln1753">    if(_pat-&gt;hasExplicitH) //The SMARTS pattern contains [H]</a>
+<a name="ln1754">      {</a>
+<a name="ln1755">        //Do matching on a copy of mol with explicit hydrogens</a>
+<a name="ln1756">        OBMol tmol = mol;</a>
+<a name="ln1757">        tmol.AddHydrogens(false,false);</a>
+<a name="ln1758">        return(matcher.match(tmol,_pat,_mlist,single));</a>
+<a name="ln1759">      }</a>
+<a name="ln1760">    return(matcher.match(mol,_pat,_mlist,single));</a>
+<a name="ln1761">  }</a>
+<a name="ln1762"> </a>
+<a name="ln1763">  bool OBSmartsPattern::HasMatch(OBMol &amp;mol) const</a>
+<a name="ln1764">  {</a>
+<a name="ln1765">	  //a convenience function</a>
+<a name="ln1766">	  std::vector&lt;std::vector&lt;int&gt; &gt; dummy;</a>
+<a name="ln1767">	  return Match(mol, dummy, Single);</a>
+<a name="ln1768">  }</a>
+<a name="ln1769"> </a>
+<a name="ln1770">  bool OBSmartsPattern::Match(OBMol &amp;mol, std::vector&lt;std::vector&lt;int&gt; &gt; &amp; mlist,</a>
+<a name="ln1771">		  MatchType mtype /*=All*/) const</a>
+<a name="ln1772">  {</a>
+<a name="ln1773">	OBSmartsMatcher matcher;</a>
+<a name="ln1774">	mlist.clear();</a>
+<a name="ln1775">	if (_pat == nullptr)</a>
+<a name="ln1776">      return false;</a>
+<a name="ln1777">    if(_pat-&gt;hasExplicitH) //The SMARTS pattern contains [H]</a>
+<a name="ln1778">      {</a>
+<a name="ln1779">        //Do matching on a copy of mol with explicit hydrogens</a>
+<a name="ln1780">        OBMol tmol = mol;</a>
+<a name="ln1781">        tmol.AddHydrogens(false,false);</a>
+<a name="ln1782">        if(!matcher.match(tmol,_pat,mlist,mtype == Single))</a>
+<a name="ln1783">        	return false;</a>
+<a name="ln1784">      }</a>
+<a name="ln1785">    else if(!matcher.match(mol,_pat,mlist,mtype == Single))</a>
+<a name="ln1786">    	return false;</a>
+<a name="ln1787"> </a>
+<a name="ln1788">    if((mtype == AllUnique) &amp;&amp; mlist.size() &gt; 1)</a>
+<a name="ln1789">    {</a>
+<a name="ln1790">    	//uniquify</a>
+<a name="ln1791">         bool ok;</a>
+<a name="ln1792">        OBBitVec bv;</a>
+<a name="ln1793">        std::vector&lt;OBBitVec&gt; vbv;</a>
+<a name="ln1794">        std::vector&lt;std::vector&lt;int&gt; &gt; ulist;</a>
+<a name="ln1795">        std::vector&lt;std::vector&lt;int&gt; &gt;::iterator i;</a>
+<a name="ln1796">        std::vector&lt;OBBitVec&gt;::iterator j;</a>
+<a name="ln1797"> </a>
+<a name="ln1798">        for (i = mlist.begin();i != mlist.end();++i)</a>
+<a name="ln1799">          {</a>
+<a name="ln1800">            ok = true;</a>
+<a name="ln1801">            bv.Clear();</a>
+<a name="ln1802">            bv.FromVecInt(*i);</a>
+<a name="ln1803">            for (j = vbv.begin();j != vbv.end() &amp;&amp; ok;++j)</a>
+<a name="ln1804">              if ((*j) == bv)</a>
+<a name="ln1805">                ok = false;</a>
+<a name="ln1806"> </a>
+<a name="ln1807">            if (ok)</a>
+<a name="ln1808">              {</a>
+<a name="ln1809">                ulist.push_back(*i);</a>
+<a name="ln1810">                vbv.push_back(bv);</a>
+<a name="ln1811">              }</a>
+<a name="ln1812">          }</a>
+<a name="ln1813"> </a>
+<a name="ln1814">        mlist = ulist;</a>
+<a name="ln1815">    }</a>
+<a name="ln1816">    return true;</a>
+<a name="ln1817">  }</a>
+<a name="ln1818"> </a>
+<a name="ln1819"> </a>
+<a name="ln1820">  bool OBSmartsPattern::RestrictedMatch(OBMol &amp;mol,</a>
+<a name="ln1821">                                        std::vector&lt;std::pair&lt;int,int&gt; &gt; &amp;pr,</a>
+<a name="ln1822">                                        bool single)</a>
+<a name="ln1823">  {</a>
+<a name="ln1824">    bool ok;</a>
+<a name="ln1825">    std::vector&lt;std::vector&lt;int&gt; &gt; mlist;</a>
+<a name="ln1826">    std::vector&lt;std::vector&lt;int&gt; &gt;::iterator i;</a>
+<a name="ln1827">    std::vector&lt;std::pair&lt;int,int&gt; &gt;::iterator j;</a>
+<a name="ln1828"> </a>
+<a name="ln1829">    OBSmartsMatcher matcher;</a>
+<a name="ln1830">    matcher.match(mol,_pat,mlist);</a>
+<a name="ln1831">    _mlist.clear();</a>
+<a name="ln1832">    if (mlist.empty())</a>
+<a name="ln1833">      return(false);</a>
+<a name="ln1834"> </a>
+<a name="ln1835">    for (i = mlist.begin();i != mlist.end();++i)</a>
+<a name="ln1836">      {</a>
+<a name="ln1837">        ok = true;</a>
+<a name="ln1838">        for (j = pr.begin();j != pr.end() &amp;&amp; ok;++j)</a>
+<a name="ln1839">          if ((*i)[j-&gt;first] != j-&gt;second)</a>
+<a name="ln1840">            ok = false;</a>
+<a name="ln1841"> </a>
+<a name="ln1842">        if (ok)</a>
+<a name="ln1843">          _mlist.push_back(*i);</a>
+<a name="ln1844">        if (single &amp;&amp; !_mlist.empty())</a>
+<a name="ln1845">          return(true);</a>
+<a name="ln1846">      }</a>
+<a name="ln1847"> </a>
+<a name="ln1848">    return((_mlist.empty()) ? false:true);</a>
+<a name="ln1849">  }</a>
+<a name="ln1850"> </a>
+<a name="ln1851">  bool OBSmartsPattern::RestrictedMatch(OBMol &amp;mol,OBBitVec &amp;vres, bool single)</a>
+<a name="ln1852">  {</a>
+<a name="ln1853">    bool ok;</a>
+<a name="ln1854">    std::vector&lt;int&gt;::iterator j;</a>
+<a name="ln1855">    std::vector&lt;std::vector&lt;int&gt; &gt; mlist;</a>
+<a name="ln1856">    std::vector&lt;std::vector&lt;int&gt; &gt;::iterator i;</a>
+<a name="ln1857"> </a>
+<a name="ln1858">    OBSmartsMatcher matcher;</a>
+<a name="ln1859">    matcher.match(mol,_pat,mlist);</a>
+<a name="ln1860"> </a>
+<a name="ln1861">    _mlist.clear();</a>
+<a name="ln1862">    if (mlist.empty())</a>
+<a name="ln1863">      return(false);</a>
+<a name="ln1864"> </a>
+<a name="ln1865">    for (i = mlist.begin();i != mlist.end();++i)</a>
+<a name="ln1866">      {</a>
+<a name="ln1867">        ok = true;</a>
+<a name="ln1868">        for (j = i-&gt;begin();j != i-&gt;end();++j)</a>
+<a name="ln1869">          if (!vres[*j])</a>
+<a name="ln1870">            {</a>
+<a name="ln1871">              ok = false;</a>
+<a name="ln1872">              break;</a>
+<a name="ln1873">            }</a>
+<a name="ln1874">        if (!ok)</a>
+<a name="ln1875">          continue;</a>
+<a name="ln1876"> </a>
+<a name="ln1877">        _mlist.push_back(*i);</a>
+<a name="ln1878">        if (single &amp;&amp; !_mlist.empty())</a>
+<a name="ln1879">          return(true);</a>
+<a name="ln1880">      }</a>
+<a name="ln1881"> </a>
+<a name="ln1882">    return((_mlist.empty()) ? false:true);</a>
+<a name="ln1883">  }</a>
+<a name="ln1884"> </a>
+<a name="ln1885">  void OBSmartsMatcher::SetupAtomMatchTable(std::vector&lt;std::vector&lt;bool&gt; &gt; &amp;ttab,</a>
+<a name="ln1886">                           const Pattern *pat, OBMol &amp;mol)</a>
+<a name="ln1887">  {</a>
+<a name="ln1888">    int i;</a>
+<a name="ln1889"> </a>
+<a name="ln1890">    ttab.resize(pat-&gt;acount);</a>
+<a name="ln1891">    for (i = 0;i &lt; pat-&gt;acount;++i)</a>
+<a name="ln1892">      ttab[i].resize(mol.NumAtoms()+1);</a>
+<a name="ln1893"> </a>
+<a name="ln1894">    OBAtom *atom;</a>
+<a name="ln1895">    std::vector&lt;OBAtom*&gt;::iterator j;</a>
+<a name="ln1896">    for (i = 0;i &lt; pat-&gt;acount;++i)</a>
+<a name="ln1897">      for (atom = mol.BeginAtom(j);atom;atom = mol.NextAtom(j))</a>
+<a name="ln1898">        if (EvalAtomExpr(pat-&gt;atom[0].expr,atom))</a>
+<a name="ln1899">          ttab[i][atom-&gt;GetIdx()] = true;</a>
+<a name="ln1900">  }</a>
+<a name="ln1901"> </a>
+<a name="ln1902">  void OBSmartsMatcher::FastSingleMatch(OBMol &amp;mol, const Pattern *pat,</a>
+<a name="ln1903">                              std::vector&lt;std::vector&lt;int&gt; &gt; &amp;mlist)</a>
+<a name="ln1904">  {</a>
+<a name="ln1905">    OBAtom *atom,*a1,*nbr;</a>
+<a name="ln1906">    std::vector&lt;OBAtom*&gt;::iterator i;</a>
+<a name="ln1907"> </a>
+<a name="ln1908">    OBBitVec bv(mol.NumAtoms()+1);</a>
+<a name="ln1909">    std::vector&lt;int&gt; map;</a>
+<a name="ln1910">    map.resize(pat-&gt;acount);</a>
+<a name="ln1911">    std::vector&lt;std::vector&lt;OBBond*&gt;::iterator&gt; vi;</a>
+<a name="ln1912">    std::vector&lt;bool&gt; vif;</a>
+<a name="ln1913"> </a>
+<a name="ln1914">    if (pat-&gt;bcount)</a>
+<a name="ln1915">      {</a>
+<a name="ln1916">        vif.resize(pat-&gt;bcount);</a>
+<a name="ln1917">        vi.resize(pat-&gt;bcount);</a>
+<a name="ln1918">      }</a>
+<a name="ln1919"> </a>
+<a name="ln1920">    int bcount;</a>
+<a name="ln1921">    for (atom = mol.BeginAtom(i);atom;atom=mol.NextAtom(i))</a>
+<a name="ln1922">      if (EvalAtomExpr(pat-&gt;atom[0].expr,atom))</a>
+<a name="ln1923">        {</a>
+<a name="ln1924">          map[0] = atom-&gt;GetIdx();</a>
+<a name="ln1925">          if (pat-&gt;bcount)</a>
+<a name="ln1926">            vif[0] = false;</a>
+<a name="ln1927">          bv.Clear();</a>
+<a name="ln1928">          bv.SetBitOn(atom-&gt;GetIdx());</a>
+<a name="ln1929"> </a>
+<a name="ln1930">          for (bcount=0;bcount &gt;=0;)</a>
+<a name="ln1931">            {</a>
+<a name="ln1932">              //***entire pattern matched***</a>
+<a name="ln1933">              if (bcount == pat-&gt;bcount) //save full match here</a>
+<a name="ln1934">                {</a>
+<a name="ln1935">                  mlist.push_back(map);</a>
+<a name="ln1936">                  bcount--;</a>
+<a name="ln1937">                  return; //found a single match</a>
+<a name="ln1938">                }</a>
+<a name="ln1939"> </a>
+<a name="ln1940">              //***match the next bond***</a>
+<a name="ln1941">              if (!pat-&gt;bond[bcount].grow) //just check bond here</a>
+<a name="ln1942">                {</a>
+<a name="ln1943">                  if ( !vif[bcount] )</a>
+<a name="ln1944">                    {</a>
+<a name="ln1945">                      OBBond *bond = mol.GetBond(map[pat-&gt;bond[bcount].src],</a>
+<a name="ln1946">                                                 map[pat-&gt;bond[bcount].dst]);</a>
+<a name="ln1947">                      if (bond &amp;&amp; EvalBondExpr(pat-&gt;bond[bcount].expr,bond))</a>
+<a name="ln1948">                        {</a>
+<a name="ln1949">                          vif[bcount++] = true;</a>
+<a name="ln1950">                          if (bcount &lt; pat-&gt;bcount)</a>
+<a name="ln1951">                            vif[bcount] = false;</a>
+<a name="ln1952">                        }</a>
+<a name="ln1953">                      else</a>
+<a name="ln1954">                        bcount--;</a>
+<a name="ln1955">                    }</a>
+<a name="ln1956">                  else //bond must have already been visited - backtrack</a>
+<a name="ln1957">                    bcount--;</a>
+<a name="ln1958">                }</a>
+<a name="ln1959">              else //need to map atom and check bond</a>
+<a name="ln1960">                {</a>
+<a name="ln1961">                  a1 = mol.GetAtom(map[pat-&gt;bond[bcount].src]);</a>
+<a name="ln1962"> </a>
+<a name="ln1963">                  if (!vif[bcount]) //figure out which nbr atom we are mapping</a>
+<a name="ln1964">                    {</a>
+<a name="ln1965">                      nbr = a1-&gt;BeginNbrAtom(vi[bcount]);</a>
+<a name="ln1966">                    }</a>
+<a name="ln1967">                  else</a>
+<a name="ln1968">                    {</a>
+<a name="ln1969">                      bv.SetBitOff(map[pat-&gt;bond[bcount].dst]);</a>
+<a name="ln1970">                      nbr = a1-&gt;NextNbrAtom(vi[bcount]);</a>
+<a name="ln1971">                    }</a>
+<a name="ln1972"> </a>
+<a name="ln1973">                  for (;nbr;nbr=a1-&gt;NextNbrAtom(vi[bcount]))</a>
+<a name="ln1974">                    if (!bv[nbr-&gt;GetIdx()])</a>
+<a name="ln1975">                      if (EvalAtomExpr(pat-&gt;atom[pat-&gt;bond[bcount].dst].expr,nbr)</a>
+<a name="ln1976">                          &amp;&amp; EvalBondExpr(pat-&gt;bond[bcount].expr,(OBBond *)*(vi[bcount])))</a>
+<a name="ln1977">                        {</a>
+<a name="ln1978">                          bv.SetBitOn(nbr-&gt;GetIdx());</a>
+<a name="ln1979">                          map[pat-&gt;bond[bcount].dst] = nbr-&gt;GetIdx();</a>
+<a name="ln1980">                          vif[bcount] = true;</a>
+<a name="ln1981">                          bcount++;</a>
+<a name="ln1982">                          if (bcount &lt; pat-&gt;bcount)</a>
+<a name="ln1983">                            vif[bcount] = false;</a>
+<a name="ln1984">                          break;</a>
+<a name="ln1985">                        }</a>
+<a name="ln1986"> </a>
+<a name="ln1987">                  if (!nbr)//no match - time to backtrack</a>
+<a name="ln1988">                    bcount--;</a>
+<a name="ln1989">                }</a>
+<a name="ln1990">            }</a>
+<a name="ln1991">        }</a>
+<a name="ln1992">  }</a>
+<a name="ln1993"> </a>
+<a name="ln1994"> </a>
+<a name="ln1995">  bool OBSmartsMatcher::match(OBMol &amp;mol, const Pattern *pat,</a>
+<a name="ln1996">                    std::vector&lt;std::vector&lt;int&gt; &gt; &amp;mlist,bool single)</a>
+<a name="ln1997">  {</a>
+<a name="ln1998">    mlist.clear();</a>
+<a name="ln1999">    if (!pat || pat-&gt;acount == 0)</a>
+<a name="ln2000">      return(false);//shouldn't ever happen</a>
+<a name="ln2001"> </a>
+<a name="ln2002">    if (single &amp;&amp; !pat-&gt;ischiral) {</a>
+<a name="ln2003">      // perform a fast single match (only works for non-chiral SMARTS)</a>
+<a name="ln2004">      FastSingleMatch(mol,pat,mlist);</a>
+<a name="ln2005">    } else {</a>
+<a name="ln2006">      // perform normal match (chirality ignored and checked below)</a>
+<a name="ln2007">      OBSSMatch ssm(mol,pat);</a>
+<a name="ln2008">      ssm.Match(mlist);</a>
+<a name="ln2009">    }</a>
+<a name="ln2010"> </a>
+<a name="ln2011">    if (pat-&gt;ischiral) {</a>
+<a name="ln2012">      std::vector&lt;std::vector&lt;int&gt; &gt;::iterator m;</a>
+<a name="ln2013">      std::vector&lt;std::vector&lt;int&gt; &gt; tmpmlist;</a>
+<a name="ln2014"> </a>
+<a name="ln2015">      tmpmlist.clear();</a>
+<a name="ln2016">      // iterate over the atom mappings</a>
+<a name="ln2017">      for (m = mlist.begin();m != mlist.end();++m) {</a>
+<a name="ln2018"> </a>
+<a name="ln2019">        bool allStereoCentersMatch = true;</a>
+<a name="ln2020"> </a>
+<a name="ln2021">        // for each pattern atom</a>
+<a name="ln2022">        for (int j = 0; j &lt; pat-&gt;acount; ++j) {</a>
+<a name="ln2023">          // skip non-chiral pattern atoms</a>
+<a name="ln2024">          if (!pat-&gt;atom[j].chiral_flag)</a>
+<a name="ln2025">            continue;</a>
+<a name="ln2026">          // ignore @? in smarts, parse like any other smarts</a>
+<a name="ln2027">          if (pat-&gt;atom[j].chiral_flag == AL_UNSPECIFIED)</a>
+<a name="ln2028">            continue;</a>
+<a name="ln2029"> </a>
+<a name="ln2030">          // use the mapping the get the chiral atom in the molecule being queried</a>
+<a name="ln2031">          OBAtom *center = mol.GetAtom((*m)[j]);</a>
+<a name="ln2032"> </a>
+<a name="ln2033">          // get the OBTetrahedralStereo::Config from the molecule</a>
+<a name="ln2034">          OBStereoFacade stereo(&amp;mol);</a>
+<a name="ln2035">          OBTetrahedralStereo *ts = stereo.GetTetrahedralStereo(center-&gt;GetId());</a>
+<a name="ln2036">          if (!ts || !ts-&gt;GetConfig().specified) {</a>
+<a name="ln2037">            // no stereochemistry specified in molecule for the atom</a>
+<a name="ln2038">            // corresponding to the chiral pattern atom using the current</a>
+<a name="ln2039">            // mapping --&gt; no match</a>
+<a name="ln2040">            allStereoCentersMatch = false;</a>
+<a name="ln2041">            break;</a>
+<a name="ln2042">          }</a>
+<a name="ln2043"> </a>
+<a name="ln2044">          std::vector&lt;int&gt; nbrs = pat-&gt;atom[j].nbrs;</a>
+<a name="ln2045"> </a>
+<a name="ln2046">          if (nbrs.size() != 4) { // 3 nbrs currently not supported. Other values are errors.</a>
+<a name="ln2047">            //stringstream ss;</a>
+<a name="ln2048">            //ss &lt;&lt; &quot;Ignoring stereochemistry. There are &quot; &lt;&lt; nbrs.size() &lt;&lt; &quot; connections to this atom instead of 4. Title: &quot; &lt;&lt; mol.GetTitle();</a>
+<a name="ln2049">            //obErrorLog.ThrowError(__FUNCTION__, ss.str(), obWarning);</a>
+<a name="ln2050">            continue;</a>
+<a name="ln2051">          }</a>
+<a name="ln2052"> </a>
+<a name="ln2053">          // construct a OBTetrahedralStereo::Config using the smarts pattern</a>
+<a name="ln2054">          OBTetrahedralStereo::Config smartsConfig;</a>
+<a name="ln2055">          smartsConfig.center = center-&gt;GetId();</a>
+<a name="ln2056">          if (nbrs.at(0) == SmartsImplicitRef)</a>
+<a name="ln2057">            smartsConfig.from = OBStereo::ImplicitRef;</a>
+<a name="ln2058">          else</a>
+<a name="ln2059">            smartsConfig.from = mol.GetAtom( (*m)[nbrs.at(0)] )-&gt;GetId();</a>
+<a name="ln2060">          OBStereo::Ref firstref;</a>
+<a name="ln2061">          if (nbrs.at(1) == SmartsImplicitRef)</a>
+<a name="ln2062">            firstref = OBStereo::ImplicitRef;</a>
+<a name="ln2063">          else</a>
+<a name="ln2064">            firstref = mol.GetAtom( (*m)[nbrs.at(1)] )-&gt;GetId();</a>
+<a name="ln2065">          OBAtom *ra2 = mol.GetAtom( (*m)[nbrs.at(2)] );</a>
+<a name="ln2066">          OBAtom *ra3 = mol.GetAtom( (*m)[nbrs.at(3)] );</a>
+<a name="ln2067">          smartsConfig.refs = OBStereo::MakeRefs(firstref, ra2-&gt;GetId(), ra3-&gt;GetId());</a>
+<a name="ln2068"> </a>
+<a name="ln2069">          smartsConfig.view = OBStereo::ViewFrom;</a>
+<a name="ln2070">          switch (pat-&gt;atom[j].chiral_flag) {</a>
+<a name="ln2071">            case AL_CLOCKWISE:</a>
+<a name="ln2072">              smartsConfig.winding = OBStereo::Clockwise;</a>
+<a name="ln2073">              break;</a>
+<a name="ln2074">            case AL_ANTICLOCKWISE:</a>
+<a name="ln2075">              smartsConfig.winding = OBStereo::AntiClockwise;</a>
+<a name="ln2076">              break;</a>
+<a name="ln2077">            default:</a>
+<a name="ln2078">              smartsConfig.specified = false;</a>
+<a name="ln2079">          }</a>
+<a name="ln2080"> </a>
+<a name="ln2081">          // cout &lt;&lt; &quot;smarts config = &quot; &lt;&lt; smartsConfig &lt;&lt; endl;</a>
+<a name="ln2082">          // cout &lt;&lt; &quot;molecule config = &quot; &lt;&lt; ts-&gt;GetConfig() &lt;&lt; endl;</a>
+<a name="ln2083">          // cout &lt;&lt; &quot;match = &quot; &lt;&lt; (ts-&gt;GetConfig() == smartsConfig) &lt;&lt; endl;</a>
+<a name="ln2084"> </a>
+<a name="ln2085">          // and save the match if the two configurations are the same</a>
+<a name="ln2086">          if (ts-&gt;GetConfig() != smartsConfig)</a>
+<a name="ln2087">            allStereoCentersMatch = false;</a>
+<a name="ln2088"> </a>
+<a name="ln2089">          // don't waste time checking more stereocenters using this mapping if one didn't match</a>
+<a name="ln2090">          if (!allStereoCentersMatch)</a>
+<a name="ln2091">            break;</a>
+<a name="ln2092">        }</a>
+<a name="ln2093"> </a>
+<a name="ln2094">        // if all the atoms in the molecule match the stereochemistry specified</a>
+<a name="ln2095">        // in the smarts pattern, save this mapping as a match</a>
+<a name="ln2096">        if (allStereoCentersMatch)</a>
+<a name="ln2097">          tmpmlist.push_back(*m);</a>
+<a name="ln2098">      }</a>
+<a name="ln2099"> </a>
+<a name="ln2100">      mlist = tmpmlist;</a>
+<a name="ln2101">    }</a>
+<a name="ln2102"> </a>
+<a name="ln2103">    return(!mlist.empty());</a>
+<a name="ln2104">  }</a>
+<a name="ln2105"> </a>
+<a name="ln2106">  bool OBSmartsMatcher::EvalAtomExpr(AtomExpr *expr,OBAtom *atom)</a>
+<a name="ln2107">  {</a>
+<a name="ln2108">    for (;;)</a>
+<a name="ln2109">      switch (expr-&gt;type)</a>
+<a name="ln2110">        {</a>
+<a name="ln2111">        case AE_TRUE:</a>
+<a name="ln2112">          return true;</a>
+<a name="ln2113">        case AE_FALSE:</a>
+<a name="ln2114">          return false;</a>
+<a name="ln2115">        case AE_AROMATIC:</a>
+<a name="ln2116">          return atom-&gt;IsAromatic();</a>
+<a name="ln2117">        case AE_ALIPHATIC:</a>
+<a name="ln2118">          return !atom-&gt;IsAromatic();</a>
+<a name="ln2119">        case AE_CYCLIC:</a>
+<a name="ln2120">          return atom-&gt;IsInRing();</a>
+<a name="ln2121">        case AE_ACYCLIC:</a>
+<a name="ln2122">          return !atom-&gt;IsInRing();</a>
+<a name="ln2123"> </a>
+<a name="ln2124">        case AE_MASS:</a>
+<a name="ln2125">          return expr-&gt;leaf.value == atom-&gt;GetIsotope();</a>
+<a name="ln2126">        case AE_ELEM:</a>
+<a name="ln2127">          return expr-&gt;leaf.value == (int)atom-&gt;GetAtomicNum();</a>
+<a name="ln2128">        case AE_AROMELEM:</a>
+<a name="ln2129">          return expr-&gt;leaf.value == (int)atom-&gt;GetAtomicNum() &amp;&amp;</a>
+<a name="ln2130">                 atom-&gt;IsAromatic();</a>
+<a name="ln2131">        case AE_ALIPHELEM:</a>
+<a name="ln2132">          return expr-&gt;leaf.value == (int)atom-&gt;GetAtomicNum() &amp;&amp;</a>
+<a name="ln2133">                 !atom-&gt;IsAromatic();</a>
+<a name="ln2134">        case AE_HCOUNT:</a>
+<a name="ln2135">          return expr-&gt;leaf.value == ((int)atom-&gt;ExplicitHydrogenCount() +</a>
+<a name="ln2136">                                      (int)atom-&gt;GetImplicitHCount());</a>
+<a name="ln2137">        case AE_CHARGE:</a>
+<a name="ln2138">          return expr-&gt;leaf.value == atom-&gt;GetFormalCharge();</a>
+<a name="ln2139">        case AE_CONNECT:</a>
+<a name="ln2140">          return expr-&gt;leaf.value == (int)atom-&gt;GetTotalDegree();</a>
+<a name="ln2141">        case AE_DEGREE:</a>
+<a name="ln2142">          return expr-&gt;leaf.value == (int)atom-&gt;GetExplicitDegree();</a>
+<a name="ln2143">        case AE_IMPLICIT:</a>
+<a name="ln2144">          return expr-&gt;leaf.value == (int)atom-&gt;GetImplicitHCount();</a>
+<a name="ln2145">        case AE_RINGS:</a>
+<a name="ln2146">          return expr-&gt;leaf.value == (int)atom-&gt;MemberOfRingCount();</a>
+<a name="ln2147">        case AE_SIZE:</a>
+<a name="ln2148">          return atom-&gt;IsInRingSize(expr-&gt;leaf.value);</a>
+<a name="ln2149">        case AE_VALENCE:</a>
+<a name="ln2150">          return expr-&gt;leaf.value == (int)atom-&gt;GetTotalValence();</a>
+<a name="ln2151">        case AE_CHIRAL:</a>
+<a name="ln2152">          // always return true (i.e. accept the match) and check later</a>
+<a name="ln2153">          return true;</a>
+<a name="ln2154">        case AE_HYB:</a>
+<a name="ln2155">          return expr-&gt;leaf.value == (int)atom-&gt;GetHyb();</a>
+<a name="ln2156">        case AE_RINGCONNECT:</a>
+<a name="ln2157">          return expr-&gt;leaf.value == (int)atom-&gt;CountRingBonds();</a>
+<a name="ln2158"> </a>
+<a name="ln2159">        case AE_NOT:</a>
+<a name="ln2160">          return !EvalAtomExpr(expr-&gt;mon.arg,atom);</a>
+<a name="ln2161">        case AE_ANDHI: /* Same as AE_ANDLO */</a>
+<a name="ln2162">        case AE_ANDLO:</a>
+<a name="ln2163">          if (!EvalAtomExpr(expr-&gt;bin.lft,atom))</a>
+<a name="ln2164">            return false;</a>
+<a name="ln2165">          expr = expr-&gt;bin.rgt;</a>
+<a name="ln2166">          break;</a>
+<a name="ln2167">        case AE_OR:</a>
+<a name="ln2168">          if (EvalAtomExpr(expr-&gt;bin.lft,atom))</a>
+<a name="ln2169">            return true;</a>
+<a name="ln2170">          expr = expr-&gt;bin.rgt;</a>
+<a name="ln2171">          break;</a>
+<a name="ln2172"> </a>
+<a name="ln2173">        case AE_RECUR:</a>
+<a name="ln2174">          {</a>
+<a name="ln2175">            //see if pattern has been matched</a>
+<a name="ln2176">            std::vector&lt;std::pair&lt;const Pattern*,std::vector&lt;bool&gt; &gt; &gt;::iterator i;</a>
+<a name="ln2177">            for (i = RSCACHE.begin();i != RSCACHE.end();++i)</a>
+<a name="ln2178">              if (i-&gt;first == (Pattern*)expr-&gt;recur.recur)</a>
+<a name="ln2179">                return(i-&gt;second[atom-&gt;GetIdx()]);</a>
+<a name="ln2180"> </a>
+<a name="ln2181">            //perceive and match pattern</a>
+<a name="ln2182">            std::vector&lt;std::vector&lt;int&gt; &gt;::iterator j;</a>
+<a name="ln2183">            std::vector&lt;bool&gt; vb(((OBMol*) atom-&gt;GetParent())-&gt;NumAtoms()+1);</a>
+<a name="ln2184">            std::vector&lt;std::vector&lt;int&gt; &gt; mlist;</a>
+<a name="ln2185">            if (match( *((OBMol *) atom-&gt;GetParent()),</a>
+<a name="ln2186">                       (Pattern*)expr-&gt;recur.recur,mlist))</a>
+<a name="ln2187">              for (j = mlist.begin();j != mlist.end();++j)</a>
+<a name="ln2188">                vb[(*j)[0]] = true;</a>
+<a name="ln2189"> </a>
+<a name="ln2190">            RSCACHE.push_back(std::pair&lt;const Pattern*,</a>
+<a name="ln2191">                              std::vector&lt;bool&gt; &gt; ((const Pattern*)expr-&gt;recur.recur,</a>
+<a name="ln2192">                                                   vb));</a>
+<a name="ln2193"> </a>
+<a name="ln2194">            return(vb[atom-&gt;GetIdx()]);</a>
+<a name="ln2195">          }</a>
+<a name="ln2196"> </a>
+<a name="ln2197">        default:</a>
+<a name="ln2198">          return false;</a>
+<a name="ln2199">        }</a>
+<a name="ln2200">  }</a>
+<a name="ln2201"> </a>
+<a name="ln2202">  bool OBSmartsMatcher::EvalBondExpr(BondExpr *expr,OBBond *bond)</a>
+<a name="ln2203">  {</a>
+<a name="ln2204">    for (;;)</a>
+<a name="ln2205">      switch( expr-&gt;type )</a>
+<a name="ln2206">        {</a>
+<a name="ln2207">        case BE_ANDHI:</a>
+<a name="ln2208">        case BE_ANDLO:</a>
+<a name="ln2209">          if (!EvalBondExpr(expr-&gt;bin.lft,bond))</a>
+<a name="ln2210">            return false;</a>
+<a name="ln2211">          expr = expr-&gt;bin.rgt;</a>
+<a name="ln2212">          break;</a>
+<a name="ln2213"> </a>
+<a name="ln2214">        case BE_OR:</a>
+<a name="ln2215">          if (EvalBondExpr(expr-&gt;bin.lft,bond))</a>
+<a name="ln2216">            return true;</a>
+<a name="ln2217">          expr = expr-&gt;bin.rgt;</a>
+<a name="ln2218">          break;</a>
+<a name="ln2219"> </a>
+<a name="ln2220">        case BE_NOT:</a>
+<a name="ln2221">          return !EvalBondExpr(expr-&gt;mon.arg,bond);</a>
+<a name="ln2222"> </a>
+<a name="ln2223">        case BE_ANY:</a>
+<a name="ln2224">          return true;</a>
+<a name="ln2225">        case BE_DEFAULT:</a>
+<a name="ln2226">          return bond-&gt;GetBondOrder()==1 || bond-&gt;IsAromatic();</a>
+<a name="ln2227">        case BE_SINGLE:</a>
+<a name="ln2228">          return bond-&gt;GetBondOrder()==1 &amp;&amp; !bond-&gt;IsAromatic();</a>
+<a name="ln2229">        case BE_DOUBLE:</a>
+<a name="ln2230">          return bond-&gt;GetBondOrder()==2 &amp;&amp; !bond-&gt;IsAromatic();</a>
+<a name="ln2231">        case BE_TRIPLE:</a>
+<a name="ln2232">          return bond-&gt;GetBondOrder() == 3;</a>
+<a name="ln2233">        case BE_QUAD:</a>
+<a name="ln2234">          return bond-&gt;GetBondOrder() == 4;</a>
+<a name="ln2235">        case BE_AROM:</a>
+<a name="ln2236">          return bond-&gt;IsAromatic();</a>
+<a name="ln2237">        case BE_RING:</a>
+<a name="ln2238">          return bond-&gt;IsInRing();</a>
+<a name="ln2239">        //case BE_UP:</a>
+<a name="ln2240">        //  return bond-&gt;IsUp();</a>
+<a name="ln2241">        //case BE_DOWN:</a>
+<a name="ln2242">        //  return bond-&gt;IsDown();</a>
+<a name="ln2243">        //case BE_UPUNSPEC: // up or unspecified (i.e., not down)</a>
+<a name="ln2244">        //  return !bond-&gt;IsDown();</a>
+<a name="ln2245">        //case BE_DOWNUNSPEC: // down or unspecified (i.e., not up)</a>
+<a name="ln2246">        //  return !bond-&gt;IsUp();</a>
+<a name="ln2247">        default:</a>
+<a name="ln2248">          return false;</a>
+<a name="ln2249">        }</a>
+<a name="ln2250">  }</a>
+<a name="ln2251"> </a>
+<a name="ln2252">  std::vector&lt;std::vector&lt;int&gt; &gt; &amp;OBSmartsPattern::GetUMapList()</a>
+<a name="ln2253">  {</a>
+<a name="ln2254">    if (_mlist.empty() || _mlist.size() == 1)</a>
+<a name="ln2255">      return(_mlist);</a>
+<a name="ln2256"> </a>
+<a name="ln2257">    bool ok;</a>
+<a name="ln2258">    OBBitVec bv;</a>
+<a name="ln2259">    std::vector&lt;OBBitVec&gt; vbv;</a>
+<a name="ln2260">    std::vector&lt;std::vector&lt;int&gt; &gt; mlist;</a>
+<a name="ln2261">    std::vector&lt;std::vector&lt;int&gt; &gt;::iterator i;</a>
+<a name="ln2262">    std::vector&lt;OBBitVec&gt;::iterator j;</a>
+<a name="ln2263"> </a>
+<a name="ln2264">    for (i = _mlist.begin();i != _mlist.end();++i)</a>
+<a name="ln2265">      {</a>
+<a name="ln2266">        ok = true;</a>
+<a name="ln2267">        bv.Clear();</a>
+<a name="ln2268">        bv.FromVecInt(*i);</a>
+<a name="ln2269">        for (j = vbv.begin();j != vbv.end() &amp;&amp; ok;++j)</a>
+<a name="ln2270">          if ((*j) == bv)</a>
+<a name="ln2271">            ok = false;</a>
+<a name="ln2272"> </a>
+<a name="ln2273">        if (ok)</a>
+<a name="ln2274">          {</a>
+<a name="ln2275">            mlist.push_back(*i);</a>
+<a name="ln2276">            vbv.push_back(bv);</a>
+<a name="ln2277">          }</a>
+<a name="ln2278">      }</a>
+<a name="ln2279"> </a>
+<a name="ln2280">    _mlist = mlist;</a>
+<a name="ln2281">    return(_mlist);</a>
+<a name="ln2282">  }</a>
+<a name="ln2283"> </a>
+<a name="ln2284">  void OBSmartsPattern::WriteMapList(ostream &amp;ofs)</a>
+<a name="ln2285">  {</a>
+<a name="ln2286">    std::vector&lt;std::vector&lt;int&gt; &gt;::iterator i;</a>
+<a name="ln2287">    std::vector&lt;int&gt;::iterator j;</a>
+<a name="ln2288"> </a>
+<a name="ln2289">    for ( i = _mlist.begin() ; i != _mlist.end() ; ++i )</a>
+<a name="ln2290">      {</a>
+<a name="ln2291">        for (j = (*i).begin();j != (*i).end();++j)</a>
+<a name="ln2292">          ofs &lt;&lt; *j &lt;&lt; ' ' &lt;&lt; ends;</a>
+<a name="ln2293">        ofs &lt;&lt; endl;</a>
+<a name="ln2294">      }</a>
+<a name="ln2295">  }</a>
+<a name="ln2296"> </a>
+<a name="ln2297">  //*******************************************************************</a>
+<a name="ln2298">  //  The OBSSMatch class performs exhaustive matching using recursion</a>
+<a name="ln2299">  //  Explicit stack handling is used to find just a single match in</a>
+<a name="ln2300">  //  match()</a>
+<a name="ln2301">  //*******************************************************************</a>
+<a name="ln2302"> </a>
+<a name="ln2303">  OBSSMatch::OBSSMatch(OBMol &amp;mol, const Pattern *pat)</a>
+<a name="ln2304">  {</a>
+<a name="ln2305">    _mol = &amp;mol;</a>
+<a name="ln2306">    _pat = pat;</a>
+<a name="ln2307">    _map.resize(pat-&gt;acount);</a>
+<a name="ln2308"> </a>
+<a name="ln2309">    if (!mol.Empty())</a>
+<a name="ln2310">      {</a>
+<a name="ln2311">        _uatoms = new bool [mol.NumAtoms()+1];</a>
+<a name="ln2312">        memset((char*)_uatoms,'\0',sizeof(bool)*(mol.NumAtoms()+1));</a>
+<a name="ln2313">      }</a>
+<a name="ln2314">    else</a>
+<a name="ln2315">      _uatoms = nullptr;</a>
+<a name="ln2316">  }</a>
+<a name="ln2317"> </a>
+<a name="ln2318">  OBSSMatch::~OBSSMatch()</a>
+<a name="ln2319">  {</a>
+<a name="ln2320">    if (_uatoms)</a>
+<a name="ln2321">      delete [] _uatoms;</a>
+<a name="ln2322">  }</a>
+<a name="ln2323"> </a>
+<a name="ln2324">  void OBSSMatch::Match(std::vector&lt;std::vector&lt;int&gt; &gt; &amp;mlist,int bidx)</a>
+<a name="ln2325">  {</a>
+<a name="ln2326">	  OBSmartsMatcher matcher;</a>
+<a name="ln2327">    if (bidx == -1)</a>
+<a name="ln2328">      {</a>
+<a name="ln2329">        OBAtom *atom;</a>
+<a name="ln2330">        std::vector&lt;OBAtom*&gt;::iterator i;</a>
+<a name="ln2331">        for (atom = _mol-&gt;BeginAtom(i);atom;atom = _mol-&gt;NextAtom(i))</a>
+<a name="ln2332">          if (matcher.EvalAtomExpr(_pat-&gt;atom[0].expr,atom))</a>
+<a name="ln2333">            {</a>
+<a name="ln2334">              _map[0] = atom-&gt;GetIdx();</a>
+<a name="ln2335">              _uatoms[atom-&gt;GetIdx()] = true;</a>
+<a name="ln2336">              Match(mlist,0);</a>
+<a name="ln2337">              _map[0] = 0;</a>
+<a name="ln2338">              _uatoms[atom-&gt;GetIdx()] = false;</a>
+<a name="ln2339">            }</a>
+<a name="ln2340">        return;</a>
+<a name="ln2341">      }</a>
+<a name="ln2342"> </a>
+<a name="ln2343">    if (bidx == _pat-&gt;bcount) //save full match here</a>
+<a name="ln2344">      {</a>
+<a name="ln2345">        mlist.push_back(_map);</a>
+<a name="ln2346">        return;</a>
+<a name="ln2347">      }</a>
+<a name="ln2348"> </a>
+<a name="ln2349">    if (_pat-&gt;bond[bidx].grow) //match the next bond</a>
+<a name="ln2350">      {</a>
+<a name="ln2351">        int src = _pat-&gt;bond[bidx].src;</a>
+<a name="ln2352">        int dst = _pat-&gt;bond[bidx].dst;</a>
+<a name="ln2353"> </a>
+<a name="ln2354">        if (_map[src] &lt;= 0 || _map[src] &gt; (signed)_mol-&gt;NumAtoms())</a>
+<a name="ln2355">          return;</a>
+<a name="ln2356"> </a>
+<a name="ln2357">        AtomExpr *aexpr = _pat-&gt;atom[dst].expr;</a>
+<a name="ln2358">        BondExpr *bexpr = _pat-&gt;bond[bidx].expr;</a>
+<a name="ln2359">        OBAtom *atom,*nbr;</a>
+<a name="ln2360">        std::vector&lt;OBBond*&gt;::iterator i;</a>
+<a name="ln2361"> </a>
+<a name="ln2362">        atom = _mol-&gt;GetAtom(_map[src]);</a>
+<a name="ln2363">        for (nbr = atom-&gt;BeginNbrAtom(i);nbr;nbr = atom-&gt;NextNbrAtom(i))</a>
+<a name="ln2364">          if (!_uatoms[nbr-&gt;GetIdx()] &amp;&amp; matcher.EvalAtomExpr(aexpr,nbr) &amp;&amp;</a>
+<a name="ln2365">        		  matcher.EvalBondExpr(bexpr,((OBBond*) *i)))</a>
+<a name="ln2366">            {</a>
+<a name="ln2367">              _map[dst] = nbr-&gt;GetIdx();</a>
+<a name="ln2368">              _uatoms[nbr-&gt;GetIdx()] = true;</a>
+<a name="ln2369">              Match(mlist,bidx+1);</a>
+<a name="ln2370">              _uatoms[nbr-&gt;GetIdx()] = false;</a>
+<a name="ln2371">              _map[dst] = 0;</a>
+<a name="ln2372">            }</a>
+<a name="ln2373">      }</a>
+<a name="ln2374">    else //just check bond here</a>
+<a name="ln2375">      {</a>
+<a name="ln2376">        OBBond *bond = _mol-&gt;GetBond(_map[_pat-&gt;bond[bidx].src],</a>
+<a name="ln2377">                                     _map[_pat-&gt;bond[bidx].dst]);</a>
+<a name="ln2378">        if (bond &amp;&amp; matcher.EvalBondExpr(_pat-&gt;bond[bidx].expr,bond))</a>
+<a name="ln2379">          Match(mlist,bidx+1);</a>
+<a name="ln2380">      }</a>
+<a name="ln2381">  }</a>
+<a name="ln2382"> </a>
+<a name="ln2383">  static int GetExprOrder(BondExpr *expr)</a>
+<a name="ln2384">  {</a>
+<a name="ln2385">    int tmp1,tmp2;</a>
+<a name="ln2386"> </a>
+<a name="ln2387">    switch( expr-&gt;type )</a>
+<a name="ln2388">      {</a>
+<a name="ln2389">      case BE_SINGLE:  return 1;</a>
+<a name="ln2390">      case BE_DOUBLE:  return 2;</a>
+<a name="ln2391">      case BE_TRIPLE:  return 3;</a>
+<a name="ln2392">      case BE_QUAD:    return 4;</a>
+<a name="ln2393">      case BE_AROM:    return 5;</a>
+<a name="ln2394"> </a>
+<a name="ln2395">      case BE_UP:</a>
+<a name="ln2396">      case BE_DOWN:</a>
+<a name="ln2397">      case BE_UPUNSPEC:</a>
+<a name="ln2398">      case BE_DOWNUNSPEC:</a>
+<a name="ln2399">        return 1;</a>
+<a name="ln2400">      </a>
+<a name="ln2401">      case BE_ANDHI:</a>
+<a name="ln2402">      case BE_ANDLO:</a>
+<a name="ln2403">        tmp1 = GetExprOrder(expr-&gt;bin.lft);</a>
+<a name="ln2404">        tmp2 = GetExprOrder(expr-&gt;bin.rgt);</a>
+<a name="ln2405">        if (tmp1 == 0) return tmp2;</a>
+<a name="ln2406">        if (tmp2 == 0) return tmp1;</a>
+<a name="ln2407">        if (tmp1 == tmp2) return tmp1;</a>
+<a name="ln2408">        break;</a>
+<a name="ln2409"> </a>
+<a name="ln2410">      case BE_OR:</a>
+<a name="ln2411">        tmp1 = GetExprOrder(expr-&gt;bin.lft);</a>
+<a name="ln2412">        if (tmp1 == 0) return 0;</a>
+<a name="ln2413">        tmp2 = GetExprOrder(expr-&gt;bin.rgt);</a>
+<a name="ln2414">        if (tmp2 == 0) return 0;</a>
+<a name="ln2415">        if (tmp1 == tmp2) return tmp1;</a>
+<a name="ln2416">        break;</a>
+<a name="ln2417">      }</a>
+<a name="ln2418"> </a>
+<a name="ln2419">    return 0;</a>
+<a name="ln2420">  }</a>
+<a name="ln2421"> </a>
+<a name="ln2422">  static int GetExprCharge(AtomExpr *expr)</a>
+<a name="ln2423">  {</a>
+<a name="ln2424">    int tmp1,tmp2;</a>
+<a name="ln2425"> </a>
+<a name="ln2426">    switch( expr-&gt;type )</a>
+<a name="ln2427">      {</a>
+<a name="ln2428">      case AE_CHARGE:</a>
+<a name="ln2429">        return expr-&gt;leaf.value;</a>
+<a name="ln2430"> </a>
+<a name="ln2431">      case AE_ANDHI:</a>
+<a name="ln2432">      case AE_ANDLO:</a>
+<a name="ln2433">        tmp1 = GetExprCharge(expr-&gt;bin.lft);</a>
+<a name="ln2434">        tmp2 = GetExprCharge(expr-&gt;bin.rgt);</a>
+<a name="ln2435">        if (tmp1 == 0) return tmp2;</a>
+<a name="ln2436">        if (tmp2 == 0) return tmp1;</a>
+<a name="ln2437">        if (tmp1 == tmp2) return tmp1;</a>
+<a name="ln2438">        break;</a>
+<a name="ln2439"> </a>
+<a name="ln2440">      case AE_OR:</a>
+<a name="ln2441">        tmp1 = GetExprCharge(expr-&gt;bin.lft);</a>
+<a name="ln2442">        if (tmp1 == 0) return 0;</a>
+<a name="ln2443">        tmp2 = GetExprCharge(expr-&gt;bin.rgt);</a>
+<a name="ln2444">        if (tmp2 == 0) return 0;</a>
+<a name="ln2445">        if (tmp1 == tmp2) return tmp1;</a>
+<a name="ln2446">        break;</a>
+<a name="ln2447">      }</a>
+<a name="ln2448"> </a>
+<a name="ln2449">    return 0;</a>
+<a name="ln2450">  }</a>
+<a name="ln2451"> </a>
+<a name="ln2452">  int OBSmartsPattern::GetCharge(int idx)</a>
+<a name="ln2453">  {</a>
+<a name="ln2454">    return GetExprCharge(_pat-&gt;atom[idx].expr);</a>
+<a name="ln2455">  }</a>
+<a name="ln2456"> </a>
+<a name="ln2457">  static int GetExprAtomicNum(AtomExpr *expr)</a>
+<a name="ln2458">  {</a>
+<a name="ln2459">    int tmp1,tmp2;</a>
+<a name="ln2460"> </a>
+<a name="ln2461">    switch( expr-&gt;type )</a>
+<a name="ln2462">      {</a>
+<a name="ln2463">      case AE_ELEM:</a>
+<a name="ln2464">      case AE_AROMELEM:</a>
+<a name="ln2465">      case AE_ALIPHELEM:</a>
+<a name="ln2466">        return expr-&gt;leaf.value;</a>
+<a name="ln2467"> </a>
+<a name="ln2468">      case AE_ANDHI:</a>
+<a name="ln2469">      case AE_ANDLO:</a>
+<a name="ln2470">        tmp1 = GetExprAtomicNum(expr-&gt;bin.lft);</a>
+<a name="ln2471">        tmp2 = GetExprAtomicNum(expr-&gt;bin.rgt);</a>
+<a name="ln2472">        if (tmp1 == 0) return tmp2;</a>
+<a name="ln2473">        if (tmp2 == 0) return tmp1;</a>
+<a name="ln2474">        if (tmp1 == tmp2) return tmp1;</a>
+<a name="ln2475">        break;</a>
+<a name="ln2476"> </a>
+<a name="ln2477">      case AE_OR:</a>
+<a name="ln2478">        tmp1 = GetExprAtomicNum(expr-&gt;bin.lft);</a>
+<a name="ln2479">        if (tmp1 == 0) return 0;</a>
+<a name="ln2480">        tmp2 = GetExprAtomicNum(expr-&gt;bin.rgt);</a>
+<a name="ln2481">        if (tmp2 == 0) return 0;</a>
+<a name="ln2482">        if (tmp1 == tmp2) return tmp1;</a>
+<a name="ln2483">        break;</a>
+<a name="ln2484">      }</a>
+<a name="ln2485"> </a>
+<a name="ln2486">    return 0;</a>
+<a name="ln2487">  }</a>
+<a name="ln2488"> </a>
+<a name="ln2489">  int OBSmartsPattern::GetAtomicNum(int idx)</a>
+<a name="ln2490">  {</a>
+<a name="ln2491">    return GetExprAtomicNum(_pat-&gt;atom[idx].expr);</a>
+<a name="ln2492">  }</a>
+<a name="ln2493"> </a>
+<a name="ln2494">  void OBSmartsPattern::GetBond(int &amp;src,int &amp;dst,int &amp;ord,int idx)</a>
+<a name="ln2495">  {</a>
+<a name="ln2496">    src = _pat-&gt;bond[idx].src;</a>
+<a name="ln2497">    dst = _pat-&gt;bond[idx].dst;</a>
+<a name="ln2498">    ord = GetExprOrder(_pat-&gt;bond[idx].expr);</a>
+<a name="ln2499">  }</a>
+<a name="ln2500"> </a>
+<a name="ln2501">  void SmartsLexReplace(std::string &amp;s,std::vector&lt;std::pair&lt;std::string,std::string&gt; &gt; &amp;vlex)</a>
+<a name="ln2502">  {</a>
+<a name="ln2503">    size_t j,pos;</a>
+<a name="ln2504">    std::string token,repstr;</a>
+<a name="ln2505">    std::vector&lt;std::pair&lt;std::string,std::string&gt; &gt;::iterator i;</a>
+<a name="ln2506"> </a>
+<a name="ln2507">    for (pos = 0,pos = s.find(&quot;$&quot;,pos);pos &lt; s.size();pos = s.find(&quot;$&quot;,pos))</a>
+<a name="ln2508">      //for (pos = 0,pos = s.find(&quot;$&quot;,pos);pos != std::string::npos;pos = s.find(&quot;$&quot;,pos))</a>
+<a name="ln2509">      {</a>
+<a name="ln2510">        pos++;</a>
+<a name="ln2511">        for (j = pos;j &lt; s.size();++j)</a>
+<a name="ln2512">          if (!isalpha(s[j]) &amp;&amp; !isdigit(s[j]) &amp;&amp; s[j] != '_')</a>
+<a name="ln2513">            break;</a>
+<a name="ln2514">        if (pos == j)</a>
+<a name="ln2515">          continue;</a>
+<a name="ln2516"> </a>
+<a name="ln2517">        token = s.substr(pos,j-pos);</a>
+<a name="ln2518">        for (i = vlex.begin();i != vlex.end();++i)</a>
+<a name="ln2519">          if (token == i-&gt;first)</a>
+<a name="ln2520">            {</a>
+<a name="ln2521">              repstr = &quot;(&quot; + i-&gt;second + &quot;)&quot;;</a>
+<a name="ln2522">              s.replace(pos,j-pos,repstr);</a>
+<a name="ln2523">              j = 0;</a>
+<a name="ln2524">            }</a>
+<a name="ln2525">        pos = j;</a>
+<a name="ln2526">      }</a>
+<a name="ln2527">  }</a>
+<a name="ln2528"> </a>
+<a name="ln2529">} // end namespace OpenBabel</a>
+<a name="ln2530"> </a>
+<a name="ln2531">//! \file parsmart.cpp</a>
+<a name="ln2532">//! \brief Implementation of Daylight SMARTS parser.</a>
+
+</code></pre>
+<div class="balloon" rel="425"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v668/" target="_blank">V668</a> There is no sense in testing the 'ptr' pointer against null, as the memory was allocated using the 'new' operator. The exception will be generated in the case of memory allocation error.</p></div>
+<div class="balloon" rel="464"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v668/" target="_blank">V668</a> There is no sense in testing the 'pat->atom' pointer against null, as the memory was allocated using the 'new' operator. The exception will be generated in the case of memory allocation error.</p></div>
+<div class="balloon" rel="496"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v668/" target="_blank">V668</a> There is no sense in testing the 'pat->bond' pointer against null, as the memory was allocated using the 'new' operator. The exception will be generated in the case of memory allocation error.</p></div>
+<div class="balloon" rel="1506"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v773/" target="_blank">V773</a> The function was exited without releasing the 'aexpr' pointer. A memory leak is possible.</p></div>
+<div class="balloon" rel="1878"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: !_mlist.empty().</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

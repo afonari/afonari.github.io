@@ -1,0 +1,784 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>data.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">data.cpp - Global data and resource file parsers.</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 1998-2001 by OpenEye Scientific Software, Inc.</a>
+<a name="ln5">Some portions Copyright (C) 2001-2008 by Geoffrey R. Hutchison</a>
+<a name="ln6"> </a>
+<a name="ln7">This file is part of the Open Babel project.</a>
+<a name="ln8">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln11">it under the terms of the GNU General Public License as published by</a>
+<a name="ln12">the Free Software Foundation version 2 of the License.</a>
+<a name="ln13"> </a>
+<a name="ln14">This program is distributed in the hope that it will be useful,</a>
+<a name="ln15">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln16">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln17">GNU General Public License for more details.</a>
+<a name="ln18">***********************************************************************/</a>
+<a name="ln19"> </a>
+<a name="ln20">#ifdef WIN32</a>
+<a name="ln21">#pragma warning (disable : 4786)</a>
+<a name="ln22">#endif</a>
+<a name="ln23">#include &lt;cstdlib&gt;</a>
+<a name="ln24">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln25">#include &lt;openbabel/data.h&gt;</a>
+<a name="ln26">#include &lt;openbabel/data_utilities.h&gt;</a>
+<a name="ln27">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln28">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln29">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln30">#include &lt;openbabel/locale.h&gt;</a>
+<a name="ln31">#include &lt;openbabel/oberror.h&gt;</a>
+<a name="ln32">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln33"> </a>
+<a name="ln34">// data headers with default parameters</a>
+<a name="ln35">#include &quot;types.h&quot;</a>
+<a name="ln36">#include &quot;resdata.h&quot;</a>
+<a name="ln37"> </a>
+<a name="ln38"> </a>
+<a name="ln39">#if !HAVE_STRNCASECMP</a>
+<a name="ln40">extern &quot;C&quot; int strncasecmp(const char *s1, const char *s2, size_t n);</a>
+<a name="ln41">#endif</a>
+<a name="ln42"> </a>
+<a name="ln43">using namespace std;</a>
+<a name="ln44"> </a>
+<a name="ln45">namespace OpenBabel</a>
+<a name="ln46">{</a>
+<a name="ln47">  // Initialize the globals (declared in data.h)</a>
+<a name="ln48">  OBTypeTable ttab;</a>
+<a name="ln49">  OBResidueData resdat;</a>
+<a name="ln50"> </a>
+<a name="ln51">  OBAtomicHeatOfFormationTable::OBAtomicHeatOfFormationTable(void)</a>
+<a name="ln52">  {</a>
+<a name="ln53">    _init = false;</a>
+<a name="ln54">    _dir = BABEL_DATADIR;</a>
+<a name="ln55">    _envvar = &quot;BABEL_DATADIR&quot;;</a>
+<a name="ln56">    _filename = &quot;atomization-energies.txt&quot;;</a>
+<a name="ln57">    _subdir = &quot;data&quot;;</a>
+<a name="ln58">    Init();</a>
+<a name="ln59">  }</a>
+<a name="ln60"> </a>
+<a name="ln61">  static double UnitNameToConversionFactor(const char* unit) {</a>
+<a name="ln62">    const char* p = unit;</a>
+<a name="ln63">    switch(p[0]) {</a>
+<a name="ln64">    case 'e':</a>
+<a name="ln65">      if (p[1]=='V' &amp;&amp; p[2]=='\0')</a>
+<a name="ln66">        return ELECTRONVOLT_TO_KCALPERMOL; // eV</a>
+<a name="ln67">      if (p[1]=='l' &amp;&amp; p[2]=='e' &amp;&amp; p[3]=='c' &amp;&amp; p[4]=='t' &amp;&amp; p[5]=='r' &amp;&amp; p[6]=='o' &amp;&amp; p[7]=='n' &amp;&amp;</a>
+<a name="ln68">          p[8]=='v' &amp;&amp; p[9]=='o' &amp;&amp; p[10]=='l' &amp;&amp; p[11]=='t' &amp;&amp; p[12]=='\0')</a>
+<a name="ln69">        return ELECTRONVOLT_TO_KCALPERMOL; // electronvolt</a>
+<a name="ln70">      break;</a>
+<a name="ln71">    case 'k':</a>
+<a name="ln72">      if (p[1]=='J' &amp;&amp; p[2]=='/' &amp;&amp; p[3]=='m' &amp;&amp; p[4]=='o' &amp;&amp; p[5]=='l' &amp;&amp; p[6]=='\0')</a>
+<a name="ln73">        return KJPERMOL_TO_KCALPERMOL; // kJ/mol</a>
+<a name="ln74">      if (p[1]=='c' &amp;&amp; p[2]=='a' &amp;&amp; p[3]=='l' &amp;&amp; p[4]=='/' &amp;&amp; p[5]=='m' &amp;&amp; p[6]=='o' &amp;&amp; p[7]=='l' &amp;&amp; p[8]=='\0')</a>
+<a name="ln75">        return 1.0; // kcal/mol</a>
+<a name="ln76">      break;</a>
+<a name="ln77">    case 'H':</a>
+<a name="ln78">      if (p[1]=='a' &amp;&amp; p[2]=='r' &amp;&amp; p[3]=='t' &amp;&amp; p[4]=='r' &amp;&amp; p[5]=='e' &amp;&amp; p[6]=='e' &amp;&amp; p[7]=='\0')</a>
+<a name="ln79">        return HARTEE_TO_KCALPERMOL; // Hartree</a>
+<a name="ln80">      break;</a>
+<a name="ln81">    case 'J':</a>
+<a name="ln82">      if (p[1]=='/' &amp;&amp; p[2]=='m' &amp;&amp; p[3]=='o' &amp;&amp; p[4]=='l' &amp;&amp; p[5]==' ' &amp;&amp; p[6]=='K' &amp;&amp; p[7]=='\0')</a>
+<a name="ln83">        return KJPERMOL_TO_KCALPERMOL; // J/mol K</a>
+<a name="ln84">      break;</a>
+<a name="ln85">    case 'R':</a>
+<a name="ln86">      if (p[1]=='y' &amp;&amp; p[2]=='d' &amp;&amp; p[3]=='b' &amp;&amp; p[4]=='e' &amp;&amp; p[5]=='r' &amp;&amp; p[6]=='g' &amp;&amp; p[7]=='\0')</a>
+<a name="ln87">        return RYDBERG_TO_KCALPERMOL; // Rydberg</a>
+<a name="ln88">      break;</a>
+<a name="ln89">    }</a>
+<a name="ln90"> </a>
+<a name="ln91">    std::stringstream errorMsg;</a>
+<a name="ln92">    errorMsg &lt;&lt; &quot;WARNING: Unknown energy unit in thermochemistry file\n&quot;;</a>
+<a name="ln93">    obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() , obWarning);</a>
+<a name="ln94"> </a>
+<a name="ln95">    return 1.0;</a>
+<a name="ln96">  }</a>
+<a name="ln97"> </a>
+<a name="ln98">  void OBAtomicHeatOfFormationTable::ParseLine(const char *line)</a>
+<a name="ln99">  {</a>
+<a name="ln100">    char *ptr;</a>
+<a name="ln101">    vector&lt;string&gt; vs;</a>
+<a name="ln102">    OBAtomHOF *oba;</a>
+<a name="ln103"> </a>
+<a name="ln104">    ptr = const_cast&lt;char*&gt;( strchr(line,'#'));</a>
+<a name="ln105">    if (nullptr != ptr)</a>
+<a name="ln106">      ptr[0] = '\0';</a>
+<a name="ln107">    if (strlen(line) &gt; 0)</a>
+<a name="ln108">      {</a>
+<a name="ln109">        tokenize(vs,line,&quot;|&quot;);</a>
+<a name="ln110">        if (vs.size() &gt;= 8)</a>
+<a name="ln111">          {</a>
+<a name="ln112">              oba = new OBAtomHOF(vs[0],</a>
+<a name="ln113">                                  atoi(vs[1].c_str()),</a>
+<a name="ln114">                                  vs[2],</a>
+<a name="ln115">                                  vs[3],</a>
+<a name="ln116">                                  atof(vs[4].c_str()),</a>
+<a name="ln117">                                  atof(vs[5].c_str()),</a>
+<a name="ln118">                                  atoi(vs[6].c_str()),</a>
+<a name="ln119">                                  vs[7]);</a>
+<a name="ln120">            _atomhof.push_back(*oba);</a>
+<a name="ln121">          }</a>
+<a name="ln122">      }</a>
+<a name="ln123">  }</a>
+<a name="ln124"> </a>
+<a name="ln125">  int OBAtomicHeatOfFormationTable::GetHeatOfFormation(std::string elem,</a>
+<a name="ln126">                                                       int charge,</a>
+<a name="ln127">                                                       std::string meth,</a>
+<a name="ln128">                                                       double T,</a>
+<a name="ln129">                                                       double *dhof0,</a>
+<a name="ln130">                                                       double *dhofT,</a>
+<a name="ln131">                                                       double *S0T)</a>
+<a name="ln132">  {</a>
+<a name="ln133">    int    found;</a>
+<a name="ln134">    double Ttol = 0.05; /* Kelvin */</a>
+<a name="ln135">    double Vmodel, Vdhf, S0, HexpT;</a>
+<a name="ln136">    std::vector&lt;OBAtomHOF&gt;::iterator it;</a>
+<a name="ln137">    char desc[128];</a>
+<a name="ln138"> </a>
+<a name="ln139">    found = 0;</a>
+<a name="ln140">    Vmodel = Vdhf = S0 = HexpT = 0;</a>
+<a name="ln141">    snprintf(desc,sizeof(desc),&quot;%s(0K)&quot;,meth.c_str());</a>
+<a name="ln142"> </a>
+<a name="ln143">    for(it = _atomhof.begin(); it != _atomhof.end(); ++it)</a>
+<a name="ln144">    {</a>
+<a name="ln145">        if ((0 == it-&gt;Element().compare(elem)) &amp;&amp;</a>
+<a name="ln146">            (it-&gt;Charge() == charge))</a>
+<a name="ln147">        {</a>
+<a name="ln148">            double eFac = UnitNameToConversionFactor(it-&gt;Unit().c_str());</a>
+<a name="ln149">            if (fabs(T - it-&gt;T()) &lt; Ttol)</a>
+<a name="ln150">            {</a>
+<a name="ln151">                if (0 == it-&gt;Method().compare(&quot;exp&quot;))</a>
+<a name="ln152">                {</a>
+<a name="ln153">                    if (0 == it-&gt;Desc().compare(&quot;H(0)-H(T)&quot;))</a>
+<a name="ln154">                    {</a>
+<a name="ln155">                        HexpT += it-&gt;Value()*eFac;</a>
+<a name="ln156">                        found++;</a>
+<a name="ln157">                    }</a>
+<a name="ln158">                    else if (0 == it-&gt;Desc().compare(&quot;S0(T)&quot;))</a>
+<a name="ln159">                    {</a>
+<a name="ln160">                        S0 += it-&gt;Value();</a>
+<a name="ln161">                        found++;</a>
+<a name="ln162">                    }</a>
+<a name="ln163">                }</a>
+<a name="ln164">            }</a>
+<a name="ln165">            else if (0 == it-&gt;T()) </a>
+<a name="ln166">            {</a>
+<a name="ln167">                if ((0 == it-&gt;Method().compare(meth)) &amp;&amp;</a>
+<a name="ln168">                    (0 == it-&gt;Desc().compare(desc)))</a>
+<a name="ln169">                {</a>
+<a name="ln170">                    Vmodel += it-&gt;Value()*eFac;</a>
+<a name="ln171">                    found++;</a>
+<a name="ln172">                }</a>
+<a name="ln173">                if (0 == it-&gt;Method().compare(&quot;exp&quot;))</a>
+<a name="ln174">                {</a>
+<a name="ln175">                    if (0 == it-&gt;Desc().compare(&quot;DHf(T)&quot;))</a>
+<a name="ln176">                    {</a>
+<a name="ln177">                        Vdhf += it-&gt;Value()*eFac;</a>
+<a name="ln178">                        found++;</a>
+<a name="ln179">                    }</a>
+<a name="ln180">                }</a>
+<a name="ln181">            }</a>
+<a name="ln182">        }</a>
+<a name="ln183">    }</a>
+<a name="ln184"> </a>
+<a name="ln185">    if (found == 4)</a>
+<a name="ln186">    {</a>
+<a name="ln187">        *dhof0 = Vdhf-Vmodel;</a>
+<a name="ln188">        *dhofT = Vdhf-Vmodel-HexpT;</a>
+<a name="ln189">        *S0T   = -S0/4.184;</a>
+<a name="ln190">        return 1;</a>
+<a name="ln191">    }</a>
+<a name="ln192">    return 0;</a>
+<a name="ln193">  }</a>
+<a name="ln194"> </a>
+<a name="ln195">  /** \class OBTypeTable data.h &lt;openbabel/data.h&gt;</a>
+<a name="ln196">      \brief Atom Type Translation Table</a>
+<a name="ln197"> </a>
+<a name="ln198">      Molecular file formats frequently store information about atoms in an</a>
+<a name="ln199">      atom type field. Some formats store only the element for each atom,</a>
+<a name="ln200">      while others include hybridization and local environments, such as the</a>
+<a name="ln201">      Sybyl mol2 atom type field. The OBTypeTable class acts as a translation</a>
+<a name="ln202">      table to convert atom types between a number of different molecular</a>
+<a name="ln203">      file formats. The constructor for OBTypeTable automatically reads the</a>
+<a name="ln204">      text file types.txt. An instance of</a>
+<a name="ln205">      OBTypeTable (ttab) is declared external in data.cpp and is referenced as</a>
+<a name="ln206">      extern OBTypeTable ttab in mol.h.  The following code demonstrates how</a>
+<a name="ln207">      to use the OBTypeTable class to translate the internal representation</a>
+<a name="ln208">      of atom types in an OBMol Internal to Sybyl Mol2 atom types.</a>
+<a name="ln209"> </a>
+<a name="ln210">      \code</a>
+<a name="ln211">      ttab.SetFromType(&quot;INT&quot;);</a>
+<a name="ln212">      ttab.SetToType(&quot;SYB&quot;);</a>
+<a name="ln213">      OBAtom *atom;</a>
+<a name="ln214">      vector&lt;OBAtom*&gt;::iterator i;</a>
+<a name="ln215">      string src,dst;</a>
+<a name="ln216">      for (atom = mol.BeginAtom(i);atom;atom = mol.EndAtom(i))</a>
+<a name="ln217">      {</a>
+<a name="ln218">         src = atom-&gt;GetType();</a>
+<a name="ln219">         ttab.Translate(dst,src);</a>
+<a name="ln220">         cout &lt;&lt; &quot;atom number &quot; &lt;&lt; atom-&gt;GetIdx() &lt;&lt; &quot;has mol2 type &quot; &lt;&lt; dst &lt;&lt; endl;</a>
+<a name="ln221">      }</a>
+<a name="ln222">      \endcode</a>
+<a name="ln223"> </a>
+<a name="ln224">      Current atom types include (defined in the top line of the data file types.txt):</a>
+<a name="ln225">      - INT (Open Babel internal codes)</a>
+<a name="ln226">      - ATN (atomic numbers)</a>
+<a name="ln227">      - HYB (hybridization)</a>
+<a name="ln228">      - MMD (MacroModel)</a>
+<a name="ln229">      - MM2 (MM2 force field)</a>
+<a name="ln230">      - XYZ (element symbols from XYZ file format)</a>
+<a name="ln231">      - ALC (Alchemy)</a>
+<a name="ln232">      - HAD (H added)</a>
+<a name="ln233">      - MCML (MacMolecule)</a>
+<a name="ln234">      - C3D (Chem3D)</a>
+<a name="ln235">      - SYB (Sybyl mol2)</a>
+<a name="ln236">      - MOL (Sybyl mol)</a>
+<a name="ln237">      - MAP (Gasteiger partial charge types)</a>
+<a name="ln238">      - DRE (Dreiding)</a>
+<a name="ln239">      - XED (XED format)</a>
+<a name="ln240">      - DOK (Dock)</a>
+<a name="ln241">      - M3D (Molecular Arts M3D)</a>
+<a name="ln242">      - SBN (Sybyl descriptor types for MPD files)</a>
+<a name="ln243">      - PCM (PC Model)</a>
+<a name="ln244">  */</a>
+<a name="ln245"> </a>
+<a name="ln246">  OBTypeTable::OBTypeTable()</a>
+<a name="ln247">  {</a>
+<a name="ln248">    _init = false;</a>
+<a name="ln249">    _dir = BABEL_DATADIR;</a>
+<a name="ln250">    _envvar = &quot;BABEL_DATADIR&quot;;</a>
+<a name="ln251">    _filename = &quot;types.txt&quot;;</a>
+<a name="ln252">    _subdir = &quot;data&quot;;</a>
+<a name="ln253">    _dataptr = TypesData;</a>
+<a name="ln254">    _linecount = 0;</a>
+<a name="ln255">    _from = _to = -1;</a>
+<a name="ln256">  }</a>
+<a name="ln257"> </a>
+<a name="ln258">  void OBTypeTable::ParseLine(const char *buffer)</a>
+<a name="ln259">  {</a>
+<a name="ln260">    if (buffer[0] == '#')</a>
+<a name="ln261">      return; // just a comment line</a>
+<a name="ln262"> </a>
+<a name="ln263">    if (_linecount == 0) {</a>
+<a name="ln264">      tokenize(_colnames,buffer);</a>
+<a name="ln265">      _ncols = _colnames.size();</a>
+<a name="ln266">    }</a>
+<a name="ln267">    else</a>
+<a name="ln268">      {</a>
+<a name="ln269">        vector&lt;string&gt; vc;</a>
+<a name="ln270">        tokenize(vc,buffer);</a>
+<a name="ln271">        if (vc.size() == (unsigned)_ncols)</a>
+<a name="ln272">          _table.push_back(vc);</a>
+<a name="ln273">        else</a>
+<a name="ln274">          {</a>
+<a name="ln275">            stringstream errorMsg;</a>
+<a name="ln276">            errorMsg &lt;&lt; &quot; Could not parse line in type translation table types.txt -- incorect number of columns&quot;;</a>
+<a name="ln277">            errorMsg &lt;&lt; &quot; found &quot; &lt;&lt; vc.size() &lt;&lt; &quot; expected &quot; &lt;&lt; _ncols &lt;&lt; &quot;.&quot;;</a>
+<a name="ln278">            obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obInfo);</a>
+<a name="ln279">          }</a>
+<a name="ln280">      }</a>
+<a name="ln281">    _linecount++;</a>
+<a name="ln282">  }</a>
+<a name="ln283"> </a>
+<a name="ln284">  bool OBTypeTable::SetFromType(const char* from)</a>
+<a name="ln285">  {</a>
+<a name="ln286">    if (!_init)</a>
+<a name="ln287">      Init();</a>
+<a name="ln288"> </a>
+<a name="ln289">    string tmp = from;</a>
+<a name="ln290"> </a>
+<a name="ln291">    unsigned int i;</a>
+<a name="ln292">    for (i = 0;i &lt; _colnames.size();++i)</a>
+<a name="ln293">      if (tmp == _colnames[i])</a>
+<a name="ln294">        {</a>
+<a name="ln295">          _from = i;</a>
+<a name="ln296">          return(true);</a>
+<a name="ln297">        }</a>
+<a name="ln298"> </a>
+<a name="ln299">    obErrorLog.ThrowError(__FUNCTION__, &quot;Requested type column not found&quot;, obInfo);</a>
+<a name="ln300"> </a>
+<a name="ln301">    return(false);</a>
+<a name="ln302">  }</a>
+<a name="ln303"> </a>
+<a name="ln304">  bool OBTypeTable::SetToType(const char* to)</a>
+<a name="ln305">  {</a>
+<a name="ln306">    if (!_init)</a>
+<a name="ln307">      Init();</a>
+<a name="ln308"> </a>
+<a name="ln309">    string tmp = to;</a>
+<a name="ln310"> </a>
+<a name="ln311">    unsigned int i;</a>
+<a name="ln312">    for (i = 0;i &lt; _colnames.size();++i)</a>
+<a name="ln313">      if (tmp == _colnames[i])</a>
+<a name="ln314">        {</a>
+<a name="ln315">          _to = i;</a>
+<a name="ln316">          return(true);</a>
+<a name="ln317">        }</a>
+<a name="ln318"> </a>
+<a name="ln319">    obErrorLog.ThrowError(__FUNCTION__, &quot;Requested type column not found&quot;, obInfo);</a>
+<a name="ln320"> </a>
+<a name="ln321">    return(false);</a>
+<a name="ln322">  }</a>
+<a name="ln323"> </a>
+<a name="ln324">  //! Translates atom types (to, from), checking for size of destination</a>
+<a name="ln325">  //!  string and null-terminating as needed</a>
+<a name="ln326">  //! \deprecated Because there is no guarantee on the length of an atom type</a>
+<a name="ln327">  //!  you should consider using std::string instead</a>
+<a name="ln328">  bool OBTypeTable::Translate(char *to, const char *from)</a>
+<a name="ln329">  {</a>
+<a name="ln330">    if (!_init)</a>
+<a name="ln331">      Init();</a>
+<a name="ln332"> </a>
+<a name="ln333">    bool rval;</a>
+<a name="ln334">    string sto,sfrom;</a>
+<a name="ln335">    sfrom = from;</a>
+<a name="ln336">    rval = Translate(sto,sfrom);</a>
+<a name="ln337">    strncpy(to,(char*)sto.c_str(), OBATOM_TYPE_LEN - 1);</a>
+<a name="ln338">    to[OBATOM_TYPE_LEN - 1] = '\0';</a>
+<a name="ln339"> </a>
+<a name="ln340">    return(rval);</a>
+<a name="ln341">  }</a>
+<a name="ln342"> </a>
+<a name="ln343">  bool OBTypeTable::Translate(string &amp;to, const string &amp;from)</a>
+<a name="ln344">  {</a>
+<a name="ln345">    if (!_init)</a>
+<a name="ln346">      Init();</a>
+<a name="ln347"> </a>
+<a name="ln348">    if (from == &quot;&quot;)</a>
+<a name="ln349">      return(false);</a>
+<a name="ln350"> </a>
+<a name="ln351">    if (_from &gt;= 0 &amp;&amp; _to &gt;= 0 &amp;&amp;</a>
+<a name="ln352">        _from &lt; (signed)_table.size() &amp;&amp; _to &lt; (signed)_table.size())</a>
+<a name="ln353">      {</a>
+<a name="ln354">        vector&lt;vector&lt;string&gt; &gt;::iterator i;</a>
+<a name="ln355">        for (i = _table.begin();i != _table.end();++i)</a>
+<a name="ln356">          if ((signed)(*i).size() &gt; _from &amp;&amp;  (*i)[_from] == from)</a>
+<a name="ln357">            {</a>
+<a name="ln358">              to = (*i)[_to];</a>
+<a name="ln359">              return(true);</a>
+<a name="ln360">            }</a>
+<a name="ln361">      }</a>
+<a name="ln362"> </a>
+<a name="ln363">    // Throw an error, copy the string and return false</a>
+<a name="ln364">    obErrorLog.ThrowError(__FUNCTION__, &quot;Cannot perform atom type translation: table cannot find requested types.&quot;, obWarning);</a>
+<a name="ln365">    to = from;</a>
+<a name="ln366">    return(false);</a>
+<a name="ln367">  }</a>
+<a name="ln368"> </a>
+<a name="ln369">  std::string OBTypeTable::Translate(const string &amp;from)</a>
+<a name="ln370">  {</a>
+<a name="ln371">    if (!_init)</a>
+<a name="ln372">      Init();</a>
+<a name="ln373"> </a>
+<a name="ln374">    if (from.empty())</a>
+<a name="ln375">      return(&quot;&quot;);</a>
+<a name="ln376"> </a>
+<a name="ln377">    if (_from &gt;= 0 &amp;&amp; _to &gt;= 0 &amp;&amp;</a>
+<a name="ln378">        _from &lt; (signed)_table.size() &amp;&amp; _to &lt; (signed)_table.size())</a>
+<a name="ln379">      {</a>
+<a name="ln380">        vector&lt;vector&lt;string&gt; &gt;::iterator i;</a>
+<a name="ln381">        for (i = _table.begin();i != _table.end();++i)</a>
+<a name="ln382">          if ((signed)(*i).size() &gt; _from &amp;&amp;  (*i)[_from] == from)</a>
+<a name="ln383">            {</a>
+<a name="ln384">              return (*i)[_to];</a>
+<a name="ln385">            }</a>
+<a name="ln386">      }</a>
+<a name="ln387"> </a>
+<a name="ln388">    // Throw an error, copy the string and return false</a>
+<a name="ln389">    obErrorLog.ThrowError(__FUNCTION__, &quot;Cannot perform atom type translation: table cannot find requested types.&quot;, obWarning);</a>
+<a name="ln390">    return(&quot;&quot;);</a>
+<a name="ln391">  }</a>
+<a name="ln392"> </a>
+<a name="ln393">  std::string OBTypeTable::GetFromType()</a>
+<a name="ln394">  {</a>
+<a name="ln395">    if (!_init)</a>
+<a name="ln396">      Init();</a>
+<a name="ln397"> </a>
+<a name="ln398">    if (_from &gt; 0 &amp;&amp; _from &lt; (signed)_table.size())</a>
+<a name="ln399">      return( _colnames[_from] );</a>
+<a name="ln400">    else</a>
+<a name="ln401">      return( _colnames[0] );</a>
+<a name="ln402">  }</a>
+<a name="ln403"> </a>
+<a name="ln404">  std::string OBTypeTable::GetToType()</a>
+<a name="ln405">  {</a>
+<a name="ln406">    if (!_init)</a>
+<a name="ln407">      Init();</a>
+<a name="ln408"> </a>
+<a name="ln409">    if (_to &gt; 0 &amp;&amp; _to &lt; (signed)_table.size())</a>
+<a name="ln410">      return( _colnames[_to] );</a>
+<a name="ln411">    else</a>
+<a name="ln412">      return( _colnames[0] );</a>
+<a name="ln413">  }</a>
+<a name="ln414"> </a>
+<a name="ln415">  void Toupper(string &amp;s)</a>
+<a name="ln416">  {</a>
+<a name="ln417">    unsigned int i;</a>
+<a name="ln418">    for (i = 0;i &lt; s.size();++i)</a>
+<a name="ln419">      s[i] = toupper(s[i]);</a>
+<a name="ln420">  }</a>
+<a name="ln421"> </a>
+<a name="ln422">  void Tolower(string &amp;s)</a>
+<a name="ln423">  {</a>
+<a name="ln424">    unsigned int i;</a>
+<a name="ln425">    for (i = 0;i &lt; s.size();++i)</a>
+<a name="ln426">      s[i] = tolower(s[i]);</a>
+<a name="ln427">  }</a>
+<a name="ln428"> </a>
+<a name="ln429">  ///////////////////////////////////////////////////////////////////////</a>
+<a name="ln430">  OBResidueData::OBResidueData()</a>
+<a name="ln431">  {</a>
+<a name="ln432">    _init = false;</a>
+<a name="ln433">    _dir = BABEL_DATADIR;</a>
+<a name="ln434">    _envvar = &quot;BABEL_DATADIR&quot;;</a>
+<a name="ln435">    _filename = &quot;resdata.txt&quot;;</a>
+<a name="ln436">    _subdir = &quot;data&quot;;</a>
+<a name="ln437">    _dataptr = ResidueData;</a>
+<a name="ln438">  }</a>
+<a name="ln439"> </a>
+<a name="ln440">  bool OBResidueData::AssignBonds(OBMol &amp;mol)</a>
+<a name="ln441">  {</a>
+<a name="ln442">    if (!_init)</a>
+<a name="ln443">      Init();</a>
+<a name="ln444"> </a>
+<a name="ln445">    OBAtom *a1,*a2;</a>
+<a name="ln446">    OBResidue *r1,*r2;</a>
+<a name="ln447">    vector&lt;OBAtom*&gt;::iterator i,j;</a>
+<a name="ln448">    vector3 v;</a>
+<a name="ln449"> </a>
+<a name="ln450">    int bo;</a>
+<a name="ln451">    string skipres = &quot;&quot;; // Residue Number to skip</a>
+<a name="ln452">    string rname = &quot;&quot;;</a>
+<a name="ln453">    //assign residue bonds</a>
+<a name="ln454">    for (a1 = mol.BeginAtom(i);a1;a1 = mol.NextAtom(i))</a>
+<a name="ln455">      {</a>
+<a name="ln456">        r1 = a1-&gt;GetResidue();</a>
+<a name="ln457">        if (r1 == nullptr) // atoms may not have residues</a>
+<a name="ln458">          continue;</a>
+<a name="ln459"> </a>
+<a name="ln460">        if (skipres.length() &amp;&amp; r1-&gt;GetNumString() == skipres)</a>
+<a name="ln461">          continue;</a>
+<a name="ln462"> </a>
+<a name="ln463">        if (r1-&gt;GetName() != rname)</a>
+<a name="ln464">          {</a>
+<a name="ln465">            skipres = SetResName(r1-&gt;GetName()) ? &quot;&quot; : r1-&gt;GetNumString();</a>
+<a name="ln466">            rname = r1-&gt;GetName();</a>
+<a name="ln467">          }</a>
+<a name="ln468">        //assign bonds for each atom</a>
+<a name="ln469">        for (j=i,a2 = mol.NextAtom(j);a2;a2 = mol.NextAtom(j))</a>
+<a name="ln470">          {</a>
+<a name="ln471">            r2 = a2-&gt;GetResidue();</a>
+<a name="ln472">            if (r2 == nullptr) // atoms may not have residues</a>
+<a name="ln473">              continue;</a>
+<a name="ln474"> </a>
+<a name="ln475">            if (r1-&gt;GetNumString() != r2-&gt;GetNumString())</a>
+<a name="ln476">              break;</a>
+<a name="ln477">            if (r1-&gt;GetName() != r2-&gt;GetName())</a>
+<a name="ln478">              break;</a>
+<a name="ln479">            if (r1-&gt;GetChain() != r2-&gt;GetChain())</a>
+<a name="ln480">              break; // Fixes PR#2889763 - Fabian</a>
+<a name="ln481"> </a>
+<a name="ln482">            if ((bo = LookupBO(r1-&gt;GetAtomID(a1),r2-&gt;GetAtomID(a2))))</a>
+<a name="ln483">              {</a>
+<a name="ln484">                // Suggested by Liu Zhiguo 2007-08-13</a>
+<a name="ln485">                // for predefined residues, don't perceive connection</a>
+<a name="ln486">                // by distance</a>
+<a name="ln487">                //                v = a1-&gt;GetVector() - a2-&gt;GetVector();</a>
+<a name="ln488">                //                if (v.length_2() &lt; 3.5) //check by distance</a>
+<a name="ln489">                  mol.AddBond(a1-&gt;GetIdx(),a2-&gt;GetIdx(),bo);</a>
+<a name="ln490">              }</a>
+<a name="ln491">          }</a>
+<a name="ln492">      }</a>
+<a name="ln493"> </a>
+<a name="ln494">    int hyb;</a>
+<a name="ln495">    string type;</a>
+<a name="ln496"> </a>
+<a name="ln497">    //types and hybridization</a>
+<a name="ln498">    rname = &quot;&quot;; // name of current residue</a>
+<a name="ln499">    skipres = &quot;&quot;; // don't skip any residues right now</a>
+<a name="ln500">    for (a1 = mol.BeginAtom(i);a1;a1 = mol.NextAtom(i))</a>
+<a name="ln501">      {</a>
+<a name="ln502">        if (a1-&gt;GetAtomicNum() == OBElements::Oxygen &amp;&amp; !a1-&gt;GetExplicitDegree())</a>
+<a name="ln503">          {</a>
+<a name="ln504">            a1-&gt;SetType(&quot;O3&quot;);</a>
+<a name="ln505">            continue;</a>
+<a name="ln506">          }</a>
+<a name="ln507">        if (a1-&gt;GetAtomicNum() == OBElements::Hydrogen)</a>
+<a name="ln508">          {</a>
+<a name="ln509">            a1-&gt;SetType(&quot;H&quot;);</a>
+<a name="ln510">            continue;</a>
+<a name="ln511">          }</a>
+<a name="ln512"> </a>
+<a name="ln513">        //***valence rule for O-</a>
+<a name="ln514">        if (a1-&gt;GetAtomicNum() == OBElements::Oxygen &amp;&amp; a1-&gt;GetExplicitDegree() == 1)</a>
+<a name="ln515">          {</a>
+<a name="ln516">            OBBond *bond;</a>
+<a name="ln517">            bond = (OBBond*)*(a1-&gt;BeginBonds());</a>
+<a name="ln518">            if (bond-&gt;GetBondOrder() == 2)</a>
+<a name="ln519">              {</a>
+<a name="ln520">                a1-&gt;SetType(&quot;O2&quot;);</a>
+<a name="ln521">                a1-&gt;SetHyb(2);</a>
+<a name="ln522">              }</a>
+<a name="ln523">            else if (bond-&gt;GetBondOrder() == 1)</a>
+<a name="ln524">              {</a>
+<a name="ln525">                // Leave the protonation/deprotonation to phmodel.txt</a>
+<a name="ln526">                a1-&gt;SetType(&quot;O3&quot;);</a>
+<a name="ln527">                a1-&gt;SetHyb(3);</a>
+<a name="ln528">                // PR#3203039 -- Fix from Magnus Lundborg</a>
+<a name="ln529">                //                a1-&gt;SetFormalCharge(0);</a>
+<a name="ln530">              }</a>
+<a name="ln531">            continue;</a>
+<a name="ln532">          }</a>
+<a name="ln533"> </a>
+<a name="ln534">        r1 = a1-&gt;GetResidue();</a>
+<a name="ln535">        if (r1 == nullptr) continue; // atoms may not have residues</a>
+<a name="ln536">        if (skipres.length() &amp;&amp; r1-&gt;GetNumString() == skipres)</a>
+<a name="ln537">          continue;</a>
+<a name="ln538"> </a>
+<a name="ln539">        if (r1-&gt;GetName() != rname)</a>
+<a name="ln540">          {</a>
+<a name="ln541">            // if SetResName fails, skip this residue</a>
+<a name="ln542">            skipres = SetResName(r1-&gt;GetName()) ? &quot;&quot; : r1-&gt;GetNumString();</a>
+<a name="ln543">            rname = r1-&gt;GetName();</a>
+<a name="ln544">          }</a>
+<a name="ln545"> </a>
+<a name="ln546">        if (LookupType(r1-&gt;GetAtomID(a1),type,hyb))</a>
+<a name="ln547">          {</a>
+<a name="ln548">            a1-&gt;SetType(type);</a>
+<a name="ln549">            a1-&gt;SetHyb(hyb);</a>
+<a name="ln550">          }</a>
+<a name="ln551">        else // try to figure it out by bond order ???</a>
+<a name="ln552">          {}</a>
+<a name="ln553">      }</a>
+<a name="ln554"> </a>
+<a name="ln555">    return(true);</a>
+<a name="ln556">  }</a>
+<a name="ln557"> </a>
+<a name="ln558">  void OBResidueData::ParseLine(const char *buffer)</a>
+<a name="ln559">  {</a>
+<a name="ln560">    int bo;</a>
+<a name="ln561">    string s;</a>
+<a name="ln562">    vector&lt;string&gt; vs;</a>
+<a name="ln563"> </a>
+<a name="ln564">    if (buffer[0] == '#')</a>
+<a name="ln565">      return;</a>
+<a name="ln566"> </a>
+<a name="ln567">    tokenize(vs,buffer);</a>
+<a name="ln568">    if (!vs.empty())</a>
+<a name="ln569">      {</a>
+<a name="ln570">        if (vs[0] == &quot;BOND&quot;)</a>
+<a name="ln571">          {</a>
+<a name="ln572">            s = (vs[1] &lt; vs[2]) ? vs[1] + &quot; &quot; + vs[2] :</a>
+<a name="ln573">              vs[2] + &quot; &quot; + vs[1];</a>
+<a name="ln574">            bo = atoi(vs[3].c_str());</a>
+<a name="ln575">            _vtmp.push_back(pair&lt;string,int&gt; (s,bo));</a>
+<a name="ln576">          }</a>
+<a name="ln577"> </a>
+<a name="ln578">        if (vs[0] == &quot;ATOM&quot; &amp;&amp; vs.size() == 4)</a>
+<a name="ln579">          {</a>
+<a name="ln580">            _vatmtmp.push_back(vs[1]);</a>
+<a name="ln581">            _vatmtmp.push_back(vs[2]);</a>
+<a name="ln582">            _vatmtmp.push_back(vs[3]);</a>
+<a name="ln583">          }</a>
+<a name="ln584"> </a>
+<a name="ln585">        if (vs[0] == &quot;RES&quot;)</a>
+<a name="ln586">          _resname.push_back(vs[1]);</a>
+<a name="ln587"> </a>
+<a name="ln588">        if (vs[0]== &quot;END&quot;)</a>
+<a name="ln589">          {</a>
+<a name="ln590">            _resatoms.push_back(_vatmtmp);</a>
+<a name="ln591">            _resbonds.push_back(_vtmp);</a>
+<a name="ln592">            _vtmp.clear();</a>
+<a name="ln593">            _vatmtmp.clear();</a>
+<a name="ln594">          }</a>
+<a name="ln595">      }</a>
+<a name="ln596">  }</a>
+<a name="ln597"> </a>
+<a name="ln598">  bool OBResidueData::SetResName(const string &amp;s)</a>
+<a name="ln599">  {</a>
+<a name="ln600">    if (!_init)</a>
+<a name="ln601">      Init();</a>
+<a name="ln602"> </a>
+<a name="ln603">    unsigned int i;</a>
+<a name="ln604"> </a>
+<a name="ln605">    for (i = 0;i &lt; _resname.size();++i)</a>
+<a name="ln606">      if (_resname[i] == s)</a>
+<a name="ln607">        {</a>
+<a name="ln608">          _resnum = i;</a>
+<a name="ln609">          return(true);</a>
+<a name="ln610">        }</a>
+<a name="ln611"> </a>
+<a name="ln612">    _resnum = -1;</a>
+<a name="ln613">    return(false);</a>
+<a name="ln614">  }</a>
+<a name="ln615"> </a>
+<a name="ln616">  int OBResidueData::LookupBO(const string &amp;s)</a>
+<a name="ln617">  {</a>
+<a name="ln618">    if (_resnum == -1)</a>
+<a name="ln619">      return(0);</a>
+<a name="ln620"> </a>
+<a name="ln621">    unsigned int i;</a>
+<a name="ln622">    for (i = 0;i &lt; _resbonds[_resnum].size();++i)</a>
+<a name="ln623">      if (_resbonds[_resnum][i].first == s)</a>
+<a name="ln624">        return(_resbonds[_resnum][i].second);</a>
+<a name="ln625"> </a>
+<a name="ln626">    return(0);</a>
+<a name="ln627">  }</a>
+<a name="ln628"> </a>
+<a name="ln629">  int OBResidueData::LookupBO(const string &amp;s1, const string &amp;s2)</a>
+<a name="ln630">  {</a>
+<a name="ln631">    if (_resnum == -1)</a>
+<a name="ln632">      return(0);</a>
+<a name="ln633">    string s;</a>
+<a name="ln634"> </a>
+<a name="ln635">    s = (s1 &lt; s2) ? s1 + &quot; &quot; + s2 : s2 + &quot; &quot; + s1;</a>
+<a name="ln636"> </a>
+<a name="ln637">    unsigned int i;</a>
+<a name="ln638">    for (i = 0;i &lt; _resbonds[_resnum].size();++i)</a>
+<a name="ln639">      if (_resbonds[_resnum][i].first == s)</a>
+<a name="ln640">        return(_resbonds[_resnum][i].second);</a>
+<a name="ln641"> </a>
+<a name="ln642">    return(0);</a>
+<a name="ln643">  }</a>
+<a name="ln644"> </a>
+<a name="ln645">  bool OBResidueData::LookupType(const string &amp;atmid,string &amp;type,int &amp;hyb)</a>
+<a name="ln646">  {</a>
+<a name="ln647">    if (_resnum == -1)</a>
+<a name="ln648">      return(false);</a>
+<a name="ln649"> </a>
+<a name="ln650">    string s;</a>
+<a name="ln651">    vector&lt;string&gt;::iterator i;</a>
+<a name="ln652"> </a>
+<a name="ln653">    for (i = _resatoms[_resnum].begin();i != _resatoms[_resnum].end();i+=3)</a>
+<a name="ln654">      if (atmid == *i)</a>
+<a name="ln655">        {</a>
+<a name="ln656">          ++i;</a>
+<a name="ln657">          type = *i;</a>
+<a name="ln658">          ++i;</a>
+<a name="ln659">          hyb = atoi((*i).c_str());</a>
+<a name="ln660">          return(true);</a>
+<a name="ln661">        }</a>
+<a name="ln662"> </a>
+<a name="ln663">    return(false);</a>
+<a name="ln664">  }</a>
+<a name="ln665"> </a>
+<a name="ln666">  void OBGlobalDataBase::Init()</a>
+<a name="ln667">  {</a>
+<a name="ln668">    if (_init)</a>
+<a name="ln669">      return;</a>
+<a name="ln670">    _init = true;</a>
+<a name="ln671"> </a>
+<a name="ln672">    ifstream ifs;</a>
+<a name="ln673">    char charBuffer[BUFF_SIZE];</a>
+<a name="ln674"> </a>
+<a name="ln675">    // Set the locale for number parsing to avoid locale issues: PR#1785463</a>
+<a name="ln676">    obLocale.SetLocale();</a>
+<a name="ln677"> </a>
+<a name="ln678">    // Check return value from OpenDatafile</a>
+<a name="ln679">    // Suggestion from Zhiguo Liu</a>
+<a name="ln680">    string fn_open = OpenDatafile(ifs, _filename, _envvar);</a>
+<a name="ln681">    </a>
+<a name="ln682">    // Check _subdir directory</a>
+<a name="ln683">    if (fn_open == &quot;&quot;)</a>
+<a name="ln684">      string fn_open = OpenDatafile(ifs, _filename, _subdir);</a>
+<a name="ln685"> </a>
+<a name="ln686">    if (fn_open != &quot;&quot; &amp;&amp; (ifs))</a>
+<a name="ln687">      {</a>
+<a name="ln688">        while(ifs.getline(charBuffer,BUFF_SIZE))</a>
+<a name="ln689">          ParseLine(charBuffer);</a>
+<a name="ln690">      }</a>
+<a name="ln691"> </a>
+<a name="ln692">    else</a>
+<a name="ln693">      // If all else fails, use the compiled in values</a>
+<a name="ln694">      if (_dataptr)</a>
+<a name="ln695">        {</a>
+<a name="ln696">          obErrorLog.ThrowError(__FUNCTION__, &quot;Cannot open &quot; + _filename + &quot; defaulting to compiled data.&quot;, obDebug);</a>
+<a name="ln697"> </a>
+<a name="ln698">          const char *p1,*p2;</a>
+<a name="ln699">          for (p1 = p2 = _dataptr;*p2 != '\0';++p2)</a>
+<a name="ln700">            if (*p2 == '\n')</a>
+<a name="ln701">              {</a>
+<a name="ln702">                strncpy(charBuffer, p1, (p2 - p1));</a>
+<a name="ln703">                charBuffer[(p2 - p1)] = '\0';</a>
+<a name="ln704">                ParseLine(charBuffer);</a>
+<a name="ln705">                p1 = ++p2;</a>
+<a name="ln706">              }</a>
+<a name="ln707">        }</a>
+<a name="ln708">      else</a>
+<a name="ln709">        {</a>
+<a name="ln710">          string s = &quot;Unable to open data file '&quot;;</a>
+<a name="ln711">          s += _filename;</a>
+<a name="ln712">          s += &quot;'&quot;;</a>
+<a name="ln713">          obErrorLog.ThrowError(__FUNCTION__, s, obWarning);</a>
+<a name="ln714">        }</a>
+<a name="ln715"> </a>
+<a name="ln716">    // return the locale to the original one</a>
+<a name="ln717">    obLocale.RestoreLocale();</a>
+<a name="ln718"> </a>
+<a name="ln719">    if (ifs)</a>
+<a name="ln720">      ifs.close();</a>
+<a name="ln721"> </a>
+<a name="ln722">    if (GetSize() == 0)</a>
+<a name="ln723">      {</a>
+<a name="ln724">        string s = &quot;Cannot initialize database '&quot;;</a>
+<a name="ln725">        s += _filename;</a>
+<a name="ln726">        s += &quot;' which may cause further errors.&quot;;</a>
+<a name="ln727">        obErrorLog.ThrowError(__FUNCTION__, s, obWarning);</a>
+<a name="ln728">      }</a>
+<a name="ln729"> </a>
+<a name="ln730">  }</a>
+<a name="ln731"> </a>
+<a name="ln732">} // end namespace OpenBabel</a>
+<a name="ln733"> </a>
+<a name="ln734">//! \file data.cpp</a>
+<a name="ln735">//! \brief Global data and resource file parsers.</a>
+
+</code></pre>
+<div class="balloon" rel="123"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v773/" target="_blank">V773</a> Visibility scope of the 'oba' pointer was exited without releasing the memory. A memory leak is possible.</p></div>
+<div class="balloon" rel="684"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v561/" target="_blank">V561</a> It's probably better to assign value to 'fn_open' variable than to declare it anew. Previous declaration: data.cpp, line 680.</p></div>
+<div class="balloon" rel="246"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v730/" target="_blank">V730</a> Not all members of a class are initialized inside the constructor. Consider inspecting: _ncols, _nrows.</p></div>
+<div class="balloon" rel="430"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v730/" target="_blank">V730</a> Not all members of a class are initialized inside the constructor. Consider inspecting: _resnum.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

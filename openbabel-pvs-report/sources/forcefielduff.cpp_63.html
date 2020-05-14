@@ -1,0 +1,1990 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>forcefielduff.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">forcefielduff.cpp - UFF force field.</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 2007-2008 by Geoffrey Hutchison</a>
+<a name="ln5">Some portions Copyright (C) 2006-2008 by Tim Vandermeersch</a>
+<a name="ln6"> </a>
+<a name="ln7">This file is part of the Open Babel project.</a>
+<a name="ln8">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln11">it under the terms of the GNU General Public License as published by</a>
+<a name="ln12">the Free Software Foundation version 2 of the License.</a>
+<a name="ln13"> </a>
+<a name="ln14">This program is distributed in the hope that it will be useful,</a>
+<a name="ln15">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln16">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln17">GNU General Public License for more details.</a>
+<a name="ln18">************************************************************************/</a>
+<a name="ln19"> </a>
+<a name="ln20">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/locale.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln24">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln25">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln26">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln27">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln28">#include &lt;openbabel/parsmart.h&gt;</a>
+<a name="ln29"> </a>
+<a name="ln30">#include &lt;cstdlib&gt;</a>
+<a name="ln31"> </a>
+<a name="ln32">#include &quot;forcefielduff.h&quot;</a>
+<a name="ln33"> </a>
+<a name="ln34"> </a>
+<a name="ln35">using namespace std;</a>
+<a name="ln36"> </a>
+<a name="ln37">// This implementation was created based on open code and reference websites:</a>
+<a name="ln38">// http://towhee.sourceforge.net/forcefields/uff.html</a>
+<a name="ln39">// http://rdkit.org/</a>
+<a name="ln40">// http://franklin.chm.colostate.edu/mmac/uff.html</a>
+<a name="ln41">// (for the last, use the Wayback Machine: http://www.archive.org/</a>
+<a name="ln42"> </a>
+<a name="ln43">// As well, the main UFF paper:</a>
+<a name="ln44">// Rappe, A. K., et. al.; J. Am. Chem. Soc. (1992) 114(25) p. 10024-10035.</a>
+<a name="ln45"> </a>
+<a name="ln46">namespace OpenBabel {</a>
+<a name="ln47"> </a>
+<a name="ln48">  template&lt;bool gradients&gt;</a>
+<a name="ln49">  void OBFFBondCalculationUFF::Compute()</a>
+<a name="ln50">  {</a>
+<a name="ln51">    if (OBForceField::IgnoreCalculation(idx_a, idx_b)) {</a>
+<a name="ln52">      energy = 0.0;</a>
+<a name="ln53">      return;</a>
+<a name="ln54">    }</a>
+<a name="ln55"> </a>
+<a name="ln56">    vector3 vab, da, db;</a>
+<a name="ln57">    double delta2, dE;</a>
+<a name="ln58"> </a>
+<a name="ln59">    if (gradients) {</a>
+<a name="ln60">      rab = OBForceField::VectorBondDerivative(pos_a, pos_b, force_a, force_b);</a>
+<a name="ln61">    } else {</a>
+<a name="ln62">      rab = OBForceField::VectorDistance(pos_a, pos_b);</a>
+<a name="ln63">    }</a>
+<a name="ln64"> </a>
+<a name="ln65">    // Harmonic bond stretching</a>
+<a name="ln66">    delta = rab - r0; // we pre-compute the r0 below</a>
+<a name="ln67">    delta2 = delta * delta;</a>
+<a name="ln68">    energy = kb * delta2; // we fold the 1/2 into kb below</a>
+<a name="ln69"> </a>
+<a name="ln70">    if (gradients) {</a>
+<a name="ln71">      dE = 2.0 * kb * delta;</a>
+<a name="ln72">      OBForceField::VectorSelfMultiply(force_a, dE);</a>
+<a name="ln73">      OBForceField::VectorSelfMultiply(force_b, dE);</a>
+<a name="ln74">    }</a>
+<a name="ln75">  }</a>
+<a name="ln76"> </a>
+<a name="ln77">  template&lt;bool gradients&gt;</a>
+<a name="ln78">  double OBForceFieldUFF::E_Bond()</a>
+<a name="ln79">  {</a>
+<a name="ln80">    vector&lt;OBFFBondCalculationUFF&gt;::iterator i;</a>
+<a name="ln81">    double energy = 0.0;</a>
+<a name="ln82"> </a>
+<a name="ln83">    IF_OBFF_LOGLVL_HIGH {</a>
+<a name="ln84">      OBFFLog(&quot;\nB O N D   S T R E T C H I N G\n\n&quot;);</a>
+<a name="ln85">      OBFFLog(&quot;ATOM TYPES  BOND    BOND       IDEAL       FORCE\n&quot;);</a>
+<a name="ln86">      OBFFLog(&quot; I      J   TYPE   LENGTH     LENGTH     CONSTANT      DELTA      ENERGY\n&quot;);</a>
+<a name="ln87">      OBFFLog(&quot;------------------------------------------------------------------------\n&quot;);</a>
+<a name="ln88">    }</a>
+<a name="ln89"> </a>
+<a name="ln90">    for (i = _bondcalculations.begin(); i != _bondcalculations.end(); ++i) {</a>
+<a name="ln91"> </a>
+<a name="ln92">      i-&gt;template Compute&lt;gradients&gt;();</a>
+<a name="ln93">      energy += i-&gt;energy;</a>
+<a name="ln94"> </a>
+<a name="ln95">      if (gradients) {</a>
+<a name="ln96">        AddGradient((*i).force_a, (*i).idx_a);</a>
+<a name="ln97">        AddGradient((*i).force_b, (*i).idx_b);</a>
+<a name="ln98">      }</a>
+<a name="ln99"> </a>
+<a name="ln100">      IF_OBFF_LOGLVL_HIGH {</a>
+<a name="ln101">        snprintf(_logbuf, BUFF_SIZE, &quot;%-5s %-5s  %4.2f%8.3f   %8.3f     %8.3f   %8.3f   %8.3f\n&quot;,</a>
+<a name="ln102">                 (*i).a-&gt;GetType(), (*i).b-&gt;GetType(),</a>
+<a name="ln103">                 (*i).bt, (*i).rab, (*i).r0, (*i).kb, (*i).delta, (*i).energy);</a>
+<a name="ln104">        OBFFLog(_logbuf);</a>
+<a name="ln105">      }</a>
+<a name="ln106">    }</a>
+<a name="ln107"> </a>
+<a name="ln108">    IF_OBFF_LOGLVL_MEDIUM {</a>
+<a name="ln109">      snprintf(_logbuf, BUFF_SIZE, &quot;     TOTAL BOND STRETCHING ENERGY = %8.3f %s\n&quot;,  energy, GetUnit().c_str());</a>
+<a name="ln110">      OBFFLog(_logbuf);</a>
+<a name="ln111">    }</a>
+<a name="ln112">    return energy;</a>
+<a name="ln113">  }</a>
+<a name="ln114"> </a>
+<a name="ln115">  template&lt;bool gradients&gt;</a>
+<a name="ln116">  void OBFFAngleCalculationUFF::Compute()</a>
+<a name="ln117">  {</a>
+<a name="ln118">    if (OBForceField::IgnoreCalculation(idx_a, idx_b, idx_c)) {</a>
+<a name="ln119">      energy = 0.0;</a>
+<a name="ln120">      return;</a>
+<a name="ln121">    }</a>
+<a name="ln122"> </a>
+<a name="ln123">    vector3 da, db, dc;</a>
+<a name="ln124">		double dE;</a>
+<a name="ln125"> </a>
+<a name="ln126">    if (gradients) {</a>
+<a name="ln127">      theta = OBForceField::VectorAngleDerivative(pos_a, pos_b, pos_c, force_a, force_b, force_c);</a>
+<a name="ln128"> </a>
+<a name="ln129">      // Supply a small nudge if the angle is degenerate</a>
+<a name="ln130">      if (theta &lt; 2.5 || theta &gt; 357.5) {</a>
+<a name="ln131">        vector3 v1;</a>
+<a name="ln132">        v1.randomUnitVector();</a>
+<a name="ln133">        for (int i = 0; i &lt; 3; ++i)</a>
+<a name="ln134">          force_a[i] += v1[i]*0.1;</a>
+<a name="ln135">      }</a>
+<a name="ln136">      theta *= DEG_TO_RAD;</a>
+<a name="ln137">    } else {</a>
+<a name="ln138">      theta = a-&gt;GetAngle(b, c) * DEG_TO_RAD;</a>
+<a name="ln139">		}</a>
+<a name="ln140"> </a>
+<a name="ln141">    if (!isfinite(theta))</a>
+<a name="ln142">      theta = 0.0; // doesn't explain why GetAngle is returning NaN but solves it for us</a>
+<a name="ln143"> </a>
+<a name="ln144">    double cosT;</a>
+<a name="ln145"> </a>
+<a name="ln146">    switch (coord) {</a>
+<a name="ln147">    case 1: // sp -- linear case, minima at 180 degrees, max (amplitude 2*ka) at 0, 360</a>
+<a name="ln148">      // Fixed typo from Rappe paper (i.e., it's NOT 1 - cosT)</a>
+<a name="ln149">      energy = ka*(1.0 + cos(theta));</a>
+<a name="ln150">      break;</a>
+<a name="ln151">    case 2: // sp2 -- trigonal planar or equatorial plane of trigonal bipyramidal</a>
+<a name="ln152">    case 4: // square planar</a>
+<a name="ln153">    case 6: // octahedral</a>
+<a name="ln154">      // ka already is pre-computed as ka/n^2 to save CPU cycles</a>
+<a name="ln155">      // UNLIKE Rappe paper, we add a penalty for angles close to zero, based on ESFF</a>
+<a name="ln156">      // i.e., if the angle is less than approx theta0, energy goes up exponentially</a>
+<a name="ln157">      energy = ka * (1 - cos(n*theta)) + exp(-20.0*(theta - theta0 + 0.25));</a>
+<a name="ln158">      break;</a>
+<a name="ln159">    case 7: // IF7 pentagonal -- pentagonal bipyramidal</a>
+<a name="ln160">      /* theta = 1/5 * 2 pi.  cosT = .30901699</a>
+<a name="ln161">       * theta = 2/5 * 2 pi.  cosT = -.80901699</a>
+<a name="ln162">       * theta = 3/5 * 2 pi.  cosT = -.80901699</a>
+<a name="ln163">       * theta = 4/5 * 2 pi.  cosT = .30901699</a>
+<a name="ln164">       */</a>
+<a name="ln165">      cosT = cos(theta);</a>
+<a name="ln166">      energy = ka * c1 * (cosT - .30901699) * (cosT - .30906199) * (cosT + .80901699) * (cosT + .8091699);</a>
+<a name="ln167">      break;</a>
+<a name="ln168">    default: // general (sp3) coordination</a>
+<a name="ln169">      cosT = cos(theta);</a>
+<a name="ln170">      energy = ka*(c0 + c1*cosT + c2*(2.0*cosT*cosT - 1.0)); // use cos 2t = (2cos^2 - 1)</a>
+<a name="ln171">    }</a>
+<a name="ln172"> </a>
+<a name="ln173">    if (gradients) {</a>
+<a name="ln174">      double sinT;</a>
+<a name="ln175"> </a>
+<a name="ln176">      switch (coord) {</a>
+<a name="ln177">      case 1: // sp -- linear case</a>
+<a name="ln178">        dE = -ka * sin(theta);</a>
+<a name="ln179">        break;</a>
+<a name="ln180">      case 2: // sp2 -- trigonal planar</a>
+<a name="ln181">      case 6: // octahedral</a>
+<a name="ln182">      case 4: // square planar</a>
+<a name="ln183">        dE = ka * n * sin(n * theta)  -20.0 * exp(-20.0*(theta - theta0 + 0.25));</a>
+<a name="ln184">        break;</a>
+<a name="ln185">      case 7: // pentagonal bipyramidal</a>
+<a name="ln186">        sinT = sin(theta);</a>
+<a name="ln187">        cosT = cos(theta);</a>
+<a name="ln188">        dE =</a>
+<a name="ln189">          c1 * -ka * (2 * sinT * (cosT - .30906199) * (cosT + .80901699) * (cosT + .8091699) +</a>
+<a name="ln190">                      2 * sinT * (cosT - .30901699) * (cosT - .30906199) * (cosT + .8091699));</a>
+<a name="ln191">        //dE = -ka * c1 * sin(5*theta) * 5;</a>
+<a name="ln192">        break;</a>
+<a name="ln193">      default: // general (sp3) coordination</a>
+<a name="ln194">        dE = -ka * (c1*sin(theta) + 2.0 * c2*sin(2 * theta));</a>
+<a name="ln195">      }</a>
+<a name="ln196"> </a>
+<a name="ln197">      OBForceField::VectorSelfMultiply(force_a, dE);</a>
+<a name="ln198">      OBForceField::VectorSelfMultiply(force_b, dE);</a>
+<a name="ln199">      OBForceField::VectorSelfMultiply(force_c, dE);</a>
+<a name="ln200">    }</a>
+<a name="ln201">  }</a>
+<a name="ln202"> </a>
+<a name="ln203">  template&lt;bool gradients&gt;</a>
+<a name="ln204">  double OBForceFieldUFF::E_Angle()</a>
+<a name="ln205">  {</a>
+<a name="ln206">    vector&lt;OBFFAngleCalculationUFF&gt;::iterator i;</a>
+<a name="ln207">    double energy = 0.0;</a>
+<a name="ln208"> </a>
+<a name="ln209">    IF_OBFF_LOGLVL_HIGH {</a>
+<a name="ln210">      OBFFLog(&quot;\nA N G L E   B E N D I N G\n\n&quot;);</a>
+<a name="ln211">      OBFFLog(&quot;ATOM TYPES       VALENCE     IDEAL      FORCE\n&quot;);</a>
+<a name="ln212">      OBFFLog(&quot; I    J    K      ANGLE      ANGLE     CONSTANT      DELTA      ENERGY\n&quot;);</a>
+<a name="ln213">      OBFFLog(&quot;-----------------------------------------------------------------------------\n&quot;);</a>
+<a name="ln214">    }</a>
+<a name="ln215"> </a>
+<a name="ln216">    for (i = _anglecalculations.begin(); i != _anglecalculations.end(); ++i) {</a>
+<a name="ln217"> </a>
+<a name="ln218">      i-&gt;template Compute&lt;gradients&gt;();</a>
+<a name="ln219">      energy += i-&gt;energy;</a>
+<a name="ln220"> </a>
+<a name="ln221">      if (gradients) {</a>
+<a name="ln222">        AddGradient((*i).force_a, (*i).idx_a);</a>
+<a name="ln223">        AddGradient((*i).force_b, (*i).idx_b);</a>
+<a name="ln224">        AddGradient((*i).force_c, (*i).idx_c);</a>
+<a name="ln225">      }</a>
+<a name="ln226"> </a>
+<a name="ln227">      IF_OBFF_LOGLVL_HIGH {</a>
+<a name="ln228">        snprintf(_logbuf, BUFF_SIZE, &quot;%-5s %-5s %-5s%8.3f  %8.3f     %8.3f   %8.3f   %8.3f\n&quot;, (*i).a-&gt;GetType(), (*i).b-&gt;GetType(),</a>
+<a name="ln229">                 (*i).c-&gt;GetType(), (*i).theta * RAD_TO_DEG, (*i).theta0, (*i).ka, (*i).delta, (*i).energy);</a>
+<a name="ln230">        OBFFLog(_logbuf);</a>
+<a name="ln231">      }</a>
+<a name="ln232">    }</a>
+<a name="ln233"> </a>
+<a name="ln234">    IF_OBFF_LOGLVL_MEDIUM {</a>
+<a name="ln235">      snprintf(_logbuf, BUFF_SIZE, &quot;     TOTAL ANGLE BENDING ENERGY = %8.3f %s\n&quot;, energy, GetUnit().c_str());</a>
+<a name="ln236">      OBFFLog(_logbuf);</a>
+<a name="ln237">    }</a>
+<a name="ln238">    return energy;</a>
+<a name="ln239">  }</a>
+<a name="ln240"> </a>
+<a name="ln241">  template&lt;bool gradients&gt;</a>
+<a name="ln242">  void OBFFTorsionCalculationUFF::Compute()</a>
+<a name="ln243">  {</a>
+<a name="ln244">    if (OBForceField::IgnoreCalculation(idx_a, idx_b, idx_c, idx_d)) {</a>
+<a name="ln245">      energy = 0.0;</a>
+<a name="ln246">      return;</a>
+<a name="ln247">    }</a>
+<a name="ln248"> </a>
+<a name="ln249">    vector3 da, db, dc, dd;</a>
+<a name="ln250">    double cosine;</a>
+<a name="ln251">    double dE;</a>
+<a name="ln252"> </a>
+<a name="ln253">    if (gradients) {</a>
+<a name="ln254">      tor = OBForceField::VectorTorsionDerivative(pos_a, pos_b, pos_c, pos_d,</a>
+<a name="ln255">                                                  force_a, force_b, force_c, force_d);</a>
+<a name="ln256">      if (!isfinite(tor))</a>
+<a name="ln257">        tor = 1.0e-3;</a>
+<a name="ln258">      tor *= DEG_TO_RAD;</a>
+<a name="ln259">    } else {</a>
+<a name="ln260">      vector3 vab, vbc, vcd, abbc, bccd;</a>
+<a name="ln261">      vab = a-&gt;GetVector() - b-&gt;GetVector();</a>
+<a name="ln262">      vbc = b-&gt;GetVector() - c-&gt;GetVector();</a>
+<a name="ln263">      vcd = c-&gt;GetVector() - d-&gt;GetVector();</a>
+<a name="ln264">      abbc = cross(vab, vbc);</a>
+<a name="ln265">      bccd = cross(vbc, vcd);</a>
+<a name="ln266"> </a>
+<a name="ln267">      double dotAbbcBccd = dot(abbc,bccd);</a>
+<a name="ln268">      tor = acos(dotAbbcBccd / (abbc.length() * bccd.length()));</a>
+<a name="ln269">      if (IsNearZero(dotAbbcBccd) || !isfinite(tor)) { // stop any NaN or infinity</a>
+<a name="ln270">        tor = 1.0e-3; // rather than NaN</a>
+<a name="ln271">      }</a>
+<a name="ln272">      else if (dotAbbcBccd &gt; 0.0) {</a>
+<a name="ln273">        tor = -tor;</a>
+<a name="ln274">      }</a>
+<a name="ln275">    }</a>
+<a name="ln276"> </a>
+<a name="ln277">    cosine = cos(tor * n);</a>
+<a name="ln278">    energy = V * (1.0 - cosNPhi0*cosine);</a>
+<a name="ln279"> </a>
+<a name="ln280">    if (gradients) {</a>
+<a name="ln281">      dE = -(V * n * cosNPhi0 * sin(n * tor));</a>
+<a name="ln282">      OBForceField::VectorSelfMultiply(force_a, dE);</a>
+<a name="ln283">      OBForceField::VectorSelfMultiply(force_b, dE);</a>
+<a name="ln284">      OBForceField::VectorSelfMultiply(force_c, dE);</a>
+<a name="ln285">      OBForceField::VectorSelfMultiply(force_d, dE);</a>
+<a name="ln286">    }</a>
+<a name="ln287">  }</a>
+<a name="ln288"> </a>
+<a name="ln289">  template&lt;bool gradients&gt;</a>
+<a name="ln290">  double OBForceFieldUFF::E_Torsion()</a>
+<a name="ln291">  {</a>
+<a name="ln292">    vector&lt;OBFFTorsionCalculationUFF&gt;::iterator i;</a>
+<a name="ln293">    double energy = 0.0;</a>
+<a name="ln294"> </a>
+<a name="ln295">    IF_OBFF_LOGLVL_HIGH {</a>
+<a name="ln296">      OBFFLog(&quot;\nT O R S I O N A L\n\n&quot;);</a>
+<a name="ln297">      OBFFLog(&quot;----ATOM TYPES-----    FORCE         TORSION\n&quot;);</a>
+<a name="ln298">      OBFFLog(&quot; I    J    K    L     CONSTANT        ANGLE         ENERGY\n&quot;);</a>
+<a name="ln299">      OBFFLog(&quot;----------------------------------------------------------------\n&quot;);</a>
+<a name="ln300">    }</a>
+<a name="ln301"> </a>
+<a name="ln302">    for (i = _torsioncalculations.begin(); i != _torsioncalculations.end(); ++i) {</a>
+<a name="ln303"> </a>
+<a name="ln304">      i-&gt;template Compute&lt;gradients&gt;();</a>
+<a name="ln305">      energy += i-&gt;energy;</a>
+<a name="ln306"> </a>
+<a name="ln307">      if (gradients) {</a>
+<a name="ln308">        AddGradient((*i).force_a, (*i).idx_a);</a>
+<a name="ln309">        AddGradient((*i).force_b, (*i).idx_b);</a>
+<a name="ln310">        AddGradient((*i).force_c, (*i).idx_c);</a>
+<a name="ln311">        AddGradient((*i).force_d, (*i).idx_d);</a>
+<a name="ln312">      }</a>
+<a name="ln313"> </a>
+<a name="ln314">      IF_OBFF_LOGLVL_HIGH {</a>
+<a name="ln315">        snprintf(_logbuf, BUFF_SIZE, &quot;%-5s %-5s %-5s %-5s%6.3f       %8.3f     %8.3f\n&quot;,</a>
+<a name="ln316">                 (*i).a-&gt;GetType(), (*i).b-&gt;GetType(),</a>
+<a name="ln317">                 (*i).c-&gt;GetType(), (*i).d-&gt;GetType(), (*i).V,</a>
+<a name="ln318">                 (*i).tor * RAD_TO_DEG, (*i).energy);</a>
+<a name="ln319">        OBFFLog(_logbuf);</a>
+<a name="ln320">      }</a>
+<a name="ln321">    }</a>
+<a name="ln322"> </a>
+<a name="ln323">    IF_OBFF_LOGLVL_MEDIUM {</a>
+<a name="ln324">      snprintf(_logbuf, BUFF_SIZE, &quot;     TOTAL TORSIONAL ENERGY = %8.3f %s\n&quot;, energy, GetUnit().c_str());</a>
+<a name="ln325">      OBFFLog(_logbuf);</a>
+<a name="ln326">    }</a>
+<a name="ln327"> </a>
+<a name="ln328">    return energy;</a>
+<a name="ln329">  }</a>
+<a name="ln330"> </a>
+<a name="ln331">  /*</a>
+<a name="ln332">  //  a</a>
+<a name="ln333">  //   \</a>
+<a name="ln334">  //    b---d      plane = a-b-c</a>
+<a name="ln335">  //   /</a>
+<a name="ln336">  //  c</a>
+<a name="ln337">  */</a>
+<a name="ln338">  template&lt;bool gradients&gt;</a>
+<a name="ln339">  void OBFFOOPCalculationUFF::Compute()</a>
+<a name="ln340">  {</a>
+<a name="ln341">    if (OBForceField::IgnoreCalculation(idx_a, idx_b, idx_c, idx_d)) {</a>
+<a name="ln342">      energy = 0.0;</a>
+<a name="ln343">      return;</a>
+<a name="ln344">    }</a>
+<a name="ln345"> </a>
+<a name="ln346">    vector3 da, db, dc, dd;</a>
+<a name="ln347">    double dE;</a>
+<a name="ln348"> </a>
+<a name="ln349">    if (gradients) {</a>
+<a name="ln350">      angle = OBForceField::VectorOOPDerivative(pos_a, pos_b, pos_c, pos_d,</a>
+<a name="ln351">                                                force_a, force_b, force_c, force_d);</a>
+<a name="ln352">      angle *= DEG_TO_RAD;</a>
+<a name="ln353"> </a>
+<a name="ln354">	    if (!isfinite(angle))</a>
+<a name="ln355">	      angle = 0.0; // doesn't explain why GetAngle is returning NaN but solves it for us;</a>
+<a name="ln356"> </a>
+<a name="ln357">      // somehow we already get the -1 from the OOPDeriv -- so we'll omit it here</a>
+<a name="ln358">      dE = koop * (c1*sin(angle) + 2.0 * c2 * sin(2.0*angle));</a>
+<a name="ln359">      OBForceField::VectorSelfMultiply(force_a, dE);</a>
+<a name="ln360">      OBForceField::VectorSelfMultiply(force_b, dE);</a>
+<a name="ln361">      OBForceField::VectorSelfMultiply(force_c, dE);</a>
+<a name="ln362">      OBForceField::VectorSelfMultiply(force_d, dE);</a>
+<a name="ln363">    } else {</a>
+<a name="ln364">      angle = DEG_TO_RAD*Point2PlaneAngle(d-&gt;GetVector(), a-&gt;GetVector(), b-&gt;GetVector(), c-&gt;GetVector());</a>
+<a name="ln365">      if (!isfinite(angle))</a>
+<a name="ln366">        angle = 0.0; // doesn't explain why GetAngle is returning NaN but solves it for us;</a>
+<a name="ln367">    }</a>
+<a name="ln368"> </a>
+<a name="ln369">    energy = koop * (c0 + c1 * cos(angle) + c2 * cos(2.0*angle));</a>
+<a name="ln370">  }</a>
+<a name="ln371"> </a>
+<a name="ln372">  template&lt;bool gradients&gt;</a>
+<a name="ln373">  double OBForceFieldUFF::E_OOP()</a>
+<a name="ln374">  {</a>
+<a name="ln375">    vector&lt;OBFFOOPCalculationUFF&gt;::iterator i;</a>
+<a name="ln376">    double energy = 0.0;</a>
+<a name="ln377"> </a>
+<a name="ln378">    IF_OBFF_LOGLVL_HIGH {</a>
+<a name="ln379">      OBFFLog(&quot;\nO U T - O F - P L A N E   B E N D I N G\n\n&quot;);</a>
+<a name="ln380">      OBFFLog(&quot;ATOM TYPES                 OOP     FORCE \n&quot;);</a>
+<a name="ln381">      OBFFLog(&quot; I    J     K     L       ANGLE   CONSTANT     ENERGY\n&quot;);</a>
+<a name="ln382">      OBFFLog(&quot;----------------------------------------------------------\n&quot;);</a>
+<a name="ln383">    }</a>
+<a name="ln384"> </a>
+<a name="ln385">    for (i = _oopcalculations.begin(); i != _oopcalculations.end(); ++i) {</a>
+<a name="ln386">      i-&gt;template Compute&lt;gradients&gt;();</a>
+<a name="ln387">      energy += i-&gt;energy;</a>
+<a name="ln388"> </a>
+<a name="ln389">      if (gradients) {</a>
+<a name="ln390">        AddGradient((*i).force_a, (*i).idx_a);</a>
+<a name="ln391">        AddGradient((*i).force_b, (*i).idx_b);</a>
+<a name="ln392">        AddGradient((*i).force_c, (*i).idx_c);</a>
+<a name="ln393">        AddGradient((*i).force_d, (*i).idx_d);</a>
+<a name="ln394">      }</a>
+<a name="ln395"> </a>
+<a name="ln396">      IF_OBFF_LOGLVL_HIGH {</a>
+<a name="ln397">        snprintf(_logbuf, BUFF_SIZE, &quot;%-5s %-5s %-5s %-5s%8.3f   %8.3f     %8.3f\n&quot;, (*i).a-&gt;GetType(), (*i).b-&gt;GetType(), (*i).c-&gt;GetType(), (*i).d-&gt;GetType(),</a>
+<a name="ln398">                 (*i).angle * RAD_TO_DEG, (*i).koop, (*i).energy);</a>
+<a name="ln399">        OBFFLog(_logbuf);</a>
+<a name="ln400">      }</a>
+<a name="ln401">    }</a>
+<a name="ln402"> </a>
+<a name="ln403">    IF_OBFF_LOGLVL_HIGH {</a>
+<a name="ln404">      snprintf(_logbuf, BUFF_SIZE, &quot;     TOTAL OUT-OF-PLANE BENDING ENERGY = %8.3f %s\n&quot;, energy, GetUnit().c_str());</a>
+<a name="ln405">      OBFFLog(_logbuf);</a>
+<a name="ln406">    }</a>
+<a name="ln407">    return energy;</a>
+<a name="ln408">  }</a>
+<a name="ln409"> </a>
+<a name="ln410">  template&lt;bool gradients&gt;</a>
+<a name="ln411">  void OBFFVDWCalculationUFF::Compute()</a>
+<a name="ln412">  {</a>
+<a name="ln413">    if (OBForceField::IgnoreCalculation(idx_a, idx_b)) {</a>
+<a name="ln414">      energy = 0.0;</a>
+<a name="ln415">      return;</a>
+<a name="ln416">    }</a>
+<a name="ln417"> </a>
+<a name="ln418">    vector3 da, db;</a>
+<a name="ln419">    double term6, term12, dE, term7, term13, rabSquared = 0.0;</a>
+<a name="ln420"> </a>
+<a name="ln421">    if (gradients) {</a>
+<a name="ln422">      rab = OBForceField::VectorDistanceDerivative(pos_a, pos_b, force_a, force_b);</a>
+<a name="ln423"> </a>
+<a name="ln424">      if (rab &lt; 1.0e-3)</a>
+<a name="ln425">        rab = 1.0e-3;</a>
+<a name="ln426"> </a>
+<a name="ln427">      rabSquared = SQUARE(rab);</a>
+<a name="ln428">    } else {</a>
+<a name="ln429">      // Get distance squared (saves a sqrt and multiply)</a>
+<a name="ln430">      // for every energy evaluation</a>
+<a name="ln431">      double ab[3];</a>
+<a name="ln432">      for (unsigned int c = 0; c &lt; 3; ++c)</a>
+<a name="ln433">        rabSquared += SQUARE(a-&gt;GetCoordinate()[c] - b-&gt;GetCoordinate()[c]);</a>
+<a name="ln434"> </a>
+<a name="ln435">      // make sure the energy doesn't blow up</a>
+<a name="ln436">      if (rabSquared &lt; 1.0e-5)</a>
+<a name="ln437">        rabSquared = 1.0e-5;</a>
+<a name="ln438">    }</a>
+<a name="ln439"> </a>
+<a name="ln440">    // TODO: This actually should include zetas (not always exactly 6-12 for VDW paper)</a>
+<a name="ln441"> </a>
+<a name="ln442">    term6 = kaSquared / rabSquared; // ^2</a>
+<a name="ln443">    term6 = term6 * term6 * term6; // ^6</a>
+<a name="ln444">    term12 = term6 * term6; // ^12</a>
+<a name="ln445"> </a>
+<a name="ln446">    energy = kab * ((term12) - (2.0 * term6));</a>
+<a name="ln447"> </a>
+<a name="ln448">    if (gradients) {</a>
+<a name="ln449">      term13 = term12 / rab; // ^13</a>
+<a name="ln450">      term7 = term6 / rab; // ^7</a>
+<a name="ln451">      dE = kab * 12.0 * (term7 - term13);</a>
+<a name="ln452">      OBForceField::VectorSelfMultiply(force_a, dE);</a>
+<a name="ln453">      OBForceField::VectorSelfMultiply(force_b, dE);</a>
+<a name="ln454">    }</a>
+<a name="ln455">  }</a>
+<a name="ln456"> </a>
+<a name="ln457">  template&lt;bool gradients&gt;</a>
+<a name="ln458">  double OBForceFieldUFF::E_VDW()</a>
+<a name="ln459">  {</a>
+<a name="ln460">    vector&lt;OBFFVDWCalculationUFF&gt;::iterator i;</a>
+<a name="ln461">    double energy = 0.0;</a>
+<a name="ln462"> </a>
+<a name="ln463">    IF_OBFF_LOGLVL_HIGH {</a>
+<a name="ln464">      OBFFLog(&quot;\nV A N   D E R   W A A L S\n\n&quot;);</a>
+<a name="ln465">      OBFFLog(&quot;ATOM TYPES\n&quot;);</a>
+<a name="ln466">      OBFFLog(&quot; I    J        Rij       kij       ENERGY\n&quot;);</a>
+<a name="ln467">      OBFFLog(&quot;-----------------------------------------\n&quot;);</a>
+<a name="ln468">      //          XX   XX     -000.000  -000.000  -000.000  -000.000</a>
+<a name="ln469">    }</a>
+<a name="ln470"> </a>
+<a name="ln471">    unsigned int j = 0;</a>
+<a name="ln472">    for (i = _vdwcalculations.begin(); i != _vdwcalculations.end(); ++i, ++j) {</a>
+<a name="ln473">      // Cut-off check</a>
+<a name="ln474">      if (_cutoff)</a>
+<a name="ln475">        if (!_vdwpairs.BitIsSet(j))</a>
+<a name="ln476">          continue;</a>
+<a name="ln477"> </a>
+<a name="ln478">      i-&gt;template Compute&lt;gradients&gt;();</a>
+<a name="ln479">      energy += i-&gt;energy;</a>
+<a name="ln480"> </a>
+<a name="ln481">      if (gradients) {</a>
+<a name="ln482">        AddGradient((*i).force_a, (*i).idx_a);</a>
+<a name="ln483">        AddGradient((*i).force_b, (*i).idx_b);</a>
+<a name="ln484">      }</a>
+<a name="ln485"> </a>
+<a name="ln486">      IF_OBFF_LOGLVL_HIGH {</a>
+<a name="ln487">        snprintf(_logbuf, BUFF_SIZE, &quot;%-5s %-5s %8.3f  %8.3f  %8.3f\n&quot;, (*i).a-&gt;GetType(), (*i).b-&gt;GetType(),</a>
+<a name="ln488">                 (*i).rab, (*i).kab, (*i).energy);</a>
+<a name="ln489">        OBFFLog(_logbuf);</a>
+<a name="ln490">      }</a>
+<a name="ln491">    }</a>
+<a name="ln492"> </a>
+<a name="ln493">    IF_OBFF_LOGLVL_MEDIUM {</a>
+<a name="ln494">      snprintf(_logbuf, BUFF_SIZE, &quot;     TOTAL VAN DER WAALS ENERGY = %8.3f %s\n&quot;, energy, GetUnit().c_str());</a>
+<a name="ln495">      OBFFLog(_logbuf);</a>
+<a name="ln496">    }</a>
+<a name="ln497"> </a>
+<a name="ln498">    return energy;</a>
+<a name="ln499">  }</a>
+<a name="ln500"> </a>
+<a name="ln501">  template&lt;bool gradients&gt;</a>
+<a name="ln502">  void OBFFElectrostaticCalculationUFF::Compute()</a>
+<a name="ln503">  {</a>
+<a name="ln504">    if (OBForceField::IgnoreCalculation(idx_a, idx_b)) {</a>
+<a name="ln505">      energy = 0.0;</a>
+<a name="ln506">      return;</a>
+<a name="ln507">    }</a>
+<a name="ln508"> </a>
+<a name="ln509">    vector3 da, db;</a>
+<a name="ln510">    double dE, rab2;</a>
+<a name="ln511"> </a>
+<a name="ln512">    if (gradients) {</a>
+<a name="ln513">      da = a-&gt;GetVector();</a>
+<a name="ln514">      db = b-&gt;GetVector();</a>
+<a name="ln515">      rab = OBForceField::VectorLengthDerivative(da, db);</a>
+<a name="ln516">    } else</a>
+<a name="ln517">      rab = a-&gt;GetDistance(b);</a>
+<a name="ln518"> </a>
+<a name="ln519">    if (IsNearZero(rab, 1.0e-3))</a>
+<a name="ln520">      rab = 1.0e-3;</a>
+<a name="ln521"> </a>
+<a name="ln522">    energy = qq / rab;</a>
+<a name="ln523"> </a>
+<a name="ln524">    if (gradients) {</a>
+<a name="ln525">      rab2 = rab * rab;</a>
+<a name="ln526">      dE = -qq / rab2;</a>
+<a name="ln527">      da *= dE;</a>
+<a name="ln528">      db *= dE;</a>
+<a name="ln529">      da.Get(force_a);</a>
+<a name="ln530">      db.Get(force_b);</a>
+<a name="ln531">    }</a>
+<a name="ln532">  }</a>
+<a name="ln533"> </a>
+<a name="ln534">  template&lt;bool gradients&gt;</a>
+<a name="ln535">  double OBForceFieldUFF::E_Electrostatic()</a>
+<a name="ln536">  {</a>
+<a name="ln537">    vector&lt;OBFFElectrostaticCalculationUFF&gt;::iterator i;</a>
+<a name="ln538">    double energy = 0.0;</a>
+<a name="ln539"> </a>
+<a name="ln540">    IF_OBFF_LOGLVL_HIGH {</a>
+<a name="ln541">      OBFFLog(&quot;\nE L E C T R O S T A T I C   I N T E R A C T I O N S\n\n&quot;);</a>
+<a name="ln542">      OBFFLog(&quot;ATOM TYPES\n&quot;);</a>
+<a name="ln543">      OBFFLog(&quot; I    J           Rij   332.17*QiQj  ENERGY\n&quot;);</a>
+<a name="ln544">      OBFFLog(&quot;-------------------------------------------\n&quot;);</a>
+<a name="ln545">      //            XX   XX     -000.000  -000.000  -000.000</a>
+<a name="ln546">    }</a>
+<a name="ln547"> </a>
+<a name="ln548">    unsigned int j = 0;</a>
+<a name="ln549">    for (i = _electrostaticcalculations.begin(); i != _electrostaticcalculations.end(); ++i, ++j) {</a>
+<a name="ln550">      // Cut-off check</a>
+<a name="ln551">      if (_cutoff)</a>
+<a name="ln552">        if (!_elepairs.BitIsSet(j))</a>
+<a name="ln553">          continue;</a>
+<a name="ln554"> </a>
+<a name="ln555">      i-&gt;template Compute&lt;gradients&gt;();</a>
+<a name="ln556">      energy += i-&gt;energy;</a>
+<a name="ln557"> </a>
+<a name="ln558">      if (gradients) {</a>
+<a name="ln559">        AddGradient((*i).force_a, (*i).idx_a);</a>
+<a name="ln560">        AddGradient((*i).force_b, (*i).idx_b);</a>
+<a name="ln561">      }</a>
+<a name="ln562"> </a>
+<a name="ln563">      IF_OBFF_LOGLVL_HIGH {</a>
+<a name="ln564">        snprintf(_logbuf, BUFF_SIZE, &quot;%-5s %-5s   %8.3f  %8.3f  %8.3f\n&quot;, (*i).a-&gt;GetType(), (*i).b-&gt;GetType(),</a>
+<a name="ln565">                 (*i).rab, (*i).qq, (*i).energy);</a>
+<a name="ln566">        OBFFLog(_logbuf);</a>
+<a name="ln567">      }</a>
+<a name="ln568">    }</a>
+<a name="ln569"> </a>
+<a name="ln570">    IF_OBFF_LOGLVL_MEDIUM {</a>
+<a name="ln571">      snprintf(_logbuf, BUFF_SIZE, &quot;     TOTAL ELECTROSTATIC ENERGY = %8.3f %s\n&quot;, energy, GetUnit().c_str());</a>
+<a name="ln572">      OBFFLog(_logbuf);</a>
+<a name="ln573">    }</a>
+<a name="ln574"> </a>
+<a name="ln575">    return energy;</a>
+<a name="ln576">  }</a>
+<a name="ln577"> </a>
+<a name="ln578">  //***********************************************</a>
+<a name="ln579">  //Make a global instance</a>
+<a name="ln580">  OBForceFieldUFF theForceFieldUFF(&quot;UFF&quot;, true);</a>
+<a name="ln581">  //***********************************************</a>
+<a name="ln582"> </a>
+<a name="ln583">  OBForceFieldUFF::~OBForceFieldUFF()</a>
+<a name="ln584">  {</a>
+<a name="ln585">  }</a>
+<a name="ln586"> </a>
+<a name="ln587">  OBForceFieldUFF &amp;OBForceFieldUFF::operator=(OBForceFieldUFF &amp;src)</a>
+<a name="ln588">  {</a>
+<a name="ln589">    _mol = src._mol;</a>
+<a name="ln590"> </a>
+<a name="ln591">    _ffparams    = src._ffparams;</a>
+<a name="ln592"> </a>
+<a name="ln593">    _bondcalculations          = src._bondcalculations;</a>
+<a name="ln594">    _anglecalculations         = src._anglecalculations;</a>
+<a name="ln595">    _torsioncalculations       = src._torsioncalculations;</a>
+<a name="ln596">    _oopcalculations           = src._oopcalculations;</a>
+<a name="ln597">    _vdwcalculations           = src._vdwcalculations;</a>
+<a name="ln598">    _electrostaticcalculations = src._electrostaticcalculations;</a>
+<a name="ln599">    _init                      = src._init;</a>
+<a name="ln600"> </a>
+<a name="ln601">    return *this;</a>
+<a name="ln602">  }</a>
+<a name="ln603"> </a>
+<a name="ln604">  double CalculateBondDistance(OBFFParameter *i, OBFFParameter *j, double bondorder)</a>
+<a name="ln605">  {</a>
+<a name="ln606">    double ri, rj;</a>
+<a name="ln607">    double chiI, chiJ;</a>
+<a name="ln608">    double rbo, ren;</a>
+<a name="ln609">    ri = i-&gt;_dpar[0];</a>
+<a name="ln610">    rj = j-&gt;_dpar[0];</a>
+<a name="ln611">    chiI = i-&gt;_dpar[8];</a>
+<a name="ln612">    chiJ = j-&gt;_dpar[8];</a>
+<a name="ln613"> </a>
+<a name="ln614">    // Precompute the equilibrium bond distance</a>
+<a name="ln615">    // From equation 3</a>
+<a name="ln616">    rbo = -0.1332*(ri+rj)*log(bondorder);</a>
+<a name="ln617">    // From equation 4</a>
+<a name="ln618">    ren = ri*rj*(pow((sqrt(chiI) - sqrt(chiJ)),2.0)) / (chiI*ri + chiJ*rj);</a>
+<a name="ln619">    // From equation 2</a>
+<a name="ln620">    // NOTE: See http://towhee.sourceforge.net/forcefields/uff.html</a>
+<a name="ln621">    // There is a typo in the published paper</a>
+<a name="ln622">    return(ri + rj + rbo - ren);</a>
+<a name="ln623">  }</a>
+<a name="ln624"> </a>
+<a name="ln625">  bool OBForceFieldUFF::SetupVDWCalculation(OBAtom *a, OBAtom *b, OBFFVDWCalculationUFF &amp;vdwcalc)</a>
+<a name="ln626">  {</a>
+<a name="ln627">    OBFFParameter *parameterA, *parameterB;</a>
+<a name="ln628">    parameterA = GetParameterUFF(a-&gt;GetType(), _ffparams);</a>
+<a name="ln629">    parameterB = GetParameterUFF(b-&gt;GetType(), _ffparams);</a>
+<a name="ln630"> </a>
+<a name="ln631">    if (parameterA == nullptr || parameterB == nullptr) {</a>
+<a name="ln632">      IF_OBFF_LOGLVL_LOW {</a>
+<a name="ln633">        snprintf(_logbuf, BUFF_SIZE, &quot;    COULD NOT FIND PARAMETERS FOR VDW INTERACTION %d-%d (IDX)...\n&quot;,</a>
+<a name="ln634">                 a-&gt;GetIdx(), b-&gt;GetIdx());</a>
+<a name="ln635">        OBFFLog(_logbuf);</a>
+<a name="ln636">      }</a>
+<a name="ln637">      return false;</a>
+<a name="ln638">    }</a>
+<a name="ln639"> </a>
+<a name="ln640">    vdwcalc.Ra = parameterA-&gt;_dpar[2];</a>
+<a name="ln641">    vdwcalc.ka = parameterA-&gt;_dpar[3];</a>
+<a name="ln642">    vdwcalc.Rb = parameterB-&gt;_dpar[2];</a>
+<a name="ln643">    vdwcalc.kb = parameterB-&gt;_dpar[3];</a>
+<a name="ln644"> </a>
+<a name="ln645">    vdwcalc.a = &amp;*a;</a>
+<a name="ln646">    vdwcalc.b = &amp;*b;</a>
+<a name="ln647"> </a>
+<a name="ln648">    //this calculations only need to be done once for each pair,</a>
+<a name="ln649">    //we do them now and save them for later use</a>
+<a name="ln650">    vdwcalc.kab = KCAL_TO_KJ * sqrt(vdwcalc.ka * vdwcalc.kb);</a>
+<a name="ln651"> </a>
+<a name="ln652">    // 1-4 scaling</a>
+<a name="ln653">    // This isn't mentioned in the UFF paper, but is common for other methods</a>
+<a name="ln654">    //       if (a-&gt;IsOneFour(b))</a>
+<a name="ln655">    //         vdwcalc.kab *= 0.5;</a>
+<a name="ln656"> </a>
+<a name="ln657">    // ka now represents the xij in equation 20 -- the expected vdw distance</a>
+<a name="ln658">    vdwcalc.kaSquared = (vdwcalc.Ra * vdwcalc.Rb);</a>
+<a name="ln659">    vdwcalc.ka = sqrt(vdwcalc.kaSquared);</a>
+<a name="ln660"> </a>
+<a name="ln661">    vdwcalc.SetupPointers();</a>
+<a name="ln662">    return true;</a>
+<a name="ln663">  }</a>
+<a name="ln664"> </a>
+<a name="ln665">  int GetCoordination(OBAtom *b, int ipar)</a>
+<a name="ln666">  {</a>
+<a name="ln667">    int coordination;</a>
+<a name="ln668"> </a>
+<a name="ln669">    // Work out coordination</a>
+<a name="ln670">    // including possible hypervalent compounds</a>
+<a name="ln671">    int valenceElectrons = 0;</a>
+<a name="ln672">    switch(b-&gt;GetAtomicNum())</a>
+<a name="ln673">      {</a>
+<a name="ln674">      case 15:</a>
+<a name="ln675">      case 33:</a>
+<a name="ln676">      case 51:</a>
+<a name="ln677">      case 83:</a>
+<a name="ln678">        // old &quot;group 5&quot;: P, As, Sb, Bi</a>
+<a name="ln679">        valenceElectrons = 5;</a>
+<a name="ln680">        break;</a>
+<a name="ln681">      case 16:</a>
+<a name="ln682">      case 34:</a>
+<a name="ln683">      case 52:</a>
+<a name="ln684">      case 84:</a>
+<a name="ln685">        // old &quot;group 6&quot;: S, Se, Te, Po</a>
+<a name="ln686">        valenceElectrons = 6;</a>
+<a name="ln687">        break;</a>
+<a name="ln688">      case 35:</a>
+<a name="ln689">      case 53:</a>
+<a name="ln690">      case 85:</a>
+<a name="ln691">        // old &quot;group 7&quot;: Br, I, At</a>
+<a name="ln692">        valenceElectrons = 7;</a>
+<a name="ln693">        break;</a>
+<a name="ln694">      case 36:</a>
+<a name="ln695">      case 54:</a>
+<a name="ln696">      case 86:</a>
+<a name="ln697">        // hypervalent noble gases (Kr, Xe, Rn)</a>
+<a name="ln698">        valenceElectrons = 8;</a>
+<a name="ln699">        break;</a>
+<a name="ln700">      }</a>
+<a name="ln701">    if (valenceElectrons) {</a>
+<a name="ln702">      // calculate the number of lone pairs</a>
+<a name="ln703">      // e.g. for IF3 =&gt; &quot;T-shaped&quot;</a>
+<a name="ln704">      valenceElectrons -= b-&gt;GetFormalCharge(); // make sure to look for I+F4 -&gt; see-saw</a>
+<a name="ln705">      double lonePairs = (valenceElectrons - b-&gt;GetExplicitValence()) / 2.0;</a>
+<a name="ln706">      // we actually need to round up here -- single e- take room too.</a>
+<a name="ln707">      int sites = (int)ceil(lonePairs);</a>
+<a name="ln708">      coordination = b-&gt;GetExplicitDegree() + sites;</a>
+<a name="ln709">      if (coordination &lt;= 4) { // normal valency</a>
+<a name="ln710">        coordination = ipar;</a>
+<a name="ln711">      } else if (b-&gt;GetAtomicNum() == OBElements::Sulfur &amp;&amp; b-&gt;CountFreeOxygens() == 3) {</a>
+<a name="ln712">        // SO3, should be planar</a>
+<a name="ln713">        // PR#2971473, thanks to Philipp Rumpf</a>
+<a name="ln714">        coordination = 2; // i.e., sp2</a>
+<a name="ln715">      }</a>
+<a name="ln716">      /* planar coordination of hexavalent molecules.*/</a>
+<a name="ln717">      if (lonePairs == 0 &amp;&amp; b-&gt;GetExplicitDegree() == 3 &amp;&amp; b-&gt;GetExplicitValence() == 6) {</a>
+<a name="ln718">        coordination = 2;</a>
+<a name="ln719">      }</a>
+<a name="ln720">      if (lonePairs == 0 &amp;&amp; b-&gt;GetExplicitDegree() == 7) {</a>
+<a name="ln721">        coordination = 7;</a>
+<a name="ln722">      }</a>
+<a name="ln723">      // Check to see if coordination is really correct</a>
+<a name="ln724">      // if not (e.g., 5- or 7- or 8-coord...)</a>
+<a name="ln725">      // then create approximate angle bending terms</a>
+<a name="ln726">    } else {</a>
+<a name="ln727">      coordination = ipar; // coordination of central atom</a>
+<a name="ln728">    }</a>
+<a name="ln729">    if (b-&gt;GetExplicitDegree() &gt; 4) {</a>
+<a name="ln730">      coordination = b-&gt;GetExplicitDegree();</a>
+<a name="ln731">    } else {</a>
+<a name="ln732">      int coordDifference = ipar - b-&gt;GetExplicitDegree();</a>
+<a name="ln733">      if (abs(coordDifference) &gt; 2)</a>
+<a name="ln734">        // low valent, but very different than expected by ipar</a>
+<a name="ln735">        coordination = b-&gt;GetExplicitDegree() - 1; // 4 coordinate == sp3</a>
+<a name="ln736">    }</a>
+<a name="ln737">    return coordination;</a>
+<a name="ln738">  }</a>
+<a name="ln739"> </a>
+<a name="ln740">  bool OBForceFieldUFF::SetupCalculations()</a>
+<a name="ln741">  {</a>
+<a name="ln742">    OBFFParameter *parameterA, *parameterB, *parameterC;</a>
+<a name="ln743">    OBAtom *a, *b, *c, *d;</a>
+<a name="ln744">    double bondorder;</a>
+<a name="ln745">    OBFFBondCalculationUFF bondcalc;</a>
+<a name="ln746">    OBFFAngleCalculationUFF anglecalc;</a>
+<a name="ln747">    OBFFTorsionCalculationUFF torsioncalc;</a>
+<a name="ln748">    OBFFOOPCalculationUFF oopcalc;</a>
+<a name="ln749">    OBFFVDWCalculationUFF vdwcalc;</a>
+<a name="ln750"> </a>
+<a name="ln751">    IF_OBFF_LOGLVL_LOW</a>
+<a name="ln752">      OBFFLog(&quot;\nS E T T I N G   U P   C A L C U L A T I O N S\n\n&quot;);</a>
+<a name="ln753"> </a>
+<a name="ln754">    // Clear previous calculations</a>
+<a name="ln755">    _bondcalculations.clear();</a>
+<a name="ln756">    _anglecalculations.clear();</a>
+<a name="ln757">    _torsioncalculations.clear();</a>
+<a name="ln758">    _oopcalculations.clear();</a>
+<a name="ln759">    _vdwcalculations.clear();</a>
+<a name="ln760"> </a>
+<a name="ln761">    // Clear and reset any 5-coordinate axial/equatorial marks (i.e., strange coordination)</a>
+<a name="ln762">    // Now should fit standard VSEPR rules, although we can't easily handle lone pairs</a>
+<a name="ln763">    int coordination;</a>
+<a name="ln764">    FOR_ATOMS_OF_MOL(atom, _mol) {</a>
+<a name="ln765">      // remove any previous designation</a>
+<a name="ln766">      atom-&gt;DeleteData(&quot;UFF_AXIAL_ATOM&quot;);</a>
+<a name="ln767">      atom-&gt;DeleteData(&quot;UFF_CENTRAL_ATOM&quot;);</a>
+<a name="ln768">    }</a>
+<a name="ln769"> </a>
+<a name="ln770">    FOR_ATOMS_OF_MOL(atom, _mol) {</a>
+<a name="ln771">      parameterB = GetParameterUFF(atom-&gt;GetType(), _ffparams);</a>
+<a name="ln772"> </a>
+<a name="ln773">      // GitHub issue #1794</a>
+<a name="ln774">      if (parameterB == nullptr) {</a>
+<a name="ln775">        snprintf(_logbuf, BUFF_SIZE, &quot;    COULD NOT FIND PARAMETERS FOR ATOM %d (IDX)...\n&quot;,</a>
+<a name="ln776">                 atom-&gt;GetIdx());</a>
+<a name="ln777">        obErrorLog.ThrowError(__FUNCTION__, _logbuf, obWarning);</a>
+<a name="ln778">        IF_OBFF_LOGLVL_LOW</a>
+<a name="ln779">          OBFFLog(_logbuf);</a>
+<a name="ln780">        return false;</a>
+<a name="ln781">      }</a>
+<a name="ln782"> </a>
+<a name="ln783">      if (GetCoordination(&amp;*atom, parameterB-&gt;_ipar[0]) == 5) { // we need to do work for trigonal-bipy!</a>
+<a name="ln784">        // First, find the two largest neighbors</a>
+<a name="ln785">        OBAtom *largestNbr, *current, *secondLargestNbr = nullptr;</a>
+<a name="ln786">        double largestRadius;</a>
+<a name="ln787">        OBBondIterator i;</a>
+<a name="ln788">        largestNbr = atom-&gt;BeginNbrAtom(i);</a>
+<a name="ln789">        // work out the radius</a>
+<a name="ln790">        parameterA = GetParameterUFF(largestNbr-&gt;GetType(), _ffparams);</a>
+<a name="ln791"> </a>
+<a name="ln792">        if (parameterA == nullptr) {</a>
+<a name="ln793">          IF_OBFF_LOGLVL_LOW {</a>
+<a name="ln794">            snprintf(_logbuf, BUFF_SIZE, &quot;    COULD NOT FIND PARAMETERS FOR ATOM %d (IDX)...\n&quot;,</a>
+<a name="ln795">                largestNbr-&gt;GetIdx());</a>
+<a name="ln796">            OBFFLog(_logbuf);</a>
+<a name="ln797">          }</a>
+<a name="ln798">          return false;</a>
+<a name="ln799">        }</a>
+<a name="ln800"> </a>
+<a name="ln801">        largestRadius = parameterA-&gt;_dpar[0];</a>
+<a name="ln802"> </a>
+<a name="ln803">        for (current = atom-&gt;NextNbrAtom(i); current; current = atom-&gt;NextNbrAtom(i)) {</a>
+<a name="ln804">          parameterA = GetParameterUFF(current-&gt;GetType(), _ffparams);</a>
+<a name="ln805"> </a>
+<a name="ln806">          if (parameterA == nullptr) {</a>
+<a name="ln807">            IF_OBFF_LOGLVL_LOW {</a>
+<a name="ln808">              snprintf(_logbuf, BUFF_SIZE, &quot;    COULD NOT FIND PARAMETERS FOR ATOM %d (IDX)...\n&quot;,</a>
+<a name="ln809">                  current-&gt;GetIdx());</a>
+<a name="ln810">              OBFFLog(_logbuf);</a>
+<a name="ln811">            }</a>
+<a name="ln812">            return false;</a>
+<a name="ln813">          }</a>
+<a name="ln814"> </a>
+<a name="ln815">          if (parameterA-&gt;_dpar[0] &gt; largestRadius) {</a>
+<a name="ln816">            // New largest neighbor</a>
+<a name="ln817">            secondLargestNbr = largestNbr;</a>
+<a name="ln818">            largestRadius = parameterA-&gt;_dpar[0];</a>
+<a name="ln819">            largestNbr = current;</a>
+<a name="ln820">          }</a>
+<a name="ln821">          if (secondLargestNbr == nullptr) {</a>
+<a name="ln822">            // save this atom</a>
+<a name="ln823">            secondLargestNbr = current;</a>
+<a name="ln824">          }</a>
+<a name="ln825">        }</a>
+<a name="ln826"> </a>
+<a name="ln827">        // OK, now we tag the central atom</a>
+<a name="ln828">        OBPairData *label = new OBPairData;</a>
+<a name="ln829">        label-&gt;SetAttribute(&quot;UFF_CENTRAL_ATOM&quot;);</a>
+<a name="ln830">        label-&gt;SetValue(&quot;True&quot;); // doesn't really matter</a>
+<a name="ln831">        atom-&gt;SetData(label);</a>
+<a name="ln832"> </a>
+<a name="ln833">        label = new OBPairData;</a>
+<a name="ln834">        label-&gt;SetAttribute(&quot;UFF_AXIAL_ATOM&quot;);</a>
+<a name="ln835">        label-&gt;SetValue(&quot;True&quot;);</a>
+<a name="ln836">        largestNbr-&gt;SetData(label);</a>
+<a name="ln837"> </a>
+<a name="ln838">        if (secondLargestNbr != nullptr) { // check for NULL, no guarantee</a>
+<a name="ln839">          label = new OBPairData;</a>
+<a name="ln840">          label-&gt;SetAttribute(&quot;UFF_AXIAL_ATOM&quot;);</a>
+<a name="ln841">          label-&gt;SetValue(&quot;True&quot;);</a>
+<a name="ln842">          secondLargestNbr-&gt;SetData(label);</a>
+<a name="ln843">        }</a>
+<a name="ln844"> </a>
+<a name="ln845">      } // end work for 5-coordinate angles</a>
+<a name="ln846">      if (GetCoordination(&amp;*atom, parameterB-&gt;_ipar[0]) == 7) { // pentagonal bipyramidal</a>
+<a name="ln847">        // First, find the two largest neighbors</a>
+<a name="ln848">        OBAtom *largestNbr, *current, *secondLargestNbr = nullptr;</a>
+<a name="ln849">        double largestRadius;</a>
+<a name="ln850">        OBBondIterator i;</a>
+<a name="ln851">        largestNbr = atom-&gt;BeginNbrAtom(i);</a>
+<a name="ln852">        // work out the radius</a>
+<a name="ln853">        parameterA = GetParameterUFF(largestNbr-&gt;GetType(), _ffparams);</a>
+<a name="ln854"> </a>
+<a name="ln855">        if (parameterA == nullptr) {</a>
+<a name="ln856">          IF_OBFF_LOGLVL_LOW {</a>
+<a name="ln857">            snprintf(_logbuf, BUFF_SIZE, &quot;    COULD NOT FIND PARAMETERS FOR ATOM %d (IDX)...\n&quot;,</a>
+<a name="ln858">                largestNbr-&gt;GetIdx());</a>
+<a name="ln859">            OBFFLog(_logbuf);</a>
+<a name="ln860">          }</a>
+<a name="ln861">          return false;</a>
+<a name="ln862">        }</a>
+<a name="ln863"> </a>
+<a name="ln864">        largestRadius = parameterA-&gt;_dpar[0];</a>
+<a name="ln865"> </a>
+<a name="ln866">        for (current = atom-&gt;NextNbrAtom(i); current; current = atom-&gt;NextNbrAtom(i)) {</a>
+<a name="ln867">          parameterA = GetParameterUFF(current-&gt;GetType(), _ffparams);</a>
+<a name="ln868"> </a>
+<a name="ln869">          if (parameterA == nullptr) {</a>
+<a name="ln870">            IF_OBFF_LOGLVL_LOW {</a>
+<a name="ln871">              snprintf(_logbuf, BUFF_SIZE, &quot;    COULD NOT FIND PARAMETERS FOR ATOM %d (IDX)...\n&quot;,</a>
+<a name="ln872">                  current-&gt;GetIdx());</a>
+<a name="ln873">              OBFFLog(_logbuf);</a>
+<a name="ln874">            }</a>
+<a name="ln875">            return false;</a>
+<a name="ln876">          }</a>
+<a name="ln877"> </a>
+<a name="ln878">          if (parameterA-&gt;_dpar[0] &gt; largestRadius) {</a>
+<a name="ln879">            // New largest neighbor</a>
+<a name="ln880">            secondLargestNbr = largestNbr;</a>
+<a name="ln881">            largestRadius = parameterA-&gt;_dpar[0];</a>
+<a name="ln882">            largestNbr = current;</a>
+<a name="ln883">          }</a>
+<a name="ln884">          if (secondLargestNbr == nullptr) {</a>
+<a name="ln885">            // save this atom</a>
+<a name="ln886">            secondLargestNbr = current;</a>
+<a name="ln887">          }</a>
+<a name="ln888">        }</a>
+<a name="ln889"> </a>
+<a name="ln890">        // OK, now we tag the central atom</a>
+<a name="ln891">        OBPairData *label = new OBPairData;</a>
+<a name="ln892">        label-&gt;SetAttribute(&quot;UFF_CENTRAL_ATOM&quot;);</a>
+<a name="ln893">        label-&gt;SetValue(&quot;True&quot;); // doesn't really matter</a>
+<a name="ln894">        atom-&gt;SetData(label);</a>
+<a name="ln895">        // And tag the axial substituents</a>
+<a name="ln896">        label = new OBPairData;</a>
+<a name="ln897">        label-&gt;SetAttribute(&quot;UFF_AXIAL_ATOM&quot;);</a>
+<a name="ln898">        label-&gt;SetValue(&quot;True&quot;);</a>
+<a name="ln899">        largestNbr-&gt;SetData(label);</a>
+<a name="ln900">        if (secondLargestNbr != nullptr) { // check for NULL, no guarantee</a>
+<a name="ln901">          label = new OBPairData;</a>
+<a name="ln902">          label-&gt;SetAttribute(&quot;UFF_AXIAL_ATOM&quot;);</a>
+<a name="ln903">          label-&gt;SetValue(&quot;True&quot;);</a>
+<a name="ln904">          secondLargestNbr-&gt;SetData(label);</a>
+<a name="ln905">        }</a>
+<a name="ln906">      }</a>
+<a name="ln907">    } // end loop through atoms</a>
+<a name="ln908"> </a>
+<a name="ln909">    //</a>
+<a name="ln910">    // Bond Calculations</a>
+<a name="ln911">    IF_OBFF_LOGLVL_LOW</a>
+<a name="ln912">      OBFFLog(&quot;SETTING UP BOND CALCULATIONS...\n&quot;);</a>
+<a name="ln913"> </a>
+<a name="ln914">    FOR_BONDS_OF_MOL(bond, _mol) {</a>
+<a name="ln915">      a = bond-&gt;GetBeginAtom();</a>
+<a name="ln916">      b = bond-&gt;GetEndAtom();</a>
+<a name="ln917"> </a>
+<a name="ln918">      // skip this bond if the atoms are ignored</a>
+<a name="ln919">      if ( _constraints.IsIgnored(a-&gt;GetIdx()) || _constraints.IsIgnored(b-&gt;GetIdx()) )</a>
+<a name="ln920">        continue;</a>
+<a name="ln921"> </a>
+<a name="ln922">      // if there are any groups specified, check if the two bond atoms are in a single intraGroup</a>
+<a name="ln923">      if (HasGroups()) {</a>
+<a name="ln924">        bool validBond = false;</a>
+<a name="ln925">        for (unsigned int i=0; i &lt; _intraGroup.size(); ++i) {</a>
+<a name="ln926">          if (_intraGroup[i].BitIsSet(a-&gt;GetIdx()) &amp;&amp; _intraGroup[i].BitIsSet(b-&gt;GetIdx()))</a>
+<a name="ln927">            validBond = true;</a>
+<a name="ln928">        }</a>
+<a name="ln929">        if (!validBond)</a>
+<a name="ln930">          continue;</a>
+<a name="ln931">      }</a>
+<a name="ln932"> </a>
+<a name="ln933">      bondorder = bond-&gt;GetBondOrder();</a>
+<a name="ln934">      if (bond-&gt;IsAromatic())</a>
+<a name="ln935">        bondorder = 1.5;</a>
+<a name="ln936">      // e.g., in Cp rings, may not be &quot;aromatic&quot; by OB</a>
+<a name="ln937">      // but check for explicit hydrogen counts (e.g., biphenyl inter-ring is not aromatic)</a>
+<a name="ln938">      if ((a-&gt;GetType()[2] == 'R' &amp;&amp; b-&gt;GetType()[2] == 'R')</a>
+<a name="ln939">          &amp;&amp; (a-&gt;ExplicitHydrogenCount() == 1 &amp;&amp; b-&gt;ExplicitHydrogenCount() == 1))</a>
+<a name="ln940">        bondorder = 1.5;</a>
+<a name="ln941">      if (bond-&gt;IsAmide())</a>
+<a name="ln942">        bondorder = 1.41;</a>
+<a name="ln943"> </a>
+<a name="ln944">      bondcalc.a = a;</a>
+<a name="ln945">      bondcalc.b = b;</a>
+<a name="ln946">      bondcalc.bt = bondorder;</a>
+<a name="ln947"> </a>
+<a name="ln948">      parameterA = GetParameterUFF(a-&gt;GetType(), _ffparams);</a>
+<a name="ln949">      parameterB = GetParameterUFF(b-&gt;GetType(), _ffparams);</a>
+<a name="ln950"> </a>
+<a name="ln951">      if (parameterA == nullptr || parameterB == nullptr) {</a>
+<a name="ln952">        IF_OBFF_LOGLVL_LOW {</a>
+<a name="ln953">          snprintf(_logbuf, BUFF_SIZE, &quot;    COULD NOT FIND PARAMETERS FOR BOND %d-%d (IDX)...\n&quot;,</a>
+<a name="ln954">                   a-&gt;GetIdx(), b-&gt;GetIdx());</a>
+<a name="ln955">          OBFFLog(_logbuf);</a>
+<a name="ln956">        }</a>
+<a name="ln957">        continue;</a>
+<a name="ln958">      }</a>
+<a name="ln959"> </a>
+<a name="ln960">      bondcalc.r0 = CalculateBondDistance(parameterA, parameterB, bondorder);</a>
+<a name="ln961"> </a>
+<a name="ln962">      // here we fold the 1/2 into the kij from equation 1a</a>
+<a name="ln963">      // Otherwise, this is equation 6 from the UFF paper.</a>
+<a name="ln964">      bondcalc.kb = (0.5 * KCAL_TO_KJ * 664.12</a>
+<a name="ln965">                     * parameterA-&gt;_dpar[5] * parameterB-&gt;_dpar[5])</a>
+<a name="ln966">        / (bondcalc.r0 * bondcalc.r0 * bondcalc.r0);</a>
+<a name="ln967"> </a>
+<a name="ln968">      bondcalc.SetupPointers();</a>
+<a name="ln969">      _bondcalculations.push_back(bondcalc);</a>
+<a name="ln970">    }</a>
+<a name="ln971"> </a>
+<a name="ln972">    //</a>
+<a name="ln973">    // Angle Calculations</a>
+<a name="ln974">    //</a>
+<a name="ln975">    IF_OBFF_LOGLVL_LOW</a>
+<a name="ln976">      OBFFLog(&quot;SETTING UP ANGLE CALCULATIONS...\n&quot;);</a>
+<a name="ln977"> </a>
+<a name="ln978">    double sinT0;</a>
+<a name="ln979">		double rab, rbc, rac;</a>
+<a name="ln980">		OBBond *bondPtr;</a>
+<a name="ln981">    FOR_ANGLES_OF_MOL(angle, _mol) {</a>
+<a name="ln982">      b = _mol.GetAtom((*angle)[0] + 1);</a>
+<a name="ln983">      a = _mol.GetAtom((*angle)[1] + 1);</a>
+<a name="ln984">      c = _mol.GetAtom((*angle)[2] + 1);</a>
+<a name="ln985"> </a>
+<a name="ln986">      // skip this angle if the atoms are ignored</a>
+<a name="ln987">      if ( _constraints.IsIgnored(a-&gt;GetIdx())</a>
+<a name="ln988">           || _constraints.IsIgnored(b-&gt;GetIdx())</a>
+<a name="ln989">           || _constraints.IsIgnored(c-&gt;GetIdx()) )</a>
+<a name="ln990">        continue;</a>
+<a name="ln991"> </a>
+<a name="ln992">      // if there are any groups specified,</a>
+<a name="ln993">      // check if the three angle atoms are in a single intraGroup</a>
+<a name="ln994">      if (HasGroups()) {</a>
+<a name="ln995">        bool validAngle = false;</a>
+<a name="ln996">        for (unsigned int i=0; i &lt; _intraGroup.size(); ++i) {</a>
+<a name="ln997">          if (_intraGroup[i].BitIsSet(a-&gt;GetIdx()) &amp;&amp; _intraGroup[i].BitIsSet(b-&gt;GetIdx()) &amp;&amp;</a>
+<a name="ln998">              _intraGroup[i].BitIsSet(c-&gt;GetIdx()))</a>
+<a name="ln999">            validAngle = true;</a>
+<a name="ln1000">        }</a>
+<a name="ln1001">        if (!validAngle)</a>
+<a name="ln1002">          continue;</a>
+<a name="ln1003">      }</a>
+<a name="ln1004"> </a>
+<a name="ln1005">      anglecalc.a = a;</a>
+<a name="ln1006">      anglecalc.b = b;</a>
+<a name="ln1007">      anglecalc.c = c;</a>
+<a name="ln1008"> </a>
+<a name="ln1009">      parameterA = GetParameterUFF(a-&gt;GetType(), _ffparams);</a>
+<a name="ln1010">      parameterB = GetParameterUFF(b-&gt;GetType(), _ffparams);</a>
+<a name="ln1011">      parameterC = GetParameterUFF(c-&gt;GetType(), _ffparams);</a>
+<a name="ln1012"> </a>
+<a name="ln1013">      if (parameterA == nullptr || parameterB == nullptr || parameterC == nullptr) {</a>
+<a name="ln1014">        IF_OBFF_LOGLVL_LOW {</a>
+<a name="ln1015">          snprintf(_logbuf, BUFF_SIZE, &quot;    COULD NOT FIND PARAMETERS FOR ANGLE %d-%d-%d (IDX)...\n&quot;,</a>
+<a name="ln1016">                   a-&gt;GetIdx(), b-&gt;GetIdx(), c-&gt;GetIdx());</a>
+<a name="ln1017">          OBFFLog(_logbuf);</a>
+<a name="ln1018">        }</a>
+<a name="ln1019">        return false;</a>
+<a name="ln1020">      }</a>
+<a name="ln1021"> </a>
+<a name="ln1022">      coordination = GetCoordination(b, parameterB-&gt;_ipar[0]);</a>
+<a name="ln1023"> </a>
+<a name="ln1024">      if (coordination != parameterB-&gt;_ipar[0]) {</a>
+<a name="ln1025">        IF_OBFF_LOGLVL_LOW {</a>
+<a name="ln1026">          snprintf(_logbuf, BUFF_SIZE, &quot;    CORRECTED COORDINATION FOR ANGLE %d-%d-%d (IDX)... WAS %d NOW %d\n&quot;,</a>
+<a name="ln1027">                   a-&gt;GetIdx(), b-&gt;GetIdx(), c-&gt;GetIdx(), parameterB-&gt;_ipar[0], coordination);</a>
+<a name="ln1028">          OBFFLog(_logbuf);</a>
+<a name="ln1029">        }</a>
+<a name="ln1030">      }</a>
+<a name="ln1031"> </a>
+<a name="ln1032">      //double currentTheta;</a>
+<a name="ln1033">      if (coordination &gt; 7) {</a>
+<a name="ln1034">        // large coordination sphere (e.g., [ReH9]-2 or [Ce(NO3)6]-2)</a>
+<a name="ln1035">        // just resort to using VDW 1-3 interactions to push atoms into place</a>
+<a name="ln1036">        // there's not much else we can do without real parameters</a>
+<a name="ln1037">        if (SetupVDWCalculation(a, c, vdwcalc)) {</a>
+<a name="ln1038">          _vdwcalculations.push_back(vdwcalc);</a>
+<a name="ln1039">        }</a>
+<a name="ln1040">        // We're not installing an angle term for this set</a>
+<a name="ln1041">        // We can't even approximate one.</a>
+<a name="ln1042">        // The downside is that we can't easily handle lone pairs.</a>
+<a name="ln1043">        continue;</a>
+<a name="ln1044"> </a>
+<a name="ln1045">      } else if (coordination == 7) { // pentagonal bipyramidal</a>
+<a name="ln1046">        // This doesn't work so well because it's hard to classify between</a>
+<a name="ln1047">        // axial-equatorial (90 degrees) and proximal equatorial (~72 degrees).</a>
+<a name="ln1048">        double currentTheta;</a>
+<a name="ln1049">        currentTheta =  a-&gt;GetAngle(&amp;*b, &amp;*c);</a>
+<a name="ln1050"> </a>
+<a name="ln1051">        anglecalc.c0 = 1.0;</a>
+<a name="ln1052">        if (b-&gt;HasData(&quot;UFF_CENTRAL_ATOM&quot;)</a>
+<a name="ln1053">              &amp;&amp; a-&gt;HasData(&quot;UFF_AXIAL_ATOM&quot;)</a>
+<a name="ln1054">              &amp;&amp; c-&gt;HasData(&quot;UFF_AXIAL_ATOM&quot;)) { // axial ligands = linear</a>
+<a name="ln1055">          anglecalc.coord = 1; // like sp</a>
+<a name="ln1056">          anglecalc.theta0 = 180.0 * DEG_TO_RAD;</a>
+<a name="ln1057">          anglecalc.c1 = 1.0;</a>
+<a name="ln1058">        } else if ( (a-&gt;HasData(&quot;UFF_AXIAL_ATOM&quot;) &amp;&amp; !c-&gt;HasData(&quot;UFF_AXIAL_ATOM&quot;))</a>
+<a name="ln1059">                    || (c-&gt;HasData(&quot;UFF_AXIAL_ATOM&quot;) &amp;&amp; !a-&gt;HasData(&quot;UFF_AXIAL_ATOM&quot;)) ) { // axial-equatorial ligands</a>
+<a name="ln1060">          anglecalc.coord = 4; // like sq. planar or octahedral</a>
+<a name="ln1061">          anglecalc.theta0 = 90.0 * DEG_TO_RAD;</a>
+<a name="ln1062">          anglecalc.c1 = 1.0;</a>
+<a name="ln1063">        } else { // equatorial - equatorial</a>
+<a name="ln1064">          anglecalc.coord = 7; // unlike anything else, as theta0 is ignored.</a>
+<a name="ln1065">          anglecalc.theta0 = (currentTheta &gt; 108.0 ? 144.0 : 72.0) * DEG_TO_RAD;</a>
+<a name="ln1066">          anglecalc.c1 = 1.0;</a>
+<a name="ln1067">        }</a>
+<a name="ln1068">        anglecalc.c2 = 0.0;</a>
+<a name="ln1069"> </a>
+<a name="ln1070">        /*</a>
+<a name="ln1071">        if (0) {</a>
+<a name="ln1072">          if (currentTheta &gt;= 155.0) { // axial ligands = linear</a>
+<a name="ln1073">            anglecalc.coord = 1; // like sp</a>
+<a name="ln1074">            anglecalc.theta0 = 180.0 * DEG_TO_RAD;</a>
+<a name="ln1075">            anglecalc.c1 = 1.0;</a>
+<a name="ln1076">          } else if (currentTheta &lt; 155.0 &amp;&amp; currentTheta &gt;= 110.0) { // distal equatorial</a>
+<a name="ln1077">            anglecalc.coord = 7; // like sp3</a>
+<a name="ln1078">            anglecalc.theta0 = 144.0 * DEG_TO_RAD;</a>
+<a name="ln1079">            anglecalc.c1 = 1.0;</a>
+<a name="ln1080">          } else if (currentTheta &lt; 110.0 &amp;&amp; currentTheta &gt;= 85.0) { // axial-equatorial</a>
+<a name="ln1081">            anglecalc.coord = 4; // like sq. planar or octahedral</a>
+<a name="ln1082">            anglecalc.theta0 = 90.0 * DEG_TO_RAD;</a>
+<a name="ln1083">            anglecalc.c1 = 1.0;</a>
+<a name="ln1084">          } else if (currentTheta &lt; 85.0) { // proximal equatorial</a>
+<a name="ln1085">            anglecalc.coord = 7; // general case (i.e., like sp3)</a>
+<a name="ln1086">            anglecalc.theta0 = 72.0 * DEG_TO_RAD;</a>
+<a name="ln1087">            anglecalc.c1 = 1.0;</a>
+<a name="ln1088">          }</a>
+<a name="ln1089">          anglecalc.c2 = 0.0;</a>
+<a name="ln1090">        } else {</a>
+<a name="ln1091">        */</a>
+<a name="ln1092"> </a>
+<a name="ln1093">      } else if (coordination == 5) { // trigonal bipyramidal</a>
+<a name="ln1094">        anglecalc.c0 = 1.0;</a>
+<a name="ln1095">        // We've already done some of our work above -- look for axial markings</a>
+<a name="ln1096">        if (b-&gt;HasData(&quot;UFF_CENTRAL_ATOM&quot;)</a>
+<a name="ln1097">            &amp;&amp; a-&gt;HasData(&quot;UFF_AXIAL_ATOM&quot;)</a>
+<a name="ln1098">            &amp;&amp; c-&gt;HasData(&quot;UFF_AXIAL_ATOM&quot;)) { // axial ligands = linear</a>
+<a name="ln1099">          anglecalc.coord = 1; // like sp</a>
+<a name="ln1100">          anglecalc.theta0 = 180.0 * DEG_TO_RAD;</a>
+<a name="ln1101">          anglecalc.c1 = 1.0;</a>
+<a name="ln1102">        } else if ( (a-&gt;HasData(&quot;UFF_AXIAL_ATOM&quot;) &amp;&amp; !c-&gt;HasData(&quot;UFF_AXIAL_ATOM&quot;))</a>
+<a name="ln1103">                    || (c-&gt;HasData(&quot;UFF_AXIAL_ATOM&quot;) &amp;&amp; !a-&gt;HasData(&quot;UFF_AXIAL_ATOM&quot;)) ) { // axial-equatorial ligands</a>
+<a name="ln1104">          anglecalc.coord = 4; // like sq. planar or octahedral</a>
+<a name="ln1105">          anglecalc.theta0 = 90.0 * DEG_TO_RAD;</a>
+<a name="ln1106">          anglecalc.c1 = 1.0;</a>
+<a name="ln1107">        } else { // equatorial - equatorial</a>
+<a name="ln1108">          anglecalc.coord = 2; // like sp2</a>
+<a name="ln1109">          anglecalc.theta0 = 120.0 * DEG_TO_RAD;</a>
+<a name="ln1110">          anglecalc.c1 = -1.0;</a>
+<a name="ln1111">        }</a>
+<a name="ln1112">        anglecalc.c2 = 0.0;</a>
+<a name="ln1113">      }</a>
+<a name="ln1114">      else { // normal coordination: sp, sp2, sp3, square planar, octahedral</a>
+<a name="ln1115">        anglecalc.coord = coordination;</a>
+<a name="ln1116">        anglecalc.theta0 = parameterB-&gt;_dpar[1] * DEG_TO_RAD;</a>
+<a name="ln1117">        if (coordination != parameterB-&gt;_ipar[0]) {</a>
+<a name="ln1118">          switch (coordination)</a>
+<a name="ln1119">            {</a>
+<a name="ln1120">            case 1:</a>
+<a name="ln1121">              anglecalc.theta0 = 180.0 * DEG_TO_RAD;</a>
+<a name="ln1122">              break;</a>
+<a name="ln1123">            case 2:</a>
+<a name="ln1124">              anglecalc.theta0 = 120.0 * DEG_TO_RAD;</a>
+<a name="ln1125">              break;</a>
+<a name="ln1126">            case 4: // sq. planar</a>
+<a name="ln1127">            case 5: // axial / equatorial</a>
+<a name="ln1128">            case 6: // octahedral</a>
+<a name="ln1129">            case 7: // axial equatorial</a>
+<a name="ln1130">              anglecalc.theta0 = 90.0 * DEG_TO_RAD;</a>
+<a name="ln1131">              break;</a>
+<a name="ln1132">            case 3: // tetrahedral</a>
+<a name="ln1133">            default:</a>
+<a name="ln1134">              anglecalc.theta0 = 109.5 * DEG_TO_RAD;</a>
+<a name="ln1135">              break;</a>
+<a name="ln1136">            }</a>
+<a name="ln1137">        }</a>
+<a name="ln1138">        anglecalc.cosT0 = cos(anglecalc.theta0);</a>
+<a name="ln1139">        sinT0 = sin(anglecalc.theta0);</a>
+<a name="ln1140">        anglecalc.c2 = 1.0 / (4.0 * sinT0 * sinT0);</a>
+<a name="ln1141">        anglecalc.c1 = -4.0 * anglecalc.c2 * anglecalc.cosT0;</a>
+<a name="ln1142">        anglecalc.c0 = anglecalc.c2*(2.0*anglecalc.cosT0*anglecalc.cosT0 + 1.0);</a>
+<a name="ln1143">      }</a>
+<a name="ln1144"> </a>
+<a name="ln1145">      anglecalc.cosT0 = cos(anglecalc.theta0);</a>
+<a name="ln1146">      anglecalc.zi = parameterA-&gt;_dpar[5];</a>
+<a name="ln1147">      anglecalc.zk = parameterC-&gt;_dpar[5];</a>
+<a name="ln1148">			// Precompute the force constant</a>
+<a name="ln1149">			bondPtr = _mol.GetBond(a,b);</a>
+<a name="ln1150">			bondorder = bondPtr-&gt;GetBondOrder();</a>
+<a name="ln1151">      if (bondPtr-&gt;IsAromatic())</a>
+<a name="ln1152">        bondorder = 1.5;</a>
+<a name="ln1153">      if (bondPtr-&gt;IsAmide())</a>
+<a name="ln1154">        bondorder = 1.41;</a>
+<a name="ln1155">			rab = CalculateBondDistance(parameterA, parameterB, bondorder);</a>
+<a name="ln1156"> </a>
+<a name="ln1157">			bondPtr = _mol.GetBond(b,c);</a>
+<a name="ln1158">			bondorder = bondPtr-&gt;GetBondOrder();</a>
+<a name="ln1159">      if (bondPtr-&gt;IsAromatic())</a>
+<a name="ln1160">        bondorder = 1.5;</a>
+<a name="ln1161">      if (bondPtr-&gt;IsAmide())</a>
+<a name="ln1162">        bondorder = 1.41;</a>
+<a name="ln1163">			rbc = CalculateBondDistance(parameterB, parameterC, bondorder);</a>
+<a name="ln1164">			rac = sqrt(rab*rab + rbc*rbc - 2.0 * rab*rbc*anglecalc.cosT0);</a>
+<a name="ln1165"> </a>
+<a name="ln1166">			// Equation 13 from paper -- corrected by Towhee</a>
+<a name="ln1167">			// Note that 1/(rij * rjk) cancels with rij*rjk in eqn. 13</a>
+<a name="ln1168">			anglecalc.ka = (664.12 * KCAL_TO_KJ) * (anglecalc.zi * anglecalc.zk / (pow(rac, 5.0)));</a>
+<a name="ln1169">			anglecalc.ka *= (3.0*rab*rbc*(1.0 - anglecalc.cosT0*anglecalc.cosT0) - rac*rac*anglecalc.cosT0);</a>
+<a name="ln1170">      // Make sure to divide by n^2 to save CPU cycles</a>
+<a name="ln1171">      switch (anglecalc.coord) {</a>
+<a name="ln1172">      case 2: // sp2, so divide by 3^2</a>
+<a name="ln1173">        anglecalc.n = 3;</a>
+<a name="ln1174">        anglecalc.ka = anglecalc.ka / 9.0;</a>
+<a name="ln1175">        break;</a>
+<a name="ln1176">      case 4: // divide by 4^2</a>
+<a name="ln1177">      case 6:</a>
+<a name="ln1178">        anglecalc.n = 4;</a>
+<a name="ln1179">        anglecalc.ka = anglecalc.ka / 16.0;</a>
+<a name="ln1180">        break;</a>
+<a name="ln1181">      default:</a>
+<a name="ln1182">        break;</a>
+<a name="ln1183">      }</a>
+<a name="ln1184"> </a>
+<a name="ln1185">      anglecalc.SetupPointers();</a>
+<a name="ln1186">      _anglecalculations.push_back(anglecalc);</a>
+<a name="ln1187">    }</a>
+<a name="ln1188"> </a>
+<a name="ln1189">    //</a>
+<a name="ln1190">    // Torsion Calculations</a>
+<a name="ln1191">    //</a>
+<a name="ln1192">    IF_OBFF_LOGLVL_LOW</a>
+<a name="ln1193">      OBFFLog(&quot;SETTING UP TORSION CALCULATIONS...\n&quot;);</a>
+<a name="ln1194"> </a>
+<a name="ln1195">    double torsiontype;</a>
+<a name="ln1196">    double phi0 = 0.0;</a>
+<a name="ln1197"> </a>
+<a name="ln1198">    double vi, vj;</a>
+<a name="ln1199">    FOR_TORSIONS_OF_MOL(t, _mol) {</a>
+<a name="ln1200">      a = _mol.GetAtom((*t)[0] + 1);</a>
+<a name="ln1201">      b = _mol.GetAtom((*t)[1] + 1);</a>
+<a name="ln1202">      c = _mol.GetAtom((*t)[2] + 1);</a>
+<a name="ln1203">      d = _mol.GetAtom((*t)[3] + 1);</a>
+<a name="ln1204"> </a>
+<a name="ln1205">      // skip this torsion if the atoms are ignored</a>
+<a name="ln1206">      if ( _constraints.IsIgnored(a-&gt;GetIdx()) || _constraints.IsIgnored(b-&gt;GetIdx()) ||</a>
+<a name="ln1207">           _constraints.IsIgnored(c-&gt;GetIdx()) || _constraints.IsIgnored(d-&gt;GetIdx()) )</a>
+<a name="ln1208">        continue;</a>
+<a name="ln1209"> </a>
+<a name="ln1210">      // if there are any groups specified, check if the four torsion atoms are in a single intraGroup</a>
+<a name="ln1211">      if (HasGroups()) {</a>
+<a name="ln1212">        bool validTorsion = false;</a>
+<a name="ln1213">        for (unsigned int i=0; i &lt; _intraGroup.size(); ++i) {</a>
+<a name="ln1214">          if (_intraGroup[i].BitIsSet(a-&gt;GetIdx()) &amp;&amp; _intraGroup[i].BitIsSet(b-&gt;GetIdx()) &amp;&amp;</a>
+<a name="ln1215">              _intraGroup[i].BitIsSet(c-&gt;GetIdx()) &amp;&amp; _intraGroup[i].BitIsSet(d-&gt;GetIdx()))</a>
+<a name="ln1216">            validTorsion = true;</a>
+<a name="ln1217">        }</a>
+<a name="ln1218">        if (!validTorsion)</a>
+<a name="ln1219">          continue;</a>
+<a name="ln1220">      }</a>
+<a name="ln1221"> </a>
+<a name="ln1222">      OBBond *bc = _mol.GetBond(b, c);</a>
+<a name="ln1223">      torsiontype = bc-&gt;GetBondOrder();</a>
+<a name="ln1224">      if (bc-&gt;IsAromatic())</a>
+<a name="ln1225">        torsiontype = 1.5;</a>
+<a name="ln1226">      if (bc-&gt;IsAmide())</a>
+<a name="ln1227">        torsiontype = 1.41;</a>
+<a name="ln1228"> </a>
+<a name="ln1229">      torsioncalc.a = a;</a>
+<a name="ln1230">      torsioncalc.b = b;</a>
+<a name="ln1231">      torsioncalc.c = c;</a>
+<a name="ln1232">      torsioncalc.d = d;</a>
+<a name="ln1233">      torsioncalc.tt = torsiontype;</a>
+<a name="ln1234"> </a>
+<a name="ln1235">      parameterB = GetParameterUFF(b-&gt;GetType(), _ffparams);</a>
+<a name="ln1236">      parameterC = GetParameterUFF(c-&gt;GetType(), _ffparams);</a>
+<a name="ln1237"> </a>
+<a name="ln1238">      if (parameterB == nullptr || parameterC == nullptr) {</a>
+<a name="ln1239">        IF_OBFF_LOGLVL_LOW {</a>
+<a name="ln1240">          snprintf(_logbuf, BUFF_SIZE, &quot;    COULD NOT FIND PARAMETERS FOR TORSION X-%d-%d-X (IDX)...\n&quot;,</a>
+<a name="ln1241">                   b-&gt;GetIdx(), c-&gt;GetIdx());</a>
+<a name="ln1242">          OBFFLog(_logbuf);</a>
+<a name="ln1243">        }</a>
+<a name="ln1244">        return false;</a>
+<a name="ln1245">      }</a>
+<a name="ln1246"> </a>
+<a name="ln1247">      if (parameterB-&gt;_ipar[0] == 3 &amp;&amp; parameterC-&gt;_ipar[0] == 3) {</a>
+<a name="ln1248">        // two sp3 centers</a>
+<a name="ln1249">        phi0 = 60.0;</a>
+<a name="ln1250">        torsioncalc.n = 3;</a>
+<a name="ln1251">        vi = parameterB-&gt;_dpar[6];</a>
+<a name="ln1252">        vj = parameterC-&gt;_dpar[6];</a>
+<a name="ln1253"> </a>
+<a name="ln1254">        // exception for a pair of group 6 sp3 atoms</a>
+<a name="ln1255">        switch (b-&gt;GetAtomicNum()) {</a>
+<a name="ln1256">        case 8:</a>
+<a name="ln1257">          vi = 2.0;</a>
+<a name="ln1258">          torsioncalc.n = 2;</a>
+<a name="ln1259">          phi0 = 90.0;</a>
+<a name="ln1260">          break;</a>
+<a name="ln1261">        case 16:</a>
+<a name="ln1262">        case 34:</a>
+<a name="ln1263">        case 52:</a>
+<a name="ln1264">        case 84:</a>
+<a name="ln1265">          vi = 6.8;</a>
+<a name="ln1266">          torsioncalc.n = 2;</a>
+<a name="ln1267">          phi0 = 90.0;</a>
+<a name="ln1268">        }</a>
+<a name="ln1269">        switch (c-&gt;GetAtomicNum()) {</a>
+<a name="ln1270">        case 8:</a>
+<a name="ln1271">          vj = 2.0;</a>
+<a name="ln1272">          torsioncalc.n = 2;</a>
+<a name="ln1273">          phi0 = 90.0;</a>
+<a name="ln1274">          break;</a>
+<a name="ln1275">        case 16:</a>
+<a name="ln1276">        case 34:</a>
+<a name="ln1277">        case 52:</a>
+<a name="ln1278">        case 84:</a>
+<a name="ln1279">          vj = 6.8;</a>
+<a name="ln1280">          torsioncalc.n = 2;</a>
+<a name="ln1281">          phi0 = 90.0;</a>
+<a name="ln1282">        }</a>
+<a name="ln1283"> </a>
+<a name="ln1284">        torsioncalc.V = 0.5 * KCAL_TO_KJ * sqrt(vi * vj);</a>
+<a name="ln1285"> </a>
+<a name="ln1286">      } else if (parameterB-&gt;_ipar[0] == 2 &amp;&amp; parameterC-&gt;_ipar[0] == 2) {</a>
+<a name="ln1287">        // two sp2 centers</a>
+<a name="ln1288">        phi0 = 180.0;</a>
+<a name="ln1289">        torsioncalc.n = 2;</a>
+<a name="ln1290">        torsioncalc.V = 0.5 * KCAL_TO_KJ * 5.0 *</a>
+<a name="ln1291">          sqrt(parameterB-&gt;_dpar[7]*parameterC-&gt;_dpar[7]) *</a>
+<a name="ln1292">          (1.0 + 4.18 * log(torsiontype));</a>
+<a name="ln1293">      } else if ((parameterB-&gt;_ipar[0] == 2 &amp;&amp; parameterC-&gt;_ipar[0] == 3)</a>
+<a name="ln1294">                 || (parameterB-&gt;_ipar[0] == 3 &amp;&amp; parameterC-&gt;_ipar[0] == 2)) {</a>
+<a name="ln1295">        // one sp3, one sp2</a>
+<a name="ln1296">        phi0 = 0.0;</a>
+<a name="ln1297">        torsioncalc.n = 6;</a>
+<a name="ln1298">        torsioncalc.V = 0.5 * KCAL_TO_KJ * 1.0;</a>
+<a name="ln1299"> </a>
+<a name="ln1300">        // exception for group 6 sp3</a>
+<a name="ln1301">        if (parameterC-&gt;_ipar[0] == 3) {</a>
+<a name="ln1302">          switch (c-&gt;GetAtomicNum()) {</a>
+<a name="ln1303">          case 8:</a>
+<a name="ln1304">          case 16:</a>
+<a name="ln1305">          case 34:</a>
+<a name="ln1306">          case 52:</a>
+<a name="ln1307">          case 84:</a>
+<a name="ln1308">            torsioncalc.n = 2;</a>
+<a name="ln1309">            phi0 = 90.0;</a>
+<a name="ln1310">          }</a>
+<a name="ln1311">        }</a>
+<a name="ln1312">        if (parameterB-&gt;_ipar[0] == 3) {</a>
+<a name="ln1313">          switch (b-&gt;GetAtomicNum()) {</a>
+<a name="ln1314">          case 8:</a>
+<a name="ln1315">          case 16:</a>
+<a name="ln1316">          case 34:</a>
+<a name="ln1317">          case 52:</a>
+<a name="ln1318">          case 84:</a>
+<a name="ln1319">            torsioncalc.n = 2;</a>
+<a name="ln1320">            phi0 = 90.0;</a>
+<a name="ln1321">          }</a>
+<a name="ln1322">        }</a>
+<a name="ln1323">      }</a>
+<a name="ln1324"> </a>
+<a name="ln1325">      if (IsNearZero(torsioncalc.V)) // don't bother calcuating this torsion</a>
+<a name="ln1326">        continue;</a>
+<a name="ln1327"> </a>
+<a name="ln1328">      // still need to implement special case of sp2-sp3 with sp2-sp2</a>
+<a name="ln1329"> </a>
+<a name="ln1330">      torsioncalc.cosNPhi0 = cos(torsioncalc.n * DEG_TO_RAD * phi0);</a>
+<a name="ln1331">      torsioncalc.SetupPointers();</a>
+<a name="ln1332">      _torsioncalculations.push_back(torsioncalc);</a>
+<a name="ln1333">    }</a>
+<a name="ln1334"> </a>
+<a name="ln1335">    //</a>
+<a name="ln1336">    // OOP/Inversion Calculations</a>
+<a name="ln1337">    //</a>
+<a name="ln1338">    IF_OBFF_LOGLVL_LOW</a>
+<a name="ln1339">      OBFFLog(&quot;SETTING UP OOP CALCULATIONS...\n&quot;);</a>
+<a name="ln1340"> </a>
+<a name="ln1341">    double phi;</a>
+<a name="ln1342">    // The original Rappe paper in JACS isn't very clear about the parameters</a>
+<a name="ln1343">    // The following was adapted from Towhee</a>
+<a name="ln1344">    FOR_ATOMS_OF_MOL(atom, _mol) {</a>
+<a name="ln1345">      b = (OBAtom*) &amp;*atom;</a>
+<a name="ln1346"> </a>
+<a name="ln1347">      switch (b-&gt;GetAtomicNum()) {</a>
+<a name="ln1348">      case 6: // carbon</a>
+<a name="ln1349">      case 7: // nitrogen</a>
+<a name="ln1350">      case 8: // oxygen</a>
+<a name="ln1351">      case 15: // phos.</a>
+<a name="ln1352">      case 33: // as</a>
+<a name="ln1353">      case 51: // sb</a>
+<a name="ln1354">      case 83: // bi</a>
+<a name="ln1355">        break;</a>
+<a name="ln1356">      default: // no inversion term for this element</a>
+<a name="ln1357">        continue;</a>
+<a name="ln1358">      }</a>
+<a name="ln1359"> </a>
+<a name="ln1360">      if (b-&gt;GetExplicitDegree() &gt; 3) // no OOP for hypervalent atoms</a>
+<a name="ln1361">        continue;</a>
+<a name="ln1362"> </a>
+<a name="ln1363">      a = nullptr;</a>
+<a name="ln1364">      c = nullptr;</a>
+<a name="ln1365">      d = nullptr;</a>
+<a name="ln1366"> </a>
+<a name="ln1367">      if (EQn(b-&gt;GetType(), &quot;N_3&quot;, 3) ||</a>
+<a name="ln1368">          EQn(b-&gt;GetType(), &quot;N_2&quot;, 3) ||</a>
+<a name="ln1369">          EQn(b-&gt;GetType(), &quot;N_R&quot;, 3) ||</a>
+<a name="ln1370">          EQn(b-&gt;GetType(), &quot;O_2&quot;, 3) ||</a>
+<a name="ln1371">          EQn(b-&gt;GetType(), &quot;O_R&quot;, 3)) {</a>
+<a name="ln1372">        oopcalc.c0 = 1.0;</a>
+<a name="ln1373">        oopcalc.c1 = -1.0;</a>
+<a name="ln1374">        oopcalc.c2 = 0.0;</a>
+<a name="ln1375">        oopcalc.koop = 6.0 * KCAL_TO_KJ;</a>
+<a name="ln1376">      }</a>
+<a name="ln1377">      else if (EQn(b-&gt;GetType(), &quot;P_3+3&quot;, 5) ||</a>
+<a name="ln1378">               EQn(b-&gt;GetType(), &quot;As3+3&quot;, 5) ||</a>
+<a name="ln1379">               EQn(b-&gt;GetType(), &quot;Sb3+3&quot;, 5) ||</a>
+<a name="ln1380">               EQn(b-&gt;GetType(), &quot;Bi3+3&quot;, 5)) {</a>
+<a name="ln1381"> </a>
+<a name="ln1382">        if (EQn(b-&gt;GetType(), &quot;P_3+3&quot;, 5))</a>
+<a name="ln1383">          phi = 84.4339 * DEG_TO_RAD;</a>
+<a name="ln1384">        else if (EQn(b-&gt;GetType(), &quot;As3+3&quot;, 5))</a>
+<a name="ln1385">          phi = 86.9735 * DEG_TO_RAD;</a>
+<a name="ln1386">        else if (EQn(b-&gt;GetType(), &quot;Sb3+3&quot;, 5))</a>
+<a name="ln1387">          phi = 87.7047 * DEG_TO_RAD;</a>
+<a name="ln1388">        else</a>
+<a name="ln1389">          phi = 90.0 * DEG_TO_RAD;</a>
+<a name="ln1390"> </a>
+<a name="ln1391">        oopcalc.c1 = -4.0 * cos(phi);</a>
+<a name="ln1392">        oopcalc.c2 = 1.0;</a>
+<a name="ln1393">        oopcalc.c0 = -1.0*oopcalc.c1 * cos(phi) + oopcalc.c2*cos(2.0*phi);</a>
+<a name="ln1394">        oopcalc.koop = 22.0 * KCAL_TO_KJ;</a>
+<a name="ln1395">      }</a>
+<a name="ln1396">      else if (!(EQn(b-&gt;GetType(), &quot;C_2&quot;, 3) || EQn(b-&gt;GetType(), &quot;C_R&quot;, 3)))</a>
+<a name="ln1397">        continue; // inversion not defined for this atom type</a>
+<a name="ln1398"> </a>
+<a name="ln1399">      FOR_NBORS_OF_ATOM(nbr, b) {</a>
+<a name="ln1400">        if (a == nullptr)</a>
+<a name="ln1401">          a = (OBAtom*) &amp;*nbr;</a>
+<a name="ln1402">        else if (c == nullptr)</a>
+<a name="ln1403">          c = (OBAtom*) &amp;*nbr;</a>
+<a name="ln1404">        else</a>
+<a name="ln1405">          d = (OBAtom*) &amp;*nbr;</a>
+<a name="ln1406">      }</a>
+<a name="ln1407"> </a>
+<a name="ln1408">      if (a == nullptr || c == nullptr || d == nullptr)</a>
+<a name="ln1409">        continue;</a>
+<a name="ln1410"> </a>
+<a name="ln1411">      // skip this oop if the atoms are ignored</a>
+<a name="ln1412">      if ( _constraints.IsIgnored(a-&gt;GetIdx()) ||</a>
+<a name="ln1413">           _constraints.IsIgnored(b-&gt;GetIdx()) ||</a>
+<a name="ln1414">           _constraints.IsIgnored(c-&gt;GetIdx()) ||</a>
+<a name="ln1415">           _constraints.IsIgnored(d-&gt;GetIdx()) )</a>
+<a name="ln1416">        continue;</a>
+<a name="ln1417"> </a>
+<a name="ln1418">      // if there are any groups specified,</a>
+<a name="ln1419">      // check if the four oop atoms are in a single intraGroup</a>
+<a name="ln1420">      if (HasGroups()) {</a>
+<a name="ln1421">        bool validOOP = false;</a>
+<a name="ln1422">        for (unsigned int i=0; i &lt; _intraGroup.size(); ++i) {</a>
+<a name="ln1423">          if (_intraGroup[i].BitIsSet(a-&gt;GetIdx()) &amp;&amp;</a>
+<a name="ln1424">              _intraGroup[i].BitIsSet(b-&gt;GetIdx()) &amp;&amp;</a>
+<a name="ln1425">              _intraGroup[i].BitIsSet(c-&gt;GetIdx()) &amp;&amp;</a>
+<a name="ln1426">              _intraGroup[i].BitIsSet(d-&gt;GetIdx()))</a>
+<a name="ln1427">            validOOP = true;</a>
+<a name="ln1428">        }</a>
+<a name="ln1429">        if (!validOOP)</a>
+<a name="ln1430">          continue;</a>
+<a name="ln1431">      }</a>
+<a name="ln1432"> </a>
+<a name="ln1433">      // C atoms, we should check if we're bonded to O</a>
+<a name="ln1434">      if (EQn(b-&gt;GetType(), &quot;C_2&quot;, 3) || EQn(b-&gt;GetType(), &quot;C_R&quot;, 3)) {</a>
+<a name="ln1435">        oopcalc.c0 = 1.0;</a>
+<a name="ln1436">        oopcalc.c1 = -1.0;</a>
+<a name="ln1437">        oopcalc.c2 = 0.0;</a>
+<a name="ln1438">        oopcalc.koop = 6.0 * KCAL_TO_KJ;</a>
+<a name="ln1439">        if (EQn(a-&gt;GetType(), &quot;O_2&quot;, 3) ||</a>
+<a name="ln1440">            EQn(c-&gt;GetType(), &quot;O_2&quot;, 3) ||</a>
+<a name="ln1441">            EQn(d-&gt;GetType(), &quot;O_2&quot;, 3)) {</a>
+<a name="ln1442">          oopcalc.koop = 50.0 * KCAL_TO_KJ;</a>
+<a name="ln1443">        }</a>
+<a name="ln1444">      }</a>
+<a name="ln1445"> </a>
+<a name="ln1446">      // A-B-CD || C-B-AD  PLANE = ABC</a>
+<a name="ln1447">      oopcalc.a = a;</a>
+<a name="ln1448">      oopcalc.b = b;</a>
+<a name="ln1449">      oopcalc.c = c;</a>
+<a name="ln1450">      oopcalc.d = d;</a>
+<a name="ln1451">      oopcalc.koop /= 3.0; // three OOPs to consider</a>
+<a name="ln1452"> </a>
+<a name="ln1453">      oopcalc.SetupPointers();</a>
+<a name="ln1454">      _oopcalculations.push_back(oopcalc);</a>
+<a name="ln1455"> </a>
+<a name="ln1456">      // C-B-DA || D-B-CA  PLANE BCD</a>
+<a name="ln1457">      oopcalc.a = d;</a>
+<a name="ln1458">      oopcalc.d = a;</a>
+<a name="ln1459"> </a>
+<a name="ln1460">      oopcalc.SetupPointers();</a>
+<a name="ln1461">      _oopcalculations.push_back(oopcalc);</a>
+<a name="ln1462"> </a>
+<a name="ln1463">      // A-B-DC || D-B-AC  PLANE ABD</a>
+<a name="ln1464">      oopcalc.a = a;</a>
+<a name="ln1465">      oopcalc.c = d;</a>
+<a name="ln1466">      oopcalc.d = c;</a>
+<a name="ln1467"> </a>
+<a name="ln1468">      oopcalc.SetupPointers();</a>
+<a name="ln1469">      _oopcalculations.push_back(oopcalc);</a>
+<a name="ln1470">    } // for all atoms</a>
+<a name="ln1471"> </a>
+<a name="ln1472">    //</a>
+<a name="ln1473">    // VDW Calculations</a>
+<a name="ln1474">    //</a>
+<a name="ln1475">    IF_OBFF_LOGLVL_LOW</a>
+<a name="ln1476">      OBFFLog(&quot;SETTING UP VAN DER WAALS CALCULATIONS...\n&quot;);</a>
+<a name="ln1477"> </a>
+<a name="ln1478">    FOR_PAIRS_OF_MOL(p, _mol) {</a>
+<a name="ln1479">      a = _mol.GetAtom((*p)[0]);</a>
+<a name="ln1480">      b = _mol.GetAtom((*p)[1]);</a>
+<a name="ln1481"> </a>
+<a name="ln1482">      // skip this vdw if the atoms are ignored</a>
+<a name="ln1483">      if ( _constraints.IsIgnored(a-&gt;GetIdx()) || _constraints.IsIgnored(b-&gt;GetIdx()) )</a>
+<a name="ln1484">        continue;</a>
+<a name="ln1485"> </a>
+<a name="ln1486">      // if there are any groups specified, check if the two atoms are in a single _interGroup or if</a>
+<a name="ln1487">      // two two atoms are in one of the _interGroups pairs.</a>
+<a name="ln1488">      if (HasGroups()) {</a>
+<a name="ln1489">        bool validVDW = false;</a>
+<a name="ln1490">        for (unsigned int i=0; i &lt; _interGroup.size(); ++i) {</a>
+<a name="ln1491">          if (_interGroup[i].BitIsSet(a-&gt;GetIdx()) &amp;&amp; _interGroup[i].BitIsSet(b-&gt;GetIdx()))</a>
+<a name="ln1492">            validVDW = true;</a>
+<a name="ln1493">        }</a>
+<a name="ln1494">        for (unsigned int i=0; i &lt; _interGroups.size(); ++i) {</a>
+<a name="ln1495">          if (_interGroups[i].first.BitIsSet(a-&gt;GetIdx()) &amp;&amp; _interGroups[i].second.BitIsSet(b-&gt;GetIdx()))</a>
+<a name="ln1496">            validVDW = true;</a>
+<a name="ln1497">          if (_interGroups[i].first.BitIsSet(b-&gt;GetIdx()) &amp;&amp; _interGroups[i].second.BitIsSet(a-&gt;GetIdx()))</a>
+<a name="ln1498">            validVDW = true;</a>
+<a name="ln1499">        }</a>
+<a name="ln1500"> </a>
+<a name="ln1501">        if (!validVDW)</a>
+<a name="ln1502">          continue;</a>
+<a name="ln1503">      }</a>
+<a name="ln1504"> </a>
+<a name="ln1505">      if (a-&gt;IsConnected(b)) {</a>
+<a name="ln1506">        continue;</a>
+<a name="ln1507">      }</a>
+<a name="ln1508">      if (a-&gt;IsOneThree(b)) {</a>
+<a name="ln1509">        continue;</a>
+<a name="ln1510">      }</a>
+<a name="ln1511"> </a>
+<a name="ln1512">      if (SetupVDWCalculation(a, b, vdwcalc)) {</a>
+<a name="ln1513">        _vdwcalculations.push_back(vdwcalc);</a>
+<a name="ln1514">      }</a>
+<a name="ln1515">    }</a>
+<a name="ln1516"> </a>
+<a name="ln1517">    // NOTE: No electrostatics are set up</a>
+<a name="ln1518">    // If you want electrostatics with UFF, you will need to call</a>
+<a name="ln1519">    // SetupElectrostatics() manually</a>
+<a name="ln1520"> </a>
+<a name="ln1521">    return true;</a>
+<a name="ln1522">  }</a>
+<a name="ln1523"> </a>
+<a name="ln1524">  bool OBForceFieldUFF::SetupElectrostatics()</a>
+<a name="ln1525">  {</a>
+<a name="ln1526">    //</a>
+<a name="ln1527">    // Electrostatic Calculations</a>
+<a name="ln1528">    //</a>
+<a name="ln1529">    OBAtom *a, *b;</a>
+<a name="ln1530"> </a>
+<a name="ln1531">    IF_OBFF_LOGLVL_LOW</a>
+<a name="ln1532">      OBFFLog(&quot;SETTING UP ELECTROSTATIC CALCULATIONS...\n&quot;);</a>
+<a name="ln1533"> </a>
+<a name="ln1534">    OBFFElectrostaticCalculationUFF elecalc;</a>
+<a name="ln1535"> </a>
+<a name="ln1536">    _electrostaticcalculations.clear();</a>
+<a name="ln1537"> </a>
+<a name="ln1538">    // Note that while the UFF paper mentions an electrostatic term,</a>
+<a name="ln1539">    // it does not actually use it. Both Towhee and the UFF FAQ</a>
+<a name="ln1540">    // discourage the use of electrostatics with UFF.</a>
+<a name="ln1541"> </a>
+<a name="ln1542">    FOR_PAIRS_OF_MOL(p, _mol) {</a>
+<a name="ln1543">      a = _mol.GetAtom((*p)[0]);</a>
+<a name="ln1544">      b = _mol.GetAtom((*p)[1]);</a>
+<a name="ln1545"> </a>
+<a name="ln1546">      // skip this ele if the atoms are ignored</a>
+<a name="ln1547">      if ( _constraints.IsIgnored(a-&gt;GetIdx()) || _constraints.IsIgnored(b-&gt;GetIdx()) )</a>
+<a name="ln1548">        continue;</a>
+<a name="ln1549"> </a>
+<a name="ln1550">      // if there are any groups specified, check if the two atoms are in a single _interGroup or if</a>
+<a name="ln1551">      // two two atoms are in one of the _interGroups pairs.</a>
+<a name="ln1552">      if (HasGroups()) {</a>
+<a name="ln1553">        bool validEle = false;</a>
+<a name="ln1554">        for (unsigned int i=0; i &lt; _interGroup.size(); ++i) {</a>
+<a name="ln1555">          if (_interGroup[i].BitIsSet(a-&gt;GetIdx()) &amp;&amp; _interGroup[i].BitIsSet(b-&gt;GetIdx()))</a>
+<a name="ln1556">            validEle = true;</a>
+<a name="ln1557">        }</a>
+<a name="ln1558">        for (unsigned int i=0; i &lt; _interGroups.size(); ++i) {</a>
+<a name="ln1559">          if (_interGroups[i].first.BitIsSet(a-&gt;GetIdx()) &amp;&amp; _interGroups[i].second.BitIsSet(b-&gt;GetIdx()))</a>
+<a name="ln1560">            validEle = true;</a>
+<a name="ln1561">          if (_interGroups[i].first.BitIsSet(b-&gt;GetIdx()) &amp;&amp; _interGroups[i].second.BitIsSet(a-&gt;GetIdx()))</a>
+<a name="ln1562">            validEle = true;</a>
+<a name="ln1563">        }</a>
+<a name="ln1564"> </a>
+<a name="ln1565">        if (!validEle)</a>
+<a name="ln1566">          continue;</a>
+<a name="ln1567">      }</a>
+<a name="ln1568"> </a>
+<a name="ln1569">      if (a-&gt;IsConnected(b)) {</a>
+<a name="ln1570">        continue;</a>
+<a name="ln1571">      }</a>
+<a name="ln1572">      if (a-&gt;IsOneThree(b)) {</a>
+<a name="ln1573">        continue;</a>
+<a name="ln1574">      }</a>
+<a name="ln1575"> </a>
+<a name="ln1576">      // Remember that at the moment, this term is not currently used</a>
+<a name="ln1577">      // These are also the Gasteiger charges, not the Qeq mentioned in the UFF paper</a>
+<a name="ln1578">      elecalc.qq = KCAL_TO_KJ * 332.0637 * a-&gt;GetPartialCharge() * b-&gt;GetPartialCharge();</a>
+<a name="ln1579"> </a>
+<a name="ln1580">      if (elecalc.qq) {</a>
+<a name="ln1581">        elecalc.a = &amp;*a;</a>
+<a name="ln1582">        elecalc.b = &amp;*b;</a>
+<a name="ln1583"> </a>
+<a name="ln1584">        elecalc.SetupPointers();</a>
+<a name="ln1585">        _electrostaticcalculations.push_back(elecalc);</a>
+<a name="ln1586">      }</a>
+<a name="ln1587">    }</a>
+<a name="ln1588">    return true;</a>
+<a name="ln1589">  }</a>
+<a name="ln1590"> </a>
+<a name="ln1591">  bool OBForceFieldUFF::SetupPointers()</a>
+<a name="ln1592">  {</a>
+<a name="ln1593">    for (unsigned int i = 0; i &lt; _bondcalculations.size(); ++i)</a>
+<a name="ln1594">      _bondcalculations[i].SetupPointers();</a>
+<a name="ln1595">    for (unsigned int i = 0; i &lt; _anglecalculations.size(); ++i)</a>
+<a name="ln1596">      _anglecalculations[i].SetupPointers();</a>
+<a name="ln1597">    for (unsigned int i = 0; i &lt; _torsioncalculations.size(); ++i)</a>
+<a name="ln1598">      _torsioncalculations[i].SetupPointers();</a>
+<a name="ln1599">     for (unsigned int i = 0; i &lt; _oopcalculations.size(); ++i)</a>
+<a name="ln1600">      _oopcalculations[i].SetupPointers();</a>
+<a name="ln1601">    for (unsigned int i = 0; i &lt; _vdwcalculations.size(); ++i)</a>
+<a name="ln1602">      _vdwcalculations[i].SetupPointers();</a>
+<a name="ln1603">    for (unsigned int i = 0; i &lt; _electrostaticcalculations.size(); ++i)</a>
+<a name="ln1604">      _electrostaticcalculations[i].SetupPointers();</a>
+<a name="ln1605"> </a>
+<a name="ln1606">    return true;</a>
+<a name="ln1607">  }</a>
+<a name="ln1608"> </a>
+<a name="ln1609">  bool OBForceFieldUFF::ParseParamFile()</a>
+<a name="ln1610">  {</a>
+<a name="ln1611">    vector&lt;string&gt; vs;</a>
+<a name="ln1612">    char buffer[BUFF_SIZE];</a>
+<a name="ln1613"> </a>
+<a name="ln1614">    OBFFParameter parameter;</a>
+<a name="ln1615"> </a>
+<a name="ln1616">    // open data/UFF.prm</a>
+<a name="ln1617">    ifstream ifs;</a>
+<a name="ln1618">    if (OpenDatafile(ifs, &quot;UFF.prm&quot;).length() == 0) {</a>
+<a name="ln1619">      obErrorLog.ThrowError(__FUNCTION__, &quot;Cannot open UFF.prm&quot;, obError);</a>
+<a name="ln1620">      return false;</a>
+<a name="ln1621">    }</a>
+<a name="ln1622"> </a>
+<a name="ln1623">    // Set the locale for number parsing to avoid locale issues: PR#1785463</a>
+<a name="ln1624">    obLocale.SetLocale();</a>
+<a name="ln1625"> </a>
+<a name="ln1626">    while (ifs.getline(buffer, BUFF_SIZE)) {</a>
+<a name="ln1627">      tokenize(vs, buffer);</a>
+<a name="ln1628">      if (vs.size() &lt; 13)</a>
+<a name="ln1629">        continue;</a>
+<a name="ln1630"> </a>
+<a name="ln1631">      if (EQn(buffer, &quot;param&quot;, 5)) {</a>
+<a name="ln1632">        // set up all parameters from this</a>
+<a name="ln1633">        parameter.clear();</a>
+<a name="ln1634">        parameter._a = vs[1]; // atom type</a>
+<a name="ln1635">        parameter._dpar.push_back(atof(vs[2].c_str())); // r1</a>
+<a name="ln1636">        parameter._dpar.push_back(atof(vs[3].c_str())); // theta0</a>
+<a name="ln1637">        parameter._dpar.push_back(atof(vs[4].c_str())); // x1</a>
+<a name="ln1638">        parameter._dpar.push_back(atof(vs[5].c_str())); // D1</a>
+<a name="ln1639">        parameter._dpar.push_back(atof(vs[6].c_str())); // zeta</a>
+<a name="ln1640">        parameter._dpar.push_back(atof(vs[7].c_str())); // Z1</a>
+<a name="ln1641">        parameter._dpar.push_back(atof(vs[8].c_str())); // Vi</a>
+<a name="ln1642">        parameter._dpar.push_back(atof(vs[9].c_str())); // Uj</a>
+<a name="ln1643">        parameter._dpar.push_back(atof(vs[10].c_str())); // Xi</a>
+<a name="ln1644">        parameter._dpar.push_back(atof(vs[11].c_str())); // Hard</a>
+<a name="ln1645">        parameter._dpar.push_back(atof(vs[12].c_str())); // Radius</a>
+<a name="ln1646"> </a>
+<a name="ln1647">        parameter.b = 0; // used for tracking number of angles in 5-coordinate</a>
+<a name="ln1648">        parameter.c = 0;</a>
+<a name="ln1649"> </a>
+<a name="ln1650">        char coord = vs[1][2]; // 3rd character of atom type</a>
+<a name="ln1651">        switch (coord) {</a>
+<a name="ln1652">        case '1': // linear</a>
+<a name="ln1653">          parameter._ipar.push_back(1);</a>
+<a name="ln1654">          break;</a>
+<a name="ln1655">        case '2': // trigonal planar (sp2)</a>
+<a name="ln1656">        case 'R': // aromatic (N_R)</a>
+<a name="ln1657">          parameter._ipar.push_back(2);</a>
+<a name="ln1658">          break;</a>
+<a name="ln1659">        case '3': // tetrahedral (sp3)</a>
+<a name="ln1660">          parameter._ipar.push_back(3);</a>
+<a name="ln1661">          break;</a>
+<a name="ln1662">        case '4': // square planar</a>
+<a name="ln1663">          parameter._ipar.push_back(4);</a>
+<a name="ln1664">          break;</a>
+<a name="ln1665">        case '5': // trigonal bipyramidal -- not actually in parameterization</a>
+<a name="ln1666">          parameter._ipar.push_back(5);</a>
+<a name="ln1667">          break;</a>
+<a name="ln1668">        case '6': // octahedral</a>
+<a name="ln1669">          parameter._ipar.push_back(6);</a>
+<a name="ln1670">          break;</a>
+<a name="ln1671">        case '7': // pentagonal bipyramidal -- not actually in parameterization</a>
+<a name="ln1672">          parameter._ipar.push_back(7);</a>
+<a name="ln1673">          break;</a>
+<a name="ln1674">        default: // general case (unknown coordination)</a>
+<a name="ln1675">          // These atoms appear to generally be linear coordination like Cl</a>
+<a name="ln1676">          parameter._ipar.push_back(1);</a>
+<a name="ln1677">        }</a>
+<a name="ln1678"> </a>
+<a name="ln1679">        _ffparams.push_back(parameter);</a>
+<a name="ln1680">      }</a>
+<a name="ln1681">    }</a>
+<a name="ln1682"> </a>
+<a name="ln1683">    if (ifs)</a>
+<a name="ln1684">      ifs.close();</a>
+<a name="ln1685"> </a>
+<a name="ln1686">    // return the locale to the original one</a>
+<a name="ln1687">    obLocale.RestoreLocale();</a>
+<a name="ln1688"> </a>
+<a name="ln1689">    return 0;</a>
+<a name="ln1690">  }</a>
+<a name="ln1691"> </a>
+<a name="ln1692">  bool OBForceFieldUFF::SetTypes()</a>
+<a name="ln1693">  {</a>
+<a name="ln1694">    vector&lt;vector&lt;int&gt; &gt; _mlist; //!&lt; match list for atom typing</a>
+<a name="ln1695">    vector&lt;pair&lt;OBSmartsPattern*,string&gt; &gt; _vexttyp; //!&lt; external atom type rules</a>
+<a name="ln1696">    vector&lt;vector&lt;int&gt; &gt;::iterator j;</a>
+<a name="ln1697">    vector&lt;pair&lt;OBSmartsPattern*,string&gt; &gt;::iterator i;</a>
+<a name="ln1698">    OBSmartsPattern *sp;</a>
+<a name="ln1699">    vector&lt;string&gt; vs;</a>
+<a name="ln1700">    char buffer[BUFF_SIZE];</a>
+<a name="ln1701"> </a>
+<a name="ln1702">    _mol.SetAtomTypesPerceived();</a>
+<a name="ln1703"> </a>
+<a name="ln1704">    // open data/UFF.prm</a>
+<a name="ln1705">    ifstream ifs;</a>
+<a name="ln1706">    if (OpenDatafile(ifs, &quot;UFF.prm&quot;).length() == 0) {</a>
+<a name="ln1707">      obErrorLog.ThrowError(__FUNCTION__, &quot;Cannot open UFF.prm&quot;, obError);</a>
+<a name="ln1708">      return false;</a>
+<a name="ln1709">    }</a>
+<a name="ln1710"> </a>
+<a name="ln1711">    while (ifs.getline(buffer, BUFF_SIZE)) {</a>
+<a name="ln1712">      if (EQn(buffer, &quot;atom&quot;, 4)) {</a>
+<a name="ln1713">      	tokenize(vs, buffer);</a>
+<a name="ln1714"> </a>
+<a name="ln1715">        sp = new OBSmartsPattern;</a>
+<a name="ln1716">        if (sp-&gt;Init(vs[1])) {</a>
+<a name="ln1717">          _vexttyp.push_back(pair&lt;OBSmartsPattern*,string&gt; (sp,vs[2]));</a>
+<a name="ln1718">        }</a>
+<a name="ln1719">        else {</a>
+<a name="ln1720">          delete sp;</a>
+<a name="ln1721">          sp = nullptr;</a>
+<a name="ln1722">          obErrorLog.ThrowError(__FUNCTION__, &quot; Could not parse atom type table from UFF.prm&quot;, obInfo);</a>
+<a name="ln1723">          return false;</a>
+<a name="ln1724">        }</a>
+<a name="ln1725">      }</a>
+<a name="ln1726">    }</a>
+<a name="ln1727"> </a>
+<a name="ln1728">    for (i = _vexttyp.begin();i != _vexttyp.end();++i) {</a>
+<a name="ln1729">      if (i-&gt;first-&gt;Match(_mol)) {</a>
+<a name="ln1730">        _mlist = i-&gt;first-&gt;GetMapList();</a>
+<a name="ln1731">        for (j = _mlist.begin();j != _mlist.end();++j) {</a>
+<a name="ln1732">          _mol.GetAtom((*j)[0])-&gt;SetType(i-&gt;second);</a>
+<a name="ln1733">        }</a>
+<a name="ln1734">      }</a>
+<a name="ln1735">    }</a>
+<a name="ln1736"> </a>
+<a name="ln1737">    // Special atom types (i.e., P_3+q)</a>
+<a name="ln1738">    // (We can't easily do this with a SMARTS)</a>
+<a name="ln1739">    FOR_ATOMS_OF_MOL(a, _mol) {</a>
+<a name="ln1740">      if (a-&gt;GetAtomicNum() == 15) {</a>
+<a name="ln1741">        // loop through all the neighbors and see if we have a metal coordination</a>
+<a name="ln1742">        bool organomet = false;</a>
+<a name="ln1743">        int nbrElement;</a>
+<a name="ln1744">        FOR_NBORS_OF_ATOM (nbr, &amp;*a) {</a>
+<a name="ln1745">          nbrElement = nbr-&gt;GetAtomicNum();</a>
+<a name="ln1746">          if ( (nbrElement &gt;= 21 &amp;&amp; nbrElement &lt;= 31) // Sc to Ga</a>
+<a name="ln1747">               || (nbrElement &gt;= 39 &amp;&amp; nbrElement &lt;= 50) // Y to Sn</a>
+<a name="ln1748">               || (nbrElement &gt;= 57 &amp;&amp; nbrElement &lt;= 83) // La to Bi</a>
+<a name="ln1749">               || (nbrElement &gt;= 89) ) {</a>
+<a name="ln1750">            organomet = true;</a>
+<a name="ln1751">            break; // done!</a>
+<a name="ln1752">          }</a>
+<a name="ln1753">        }</a>
+<a name="ln1754">        if (organomet)</a>
+<a name="ln1755">          a-&gt;SetType(&quot;P_3+q&quot;);</a>
+<a name="ln1756">      }</a>
+<a name="ln1757">      else if (a-&gt;GetAtomicNum() &gt; 102) { // superheavy</a>
+<a name="ln1758">        a-&gt;SetType(&quot;Lw6+3&quot;); // prevent a crash with atoms beyond the parameterization Avogadro PR#741</a>
+<a name="ln1759">      }</a>
+<a name="ln1760">    }</a>
+<a name="ln1761"> </a>
+<a name="ln1762">    IF_OBFF_LOGLVL_LOW {</a>
+<a name="ln1763">      OBFFLog(&quot;\nA T O M   T Y P E S\n\n&quot;);</a>
+<a name="ln1764">      OBFFLog(&quot;IDX\tTYPE\tRING\n&quot;);</a>
+<a name="ln1765"> </a>
+<a name="ln1766">      FOR_ATOMS_OF_MOL (a, _mol) {</a>
+<a name="ln1767">        snprintf(_logbuf, BUFF_SIZE, &quot;%d\t%s\t%s\n&quot;, a-&gt;GetIdx(), a-&gt;GetType(),</a>
+<a name="ln1768">	  (a-&gt;IsInRing() ? (a-&gt;IsAromatic() ? &quot;AR&quot; : &quot;AL&quot;) : &quot;NO&quot;));</a>
+<a name="ln1769">        OBFFLog(_logbuf);</a>
+<a name="ln1770">      }</a>
+<a name="ln1771"> </a>
+<a name="ln1772">    }</a>
+<a name="ln1773"> </a>
+<a name="ln1774">    if (ifs)</a>
+<a name="ln1775">      ifs.close();</a>
+<a name="ln1776"> </a>
+<a name="ln1777">    // Free memory</a>
+<a name="ln1778">    for (i = _vexttyp.begin();i != _vexttyp.end();++i) {</a>
+<a name="ln1779">      sp = i-&gt;first;</a>
+<a name="ln1780">      delete sp;</a>
+<a name="ln1781">    }</a>
+<a name="ln1782"> </a>
+<a name="ln1783">    return true;</a>
+<a name="ln1784">  }</a>
+<a name="ln1785"> </a>
+<a name="ln1786">  double OBForceFieldUFF::Energy(bool gradients)</a>
+<a name="ln1787">  {</a>
+<a name="ln1788">    double energy;</a>
+<a name="ln1789"> </a>
+<a name="ln1790">    IF_OBFF_LOGLVL_MEDIUM</a>
+<a name="ln1791">      OBFFLog(&quot;\nE N E R G Y\n\n&quot;);</a>
+<a name="ln1792"> </a>
+<a name="ln1793">    if (gradients) {</a>
+<a name="ln1794">      ClearGradients();</a>
+<a name="ln1795">      energy  = E_Bond&lt;true&gt;();</a>
+<a name="ln1796">      energy += E_Angle&lt;true&gt;();</a>
+<a name="ln1797">      energy += E_Torsion&lt;true&gt;();</a>
+<a name="ln1798">      energy += E_OOP&lt;true&gt;();</a>
+<a name="ln1799">      energy += E_VDW&lt;true&gt;();</a>
+<a name="ln1800">    } else {</a>
+<a name="ln1801">      energy  = E_Bond&lt;false&gt;();</a>
+<a name="ln1802">      energy += E_Angle&lt;false&gt;();</a>
+<a name="ln1803">      energy += E_Torsion&lt;false&gt;();</a>
+<a name="ln1804">      energy += E_OOP&lt;false&gt;();</a>
+<a name="ln1805">      energy += E_VDW&lt;false&gt;();</a>
+<a name="ln1806">    }</a>
+<a name="ln1807"> </a>
+<a name="ln1808">    // The electrostatic term, by default is 0.0</a>
+<a name="ln1809">    // You will need to call SetupEletrostatics if you want it</a>
+<a name="ln1810">    // energy += E_Electrostatic(gradients);</a>
+<a name="ln1811"> </a>
+<a name="ln1812">    IF_OBFF_LOGLVL_MEDIUM {</a>
+<a name="ln1813">      snprintf(_logbuf, BUFF_SIZE, &quot;\nTOTAL ENERGY = %8.5f %s\n&quot;, energy, GetUnit().c_str());</a>
+<a name="ln1814">      OBFFLog(_logbuf);</a>
+<a name="ln1815">    }</a>
+<a name="ln1816"> </a>
+<a name="ln1817">    return energy;</a>
+<a name="ln1818">  }</a>
+<a name="ln1819"> </a>
+<a name="ln1820">  OBFFParameter* OBForceFieldUFF::GetParameterUFF(std::string a, vector&lt;OBFFParameter&gt; &amp;parameter)</a>
+<a name="ln1821">  {</a>
+<a name="ln1822">    for (unsigned int idx=0; idx &lt; parameter.size(); ++idx) {</a>
+<a name="ln1823">      if (a == parameter[idx]._a) {</a>
+<a name="ln1824">        return &amp;parameter[idx];</a>
+<a name="ln1825">      }</a>
+<a name="ln1826">    }</a>
+<a name="ln1827">    return nullptr;</a>
+<a name="ln1828">  }</a>
+<a name="ln1829"> </a>
+<a name="ln1830">  bool OBForceFieldUFF::ValidateGradients ()</a>
+<a name="ln1831">  {</a>
+<a name="ln1832">    vector3 numgrad, anagrad, err;</a>
+<a name="ln1833">    bool passed = true; // set to false if any component fails</a>
+<a name="ln1834">    int coordIdx;</a>
+<a name="ln1835"> </a>
+<a name="ln1836">    OBFFLog(&quot;\nV A L I D A T E   G R A D I E N T S\n\n&quot;);</a>
+<a name="ln1837">    OBFFLog(&quot;ATOM IDX      NUMERICAL GRADIENT           ANALYTICAL GRADIENT        REL. ERROR (%)   \n&quot;);</a>
+<a name="ln1838">    OBFFLog(&quot;----------------------------------------------------------------------------------------\n&quot;);</a>
+<a name="ln1839">    //     &quot;XX       (000.000, 000.000, 000.000)  (000.000, 000.000, 000.000)  (00.00, 00.00, 00.00)&quot;</a>
+<a name="ln1840"> </a>
+<a name="ln1841">    FOR_ATOMS_OF_MOL (a, _mol) {</a>
+<a name="ln1842">      coordIdx = (a-&gt;GetIdx() - 1) * 3;</a>
+<a name="ln1843"> </a>
+<a name="ln1844">      // OBFF_ENERGY (i.e., overall)</a>
+<a name="ln1845">      numgrad = NumericalDerivative(&amp;*a, OBFF_ENERGY);</a>
+<a name="ln1846">      Energy(); // compute</a>
+<a name="ln1847">      anagrad.Set(_gradientPtr[coordIdx], _gradientPtr[coordIdx+1], _gradientPtr[coordIdx+2]);</a>
+<a name="ln1848">      err = ValidateGradientError(numgrad, anagrad);</a>
+<a name="ln1849"> </a>
+<a name="ln1850">      snprintf(_logbuf, BUFF_SIZE, &quot;%2d       (%7.3f, %7.3f, %7.3f)  (%7.3f, %7.3f, %7.3f)  (%5.2f, %5.2f, %5.2f)\n&quot;, a-&gt;GetIdx(), numgrad.x(), numgrad.y(), numgrad.z(),</a>
+<a name="ln1851">               anagrad.x(), anagrad.y(), anagrad.z(), err.x(), err.y(), err.z());</a>
+<a name="ln1852">      OBFFLog(_logbuf);</a>
+<a name="ln1853"> </a>
+<a name="ln1854">      // OBFF_EBOND</a>
+<a name="ln1855">      numgrad = NumericalDerivative(&amp;*a, OBFF_EBOND);</a>
+<a name="ln1856">      ClearGradients();</a>
+<a name="ln1857">      E_Bond(); // compute</a>
+<a name="ln1858">      anagrad.Set(_gradientPtr[coordIdx], _gradientPtr[coordIdx+1], _gradientPtr[coordIdx+2]);</a>
+<a name="ln1859">      err = ValidateGradientError(numgrad, anagrad);</a>
+<a name="ln1860"> </a>
+<a name="ln1861">      snprintf(_logbuf, BUFF_SIZE, &quot;    bond    (%7.3f, %7.3f, %7.3f)  (%7.3f, %7.3f, %7.3f)  (%5.2f, %5.2f, %5.2f)\n&quot;, numgrad.x(), numgrad.y(), numgrad.z(),</a>
+<a name="ln1862">               anagrad.x(), anagrad.y(), anagrad.z(), err.x(), err.y(), err.z());</a>
+<a name="ln1863">      OBFFLog(_logbuf);</a>
+<a name="ln1864">      if (err.x() &gt; 5.0 || err.y() &gt; 5.0 || err.z() &gt; 5.0)</a>
+<a name="ln1865">        passed = false;</a>
+<a name="ln1866"> </a>
+<a name="ln1867">      // OBFF_EANGLE</a>
+<a name="ln1868">      numgrad = NumericalDerivative(&amp;*a, OBFF_EANGLE);</a>
+<a name="ln1869">      ClearGradients();</a>
+<a name="ln1870">      E_Angle(); // compute</a>
+<a name="ln1871">      anagrad.Set(_gradientPtr[coordIdx], _gradientPtr[coordIdx+1], _gradientPtr[coordIdx+2]);</a>
+<a name="ln1872">      err = ValidateGradientError(numgrad, anagrad);</a>
+<a name="ln1873"> </a>
+<a name="ln1874">      snprintf(_logbuf, BUFF_SIZE, &quot;    angle   (%7.3f, %7.3f, %7.3f)  (%7.3f, %7.3f, %7.3f)  (%5.2f, %5.2f, %5.2f)\n&quot;, numgrad.x(), numgrad.y(), numgrad.z(),</a>
+<a name="ln1875">               anagrad.x(), anagrad.y(), anagrad.z(), err.x(), err.y(), err.z());</a>
+<a name="ln1876">      OBFFLog(_logbuf);</a>
+<a name="ln1877">      if (err.x() &gt; 8.0 || err.y() &gt; 8.0 || err.z() &gt; 8.0)</a>
+<a name="ln1878">        passed = false;</a>
+<a name="ln1879"> </a>
+<a name="ln1880">      // OBFF_ETORSION</a>
+<a name="ln1881">      numgrad = NumericalDerivative(&amp;*a, OBFF_ETORSION);</a>
+<a name="ln1882">      ClearGradients();</a>
+<a name="ln1883">      E_Torsion(); // compute</a>
+<a name="ln1884">      anagrad.Set(_gradientPtr[coordIdx], _gradientPtr[coordIdx+1], _gradientPtr[coordIdx+2]);</a>
+<a name="ln1885">      err = ValidateGradientError(numgrad, anagrad);</a>
+<a name="ln1886"> </a>
+<a name="ln1887">      snprintf(_logbuf, BUFF_SIZE, &quot;    torsion (%7.3f, %7.3f, %7.3f)  (%7.3f, %7.3f, %7.3f)  (%5.2f, %5.2f, %5.2f)\n&quot;, numgrad.x(), numgrad.y(), numgrad.z(),</a>
+<a name="ln1888">               anagrad.x(), anagrad.y(), anagrad.z(), err.x(), err.y(), err.z());</a>
+<a name="ln1889">      OBFFLog(_logbuf);</a>
+<a name="ln1890">      // 8% tolerance here because some 180 torsions cause numerical instability</a>
+<a name="ln1891">      if (err.x() &gt; 8.0 || err.y() &gt; 8.0 || err.z() &gt; 8.0)</a>
+<a name="ln1892">        passed = false;</a>
+<a name="ln1893"> </a>
+<a name="ln1894">      // OBFF_EOOP</a>
+<a name="ln1895">      numgrad = NumericalDerivative(&amp;*a, OBFF_EOOP);</a>
+<a name="ln1896">      ClearGradients();</a>
+<a name="ln1897">      E_OOP(); // compute</a>
+<a name="ln1898">      anagrad.Set(_gradientPtr[coordIdx], _gradientPtr[coordIdx+1], _gradientPtr[coordIdx+2]);</a>
+<a name="ln1899">      err = ValidateGradientError(numgrad, anagrad);</a>
+<a name="ln1900"> </a>
+<a name="ln1901">      snprintf(_logbuf, BUFF_SIZE, &quot;    oop     (%7.3f, %7.3f, %7.3f)  (%7.3f, %7.3f, %7.3f)  (%5.2f, %5.2f, %5.2f)\n&quot;, numgrad.x(), numgrad.y(), numgrad.z(),</a>
+<a name="ln1902">               anagrad.x(), anagrad.y(), anagrad.z(), err.x(), err.y(), err.z());</a>
+<a name="ln1903">      OBFFLog(_logbuf);</a>
+<a name="ln1904">      // We don't care if the OOP error is relatively large</a>
+<a name="ln1905">      //      if (err.x() &gt; 5.0 || err.y() &gt; 5.0 || err.z() &gt; 5.0)</a>
+<a name="ln1906">      //        passed = false;</a>
+<a name="ln1907"> </a>
+<a name="ln1908">      // OBFF_EVDW</a>
+<a name="ln1909">      numgrad = NumericalDerivative(&amp;*a, OBFF_EVDW);</a>
+<a name="ln1910">      ClearGradients();</a>
+<a name="ln1911">      E_VDW(); // compute</a>
+<a name="ln1912">      anagrad.Set(_gradientPtr[coordIdx], _gradientPtr[coordIdx+1], _gradientPtr[coordIdx+2]);</a>
+<a name="ln1913">      err = ValidateGradientError(numgrad, anagrad);</a>
+<a name="ln1914"> </a>
+<a name="ln1915">      snprintf(_logbuf, BUFF_SIZE, &quot;    vdw     (%7.3f, %7.3f, %7.3f)  (%7.3f, %7.3f, %7.3f)  (%5.2f, %5.2f, %5.2f)\n&quot;, numgrad.x(), numgrad.y(), numgrad.z(),</a>
+<a name="ln1916">               anagrad.x(), anagrad.y(), anagrad.z(), err.x(), err.y(), err.z());</a>
+<a name="ln1917">      OBFFLog(_logbuf);</a>
+<a name="ln1918">      if (err.x() &gt; 5.0 || err.y() &gt; 5.0 || err.z() &gt; 5.0)</a>
+<a name="ln1919">        passed = false;</a>
+<a name="ln1920"> </a>
+<a name="ln1921">      // OBFF_EELECTROSTATIC</a>
+<a name="ln1922">      numgrad = NumericalDerivative(&amp;*a, OBFF_EELECTROSTATIC);</a>
+<a name="ln1923">      ClearGradients();</a>
+<a name="ln1924">      E_Electrostatic(); // compute</a>
+<a name="ln1925">      anagrad.Set(_gradientPtr[coordIdx], _gradientPtr[coordIdx+1], _gradientPtr[coordIdx+2]);</a>
+<a name="ln1926">      err = ValidateGradientError(numgrad, anagrad);</a>
+<a name="ln1927"> </a>
+<a name="ln1928">      snprintf(_logbuf, BUFF_SIZE, &quot;    electro (%7.3f, %7.3f, %7.3f)  (%7.3f, %7.3f, %7.3f)  (%5.2f, %5.2f, %5.2f)\n&quot;, numgrad.x(), numgrad.y(), numgrad.z(),</a>
+<a name="ln1929">               anagrad.x(), anagrad.y(), anagrad.z(), err.x(), err.y(), err.z());</a>
+<a name="ln1930">      OBFFLog(_logbuf);</a>
+<a name="ln1931">      if (err.x() &gt; 5.0 || err.y() &gt; 5.0 || err.z() &gt; 5.0)</a>
+<a name="ln1932">        passed = false;</a>
+<a name="ln1933">    }</a>
+<a name="ln1934"> </a>
+<a name="ln1935">    return passed; // did we pass every single component?</a>
+<a name="ln1936">  }</a>
+<a name="ln1937"> </a>
+<a name="ln1938">} // end namespace OpenBabel</a>
+<a name="ln1939"> </a>
+<a name="ln1940">//! \file forcefieldUFF.cpp</a>
+<a name="ln1941">//! \brief UFF force field</a>
+
+</code></pre>
+<div class="balloon" rel="1058"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v728/" target="_blank">V728</a> An excessive check can be simplified. The '(A && !B) || (!A && B)' expression is equivalent to the 'bool(A) != bool(B)' expression.</p></div>
+<div class="balloon" rel="1102"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v728/" target="_blank">V728</a> An excessive check can be simplified. The '(A && !B) || (!A && B)' expression is equivalent to the 'bool(A) != bool(B)' expression.</p></div>
+<div class="balloon" rel="1325"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v614/" target="_blank">V614</a> Potentially uninitialized variable 'torsioncalc.V' used. Consider checking the first actual argument of the 'IsNearZero' function.</p></div>
+<div class="balloon" rel="1330"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v614/" target="_blank">V614</a> Potentially uninitialized variable 'torsioncalc.n' used.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

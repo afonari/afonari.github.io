@@ -1,0 +1,329 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>smartstest.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1"> /**********************************************************************</a>
+<a name="ln2"> smartstest.cpp - Test SMARTS algorithms and atom typing.</a>
+<a name="ln3"> </a>
+<a name="ln4"> This file is part of the Open Babel project.</a>
+<a name="ln5"> For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln6"> </a>
+<a name="ln7"> Copyright (C) 1998-2001 by OpenEye Scientific Software, Inc.</a>
+<a name="ln8"> Some portions Copyright (C) 2001-2005 Geoffrey R. Hutchison</a>
+<a name="ln9"> </a>
+<a name="ln10"> This program is free software; you can redistribute it and/or modify</a>
+<a name="ln11"> it under the terms of the GNU General Public License as published by</a>
+<a name="ln12"> the Free Software Foundation version 2 of the License.</a>
+<a name="ln13"> </a>
+<a name="ln14"> This program is distributed in the hope that it will be useful,</a>
+<a name="ln15"> but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln16"> MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln17"> GNU General Public License for more details.</a>
+<a name="ln18"> ***********************************************************************/</a>
+<a name="ln19"> </a>
+<a name="ln20">// used to set import/export for Cygwin DLLs</a>
+<a name="ln21">#ifdef WIN32</a>
+<a name="ln22">#define USING_OBDLL</a>
+<a name="ln23">#endif</a>
+<a name="ln24"> </a>
+<a name="ln25">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln26"> </a>
+<a name="ln27">#include &lt;fstream&gt;</a>
+<a name="ln28">#include &lt;cstdlib&gt;</a>
+<a name="ln29">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln30">#include &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln31">#include &lt;openbabel/obutil.h&gt;</a>
+<a name="ln32">#include &lt;openbabel/parsmart.h&gt;</a>
+<a name="ln33"> </a>
+<a name="ln34">using namespace std;</a>
+<a name="ln35">using namespace OpenBabel;</a>
+<a name="ln36"> </a>
+<a name="ln37">void GenerateSmartsReference();</a>
+<a name="ln38"> </a>
+<a name="ln39">#ifdef TESTDATADIR</a>
+<a name="ln40">  string mtestdatadir = TESTDATADIR;</a>
+<a name="ln41">  string msmarts_file = mtestdatadir + &quot;smartstest.txt&quot;;</a>
+<a name="ln42">  string mresults_file = mtestdatadir + &quot;smartsresults.txt&quot;;</a>
+<a name="ln43">  string msmilestypes_file = mtestdatadir + &quot;attype.00.smi&quot;;</a>
+<a name="ln44">#else</a>
+<a name="ln45">   string msmarts_file = &quot;files/smartstest.txt&quot;;</a>
+<a name="ln46">   string mresults_file = &quot;files/smartsresults.txt&quot;;</a>
+<a name="ln47">   string msmilestypes_file = &quot;files/attype.00.smi&quot;;</a>
+<a name="ln48">#endif</a>
+<a name="ln49"> </a>
+<a name="ln50">int smartstest(int argc, char* argv[])</a>
+<a name="ln51">{</a>
+<a name="ln52">  int defaultchoice = 1;</a>
+<a name="ln53">  </a>
+<a name="ln54">  int choice = defaultchoice;</a>
+<a name="ln55"> </a>
+<a name="ln56">  if (argc &gt; 1) {</a>
+<a name="ln57">    if(sscanf(argv[1], &quot;%d&quot;, &amp;choice) != 1) {</a>
+<a name="ln58">      printf(&quot;Couldn't parse that input as a number\n&quot;);</a>
+<a name="ln59">      return -1;</a>
+<a name="ln60">    }</a>
+<a name="ln61">  }</a>
+<a name="ln62"> </a>
+<a name="ln63">  // Define location of file formats for testing</a>
+<a name="ln64">  #ifdef FORMATDIR</a>
+<a name="ln65">    char env[BUFF_SIZE];</a>
+<a name="ln66">    snprintf(env, BUFF_SIZE, &quot;BABEL_LIBDIR=%s&quot;, FORMATDIR);</a>
+<a name="ln67">    putenv(env);</a>
+<a name="ln68">  #endif</a>
+<a name="ln69"> </a>
+<a name="ln70">    if (choice==99)</a>
+<a name="ln71">    {</a>
+<a name="ln72">          GenerateSmartsReference();</a>
+<a name="ln73">          return 0;</a>
+<a name="ln74">    }</a>
+<a name="ln75">  </a>
+<a name="ln76">  cout &lt;&lt; endl &lt;&lt; &quot;# Testing SMARTS...  \n&quot;;</a>
+<a name="ln77"> </a>
+<a name="ln78">  std::ifstream ifs;</a>
+<a name="ln79">  if (!SafeOpen(ifs, msmarts_file.c_str()))</a>
+<a name="ln80">    {</a>
+<a name="ln81">      cout &lt;&lt; &quot;Bail out! Cannot read &quot; &lt;&lt; msmarts_file &lt;&lt; endl;</a>
+<a name="ln82">      return -1; // test failed</a>
+<a name="ln83">    }</a>
+<a name="ln84"> </a>
+<a name="ln85">  //read in the SMARTS test patterns</a>
+<a name="ln86">  char buffer[BUFF_SIZE];</a>
+<a name="ln87">  vector&lt;OBSmartsPattern*&gt; vsp;</a>
+<a name="ln88">  for (;ifs.getline(buffer,BUFF_SIZE);)</a>
+<a name="ln89">    {</a>
+<a name="ln90">      if (buffer[0] == '#') // skip comment line</a>
+<a name="ln91">        continue;</a>
+<a name="ln92"> </a>
+<a name="ln93">      OBSmartsPattern *sp = new OBSmartsPattern;</a>
+<a name="ln94"> </a>
+<a name="ln95">      if (sp-&gt;Init(buffer))</a>
+<a name="ln96">        vsp.push_back(sp);</a>
+<a name="ln97">      else</a>
+<a name="ln98">        delete sp;</a>
+<a name="ln99">    }</a>
+<a name="ln100">  ifs.close();</a>
+<a name="ln101"> </a>
+<a name="ln102">  std::ifstream rifs;</a>
+<a name="ln103">  if (!SafeOpen(rifs, mresults_file.c_str()))</a>
+<a name="ln104">    {</a>
+<a name="ln105">      cout &lt;&lt; &quot;Bail out! Cannot read in results file &quot; &lt;&lt; mresults_file &lt;&lt; endl;</a>
+<a name="ln106">      return -1; // test failed</a>
+<a name="ln107">    }</a>
+<a name="ln108">  unsigned int npats;</a>
+<a name="ln109">  rifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln110">  sscanf(buffer,&quot;%d %*s&quot;,&amp;npats);</a>
+<a name="ln111"> </a>
+<a name="ln112">  //make sure the number of SMARTS patterns is the same as in the</a>
+<a name="ln113">  //reference data</a>
+<a name="ln114">  if (npats != vsp.size())</a>
+<a name="ln115">    {</a>
+<a name="ln116">      cout &lt;&lt; &quot;Bail out! Correct number of patterns not read in&quot; &lt;&lt;</a>
+<a name="ln117">        &quot;Read in &quot; &lt;&lt; vsp.size() &lt;&lt; &quot; expected &quot; &lt;&lt; npats &lt;&lt; endl;</a>
+<a name="ln118">      return -1; // test failed</a>
+<a name="ln119">    }</a>
+<a name="ln120"> </a>
+<a name="ln121">  std::ifstream mifs;</a>
+<a name="ln122">  if (!SafeOpen(mifs, msmilestypes_file.c_str()))</a>
+<a name="ln123">    {</a>
+<a name="ln124">      cout &lt;&lt; &quot;Bail out! Cannot read atom types &quot; &lt;&lt; msmilestypes_file &lt;&lt; endl;</a>
+<a name="ln125">      return -1; // test failed</a>
+<a name="ln126">    }</a>
+<a name="ln127"> </a>
+<a name="ln128">  unsigned int k;</a>
+<a name="ln129">  unsigned int res_line = 0;</a>
+<a name="ln130">  OBMol mol;</a>
+<a name="ln131">  vector&lt;string&gt; vs;</a>
+<a name="ln132">  vector&lt;OBSmartsPattern*&gt;::iterator i;</a>
+<a name="ln133">  vector&lt;vector&lt;int&gt; &gt; mlist;</a>
+<a name="ln134">  unsigned int currentMol = 0; // each molecule is a separate test</a>
+<a name="ln135">  bool molPassed = true;</a>
+<a name="ln136"> </a>
+<a name="ln137">  OBConversion conv(&amp;mifs, &amp;cout);</a>
+<a name="ln138">  if (! conv.SetInAndOutFormats(&quot;SMI&quot;,&quot;SMI&quot;))</a>
+<a name="ln139">    {</a>
+<a name="ln140">      cout &lt;&lt; &quot;Bail out! SMILES format is not loaded&quot; &lt;&lt; endl;</a>
+<a name="ln141">      return -1;</a>
+<a name="ln142">    }</a>
+<a name="ln143"> </a>
+<a name="ln144">  //read in molecules, match SMARTS, and compare results to reference data</a>
+<a name="ln145">  for (;mifs;)</a>
+<a name="ln146">    {</a>
+<a name="ln147">      mol.Clear();</a>
+<a name="ln148">      conv.Read(&amp;mol);</a>
+<a name="ln149">      if (mol.Empty())</a>
+<a name="ln150">        continue;</a>
+<a name="ln151"> </a>
+<a name="ln152">      currentMol++;</a>
+<a name="ln153">      molPassed = true;</a>
+<a name="ln154"> </a>
+<a name="ln155">      for (i = vsp.begin();i != vsp.end();++i)</a>
+<a name="ln156">        {</a>
+<a name="ln157">          if (!rifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln158">            {</a>
+<a name="ln159">              cout &lt;&lt; &quot;Bail out! Error reading reference data&quot; &lt;&lt; endl;</a>
+<a name="ln160">              return -1; // test failed</a>
+<a name="ln161">            }</a>
+<a name="ln162">          res_line++;</a>
+<a name="ln163"> </a>
+<a name="ln164">          tokenize(vs,buffer);</a>
+<a name="ln165">          (*i)-&gt;Match(mol);</a>
+<a name="ln166">          mlist = (*i)-&gt;GetMapList();</a>
+<a name="ln167">          if (mlist.size() != vs.size())</a>
+<a name="ln168">            {</a>
+<a name="ln169">              cout &lt;&lt; &quot;not ok &quot; &lt;&lt; currentMol</a>
+<a name="ln170">                   &lt;&lt; &quot; # number of matches different than reference\n&quot;;</a>
+<a name="ln171">              cout &lt;&lt; &quot;# Expected &quot; &lt;&lt; vs.size() &lt;&lt; &quot; matches, found &quot;</a>
+<a name="ln172">                   &lt;&lt; mlist.size() &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln173">              cout &lt;&lt; &quot;# Error with molecule &quot; &lt;&lt; mol.GetTitle();</a>
+<a name="ln174">              cout &lt;&lt; &quot;#  on pattern &quot; &lt;&lt; (*i)-&gt;GetSMARTS() &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln175">              if (mlist.size())</a>
+<a name="ln176">                cout &lt;&lt; &quot;# First match: atom #&quot; &lt;&lt; mlist[0][0] &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln177">              molPassed = false;</a>
+<a name="ln178">              continue;</a>
+<a name="ln179">            }</a>
+<a name="ln180"> </a>
+<a name="ln181">          if (mlist.size())</a>
+<a name="ln182">            {</a>
+<a name="ln183">              for (k = 0;k &lt; vs.size();k++)</a>
+<a name="ln184">                {</a>
+<a name="ln185">                  if (atoi(vs[k].c_str()) != mlist[k][0])</a>
+<a name="ln186">                    {</a>
+<a name="ln187">                      cout &lt;&lt; &quot;not ok &quot; &lt;&lt; currentMol</a>
+<a name="ln188">                           &lt;&lt; &quot;# matching atom numbers different than reference\n&quot;;</a>
+<a name="ln189">                      cout &lt;&lt; &quot;# Expected &quot; &lt;&lt; vs[k] &lt;&lt; &quot; but found &quot;</a>
+<a name="ln190">                           &lt;&lt; mlist[k][0] &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln191">                      cout &lt;&lt; &quot;# Molecule: &quot; &lt;&lt; mol.GetTitle() &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln192">                      cout &lt;&lt; &quot;# Pattern: &quot; &lt;&lt; (*i)-&gt;GetSMARTS() &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln193">                      molPassed = false;</a>
+<a name="ln194">                      break;</a>
+<a name="ln195">                    }</a>
+<a name="ln196">                }</a>
+<a name="ln197">              if (k != vs.size())</a>
+<a name="ln198">                {</a>
+<a name="ln199">                  molPassed = false;</a>
+<a name="ln200">                  continue;</a>
+<a name="ln201">                }</a>
+<a name="ln202">            }</a>
+<a name="ln203">        }</a>
+<a name="ln204">      if (molPassed)</a>
+<a name="ln205">        cout &lt;&lt; &quot;ok &quot; &lt;&lt; currentMol &lt;&lt; &quot; # molecule passed tests\n&quot;;</a>
+<a name="ln206">    }</a>
+<a name="ln207"> </a>
+<a name="ln208">  // output the number of tests run</a>
+<a name="ln209">  cout &lt;&lt; &quot;1..&quot; &lt;&lt; currentMol &lt;&lt; endl;</a>
+<a name="ln210"> </a>
+<a name="ln211">  // Passed Test</a>
+<a name="ln212">  return 0;</a>
+<a name="ln213">}</a>
+<a name="ln214"> </a>
+<a name="ln215">void GenerateSmartsReference()</a>
+<a name="ln216">{</a>
+<a name="ln217">  std::ifstream ifs;</a>
+<a name="ln218">  if (!SafeOpen(ifs,msmarts_file.c_str()))</a>
+<a name="ln219">    return;</a>
+<a name="ln220"> </a>
+<a name="ln221">  char buffer[BUFF_SIZE];</a>
+<a name="ln222">  vector&lt;OBSmartsPattern*&gt; vsp;</a>
+<a name="ln223">  for (;ifs.getline(buffer,BUFF_SIZE);)</a>
+<a name="ln224">    {</a>
+<a name="ln225">      if (buffer[0] == '#') // skip comment line</a>
+<a name="ln226">        continue;</a>
+<a name="ln227"> </a>
+<a name="ln228">      OBSmartsPattern *sp = new OBSmartsPattern;</a>
+<a name="ln229"> </a>
+<a name="ln230">      if (sp-&gt;Init(buffer))</a>
+<a name="ln231">        vsp.push_back(sp);</a>
+<a name="ln232">      else</a>
+<a name="ln233">        delete sp;</a>
+<a name="ln234">    }</a>
+<a name="ln235"> </a>
+<a name="ln236">  std::ofstream ofs;</a>
+<a name="ln237">  if (!SafeOpen(ofs, mresults_file.c_str()))</a>
+<a name="ln238">    return;</a>
+<a name="ln239"> </a>
+<a name="ln240">  ofs &lt;&lt; vsp.size() &lt;&lt; &quot; patterns&quot; &lt;&lt; endl;</a>
+<a name="ln241">  std::ifstream mifs;</a>
+<a name="ln242">  if (!SafeOpen(mifs, msmilestypes_file.c_str()))</a>
+<a name="ln243">    return;</a>
+<a name="ln244"> </a>
+<a name="ln245">  vector&lt;int&gt; vm;</a>
+<a name="ln246">  vector&lt;vector&lt;int&gt; &gt; mlist;</a>
+<a name="ln247">  vector&lt;vector&lt;int&gt; &gt;::iterator j;</a>
+<a name="ln248">  vector&lt;OBSmartsPattern*&gt;::iterator i;</a>
+<a name="ln249">  OBMol mol;</a>
+<a name="ln250">  OBConversion conv(&amp;mifs, &amp;cout);</a>
+<a name="ln251"> </a>
+<a name="ln252">  if(! conv.SetInAndOutFormats(&quot;SMI&quot;,&quot;SMI&quot;))</a>
+<a name="ln253">    {</a>
+<a name="ln254">      cerr &lt;&lt; &quot;SMILES format is not loaded&quot; &lt;&lt; endl;</a>
+<a name="ln255">      return;</a>
+<a name="ln256">    }</a>
+<a name="ln257"> </a>
+<a name="ln258">  for (;mifs;)</a>
+<a name="ln259">    {</a>
+<a name="ln260">      mol.Clear();</a>
+<a name="ln261">      conv.Read(&amp;mol);</a>
+<a name="ln262"> </a>
+<a name="ln263">      if (mol.Empty())</a>
+<a name="ln264">        continue;</a>
+<a name="ln265">      for (i = vsp.begin();i != vsp.end();++i)</a>
+<a name="ln266">        {</a>
+<a name="ln267">          (*i)-&gt;Match(mol);</a>
+<a name="ln268">          mlist = (*i)-&gt;GetMapList();</a>
+<a name="ln269">          for (j = mlist.begin();j != mlist.end();++j)</a>
+<a name="ln270">            {</a>
+<a name="ln271">              sprintf(buffer,&quot;%3d&quot;,*(j-&gt;begin()));</a>
+<a name="ln272">              ofs &lt;&lt; buffer;</a>
+<a name="ln273">            }</a>
+<a name="ln274">          ofs &lt;&lt; endl;</a>
+<a name="ln275">        }</a>
+<a name="ln276">    }</a>
+<a name="ln277"> </a>
+<a name="ln278"> </a>
+<a name="ln279">  cerr &lt;&lt; &quot; SMARTS test results written successfully&quot; &lt;&lt; endl;</a>
+<a name="ln280">  return;</a>
+<a name="ln281">}</a>
+<a name="ln282"> </a>
+
+</code></pre>
+<div class="balloon" rel="110"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v576/" target="_blank">V576</a> Incorrect format. Consider checking the third actual argument of the 'sscanf' function. A pointer to the signed int type is expected.</p></div>
+<div class="balloon" rel="258"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1044/" target="_blank">V1044</a> Loop break conditions do not depend on the number of iterations.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

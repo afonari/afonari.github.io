@@ -1,0 +1,243 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>fhiaimsformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Copyright (C) 2010 by Geoffrey R. Hutchison</a>
+<a name="ln3"> </a>
+<a name="ln4">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln5">it under the terms of the GNU General Public License as published by</a>
+<a name="ln6">the Free Software Foundation version 2 of the License.</a>
+<a name="ln7"> </a>
+<a name="ln8">This program is distributed in the hope that it will be useful,</a>
+<a name="ln9">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln10">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln11">GNU General Public License for more details.</a>
+<a name="ln12">***********************************************************************/</a>
+<a name="ln13">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln14"> </a>
+<a name="ln15">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln16">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln17">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln18">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln22"> </a>
+<a name="ln23">#include &lt;cstdlib&gt;</a>
+<a name="ln24"> </a>
+<a name="ln25"> </a>
+<a name="ln26">using namespace std;</a>
+<a name="ln27">namespace OpenBabel</a>
+<a name="ln28">{</a>
+<a name="ln29"> </a>
+<a name="ln30">class FHIaimsFormat : public OBMoleculeFormat</a>
+<a name="ln31">{</a>
+<a name="ln32">public:</a>
+<a name="ln33">    //Register this format type ID</a>
+<a name="ln34">    FHIaimsFormat()</a>
+<a name="ln35">    {</a>
+<a name="ln36">        OBConversion::RegisterFormat(&quot;fhiaims&quot;,this);</a>
+<a name="ln37">    }</a>
+<a name="ln38"> </a>
+<a name="ln39">  virtual const char* Description() //required</a>
+<a name="ln40">  {</a>
+<a name="ln41">    return</a>
+<a name="ln42">      &quot;FHIaims XYZ format\n&quot;</a>
+<a name="ln43">      &quot;Read Options e.g. -as\n&quot;</a>
+<a name="ln44">      &quot; s  Output single bonds only\n&quot;</a>
+<a name="ln45">      &quot; b  Disable bonding entirely\n\n&quot;;</a>
+<a name="ln46">  };</a>
+<a name="ln47"> </a>
+<a name="ln48">  virtual const char* SpecificationURL()</a>
+<a name="ln49">  {return &quot;http://www.fhi-berlin.mpg.de/th/aims/&quot;;}; //optional</a>
+<a name="ln50"> </a>
+<a name="ln51">    //Flags() can return be any the following combined by | or be omitted if none apply</a>
+<a name="ln52">    // NOTREADABLE  READONEONLY  NOTWRITABLE  WRITEONEONLY</a>
+<a name="ln53">    virtual unsigned int Flags()</a>
+<a name="ln54">    {</a>
+<a name="ln55">      return READONEONLY | WRITEONEONLY;</a>
+<a name="ln56">    };</a>
+<a name="ln57"> </a>
+<a name="ln58">    //*** This section identical for most OBMol conversions ***</a>
+<a name="ln59">    ////////////////////////////////////////////////////</a>
+<a name="ln60">    /// The &quot;API&quot; interface functions</a>
+<a name="ln61">    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln62">    virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln63">};</a>
+<a name="ln64">//***</a>
+<a name="ln65"> </a>
+<a name="ln66">//Make an instance of the format class</a>
+<a name="ln67">FHIaimsFormat theFHIaimsFormat;</a>
+<a name="ln68"> </a>
+<a name="ln69">/////////////////////////////////////////////////////////////////</a>
+<a name="ln70">bool FHIaimsFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln71">{</a>
+<a name="ln72"> </a>
+<a name="ln73">    OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln74">    if (pmol == nullptr)</a>
+<a name="ln75">        return false;</a>
+<a name="ln76"> </a>
+<a name="ln77">    //Define some references so we can use the old parameter names</a>
+<a name="ln78">    istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln79">    OBMol &amp;mol = *pmol;</a>
+<a name="ln80">    const char* title = pConv-&gt;GetTitle();</a>
+<a name="ln81"> </a>
+<a name="ln82">    char buffer[BUFF_SIZE];</a>
+<a name="ln83">    string str;</a>
+<a name="ln84">    double x,y,z;</a>
+<a name="ln85">    OBAtom *atom;</a>
+<a name="ln86">    vector&lt;string&gt; vs;</a>
+<a name="ln87">    vector&lt;vector3&gt; lattice;</a>
+<a name="ln88"> </a>
+<a name="ln89">    mol.BeginModify();</a>
+<a name="ln90"> </a>
+<a name="ln91">    while (ifs.getline(buffer,BUFF_SIZE)) {</a>
+<a name="ln92">      if (buffer[0] == '#')</a>
+<a name="ln93">        continue; // comment line</a>
+<a name="ln94"> </a>
+<a name="ln95">      if (strstr(buffer, &quot;atom&quot;) != nullptr) {</a>
+<a name="ln96">        // atom X Y Z element (in real-space Angstroms)</a>
+<a name="ln97">        tokenize(vs,buffer);</a>
+<a name="ln98">        if (vs.size() &lt; 5)</a>
+<a name="ln99">          continue; // invalid line</a>
+<a name="ln100">        atom = mol.NewAtom();</a>
+<a name="ln101">        x = atof((char*)vs[1].c_str());</a>
+<a name="ln102">        y = atof((char*)vs[2].c_str());</a>
+<a name="ln103">        z = atof((char*)vs[3].c_str());</a>
+<a name="ln104">        atom-&gt;SetVector(x,y,z); //set coordinates</a>
+<a name="ln105"> </a>
+<a name="ln106">        //set atomic number</a>
+<a name="ln107">        int atomicNum = OBElements::GetAtomicNum(vs[4].c_str());</a>
+<a name="ln108">        atom-&gt;SetAtomicNum(atomicNum);</a>
+<a name="ln109"> </a>
+<a name="ln110">      } else if (strstr(buffer, &quot;lattice_vector&quot;) != nullptr) {</a>
+<a name="ln111">        // lattice_vector X Y Z (in real-space Angstroms)</a>
+<a name="ln112">        tokenize(vs,buffer);</a>
+<a name="ln113">        if (vs.size() &lt; 4)</a>
+<a name="ln114">          continue;</a>
+<a name="ln115"> </a>
+<a name="ln116">        x = atof((char*)vs[1].c_str());</a>
+<a name="ln117">        y = atof((char*)vs[2].c_str());</a>
+<a name="ln118">        z = atof((char*)vs[3].c_str());</a>
+<a name="ln119">        lattice.push_back(vector3(x, y, z));</a>
+<a name="ln120">      }</a>
+<a name="ln121">    }</a>
+<a name="ln122"> </a>
+<a name="ln123">    if (!pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln124">      mol.ConnectTheDots();</a>
+<a name="ln125">    if (!pConv-&gt;IsOption(&quot;s&quot;,OBConversion::INOPTIONS) &amp;&amp; !pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln126">      mol.PerceiveBondOrders();</a>
+<a name="ln127"> </a>
+<a name="ln128">    // clean out remaining blank lines</a>
+<a name="ln129">    std::streampos ipos;</a>
+<a name="ln130">    do</a>
+<a name="ln131">    {</a>
+<a name="ln132">      ipos = ifs.tellg();</a>
+<a name="ln133">      ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln134">    }</a>
+<a name="ln135">    while(strlen(buffer) == 0 &amp;&amp; !ifs.eof() );</a>
+<a name="ln136">    ifs.seekg(ipos);</a>
+<a name="ln137"> </a>
+<a name="ln138">    mol.EndModify();</a>
+<a name="ln139">    // Check if there are lattice vectors and add them</a>
+<a name="ln140">    if (lattice.size() == 3) {</a>
+<a name="ln141">      OBUnitCell *uc = new OBUnitCell;</a>
+<a name="ln142">      uc-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln143">      uc-&gt;SetData(lattice[0], lattice[1], lattice[2]);</a>
+<a name="ln144">      mol.SetData(uc);</a>
+<a name="ln145">    }</a>
+<a name="ln146">    mol.SetTitle(title);</a>
+<a name="ln147">    return(true);</a>
+<a name="ln148">}</a>
+<a name="ln149"> </a>
+<a name="ln150">////////////////////////////////////////////////////////////////</a>
+<a name="ln151"> </a>
+<a name="ln152">bool FHIaimsFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln153">{</a>
+<a name="ln154">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln155">    if (pmol == nullptr)</a>
+<a name="ln156">        return false;</a>
+<a name="ln157"> </a>
+<a name="ln158">    //Define some references so we can use the old parameter names</a>
+<a name="ln159">    ostream &amp;ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln160">    OBMol &amp;mol = *pmol;</a>
+<a name="ln161"> </a>
+<a name="ln162">    char buffer[BUFF_SIZE];</a>
+<a name="ln163"> </a>
+<a name="ln164">    ofs &lt;&lt; &quot;#\n&quot;;</a>
+<a name="ln165">    ofs &lt;&lt; &quot;# &quot; &lt;&lt; mol.GetTitle() &lt;&lt; '\n';</a>
+<a name="ln166">    ofs &lt;&lt; &quot;# Generated by Open Babel &quot; &lt;&lt; BABEL_VERSION &lt;&lt; '\n';</a>
+<a name="ln167">    ofs &lt;&lt; &quot;#\n&quot;;</a>
+<a name="ln168"> </a>
+<a name="ln169">    FOR_ATOMS_OF_MOL(atom, mol) {</a>
+<a name="ln170">      snprintf(buffer, BUFF_SIZE,</a>
+<a name="ln171">               &quot;atom           %15.5f%15.5f%15.5f  %s&quot;,</a>
+<a name="ln172">               atom-&gt;GetX(),</a>
+<a name="ln173">               atom-&gt;GetY(),</a>
+<a name="ln174">               atom-&gt;GetZ(),</a>
+<a name="ln175">               OBElements::GetSymbol(atom-&gt;GetAtomicNum()));</a>
+<a name="ln176">        ofs &lt;&lt; buffer &lt;&lt; '\n';</a>
+<a name="ln177">    }</a>
+<a name="ln178"> </a>
+<a name="ln179">    if (mol.HasData(OBGenericDataType::UnitCell)) {</a>
+<a name="ln180">        OBUnitCell *uc = (OBUnitCell*)mol.GetData(OBGenericDataType::UnitCell);</a>
+<a name="ln181">        ofs &lt;&lt; &quot;#\n&quot;;</a>
+<a name="ln182">        ofs &lt;&lt; &quot;# unit cell\n&quot;;</a>
+<a name="ln183">        ofs &lt;&lt; &quot;#\n&quot;;</a>
+<a name="ln184"> </a>
+<a name="ln185">        vector&lt;vector3&gt; v = uc-&gt;GetCellVectors();</a>
+<a name="ln186"> </a>
+<a name="ln187">        for (unsigned int i = 0; i &lt; v.size(); ++i) {</a>
+<a name="ln188">          snprintf(buffer, BUFF_SIZE,</a>
+<a name="ln189">                   &quot;lattice_vector %15.5f%15.5f%15.5f\n&quot;, v[i].x(), v[i].y(), v[i].z());</a>
+<a name="ln190">          ofs &lt;&lt; buffer;</a>
+<a name="ln191">        }</a>
+<a name="ln192">    }</a>
+<a name="ln193"> </a>
+<a name="ln194">    return(true);</a>
+<a name="ln195">}</a>
+<a name="ln196"> </a>
+<a name="ln197">} //namespace OpenBabel</a>
+
+</code></pre>
+<div class="balloon" rel="130"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v663/" target="_blank">V663</a> Infinite loop is possible. The 'cin.eof()' condition is insufficient to break from the loop. Consider adding the 'cin.fail()' function call to the conditional expression.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

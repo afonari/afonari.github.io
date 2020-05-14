@@ -1,0 +1,855 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>MaeParser.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">#include &lt;cstdio&gt;</a>
+<a name="ln2">#include &lt;cstdlib&gt;</a>
+<a name="ln3"> </a>
+<a name="ln4">#include &lt;boost/spirit/include/qi_numeric.hpp&gt;</a>
+<a name="ln5">#include &lt;boost/spirit/include/qi_parse_attr.hpp&gt;</a>
+<a name="ln6"> </a>
+<a name="ln7">#include &quot;MaeBlock.hpp&quot;</a>
+<a name="ln8">#include &quot;MaeParser.hpp&quot;</a>
+<a name="ln9"> </a>
+<a name="ln10">#define WHITESPACE ' ' : case '\n' : case '\r' : case '\t'</a>
+<a name="ln11"> </a>
+<a name="ln12">namespace qi = boost::spirit::qi;</a>
+<a name="ln13"> </a>
+<a name="ln14">namespace schrodinger</a>
+<a name="ln15">{</a>
+<a name="ln16"> </a>
+<a name="ln17">namespace mae</a>
+<a name="ln18">{</a>
+<a name="ln19"> </a>
+<a name="ln20">static bool property_key_author_name(Buffer&amp; buffer, char*&amp; save);</a>
+<a name="ln21"> </a>
+<a name="ln22">static std::string outer_block_name(Buffer&amp; buffer);</a>
+<a name="ln23"> </a>
+<a name="ln24">void read_exception::format(size_t line_number, size_t column, const char* msg)</a>
+<a name="ln25">{</a>
+<a name="ln26">#ifdef _MSC_VER</a>
+<a name="ln27">    _snprintf(m_msg, MAEPARSER_EXCEPTION_BUFFER_SIZE,</a>
+<a name="ln28">              &quot;Line %Iu, column %Iu: %s\n&quot;,</a>
+<a name="ln29">#else</a>
+<a name="ln30">    snprintf(m_msg, MAEPARSER_EXCEPTION_BUFFER_SIZE,</a>
+<a name="ln31">             &quot;Line %zu, column %zu: %s\n&quot;,</a>
+<a name="ln32">#endif</a>
+<a name="ln33">              line_number, column, msg);</a>
+<a name="ln34">    m_msg[MAEPARSER_EXCEPTION_BUFFER_SIZE - 1] = '\0';</a>
+<a name="ln35">}</a>
+<a name="ln36"> </a>
+<a name="ln37">// TODO: Not sure that newlines embedded in comments are allowed.</a>
+<a name="ln38">void comment(Buffer&amp; buffer)</a>
+<a name="ln39">{</a>
+<a name="ln40">    ++buffer.current; // Step past initial '#'</a>
+<a name="ln41">    while (buffer.current &lt; buffer.end || buffer.load()) {</a>
+<a name="ln42">        switch (*buffer.current) {</a>
+<a name="ln43">        case '#':</a>
+<a name="ln44">            return;</a>
+<a name="ln45">        case '\n':</a>
+<a name="ln46">            ++buffer.line_number;</a>
+<a name="ln47">        }</a>
+<a name="ln48">        ++buffer.current;</a>
+<a name="ln49">    }</a>
+<a name="ln50">    throw read_exception(buffer, &quot;Unterminated comment.&quot;);</a>
+<a name="ln51">}</a>
+<a name="ln52"> </a>
+<a name="ln53">void whitespace(Buffer&amp; buffer)</a>
+<a name="ln54">{</a>
+<a name="ln55">    while (buffer.current &lt; buffer.end || buffer.load()) {</a>
+<a name="ln56">        switch (*buffer.current) {</a>
+<a name="ln57">        case '\n':</a>
+<a name="ln58">            ++buffer.line_number;</a>
+<a name="ln59">        case '\r':</a>
+<a name="ln60">        case ' ':</a>
+<a name="ln61">        case '\t':</a>
+<a name="ln62">            break;</a>
+<a name="ln63">        case '#':</a>
+<a name="ln64">            comment(buffer);</a>
+<a name="ln65">            break;</a>
+<a name="ln66">        default:</a>
+<a name="ln67">            return;</a>
+<a name="ln68">        }</a>
+<a name="ln69">        ++buffer.current;</a>
+<a name="ln70">    }</a>
+<a name="ln71">}</a>
+<a name="ln72"> </a>
+<a name="ln73">bool character(char c, Buffer&amp; buffer)</a>
+<a name="ln74">{</a>
+<a name="ln75">    char* save = nullptr;</a>
+<a name="ln76">    return character(c, buffer, save);</a>
+<a name="ln77">}</a>
+<a name="ln78"> </a>
+<a name="ln79">bool character(char c, Buffer&amp; buffer, char*&amp; save)</a>
+<a name="ln80">{</a>
+<a name="ln81">    if (buffer.current &gt;= buffer.end &amp;&amp; !buffer.load(save)) {</a>
+<a name="ln82">        return false;</a>
+<a name="ln83">    } else if (*buffer.current != c) {</a>
+<a name="ln84">        return false;</a>
+<a name="ln85">    } else {</a>
+<a name="ln86">        ++buffer.current;</a>
+<a name="ln87">        return true;</a>
+<a name="ln88">    }</a>
+<a name="ln89">}</a>
+<a name="ln90"> </a>
+<a name="ln91">static void remove_escape_characters(std::string&amp; s)</a>
+<a name="ln92">{</a>
+<a name="ln93">    size_t j = 0;</a>
+<a name="ln94">    for (size_t i = 0; i &lt; s.size(); ++i, ++j) {</a>
+<a name="ln95">        if (s[i] == '\\')</a>
+<a name="ln96">            ++i;</a>
+<a name="ln97">        if (j &lt; i)</a>
+<a name="ln98">            s[j] = s[i];</a>
+<a name="ln99">    }</a>
+<a name="ln100">    s.resize(j);</a>
+<a name="ln101">}</a>
+<a name="ln102"> </a>
+<a name="ln103">/**</a>
+<a name="ln104"> * Read an integer and return its value. An integer is terminated</a>
+<a name="ln105"> * either by whitespace or a ']'.</a>
+<a name="ln106"> */</a>
+<a name="ln107">template &lt;&gt; EXPORT_MAEPARSER int parse_value&lt;int&gt;(Buffer&amp; buffer)</a>
+<a name="ln108">{</a>
+<a name="ln109">    int value = 0;</a>
+<a name="ln110">    int sign = 1;</a>
+<a name="ln111"> </a>
+<a name="ln112">    char* save = buffer.current;</a>
+<a name="ln113">    while (buffer.current &lt; buffer.end || buffer.load()) {</a>
+<a name="ln114">        switch (*buffer.current) {</a>
+<a name="ln115">        case ']':</a>
+<a name="ln116">        case WHITESPACE:</a>
+<a name="ln117">            if (save == buffer.current) {</a>
+<a name="ln118">                throw read_exception(buffer, &quot;Missing integer.&quot;);</a>
+<a name="ln119">            }</a>
+<a name="ln120">            return value * sign;</a>
+<a name="ln121">        case '0':</a>
+<a name="ln122">        case '1':</a>
+<a name="ln123">        case '2':</a>
+<a name="ln124">        case '3':</a>
+<a name="ln125">        case '4':</a>
+<a name="ln126">        case '5':</a>
+<a name="ln127">        case '6':</a>
+<a name="ln128">        case '7':</a>
+<a name="ln129">        case '8':</a>
+<a name="ln130">        case '9':</a>
+<a name="ln131">            value = value * 10 + *buffer.current - '0';</a>
+<a name="ln132">            break;</a>
+<a name="ln133">        case '-':</a>
+<a name="ln134">            if (sign == -1 || value) {</a>
+<a name="ln135">                throw read_exception(buffer, &quot;Unexpected '-'.&quot;);</a>
+<a name="ln136">            }</a>
+<a name="ln137">            sign = -1;</a>
+<a name="ln138">            break;</a>
+<a name="ln139">        default:</a>
+<a name="ln140">            throw read_exception(buffer, &quot;Unexpected character.&quot;);</a>
+<a name="ln141">        }</a>
+<a name="ln142">        ++buffer.current;</a>
+<a name="ln143">    }</a>
+<a name="ln144">    return value * sign;</a>
+<a name="ln145">}</a>
+<a name="ln146"> </a>
+<a name="ln147">template &lt;&gt; EXPORT_MAEPARSER double parse_value&lt;double&gt;(Buffer&amp; buffer)</a>
+<a name="ln148">{</a>
+<a name="ln149">    char* save = buffer.current;</a>
+<a name="ln150">    while (buffer.current &lt; buffer.end || buffer.load(save)) {</a>
+<a name="ln151">        switch (*buffer.current) {</a>
+<a name="ln152">        case '-':</a>
+<a name="ln153">        case '.':</a>
+<a name="ln154">        case '0':</a>
+<a name="ln155">        case '1':</a>
+<a name="ln156">        case '2':</a>
+<a name="ln157">        case '3':</a>
+<a name="ln158">        case '4':</a>
+<a name="ln159">        case '5':</a>
+<a name="ln160">        case '6':</a>
+<a name="ln161">        case '7':</a>
+<a name="ln162">        case '8':</a>
+<a name="ln163">        case '9':</a>
+<a name="ln164">        case 'e':</a>
+<a name="ln165">        case 'E':</a>
+<a name="ln166">            break;</a>
+<a name="ln167">        case WHITESPACE:</a>
+<a name="ln168">            goto done;</a>
+<a name="ln169">        default:</a>
+<a name="ln170">            throw read_exception(buffer,</a>
+<a name="ln171">                                 &quot;Unexpected character in real number.&quot;);</a>
+<a name="ln172">        }</a>
+<a name="ln173">        ++buffer.current;</a>
+<a name="ln174">    }</a>
+<a name="ln175"> </a>
+<a name="ln176">done:</a>
+<a name="ln177">    if (save == buffer.current) {</a>
+<a name="ln178">        throw read_exception(buffer, &quot;Missing real.&quot;);</a>
+<a name="ln179">    }</a>
+<a name="ln180"> </a>
+<a name="ln181">    double value = 0;</a>
+<a name="ln182">    if (!qi::parse(save, buffer.current, qi::double_, value) ||</a>
+<a name="ln183">        save != buffer.current) {</a>
+<a name="ln184">        // On error, save will have advanced to the point of the problem.</a>
+<a name="ln185">        // May differ on versions of boost</a>
+<a name="ln186">        throw read_exception(buffer.line_number, buffer.getColumn(save),</a>
+<a name="ln187">                             &quot;Bad real number.&quot;);</a>
+<a name="ln188">    }</a>
+<a name="ln189">    return value;</a>
+<a name="ln190">}</a>
+<a name="ln191"> </a>
+<a name="ln192">template &lt;&gt;</a>
+<a name="ln193">EXPORT_MAEPARSER std::string parse_value&lt;std::string&gt;(Buffer&amp; buffer)</a>
+<a name="ln194">{</a>
+<a name="ln195">    char* save = buffer.current;</a>
+<a name="ln196">    if (*buffer.current != '&quot;') {</a>
+<a name="ln197">        while (buffer.current &lt; buffer.end || buffer.load(save)) {</a>
+<a name="ln198">            switch (*buffer.current) {</a>
+<a name="ln199">            case WHITESPACE:</a>
+<a name="ln200">                return std::string(save, buffer.current);</a>
+<a name="ln201">            }</a>
+<a name="ln202">            ++buffer.current;</a>
+<a name="ln203">        }</a>
+<a name="ln204">        return std::string(save, buffer.current);</a>
+<a name="ln205">    } else {</a>
+<a name="ln206">        save = ++buffer.current;</a>
+<a name="ln207">        std::string rval;</a>
+<a name="ln208">        while (buffer.current &lt; buffer.end || buffer.load(save)) {</a>
+<a name="ln209">            switch (*buffer.current) {</a>
+<a name="ln210">            case '&quot;':</a>
+<a name="ln211">                rval = std::string(save, buffer.current++);</a>
+<a name="ln212">                remove_escape_characters(rval);</a>
+<a name="ln213">                return rval;</a>
+<a name="ln214">            case '\\':</a>
+<a name="ln215">                ++buffer.current;</a>
+<a name="ln216">                break;</a>
+<a name="ln217">            }</a>
+<a name="ln218">            ++buffer.current;</a>
+<a name="ln219">        }</a>
+<a name="ln220">        throw read_exception(buffer, &quot;Unterminated quoted string at EOF.&quot;);</a>
+<a name="ln221">    }</a>
+<a name="ln222">}</a>
+<a name="ln223"> </a>
+<a name="ln224">template &lt;&gt;</a>
+<a name="ln225">EXPORT_MAEPARSER BoolProperty parse_value&lt;BoolProperty&gt;(Buffer&amp; buffer)</a>
+<a name="ln226">{</a>
+<a name="ln227">    bool value = false;</a>
+<a name="ln228">    if (*buffer.current == '1') {</a>
+<a name="ln229">        value = true;</a>
+<a name="ln230">    } else if (*buffer.current == '0') {</a>
+<a name="ln231">        value = false;</a>
+<a name="ln232">    } else {</a>
+<a name="ln233">        throw read_exception(buffer, &quot;Unexpected character for boolean value.&quot;);</a>
+<a name="ln234">    }</a>
+<a name="ln235">    ++buffer.current;</a>
+<a name="ln236"> </a>
+<a name="ln237">    if (buffer.current &gt;= buffer.end) {</a>
+<a name="ln238">        if (!buffer.load()) {</a>
+<a name="ln239">            return value;</a>
+<a name="ln240">        }</a>
+<a name="ln241">    }</a>
+<a name="ln242"> </a>
+<a name="ln243">    switch (*buffer.current) {</a>
+<a name="ln244">    case WHITESPACE:</a>
+<a name="ln245">        return value;</a>
+<a name="ln246">    default:</a>
+<a name="ln247">        throw read_exception(buffer, &quot;Unexpected character for boolean value.&quot;);</a>
+<a name="ln248">    }</a>
+<a name="ln249">}</a>
+<a name="ln250"> </a>
+<a name="ln251">std::string outer_block_beginning(Buffer&amp; buffer)</a>
+<a name="ln252">{</a>
+<a name="ln253">    std::string name = outer_block_name(buffer);</a>
+<a name="ln254">    schrodinger::mae::whitespace(buffer);</a>
+<a name="ln255">    if (!character('{', buffer)) {</a>
+<a name="ln256">        throw read_exception(buffer, &quot;Missing '{' for outer block.&quot;);</a>
+<a name="ln257">    }</a>
+<a name="ln258">    return name;</a>
+<a name="ln259">}</a>
+<a name="ln260"> </a>
+<a name="ln261">std::shared_ptr&lt;Block&gt; MaeParser::outerBlock()</a>
+<a name="ln262">{</a>
+<a name="ln263">    if (!m_buffer.load()) {</a>
+<a name="ln264">        return nullptr;</a>
+<a name="ln265">    }</a>
+<a name="ln266">    std::string name = outer_block_beginning(m_buffer);</a>
+<a name="ln267">    return blockBody(name);</a>
+<a name="ln268">}</a>
+<a name="ln269"> </a>
+<a name="ln270">std::string outer_block_name(Buffer&amp; buffer)</a>
+<a name="ln271">{</a>
+<a name="ln272">    char* save = buffer.current;</a>
+<a name="ln273">    char c = *buffer.current;</a>
+<a name="ln274">    if (c == '{') {</a>
+<a name="ln275">        return std::string();</a>
+<a name="ln276">    } else if (c != 'f' &amp;&amp; c != 'p') {</a>
+<a name="ln277">        goto bad_format;</a>
+<a name="ln278">    }</a>
+<a name="ln279">    ++buffer.current;</a>
+<a name="ln280"> </a>
+<a name="ln281">    if (!character('_', buffer, save)) {</a>
+<a name="ln282">        goto bad_format;</a>
+<a name="ln283">    }</a>
+<a name="ln284">    if (!property_key_author_name(buffer, save)) {</a>
+<a name="ln285">        goto bad_format;</a>
+<a name="ln286">    }</a>
+<a name="ln287"> </a>
+<a name="ln288">    return std::string(save, buffer.current - save);</a>
+<a name="ln289"> </a>
+<a name="ln290">bad_format:</a>
+<a name="ln291">    throw read_exception(buffer, &quot;Bad format for outer block name; &quot;</a>
+<a name="ln292">                                 &quot;must be (f|p)_&lt;author&gt;_&lt;name&gt;.&quot;);</a>
+<a name="ln293">}</a>
+<a name="ln294"> </a>
+<a name="ln295">std::string MaeParser::blockBeginning(int* indexed)</a>
+<a name="ln296">{</a>
+<a name="ln297">    *indexed = 0;</a>
+<a name="ln298"> </a>
+<a name="ln299">    char* save = m_buffer.current;</a>
+<a name="ln300">    if (!property_key_author_name(m_buffer, save)) {</a>
+<a name="ln301">        throw read_exception(m_buffer, &quot;Bad format for block name; &quot;</a>
+<a name="ln302">                                       &quot;must be &lt;author&gt;_&lt;name&gt;.&quot;);</a>
+<a name="ln303">    }</a>
+<a name="ln304">    std::string name(save, m_buffer.current - save);</a>
+<a name="ln305"> </a>
+<a name="ln306">    schrodinger::mae::whitespace(m_buffer);</a>
+<a name="ln307"> </a>
+<a name="ln308">    if (character('[', m_buffer)) {</a>
+<a name="ln309">        schrodinger::mae::whitespace(</a>
+<a name="ln310">            m_buffer); // TODO: is m_block[ 123 ] allowed?</a>
+<a name="ln311">        *indexed = parse_value&lt;int&gt;(m_buffer);</a>
+<a name="ln312">        schrodinger::mae::whitespace(m_buffer);</a>
+<a name="ln313">        if (!character(']', m_buffer)) {</a>
+<a name="ln314">            throw read_exception(m_buffer, &quot;Bad block index; missing ']'.&quot;);</a>
+<a name="ln315">        }</a>
+<a name="ln316">        schrodinger::mae::whitespace(m_buffer);</a>
+<a name="ln317">    }</a>
+<a name="ln318"> </a>
+<a name="ln319">    if (character('{', m_buffer)) {</a>
+<a name="ln320">        return name;</a>
+<a name="ln321">    } else {</a>
+<a name="ln322">        throw read_exception(m_buffer, &quot;Missing '{' for block.&quot;);</a>
+<a name="ln323">    }</a>
+<a name="ln324">}</a>
+<a name="ln325"> </a>
+<a name="ln326">std::shared_ptr&lt;Block&gt; MaeParser::blockBody(const std::string&amp; name)</a>
+<a name="ln327">{</a>
+<a name="ln328">    auto block = std::make_shared&lt;Block&gt;(name);</a>
+<a name="ln329">    auto indexed_block_parser =</a>
+<a name="ln330">        std::shared_ptr&lt;IndexedBlockParser&gt;(getIndexedBlockParser());</a>
+<a name="ln331"> </a>
+<a name="ln332">    std::vector&lt;std::shared_ptr&lt;std::string&gt;&gt; property_names;</a>
+<a name="ln333">    schrodinger::mae::whitespace(m_buffer);</a>
+<a name="ln334">    properties(&amp;property_names);</a>
+<a name="ln335"> </a>
+<a name="ln336">    for (auto&amp; property_name : property_names) {</a>
+<a name="ln337">        schrodinger::mae::whitespace(m_buffer);</a>
+<a name="ln338">        switch ((*property_name)[0]) {</a>
+<a name="ln339">        case 'r':</a>
+<a name="ln340">            block-&gt;setRealProperty(*property_name,</a>
+<a name="ln341">                                   parse_value&lt;double&gt;(m_buffer));</a>
+<a name="ln342">            break;</a>
+<a name="ln343">        case 's':</a>
+<a name="ln344">            block-&gt;setStringProperty(*property_name,</a>
+<a name="ln345">                                     parse_value&lt;std::string&gt;(m_buffer));</a>
+<a name="ln346">            break;</a>
+<a name="ln347">        case 'i':</a>
+<a name="ln348">            block-&gt;setIntProperty(*property_name, parse_value&lt;int&gt;(m_buffer));</a>
+<a name="ln349">            break;</a>
+<a name="ln350">        case 'b':</a>
+<a name="ln351">            block-&gt;setBoolProperty(*property_name,</a>
+<a name="ln352">                                   1u == parse_value&lt;BoolProperty&gt;(m_buffer));</a>
+<a name="ln353">            break;</a>
+<a name="ln354">        }</a>
+<a name="ln355">    }</a>
+<a name="ln356"> </a>
+<a name="ln357">    auto advance = [this]() {</a>
+<a name="ln358">        schrodinger::mae::whitespace(m_buffer);</a>
+<a name="ln359">        if (!m_buffer.load()) {</a>
+<a name="ln360">            throw read_exception(m_buffer, &quot;Missing '}' for block.&quot;);</a>
+<a name="ln361">        }</a>
+<a name="ln362">    };</a>
+<a name="ln363"> </a>
+<a name="ln364">    int indexed = 0;</a>
+<a name="ln365">    for (advance(); *m_buffer.current != '}'; advance()) {</a>
+<a name="ln366">        std::string name = blockBeginning(&amp;indexed);</a>
+<a name="ln367">        if (indexed) {</a>
+<a name="ln368">            indexed_block_parser-&gt;parse(name, indexed, m_buffer);</a>
+<a name="ln369">        } else {</a>
+<a name="ln370">            std::shared_ptr&lt;Block&gt; sub_block = blockBody(name);</a>
+<a name="ln371">            block-&gt;addBlock(sub_block);</a>
+<a name="ln372">        }</a>
+<a name="ln373">    }</a>
+<a name="ln374"> </a>
+<a name="ln375">    ++m_buffer.current;</a>
+<a name="ln376"> </a>
+<a name="ln377">    block-&gt;setIndexedBlockMap(indexed_block_parser-&gt;getIndexedBlockMap());</a>
+<a name="ln378"> </a>
+<a name="ln379">    return block;</a>
+<a name="ln380">}</a>
+<a name="ln381"> </a>
+<a name="ln382">void MaeParser::properties(</a>
+<a name="ln383">    std::vector&lt;std::shared_ptr&lt;std::string&gt;&gt;* property_names)</a>
+<a name="ln384">{</a>
+<a name="ln385">    std::shared_ptr&lt;std::string&gt; property_name;</a>
+<a name="ln386">    while ((property_name = property_key(m_buffer)) != nullptr) {</a>
+<a name="ln387">        property_names-&gt;push_back(property_name);</a>
+<a name="ln388">        schrodinger::mae::whitespace(m_buffer);</a>
+<a name="ln389">    }</a>
+<a name="ln390">    triple_colon(m_buffer);</a>
+<a name="ln391">    return;</a>
+<a name="ln392">}</a>
+<a name="ln393"> </a>
+<a name="ln394">void triple_colon(Buffer&amp; buffer)</a>
+<a name="ln395">{</a>
+<a name="ln396">    for (int i = 0; i &lt; 3; ++i) {</a>
+<a name="ln397">        if (!character(':', buffer)) {</a>
+<a name="ln398">            throw read_exception(buffer, &quot;Bad ':::' token.&quot;);</a>
+<a name="ln399">        }</a>
+<a name="ln400">    }</a>
+<a name="ln401">}</a>
+<a name="ln402"> </a>
+<a name="ln403">std::shared_ptr&lt;std::string&gt; MaeParser::property()</a>
+<a name="ln404">{</a>
+<a name="ln405">    return property_key(m_buffer);</a>
+<a name="ln406">}</a>
+<a name="ln407"> </a>
+<a name="ln408">std::shared_ptr&lt;std::string&gt; property_key(Buffer&amp; buffer)</a>
+<a name="ln409">{</a>
+<a name="ln410">    if (!buffer.load()) {</a>
+<a name="ln411">        throw read_exception(buffer, &quot;Missing property key.&quot;);</a>
+<a name="ln412">    }</a>
+<a name="ln413"> </a>
+<a name="ln414">    char* save = buffer.current;</a>
+<a name="ln415">    switch (*buffer.current) {</a>
+<a name="ln416">    case 'b':</a>
+<a name="ln417">    case 'i':</a>
+<a name="ln418">    case 'r':</a>
+<a name="ln419">    case 's':</a>
+<a name="ln420">        break;</a>
+<a name="ln421">    case ':':</a>
+<a name="ln422">        return nullptr;</a>
+<a name="ln423">    default:</a>
+<a name="ln424">        goto bad_format;</a>
+<a name="ln425">    }</a>
+<a name="ln426">    ++buffer.current;</a>
+<a name="ln427"> </a>
+<a name="ln428">    if (buffer.current &gt;= buffer.end) {</a>
+<a name="ln429">        if (!buffer.load(save)) {</a>
+<a name="ln430">            goto bad_format;</a>
+<a name="ln431">        }</a>
+<a name="ln432">    }</a>
+<a name="ln433">    if (*buffer.current != '_') {</a>
+<a name="ln434">        goto bad_format;</a>
+<a name="ln435">    }</a>
+<a name="ln436">    ++buffer.current;</a>
+<a name="ln437"> </a>
+<a name="ln438">    if (!property_key_author_name(buffer, save)) {</a>
+<a name="ln439">        goto bad_format;</a>
+<a name="ln440">    }</a>
+<a name="ln441">    return std::make_shared&lt;std::string&gt;(save, buffer.current - save);</a>
+<a name="ln442"> </a>
+<a name="ln443">bad_format:</a>
+<a name="ln444">    throw read_exception(buffer, &quot;Bad format for property; &quot;</a>
+<a name="ln445">                                 &quot;must be (b|i|r|s)_&lt;author&gt;_&lt;name&gt;.&quot;);</a>
+<a name="ln446">}</a>
+<a name="ln447"> </a>
+<a name="ln448">bool property_key_author_name(Buffer&amp; buffer, char*&amp; save)</a>
+<a name="ln449">{</a>
+<a name="ln450">    while (buffer.current &lt; buffer.end || buffer.load(save)) {</a>
+<a name="ln451">        if (*buffer.current == '_') {</a>
+<a name="ln452">            ++buffer.current;</a>
+<a name="ln453">            break;</a>
+<a name="ln454">        } else if (!((*buffer.current &gt;= 'a' &amp;&amp; *buffer.current &lt;= 'z') ||</a>
+<a name="ln455">                     (*buffer.current &gt;= 'A' &amp;&amp; *buffer.current &lt;= 'Z') ||</a>
+<a name="ln456">                     (*buffer.current &gt;= '0' &amp;&amp; *buffer.current &lt;= '9'))) {</a>
+<a name="ln457">            return false;</a>
+<a name="ln458">        }</a>
+<a name="ln459">        ++buffer.current;</a>
+<a name="ln460">    }</a>
+<a name="ln461"> </a>
+<a name="ln462">    char* start = buffer.current;</a>
+<a name="ln463">    while (buffer.current &lt; buffer.end || buffer.load(save)) {</a>
+<a name="ln464">        switch (*buffer.current) {</a>
+<a name="ln465">        case WHITESPACE:</a>
+<a name="ln466">        case ':':</a>
+<a name="ln467">        case '{':</a>
+<a name="ln468">        case '[':</a>
+<a name="ln469">            return buffer.current != start;</a>
+<a name="ln470">        }</a>
+<a name="ln471">        ++buffer.current;</a>
+<a name="ln472">    }</a>
+<a name="ln473">    return false;</a>
+<a name="ln474">}</a>
+<a name="ln475"> </a>
+<a name="ln476">void IndexedBlockBuffer::value(Buffer&amp; buffer)</a>
+<a name="ln477">{</a>
+<a name="ln478">    char* save = buffer.current;</a>
+<a name="ln479"> </a>
+<a name="ln480">    if (buffer.current == buffer.end) {</a>
+<a name="ln481">        throw read_exception(buffer, &quot;Unexpected EOF in indexed block values.&quot;);</a>
+<a name="ln482">    }</a>
+<a name="ln483"> </a>
+<a name="ln484">    if (*buffer.current != '&quot;') {</a>
+<a name="ln485">        while (buffer.current &lt; buffer.end || buffer.load(save)) {</a>
+<a name="ln486">            switch (*buffer.current) {</a>
+<a name="ln487">            case WHITESPACE:</a>
+<a name="ln488">                m_tokens_list.setTokenIndices(save - buffer.begin,</a>
+<a name="ln489">                                              buffer.current - buffer.begin);</a>
+<a name="ln490">                return;</a>
+<a name="ln491">            }</a>
+<a name="ln492">            ++buffer.current;</a>
+<a name="ln493">        }</a>
+<a name="ln494">        // If EOF is reached...</a>
+<a name="ln495">        m_tokens_list.setTokenIndices(save - buffer.begin,</a>
+<a name="ln496">                                      buffer.current - buffer.begin);</a>
+<a name="ln497">        return;</a>
+<a name="ln498">    } else {</a>
+<a name="ln499">        ++buffer.current;</a>
+<a name="ln500">        while (buffer.current &lt; buffer.end || buffer.load(save)) {</a>
+<a name="ln501">            switch (*buffer.current) {</a>
+<a name="ln502">            case '&quot;':</a>
+<a name="ln503">                if (*(buffer.current - 1) == '\\') {</a>
+<a name="ln504">                    break;</a>
+<a name="ln505">                }</a>
+<a name="ln506">                ++buffer.current;</a>
+<a name="ln507">                m_tokens_list.setTokenIndices(save - buffer.begin,</a>
+<a name="ln508">                                              buffer.current - buffer.begin);</a>
+<a name="ln509">                return;</a>
+<a name="ln510">            }</a>
+<a name="ln511">            ++buffer.current;</a>
+<a name="ln512">        }</a>
+<a name="ln513">        throw read_exception(buffer, &quot;Unterminated quoted string at EOF.&quot;);</a>
+<a name="ln514">    }</a>
+<a name="ln515">}</a>
+<a name="ln516"> </a>
+<a name="ln517">void DirectIndexedBlockParser::parse(const std::string&amp; name, size_t size,</a>
+<a name="ln518">                                     Buffer&amp; buffer)</a>
+<a name="ln519">{</a>
+<a name="ln520">    if (m_indexed_block_map == nullptr) {</a>
+<a name="ln521">        m_indexed_block_map = std::make_shared&lt;IndexedBlockMap&gt;();</a>
+<a name="ln522">    }</a>
+<a name="ln523">    auto indexed_block = std::make_shared&lt;IndexedBlock&gt;(name);</a>
+<a name="ln524"> </a>
+<a name="ln525">    std::vector&lt;std::string&gt; property_keys;</a>
+<a name="ln526"> </a>
+<a name="ln527">    whitespace(buffer);</a>
+<a name="ln528">    std::shared_ptr&lt;std::string&gt; property_name;</a>
+<a name="ln529">    while ((property_name = property_key(buffer)) != nullptr) {</a>
+<a name="ln530">        property_keys.push_back(*property_name);</a>
+<a name="ln531">        whitespace(buffer);</a>
+<a name="ln532">    }</a>
+<a name="ln533">    triple_colon(buffer);</a>
+<a name="ln534"> </a>
+<a name="ln535">    std::vector&lt;IndexedValueParser*&gt; parsers;</a>
+<a name="ln536">    parsers.reserve(property_keys.size() + 1);</a>
+<a name="ln537">    IndexedValueParser* p = new IndexedValueCollector&lt;int&gt;(&quot;&quot;, size);</a>
+<a name="ln538">    parsers.push_back(p);</a>
+<a name="ln539">    for (auto&amp; key : property_keys) {</a>
+<a name="ln540">        switch (key[0]) {</a>
+<a name="ln541">        case 'b':</a>
+<a name="ln542">            p = new IndexedValueCollector&lt;BoolProperty&gt;(key, size);</a>
+<a name="ln543">            break;</a>
+<a name="ln544">        case 'i':</a>
+<a name="ln545">            p = new IndexedValueCollector&lt;int&gt;(key, size);</a>
+<a name="ln546">            break;</a>
+<a name="ln547">        case 'r':</a>
+<a name="ln548">            p = new IndexedValueCollector&lt;double&gt;(key, size);</a>
+<a name="ln549">            break;</a>
+<a name="ln550">        case 's':</a>
+<a name="ln551">            p = new IndexedValueCollector&lt;std::string&gt;(key, size);</a>
+<a name="ln552">            break;</a>
+<a name="ln553">        default:</a>
+<a name="ln554">            throw std::out_of_range(&quot;An unexpected error was found.&quot;);</a>
+<a name="ln555">        }</a>
+<a name="ln556">        parsers.push_back(p);</a>
+<a name="ln557">    }</a>
+<a name="ln558"> </a>
+<a name="ln559">    for (size_t i = 0; i &lt; size; ++i) {</a>
+<a name="ln560">        for (auto parser : parsers) {</a>
+<a name="ln561">            whitespace(buffer);</a>
+<a name="ln562">            parser-&gt;parse(buffer);</a>
+<a name="ln563">        }</a>
+<a name="ln564">    }</a>
+<a name="ln565">    whitespace(buffer);</a>
+<a name="ln566">    triple_colon(buffer);</a>
+<a name="ln567">    whitespace(buffer);</a>
+<a name="ln568">    if (!character('}', buffer)) {</a>
+<a name="ln569">        throw read_exception(buffer, &quot;Missing '{' for outer block.&quot;);</a>
+<a name="ln570">    }</a>
+<a name="ln571"> </a>
+<a name="ln572">    for (auto parser : parsers) {</a>
+<a name="ln573">        parser-&gt;addToIndexedBlock(indexed_block.get());</a>
+<a name="ln574">        delete parser;</a>
+<a name="ln575">    }</a>
+<a name="ln576">    m_indexed_block_map-&gt;addIndexedBlock(name, indexed_block);</a>
+<a name="ln577">}</a>
+<a name="ln578"> </a>
+<a name="ln579">std::shared_ptr&lt;IndexedBlockMapI&gt; DirectIndexedBlockParser::getIndexedBlockMap()</a>
+<a name="ln580">{</a>
+<a name="ln581">    std::shared_ptr&lt;IndexedBlockMapI&gt; map(m_indexed_block_map);</a>
+<a name="ln582">    m_indexed_block_map = nullptr;</a>
+<a name="ln583">    return map;</a>
+<a name="ln584">}</a>
+<a name="ln585"> </a>
+<a name="ln586">void IndexedBlockBuffer::parse(Buffer&amp; buffer)</a>
+<a name="ln587">{</a>
+<a name="ln588">    // Modifies buffer to use a loader that stores offsets and data in</a>
+<a name="ln589">    // m_tokens_list. Original loader restored at data_collector destruction.</a>
+<a name="ln590">    BufferDataCollector data_collector(&amp;buffer, &amp;m_tokens_list);</a>
+<a name="ln591"> </a>
+<a name="ln592">    size_t values = m_rows * (m_property_names.size() + 1);</a>
+<a name="ln593">    m_tokens_list.reserve(values);</a>
+<a name="ln594"> </a>
+<a name="ln595">    if (buffer.size() == 0) {</a>
+<a name="ln596">        if (!buffer.load()) {</a>
+<a name="ln597">            throw read_exception(buffer,</a>
+<a name="ln598">                                 &quot;Unexpected EOF in indexed block scan.&quot;);</a>
+<a name="ln599">        }</a>
+<a name="ln600">    }</a>
+<a name="ln601">    m_tokens_list.appendBufferData(buffer.data());</a>
+<a name="ln602"> </a>
+<a name="ln603">    for (std::size_t ix = 0; ix &lt; values; ix++) {</a>
+<a name="ln604">        // TODO: Another boost in performance can be had by avoiding the</a>
+<a name="ln605">        // function call overhead for value and whitespace, but simplying</a>
+<a name="ln606">        // marking the functions as inline doesn't seem to do the trick.</a>
+<a name="ln607">        whitespace(buffer);</a>
+<a name="ln608">        value(buffer);</a>
+<a name="ln609">    }</a>
+<a name="ln610">    whitespace(buffer);</a>
+<a name="ln611">}</a>
+<a name="ln612"> </a>
+<a name="ln613">/**</a>
+<a name="ln614"> * This function is measurably faster than strtol.</a>
+<a name="ln615"> *</a>
+<a name="ln616"> * The main reason for this is probably that it does not deal with alternate</a>
+<a name="ln617"> * bases for the integer.</a>
+<a name="ln618"> */</a>
+<a name="ln619">static long int simple_strtol(const char* ptr, const char* end)</a>
+<a name="ln620">{</a>
+<a name="ln621">    long int value = 0;</a>
+<a name="ln622">    long int sign = 1;</a>
+<a name="ln623"> </a>
+<a name="ln624">    while (ptr &lt; end) {</a>
+<a name="ln625">        switch (*ptr) {</a>
+<a name="ln626">        case '0':</a>
+<a name="ln627">        case '1':</a>
+<a name="ln628">        case '2':</a>
+<a name="ln629">        case '3':</a>
+<a name="ln630">        case '4':</a>
+<a name="ln631">        case '5':</a>
+<a name="ln632">        case '6':</a>
+<a name="ln633">        case '7':</a>
+<a name="ln634">        case '8':</a>
+<a name="ln635">        case '9':</a>
+<a name="ln636">            value = value * 10 + *ptr - '0';</a>
+<a name="ln637">            break;</a>
+<a name="ln638">        case '-':</a>
+<a name="ln639">            if (sign == -1 || value) {</a>
+<a name="ln640">                throw std::invalid_argument(&quot;Unexpected '-' in integer.&quot;);</a>
+<a name="ln641">            }</a>
+<a name="ln642">            sign = -1;</a>
+<a name="ln643">            break;</a>
+<a name="ln644">        default:</a>
+<a name="ln645">            throw std::invalid_argument(&quot;Unexpected character in integer.&quot;);</a>
+<a name="ln646">        }</a>
+<a name="ln647">        ++ptr;</a>
+<a name="ln648">    }</a>
+<a name="ln649">    return value * sign;</a>
+<a name="ln650">}</a>
+<a name="ln651"> </a>
+<a name="ln652">IndexedBlock* IndexedBlockBuffer::getIndexedBlock()</a>
+<a name="ln653">{</a>
+<a name="ln654">    IndexedBlock* iblock = new IndexedBlock(getName());</a>
+<a name="ln655"> </a>
+<a name="ln656">    std::vector&lt;std::string&gt;::const_iterator iter = m_property_names.begin();</a>
+<a name="ln657"> </a>
+<a name="ln658">    // Indexed blocks have row indexes explicitly mixed in as the first</a>
+<a name="ln659">    // value of each row. This is why a) prop_indx starts at 1, b)</a>
+<a name="ln660">    // col_count is prop_count + 1 instead of prop_count.</a>
+<a name="ln661">    //</a>
+<a name="ln662">    size_t prop_count = m_property_names.size();</a>
+<a name="ln663">    size_t col_count = prop_count + 1;</a>
+<a name="ln664">    size_t value_count = col_count * m_rows;</a>
+<a name="ln665">    boost::dynamic_bitset&lt;&gt;* is_null = nullptr;</a>
+<a name="ln666">    for (int prop_indx = 1; iter != m_property_names.end();</a>
+<a name="ln667">         ++iter, ++prop_indx) {</a>
+<a name="ln668">        char type = (*iter)[0];</a>
+<a name="ln669">        is_null = nullptr;</a>
+<a name="ln670">        const char* data;</a>
+<a name="ln671">        size_t len;</a>
+<a name="ln672">        switch (type) {</a>
+<a name="ln673">        case 'b': {</a>
+<a name="ln674">            std::vector&lt;BoolProperty&gt; bvalues;</a>
+<a name="ln675">            bvalues.reserve(m_rows);</a>
+<a name="ln676">            for (size_t ix = prop_indx; ix &lt; value_count; ix += col_count) {</a>
+<a name="ln677">                getData(ix, &amp;data, &amp;len);</a>
+<a name="ln678">                if (data[0] == '&lt;' &amp;&amp; data[1] == '&gt;') {</a>
+<a name="ln679">                    if (is_null == nullptr) {</a>
+<a name="ln680">                        is_null = new boost::dynamic_bitset&lt;&gt;(m_rows);</a>
+<a name="ln681">                    }</a>
+<a name="ln682">                    is_null-&gt;set(bvalues.size());</a>
+<a name="ln683">                    bvalues.push_back(false);</a>
+<a name="ln684">                } else if (data[0] == '1') {</a>
+<a name="ln685">                    bvalues.push_back(true);</a>
+<a name="ln686">                } else if (data[0] == '0') {</a>
+<a name="ln687">                    bvalues.push_back(false);</a>
+<a name="ln688">                } else {</a>
+<a name="ln689">                    throw std::out_of_range(&quot;Bogus bool.&quot;);</a>
+<a name="ln690">                }</a>
+<a name="ln691">            }</a>
+<a name="ln692">            std::shared_ptr&lt;IndexedBoolProperty&gt; ibp(</a>
+<a name="ln693">                new IndexedBoolProperty(bvalues, is_null));</a>
+<a name="ln694">            iblock-&gt;setBoolProperty(*iter, ibp);</a>
+<a name="ln695">        } break;</a>
+<a name="ln696">        case 'i': {</a>
+<a name="ln697">            std::vector&lt;int&gt; ivalues;</a>
+<a name="ln698">            ivalues.reserve(m_rows);</a>
+<a name="ln699">            for (size_t ix = prop_indx; ix &lt; value_count; ix += col_count) {</a>
+<a name="ln700">                getData(ix, &amp;data, &amp;len);</a>
+<a name="ln701">                if (data[0] == '&lt;' &amp;&amp; data[1] == '&gt;') {</a>
+<a name="ln702">                    if (is_null == nullptr) {</a>
+<a name="ln703">                        is_null = new boost::dynamic_bitset&lt;&gt;(m_rows);</a>
+<a name="ln704">                    }</a>
+<a name="ln705">                    is_null-&gt;set(ivalues.size());</a>
+<a name="ln706">                    ivalues.push_back(0);</a>
+<a name="ln707">                } else {</a>
+<a name="ln708">                    long int value = simple_strtol(data, data + len);</a>
+<a name="ln709">                    ivalues.push_back(value);</a>
+<a name="ln710">                }</a>
+<a name="ln711">            }</a>
+<a name="ln712">            std::shared_ptr&lt;IndexedIntProperty&gt; iip(</a>
+<a name="ln713">                new IndexedIntProperty(ivalues, is_null));</a>
+<a name="ln714">            iblock-&gt;setIntProperty(*iter, iip);</a>
+<a name="ln715">        } break;</a>
+<a name="ln716">        case 'r': {</a>
+<a name="ln717">            std::vector&lt;double&gt; dvalues;</a>
+<a name="ln718">            dvalues.reserve(m_rows);</a>
+<a name="ln719">            for (size_t ix = prop_indx; ix &lt; value_count; ix += col_count) {</a>
+<a name="ln720">                getData(ix, &amp;data, &amp;len);</a>
+<a name="ln721">                if (data[0] == '&lt;' &amp;&amp; data[1] == '&gt;') {</a>
+<a name="ln722">                    if (is_null == nullptr) {</a>
+<a name="ln723">                        is_null = new boost::dynamic_bitset&lt;&gt;(m_rows);</a>
+<a name="ln724">                    }</a>
+<a name="ln725">                    is_null-&gt;set(dvalues.size());</a>
+<a name="ln726">                    dvalues.push_back(0);</a>
+<a name="ln727">                } else {</a>
+<a name="ln728">                    double value = 0;</a>
+<a name="ln729">                    const char* end = data + len;</a>
+<a name="ln730">                    if (!qi::parse(data, end, qi::double_, value) ||</a>
+<a name="ln731">                        data != end) {</a>
+<a name="ln732">                        throw std::invalid_argument(&quot;Bad floating point &quot;</a>
+<a name="ln733">                                                    &quot;representation.&quot;);</a>
+<a name="ln734">                    }</a>
+<a name="ln735">                    dvalues.push_back(value);</a>
+<a name="ln736">                }</a>
+<a name="ln737">            }</a>
+<a name="ln738">            std::shared_ptr&lt;IndexedRealProperty&gt; irp(</a>
+<a name="ln739">                new IndexedRealProperty(dvalues, is_null));</a>
+<a name="ln740">            iblock-&gt;setRealProperty(*iter, irp);</a>
+<a name="ln741">        } break;</a>
+<a name="ln742">        case 's': {</a>
+<a name="ln743">            std::vector&lt;std::string&gt; svalues;</a>
+<a name="ln744">            svalues.reserve(m_rows);</a>
+<a name="ln745">            for (size_t ix = prop_indx; ix &lt; value_count; ix += col_count) {</a>
+<a name="ln746">                getData(ix, &amp;data, &amp;len);</a>
+<a name="ln747">                if (data[0] == '&lt;' &amp;&amp; data[1] == '&gt;') {</a>
+<a name="ln748">                    if (is_null == nullptr) {</a>
+<a name="ln749">                        is_null = new boost::dynamic_bitset&lt;&gt;(m_rows);</a>
+<a name="ln750">                    }</a>
+<a name="ln751">                    is_null-&gt;set(svalues.size());</a>
+<a name="ln752">                    svalues.emplace_back();</a>
+<a name="ln753">                } else {</a>
+<a name="ln754">                    if (data[0] != '&quot;') { // Check for quote wrapping</a>
+<a name="ln755">                        svalues.emplace_back(data, len);</a>
+<a name="ln756">                    } else { // During parsing we check for full quote wrapping</a>
+<a name="ln757">                        auto rval = std::string(data + 1, len - 2);</a>
+<a name="ln758">                        remove_escape_characters(rval);</a>
+<a name="ln759">                        svalues.emplace_back(rval);</a>
+<a name="ln760">                    }</a>
+<a name="ln761">                }</a>
+<a name="ln762">            }</a>
+<a name="ln763">            std::shared_ptr&lt;IndexedStringProperty&gt; isp(</a>
+<a name="ln764">                new IndexedStringProperty(svalues, is_null));</a>
+<a name="ln765">            iblock-&gt;setStringProperty(*iter, isp);</a>
+<a name="ln766">        } break;</a>
+<a name="ln767">        }</a>
+<a name="ln768">    }</a>
+<a name="ln769">    return iblock;</a>
+<a name="ln770">}</a>
+<a name="ln771"> </a>
+<a name="ln772">BufferedIndexedBlockParser::BufferedIndexedBlockParser()</a>
+<a name="ln773">{</a>
+<a name="ln774">    m_indexed_block_map = std::make_shared&lt;BufferedIndexedBlockMap&gt;();</a>
+<a name="ln775">}</a>
+<a name="ln776"> </a>
+<a name="ln777">std::shared_ptr&lt;IndexedBlockMapI&gt;</a>
+<a name="ln778">BufferedIndexedBlockParser::getIndexedBlockMap()</a>
+<a name="ln779">{</a>
+<a name="ln780">    std::shared_ptr&lt;IndexedBlockMapI&gt; indexed_block_map(m_indexed_block_map);</a>
+<a name="ln781">    m_indexed_block_map = nullptr;</a>
+<a name="ln782">    return indexed_block_map;</a>
+<a name="ln783">}</a>
+<a name="ln784"> </a>
+<a name="ln785">void BufferedIndexedBlockParser::parse(const std::string&amp; name, size_t size,</a>
+<a name="ln786">                                       Buffer&amp; buffer)</a>
+<a name="ln787">{</a>
+<a name="ln788">    auto ibb = std::make_shared&lt;IndexedBlockBuffer&gt;(name, size);</a>
+<a name="ln789">    whitespace(buffer);</a>
+<a name="ln790">    std::shared_ptr&lt;std::string&gt; property_name;</a>
+<a name="ln791">    while ((property_name = property_key(buffer)) != nullptr) {</a>
+<a name="ln792">        ibb-&gt;addPropertyName(*property_name);</a>
+<a name="ln793">        whitespace(buffer);</a>
+<a name="ln794">    }</a>
+<a name="ln795">    triple_colon(buffer);</a>
+<a name="ln796">    ibb-&gt;parse(buffer);</a>
+<a name="ln797">    triple_colon(buffer);</a>
+<a name="ln798">    whitespace(buffer);</a>
+<a name="ln799"> </a>
+<a name="ln800">    if (!character('}', buffer)) {</a>
+<a name="ln801">        throw read_exception(buffer, &quot;Missing closing '}' for &quot;</a>
+<a name="ln802">                                     &quot;indexed block.&quot;);</a>
+<a name="ln803">    }</a>
+<a name="ln804">    m_indexed_block_map-&gt;addIndexedBlockBuffer(name, ibb);</a>
+<a name="ln805">}</a>
+<a name="ln806"> </a>
+<a name="ln807">} // end of namespace mae</a>
+<a name="ln808"> </a>
+<a name="ln809">} // end of namespace schrodinger</a>
+
+</code></pre>
+<div class="balloon" rel="689"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v773/" target="_blank">V773</a> The exception was thrown without releasing the 'iblock' pointer. A memory leak is possible.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

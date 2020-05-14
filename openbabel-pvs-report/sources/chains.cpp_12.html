@@ -1,0 +1,2306 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>chains.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">chains.cpp - Parse for macromolecule chains and residues.</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 1998-2001 by OpenEye Scientific Software, Inc.</a>
+<a name="ln5">(original author, Roger Sayle, version 1.6, March 1998)</a>
+<a name="ln6">(modified by Joe Corkery, OpenEye Scientific Software, March 2001)</a>
+<a name="ln7">Some portions Copyright (C) 2001-2006 by Geoffrey R. Hutchison</a>
+<a name="ln8"> </a>
+<a name="ln9">This file is part of the Open Babel project.</a>
+<a name="ln10">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln11"> </a>
+<a name="ln12">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln13">it under the terms of the GNU General Public License as published by</a>
+<a name="ln14">the Free Software Foundation version 2 of the License.</a>
+<a name="ln15"> </a>
+<a name="ln16">This program is distributed in the hope that it will be useful,</a>
+<a name="ln17">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln18">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln19">GNU General Public License for more details.</a>
+<a name="ln20">***********************************************************************/</a>
+<a name="ln21"> </a>
+<a name="ln22">//////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln23">// File Includes</a>
+<a name="ln24">//////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln25">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln26"> </a>
+<a name="ln27">#include &lt;stdlib.h&gt;</a>
+<a name="ln28">#include &lt;string.h&gt;</a>
+<a name="ln29">#include &lt;stdio.h&gt;</a>
+<a name="ln30">#include &lt;ctype.h&gt;</a>
+<a name="ln31">#include &lt;map&gt;</a>
+<a name="ln32"> </a>
+<a name="ln33">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln34">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln35">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln36">#include &lt;openbabel/chains.h&gt;</a>
+<a name="ln37">#include &lt;openbabel/oberror.h&gt;</a>
+<a name="ln38">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln39">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln40"> </a>
+<a name="ln41">using namespace std;</a>
+<a name="ln42"> </a>
+<a name="ln43">//////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln44">// Preprocessor Definitions</a>
+<a name="ln45">//////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln46"> </a>
+<a name="ln47">//! The first available index for actual residues</a>
+<a name="ln48">//! 0, 1, 2 reserved for UNK, HOH, UNL</a>
+<a name="ln49">#define RESIDMIN       4</a>
+<a name="ln50">//! The maximum number of residue IDs for this code</a>
+<a name="ln51">#define RESIDMAX       64</a>
+<a name="ln52"> </a>
+<a name="ln53">//! An index of the residue names perceived during a run</a>
+<a name="ln54">//! 0, 1, and 2 reserved for UNK, HOH, LIG</a>
+<a name="ln55">static char ChainsResName[RESIDMAX][4] = {</a>
+<a name="ln56">  /*0*/ &quot;UNK&quot;,</a>
+<a name="ln57">  /*1*/ &quot;HOH&quot;,</a>
+<a name="ln58">  /*2*/ &quot;UNL&quot;,</a>
+<a name="ln59">  /*3*/ &quot;ACE&quot;</a>
+<a name="ln60">};</a>
+<a name="ln61"> </a>
+<a name="ln62">#define ATOMMINAMINO   4</a>
+<a name="ln63">#define ATOMMINNUCLEIC 50</a>
+<a name="ln64">#define MAXPEPTIDE     11</a>
+<a name="ln65">#define MAXNUCLEIC     15</a>
+<a name="ln66">//! The number of amino acids recognized by this code</a>
+<a name="ln67">//! Currently: ILE, VAL, ALA, ASN, ASP, ARG, CYS, GLN, GLU</a>
+<a name="ln68">//!  GLY, HIS, HYP, LEU, LYS, MET, PHE, PRO, SER, THR, TRP, TYR</a>
+<a name="ln69">#define AMINOMAX       21</a>
+<a name="ln70">//! The number of nucleic acids recognized by this code</a>
+<a name="ln71">//! Currently A, C, T, G, U, I</a>
+<a name="ln72">#define NUCLEOMAX      6</a>
+<a name="ln73">#define STACKSIZE      20</a>
+<a name="ln74"> </a>
+<a name="ln75">#define AI_N           0</a>
+<a name="ln76">#define AI_CA          1</a>
+<a name="ln77">#define AI_C           2</a>
+<a name="ln78">#define AI_O           3</a>
+<a name="ln79">#define AI_OXT         37</a>
+<a name="ln80"> </a>
+<a name="ln81">#define AI_P           38</a>
+<a name="ln82">#define AI_O1P         39</a>
+<a name="ln83">#define AI_O2P         40</a>
+<a name="ln84">#define AI_O5          41</a>
+<a name="ln85">#define AI_C5          42</a>
+<a name="ln86">#define AI_C4          43</a>
+<a name="ln87">#define AI_O4          44</a>
+<a name="ln88">#define AI_C3          45</a>
+<a name="ln89">#define AI_O3          46</a>
+<a name="ln90">#define AI_C2          47</a>
+<a name="ln91">#define AI_O2          48</a>
+<a name="ln92">#define AI_C1          49</a>
+<a name="ln93"> </a>
+<a name="ln94">#define BitN           0x0001</a>
+<a name="ln95">#define BitNTer        0x0002</a>
+<a name="ln96">#define BitNPro        0x0004</a>
+<a name="ln97">#define BitNPT         0x0008</a>
+<a name="ln98">#define BitCA          0x0010</a>
+<a name="ln99">#define BitCAGly       0x0020</a>
+<a name="ln100">#define BitC           0x0100</a>
+<a name="ln101">#define BitCTer        0x0200</a>
+<a name="ln102">#define BitCOXT        0x0400</a>
+<a name="ln103">#define BitO           0x1000</a>
+<a name="ln104">#define BitOXT         0x2000</a>
+<a name="ln105"> </a>
+<a name="ln106">#define BitNAll        0x000F</a>
+<a name="ln107">#define BitCAAll       0x0030</a>
+<a name="ln108">#define BitCAll        0x0700</a>
+<a name="ln109">#define BitOAll        0x3000</a>
+<a name="ln110"> </a>
+<a name="ln111">#define BitP           0x0001</a>
+<a name="ln112">#define BitPTer        0x0002</a>
+<a name="ln113">#define BitOP          0x0004</a>
+<a name="ln114">#define BitO5          0x0008</a>
+<a name="ln115">#define BitO5Ter       0x0010</a>
+<a name="ln116">#define BitC5          0x0020</a>
+<a name="ln117">#define BitC4          0x0040</a>
+<a name="ln118">#define BitO4          0x0080</a>
+<a name="ln119">#define BitC3          0x0100</a>
+<a name="ln120">#define BitO3          0x0200</a>
+<a name="ln121">#define BitO3Ter       0x0400</a>
+<a name="ln122">#define BitC2RNA       0x0800</a>
+<a name="ln123">#define BitC2DNA       0x1000</a>
+<a name="ln124">#define BitO2          0x2000</a>
+<a name="ln125">#define BitC1          0x4000</a>
+<a name="ln126"> </a>
+<a name="ln127">#define BitPAll        0x0003</a>
+<a name="ln128">#define Bit05All       0x0018</a>
+<a name="ln129">#define BitO3All       0x0600</a>
+<a name="ln130">#define BitC2All       0x1800</a>
+<a name="ln131"> </a>
+<a name="ln132">#define BC_ASSIGN      0x01</a>
+<a name="ln133">#define BC_COUNT       0x02</a>
+<a name="ln134">#define BC_ELEM        0x03</a>
+<a name="ln135">#define BC_EVAL        0x04</a>
+<a name="ln136">#define BC_IDENT       0x05</a>
+<a name="ln137">#define BC_LOCAL       0x06</a>
+<a name="ln138"> </a>
+<a name="ln139">#define BF_SINGLE      0x01</a>
+<a name="ln140">#define BF_DOUBLE      0x02</a>
+<a name="ln141">#define BF_TRIPLE      0x04</a>
+<a name="ln142">#define BF_AROMATIC    0x08</a>
+<a name="ln143"> </a>
+<a name="ln144">namespace OpenBabel</a>
+<a name="ln145">{</a>
+<a name="ln146">  extern OBMessageHandler obErrorLog;</a>
+<a name="ln147"> </a>
+<a name="ln148"> </a>
+<a name="ln149">  // Initialize the global chainsparser - declared in chains.h</a>
+<a name="ln150">  OBChainsParser chainsparser;</a>
+<a name="ln151"> </a>
+<a name="ln152">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln153">  // Structure / Type Definitions</a>
+<a name="ln154">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln155"> </a>
+<a name="ln156">  //! Structure template for atomic patterns in residues for OBChainsParser</a>
+<a name="ln157">  typedef struct Template</a>
+<a name="ln158">  {</a>
+<a name="ln159">    int flag;        //!&lt; binary flag representing this atom type</a>
+<a name="ln160">    short elem;      //!&lt; atomic number of this element</a>
+<a name="ln161">    short count;     //!&lt; expected valence for this atom type</a>
+<a name="ln162">    int n1;          //!&lt; mask 1 used by ConstrainBackbone() and MatchConstraint()</a>
+<a name="ln163">    int n2;          //!&lt; mask 2 used by ConstrainBackbone() and MatchConstraint()</a>
+<a name="ln164">    int n3;          //!&lt; mask 3 used by ConstrainBackbone() and MatchConstraint()</a>
+<a name="ln165">    int n4;          //!&lt; mask 4 used by ConstrainBackbone() and MatchConstraint()</a>
+<a name="ln166">  }    Template;</a>
+<a name="ln167"> </a>
+<a name="ln168">  /**</a>
+<a name="ln169">   * Generic template for peptide residue backbone. \n</a>
+<a name="ln170">   * col 1: bitmask \n</a>
+<a name="ln171">   * col 2: element number \n</a>
+<a name="ln172">   * col 3: neighbour count \n</a>
+<a name="ln173">   * col 4-7: 1-4 bitmasks for neighbour atoms (-6 means carbon)</a>
+<a name="ln174">   */</a>
+<a name="ln175">  static Template Peptide[MAXPEPTIDE] = {</a>
+<a name="ln176">    /* N     */    {  0x0001, 7, 2, 0x0030, 0x0100,      0, 0 }, //!&lt; N</a>
+<a name="ln177">    /* NTer  */    {  0x0002, 7, 1, 0x0030,      0,      0, 0 }, //!&lt; NTre</a>
+<a name="ln178">    /* NPro  */    {  0x0004, 7, 3, 0x0030, 0x0100,     -6, 0 }, //!&lt; NPro</a>
+<a name="ln179">    /* NPT   */    {  0x0008, 7, 2, 0x0030,     -6,      0, 0 }, //!&lt; NPT</a>
+<a name="ln180">    /* CA    */    {  0x0010, 6, 3, 0x000F, 0x0700,     -6, 0 }, //!&lt; CA</a>
+<a name="ln181">    /* CAGly */    {  0x0020, 6, 2, 0x0003, 0x0700,      0, 0 }, //!&lt; CAGly</a>
+<a name="ln182">    /* C     */    {  0x0100, 6, 3, 0x0030, 0x1000, 0x0005, 0 }, //!&lt; C</a>
+<a name="ln183">    /* CTer  */    {  0x0200, 6, 2, 0x0030, 0x1000,      0, 0 }, //!&lt; CTer</a>
+<a name="ln184">    /* COXT  */    {  0x0400, 6, 3, 0x0030, 0x1000, 0x2000, 0 }, //!&lt; COXT</a>
+<a name="ln185">    /* O     */    {  0x1000, 8, 1, 0x0700,      0,      0, 0 }, //!&lt; O</a>
+<a name="ln186">    /* OXT   */    {  0x2000, 8, 1, 0x0400,      0,      0, 0 }  //!&lt; OXT</a>
+<a name="ln187">  };</a>
+<a name="ln188"> </a>
+<a name="ln189">  //! Generic template for peptide nucleotide backbone</a>
+<a name="ln190">  static Template Nucleotide[MAXNUCLEIC] = {</a>
+<a name="ln191">    /* P     */    {  0x0001, 15, 4, 0x0004, 0x0004, 0x0008, 0x0200 },</a>
+<a name="ln192">    /* PTer  */    {  0x0002, 15, 3, 0x0004, 0x0004, 0x0008,      0 },</a>
+<a name="ln193">    /* OP    */    {  0x0004,  8, 1, 0x0003,      0,      0,      0 },</a>
+<a name="ln194">    /* O5    */    {  0x0008,  8, 2, 0x0020, 0x0003,      0,      0 },</a>
+<a name="ln195">    /* O5Ter */    {  0x0010,  8, 1, 0x0020,      0,      0,      0 },</a>
+<a name="ln196">    /* C5    */    {  0x0020,  6, 2, 0x0018, 0x0040,      0,      0 },</a>
+<a name="ln197">    /* C4    */    {  0x0040,  6, 3, 0x0020, 0x0080, 0x0100,      0 },</a>
+<a name="ln198">    /* O4    */    {  0x0080,  8, 2, 0x0040, 0x4000,      0,      0 },</a>
+<a name="ln199">    /* C3    */    {  0x0100,  6, 3, 0x0040, 0x0600, 0x1800,      0 },</a>
+<a name="ln200">    /* O3    */    {  0x0200,  8, 2, 0x0100, 0x0001,      0,      0 },</a>
+<a name="ln201">    /* O3Ter */    {  0x0400,  8, 1, 0x0100,      0,      0,      0 },</a>
+<a name="ln202">    /* C2RNA */    {  0x0800,  6, 3, 0x0100, 0x4000, 0x2000,      0 },</a>
+<a name="ln203">    /* C2DNA */    {  0x1000,  6, 2, 0x0100, 0x4000,      0,      0 },</a>
+<a name="ln204">    /* O2    */    {  0x2000,  8, 1, 0x0800,      0,      0,      0 },</a>
+<a name="ln205">    /* C1    */    {  0x4000,  6, 3, 0x0080, 0x1800,     -7,      0 }</a>
+<a name="ln206">  };</a>
+<a name="ln207"> </a>
+<a name="ln208"> </a>
+<a name="ln209">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln210">  // Global Variables / Tables</a>
+<a name="ln211">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln212"> </a>
+<a name="ln213">  //! The number of PDB atom type names recognized by this code</a>
+<a name="ln214">#define ATOMMAX        68</a>
+<a name="ln215"> </a>
+<a name="ln216">  //! PDB atom types (i.e., columns 13-16 of a PDB file)</a>
+<a name="ln217">  //!  index numbers from this array are used in the pseudo-SMILES format</a>
+<a name="ln218">  //!  for side-chains in the AminoAcids[] &amp; Nucleotides[] global arrays below</a>
+<a name="ln219">  static char ChainsAtomName[ATOMMAX][4] = {</a>
+<a name="ln220">    /*  0 */  { ' ', 'N', ' ', ' ' },</a>
+<a name="ln221">    /*  1 */  { ' ', 'C', 'A', ' ' },</a>
+<a name="ln222">    /*  2 */  { ' ', 'C', ' ', ' ' },</a>
+<a name="ln223">    /*  3 */  { ' ', 'O', ' ', ' ' },</a>
+<a name="ln224">    /*  4 */  { ' ', 'C', 'B', ' ' },</a>
+<a name="ln225">    /*  5 */  { ' ', 'S', 'G', ' ' },</a>
+<a name="ln226">    /*  6 */  { ' ', 'O', 'G', ' ' },</a>
+<a name="ln227">    /*  7 */  { ' ', 'C', 'G', ' ' },</a>
+<a name="ln228">    /*  8 */  { ' ', 'O', 'G', '1' },</a>
+<a name="ln229">    /*  9 */  { ' ', 'C', 'G', '1' },</a>
+<a name="ln230">    /* 10 */  { ' ', 'C', 'G', '2' },</a>
+<a name="ln231">    /* 11 */  { ' ', 'C', 'D', ' ' },</a>
+<a name="ln232">    /* 12 */  { ' ', 'O', 'D', ' ' },</a>
+<a name="ln233">    /* 13 */  { ' ', 'S', 'D', ' ' },</a>
+<a name="ln234">    /* 14 */  { ' ', 'C', 'D', '1' },</a>
+<a name="ln235">    /* 15 */  { ' ', 'O', 'D', '1' },</a>
+<a name="ln236">    /* 16 */  { ' ', 'N', 'D', '1' },</a>
+<a name="ln237">    /* 17 */  { ' ', 'C', 'D', '2' },</a>
+<a name="ln238">    /* 18 */  { ' ', 'O', 'D', '2' },</a>
+<a name="ln239">    /* 19 */  { ' ', 'N', 'D', '2' },</a>
+<a name="ln240">    /* 20 */  { ' ', 'C', 'E', ' ' },</a>
+<a name="ln241">    /* 21 */  { ' ', 'N', 'E', ' ' },</a>
+<a name="ln242">    /* 22 */  { ' ', 'C', 'E', '1' },</a>
+<a name="ln243">    /* 23 */  { ' ', 'O', 'E', '1' },</a>
+<a name="ln244">    /* 24 */  { ' ', 'N', 'E', '1' },</a>
+<a name="ln245">    /* 25 */  { ' ', 'C', 'E', '2' },</a>
+<a name="ln246">    /* 26 */  { ' ', 'O', 'E', '2' },</a>
+<a name="ln247">    /* 27 */  { ' ', 'N', 'E', '2' },</a>
+<a name="ln248">    /* 28 */  { ' ', 'C', 'E', '3' },</a>
+<a name="ln249">    /* 29 */  { ' ', 'C', 'Z', ' ' },</a>
+<a name="ln250">    /* 30 */  { ' ', 'N', 'Z', ' ' },</a>
+<a name="ln251">    /* 31 */  { ' ', 'C', 'Z', '2' },</a>
+<a name="ln252">    /* 32 */  { ' ', 'C', 'Z', '3' },</a>
+<a name="ln253">    /* 33 */  { ' ', 'O', 'H', ' ' },</a>
+<a name="ln254">    /* 34 */  { ' ', 'N', 'H', '1' },</a>
+<a name="ln255">    /* 35 */  { ' ', 'N', 'H', '2' },</a>
+<a name="ln256">    /* 36 */  { ' ', 'C', 'H', '2' },</a>
+<a name="ln257">    /* 37 */  { ' ', 'O', 'X', 'T' },</a>
+<a name="ln258">    /* 38 */  { ' ', 'P', ' ', ' ' },</a>
+<a name="ln259">    /* 39 */  { ' ', 'O', '1', 'P' },</a>
+<a name="ln260">    /* 40 */  { ' ', 'O', '2', 'P' },</a>
+<a name="ln261">    /* 41 */  { ' ', 'O', '5', '*' },</a>
+<a name="ln262">    /* 42 */  { ' ', 'C', '5', '*' },</a>
+<a name="ln263">    /* 43 */  { ' ', 'C', '4', '*' },</a>
+<a name="ln264">    /* 44 */  { ' ', 'O', '4', '*' },</a>
+<a name="ln265">    /* 45 */  { ' ', 'C', '3', '*' },</a>
+<a name="ln266">    /* 46 */  { ' ', 'O', '3', '*' },</a>
+<a name="ln267">    /* 47 */  { ' ', 'C', '2', '*' },</a>
+<a name="ln268">    /* 48 */  { ' ', 'O', '2', '*' },</a>
+<a name="ln269">    /* 49 */  { ' ', 'C', '1', '*' },</a>
+<a name="ln270">    /* 50 */  { ' ', 'N', '9', ' ' },</a>
+<a name="ln271">    /* 51 */  { ' ', 'C', '8', ' ' },</a>
+<a name="ln272">    /* 52 */  { ' ', 'N', '7', ' ' },</a>
+<a name="ln273">    /* 53 */  { ' ', 'C', '5', ' ' },</a>
+<a name="ln274">    /* 54 */  { ' ', 'C', '6', ' ' },</a>
+<a name="ln275">    /* 55 */  { ' ', 'O', '6', ' ' },</a>
+<a name="ln276">    /* 56 */  { ' ', 'N', '6', ' ' },</a>
+<a name="ln277">    /* 57 */  { ' ', 'N', '1', ' ' },</a>
+<a name="ln278">    /* 58 */  { ' ', 'C', '2', ' ' },</a>
+<a name="ln279">    /* 59 */  { ' ', 'O', '2', ' ' },</a>
+<a name="ln280">    /* 60 */  { ' ', 'N', '2', ' ' },</a>
+<a name="ln281">    /* 61 */  { ' ', 'N', '3', ' ' },</a>
+<a name="ln282">    /* 62 */  { ' ', 'C', '4', ' ' },</a>
+<a name="ln283">    /* 63 */  { ' ', 'O', '4', ' ' },</a>
+<a name="ln284">    /* 64 */  { ' ', 'N', '4', ' ' },</a>
+<a name="ln285">    /* 65 */  { ' ', 'C', '5', ' ' },</a>
+<a name="ln286">    /* 66 */  { ' ', 'C', '5', 'M' },</a>
+<a name="ln287">    /* 67 */  { ' ', 'C', '6', ' ' }</a>
+<a name="ln288">  };</a>
+<a name="ln289"> </a>
+<a name="ln290">  //! Definition of side chains, associating overall residue name with</a>
+<a name="ln291">  //!  the pseudo-SMILES pattern</a>
+<a name="ln292">  typedef struct</a>
+<a name="ln293">  {</a>
+<a name="ln294">    const char *name; //!&lt; Residue name, standardized by PDB</a>
+<a name="ln295">    const char *data; //!&lt; pseudo-SMILES definition of side-chain</a>
+<a name="ln296">  }    ResidType;</a>
+<a name="ln297"> </a>
+<a name="ln298">  /**</a>
+<a name="ln299">   * Side chains for recognized amino acids using a pseudo-SMARTS syntax</a>
+<a name="ln300">   * for branching and bonds. Numbers indicate atom types defined by</a>
+<a name="ln301">   * OpenBabel::ChainsAtomName global array above.</a>
+<a name="ln302">   */</a>
+<a name="ln303">  static ResidType AminoAcids[AMINOMAX] = {</a>
+<a name="ln304">    { &quot;ILE&quot;, &quot;1-4(-9-14)-10&quot;                        },</a>
+<a name="ln305">    { &quot;VAL&quot;, &quot;1-4(-9)-10&quot;                           },</a>
+<a name="ln306">    { &quot;ALA&quot;, &quot;1-4&quot;                                  },</a>
+<a name="ln307">    { &quot;ASN&quot;, &quot;1-4-7(=15)-19&quot;                        },</a>
+<a name="ln308">    { &quot;ASP&quot;, &quot;1-4-7(=15)-18&quot;                        },</a>
+<a name="ln309">    { &quot;ARG&quot;, &quot;1-4-7-11-21-29(=34)-35&quot;               },</a>
+<a name="ln310">    { &quot;CYS&quot;, &quot;1-4-5&quot;                                },</a>
+<a name="ln311">    { &quot;GLN&quot;, &quot;1-4-7-11(=23)-27&quot;                     },</a>
+<a name="ln312">    { &quot;GLU&quot;, &quot;1-4-7-11(=23)-26&quot;                     },</a>
+<a name="ln313">    { &quot;GLY&quot;, &quot;1&quot;                                    },</a>
+<a name="ln314">    { &quot;HIS&quot;, &quot;1-4-7^16~22^27^17~7&quot;                  },</a>
+<a name="ln315">    { &quot;HYP&quot;, &quot;1-4-7(-12)-11-0&quot;                      },</a>
+<a name="ln316">    { &quot;LEU&quot;, &quot;1-4-7(-14)-17&quot;                        },</a>
+<a name="ln317">    { &quot;LYS&quot;, &quot;1-4-7-11-20-30&quot;                       },</a>
+<a name="ln318">    { &quot;MET&quot;, &quot;1-4-7-13-20&quot;                          },</a>
+<a name="ln319">    { &quot;PHE&quot;, &quot;1-4-7~14^22~29^25~17^7&quot;               },</a>
+<a name="ln320">    { &quot;PRO&quot;, &quot;1-4-7-11-0&quot;                           },</a>
+<a name="ln321">    { &quot;SER&quot;, &quot;1-4-6&quot;                                },</a>
+<a name="ln322">    { &quot;THR&quot;, &quot;1-4(-8)-10&quot;                           },</a>
+<a name="ln323">    { &quot;TRP&quot;, &quot;1-4-7~14^24^25~17(^7)^28~32^36~31^25&quot; },</a>
+<a name="ln324">    { &quot;TYR&quot;, &quot;1-4-7~14^22~29(-33)^25~17^7&quot;          }</a>
+<a name="ln325">  };</a>
+<a name="ln326">  // Other possible amino acid templates (less common)</a>
+<a name="ln327">  /* Pyroglutamate (PCA):        1-4-7-11(=&quot; OE &quot;)-0  PDB Example: 1CEL */</a>
+<a name="ln328">  /* Amino-N-Butyric Acid (ABA): 1-4-7                PDB Example: 1BBO */</a>
+<a name="ln329">  /* Selenic Acid (SEC):         1-4-&quot;SEG &quot;(-15)-18   PDB Example: 1GP1 */</a>
+<a name="ln330"> </a>
+<a name="ln331">  /**</a>
+<a name="ln332">   * Side chains for recognized nucleotides using a pseudo-SMARTS syntax</a>
+<a name="ln333">   * for branching and bonds. Numbers indicate atom types defined by</a>
+<a name="ln334">   * OpenBabel::ChainsAtomName global array above.</a>
+<a name="ln335">   */</a>
+<a name="ln336">  static ResidType Nucleotides[NUCLEOMAX] = {</a>
+<a name="ln337">    { &quot;  A&quot;, &quot;49-50-51-52-53-54(-56)-57-58-61-62(-53)-50&quot;      },</a>
+<a name="ln338">    { &quot;  C&quot;, &quot;49-57-58(-59)-61-62(-64)-65-67-57&quot;               },</a>
+<a name="ln339">    { &quot;  G&quot;, &quot;49-50-51-52-53-54(-55)-57-58(-60)-61-62(-53)-50&quot; },</a>
+<a name="ln340">    { &quot;  T&quot;, &quot;49-57-58(-59)-61-62(-63)-65(-66)-67-57&quot;          },</a>
+<a name="ln341">    { &quot;  U&quot;, &quot;49-57-58(-59)-61-62(-63)-65-67-57&quot;               },</a>
+<a name="ln342">    { &quot;  I&quot;, &quot;49-50-51-52-53-54(-55)-57-58-61-62(-53)-50&quot;      }</a>
+<a name="ln343">  };</a>
+<a name="ln344"> </a>
+<a name="ln345"> </a>
+<a name="ln346">  typedef struct</a>
+<a name="ln347">  {</a>
+<a name="ln348">    int atomid,elem;</a>
+<a name="ln349">    int bcount;</a>
+<a name="ln350">    int index;</a>
+<a name="ln351">  } MonoAtomType;</a>
+<a name="ln352"> </a>
+<a name="ln353">  typedef struct</a>
+<a name="ln354">  {</a>
+<a name="ln355">    int src,dst;</a>
+<a name="ln356">    int index;</a>
+<a name="ln357">    int flag;</a>
+<a name="ln358">  } MonoBondType;</a>
+<a name="ln359"> </a>
+<a name="ln360">  typedef struct</a>
+<a name="ln361">  {</a>
+<a name="ln362">    int type;</a>
+<a name="ln363">    union _ByteCode *next;</a>
+<a name="ln364">  } MonOpStruct;</a>
+<a name="ln365"> </a>
+<a name="ln366">  typedef struct</a>
+<a name="ln367">  {</a>
+<a name="ln368">    int type;</a>
+<a name="ln369">    int value;</a>
+<a name="ln370">    union _ByteCode *tcond;</a>
+<a name="ln371">    union _ByteCode *fcond;</a>
+<a name="ln372">  } BinOpStruct;</a>
+<a name="ln373"> </a>
+<a name="ln374">  //! Output array -- residue id, atom id, bond flags, etc.</a>
+<a name="ln375">  typedef struct</a>
+<a name="ln376">  {</a>
+<a name="ln377">    int type;</a>
+<a name="ln378">    int resid;</a>
+<a name="ln379">    int *atomid;</a>
+<a name="ln380">    int *bflags;</a>
+<a name="ln381">  } AssignStruct;</a>
+<a name="ln382"> </a>
+<a name="ln383">  //! Chemical graph matching virtual machine</a>
+<a name="ln384">  typedef union _ByteCode</a>
+<a name="ln385">  {</a>
+<a name="ln386">    int type;</a>
+<a name="ln387">    MonOpStruct eval;     //!&lt; Eval - push current neighbors onto the stack</a>
+<a name="ln388">    BinOpStruct count;    //!&lt; Count - test the number of eval bonds</a>
+<a name="ln389">    BinOpStruct elem;     //!&lt; Element - test the element of current atom</a>
+<a name="ln390">    BinOpStruct ident;    //!&lt; Ident - test the atom for backbone identity</a>
+<a name="ln391">    BinOpStruct local;    //!&lt; Local - test whether the atom has been visited</a>
+<a name="ln392">    AssignStruct assign;  //!&lt; Assign - assign residue name, atom name and bond type to output</a>
+<a name="ln393">  } ByteCode;</a>
+<a name="ln394"> </a>
+<a name="ln395">  typedef struct</a>
+<a name="ln396">  {</a>
+<a name="ln397">    int atom,bond;</a>
+<a name="ln398">    int prev;</a>
+<a name="ln399">  } StackType;</a>
+<a name="ln400"> </a>
+<a name="ln401">  static MonoAtomType MonoAtom[MaxMonoAtom];</a>
+<a name="ln402">  static MonoBondType MonoBond[MaxMonoBond];</a>
+<a name="ln403">  static int MonoAtomCount;</a>
+<a name="ln404">  static int MonoBondCount;</a>
+<a name="ln405"> </a>
+<a name="ln406">  static StackType Stack[STACKSIZE];</a>
+<a name="ln407">  static int StackPtr;</a>
+<a name="ln408"> </a>
+<a name="ln409">  static int  AtomIndex;</a>
+<a name="ln410">  static int  BondIndex;</a>
+<a name="ln411">  static bool StrictFlag = false;</a>
+<a name="ln412"> </a>
+<a name="ln413">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln414">  // Static Functions</a>
+<a name="ln415">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln416"> </a>
+<a name="ln417">  static ByteCode *AllocateByteCode(int type)</a>
+<a name="ln418">  {</a>
+<a name="ln419">    ByteCode *result;</a>
+<a name="ln420"> </a>
+<a name="ln421">    result = new ByteCode;</a>
+<a name="ln422">    if( !result )</a>
+<a name="ln423">      {</a>
+<a name="ln424">        obErrorLog.ThrowError(__FUNCTION__, &quot;Unable to allocate byte codes for biomolecule residue perception.&quot;, obError);</a>
+<a name="ln425">        return (result);</a>
+<a name="ln426">      }</a>
+<a name="ln427">    result-&gt;type = type;</a>
+<a name="ln428">    result-&gt;eval.next     = nullptr;</a>
+<a name="ln429">    result-&gt;count.tcond   = nullptr;</a>
+<a name="ln430">    result-&gt;count.fcond   = nullptr;</a>
+<a name="ln431">    result-&gt;elem.tcond    = nullptr;</a>
+<a name="ln432">    result-&gt;elem.fcond    = nullptr;</a>
+<a name="ln433">    result-&gt;ident.tcond   = nullptr;</a>
+<a name="ln434">    result-&gt;ident.fcond   = nullptr;</a>
+<a name="ln435">    result-&gt;local.tcond   = nullptr;</a>
+<a name="ln436">    result-&gt;local.fcond   = nullptr;</a>
+<a name="ln437">    result-&gt;assign.atomid = nullptr;</a>
+<a name="ln438">    result-&gt;assign.bflags = nullptr;</a>
+<a name="ln439"> </a>
+<a name="ln440">    return (result);</a>
+<a name="ln441">  }</a>
+<a name="ln442"> </a>
+<a name="ln443">  //! Free a ByteCode and all corresponding data</a>
+<a name="ln444">  static void DeleteByteCode(ByteCode *node)</a>
+<a name="ln445">  {</a>
+<a name="ln446">    if (node == nullptr)</a>
+<a name="ln447">      return;</a>
+<a name="ln448">    else</a>
+<a name="ln449">      {</a>
+<a name="ln450">        switch (node-&gt;type)</a>
+<a name="ln451">          {</a>
+<a name="ln452">          case BC_ASSIGN:</a>
+<a name="ln453"> </a>
+<a name="ln454">            if (node-&gt;assign.atomid != nullptr) {</a>
+<a name="ln455">              delete [] node-&gt;assign.atomid;</a>
+<a name="ln456">              node-&gt;assign.atomid = nullptr; // prevent double-free</a>
+<a name="ln457">            }</a>
+<a name="ln458">            if (node-&gt;assign.bflags != nullptr) {</a>
+<a name="ln459">              delete [] node-&gt;assign.bflags;</a>
+<a name="ln460">              node-&gt;assign.bflags = nullptr; // prevent double-free</a>
+<a name="ln461">            }</a>
+<a name="ln462"> </a>
+<a name="ln463">            break;</a>
+<a name="ln464"> </a>
+<a name="ln465">          case BC_COUNT:</a>
+<a name="ln466"> </a>
+<a name="ln467">            DeleteByteCode(node-&gt;count.tcond);</a>
+<a name="ln468">            DeleteByteCode(node-&gt;count.fcond);</a>
+<a name="ln469">            break;</a>
+<a name="ln470">          case BC_ELEM:</a>
+<a name="ln471"> </a>
+<a name="ln472">            DeleteByteCode(node-&gt;elem.tcond);</a>
+<a name="ln473">            DeleteByteCode(node-&gt;elem.fcond);</a>
+<a name="ln474">            break;</a>
+<a name="ln475"> </a>
+<a name="ln476">          case BC_EVAL:</a>
+<a name="ln477"> </a>
+<a name="ln478">            DeleteByteCode(node-&gt;eval.next);</a>
+<a name="ln479">            break;</a>
+<a name="ln480"> </a>
+<a name="ln481">          case BC_IDENT:</a>
+<a name="ln482"> </a>
+<a name="ln483">            DeleteByteCode(node-&gt;ident.tcond);</a>
+<a name="ln484">            DeleteByteCode(node-&gt;ident.fcond);</a>
+<a name="ln485">            break;</a>
+<a name="ln486"> </a>
+<a name="ln487">          case BC_LOCAL:</a>
+<a name="ln488"> </a>
+<a name="ln489">            DeleteByteCode(node-&gt;local.tcond);</a>
+<a name="ln490">            DeleteByteCode(node-&gt;local.fcond);</a>
+<a name="ln491">            break;</a>
+<a name="ln492">          }</a>
+<a name="ln493"> </a>
+<a name="ln494">        delete node;</a>
+<a name="ln495">        node = nullptr;</a>
+<a name="ln496">      }</a>
+<a name="ln497">  }</a>
+<a name="ln498"> </a>
+<a name="ln499">  static void FatalMemoryError(void)</a>
+<a name="ln500">  {</a>
+<a name="ln501">    obErrorLog.ThrowError(__FUNCTION__, &quot;Unable to allocate memory for biomolecule residue / chain perception.&quot;, obError);</a>
+<a name="ln502">  }</a>
+<a name="ln503"> </a>
+<a name="ln504">  void GenerateByteCodes(ByteCode **node, int resid, int curr, int prev, int bond)</a>
+<a name="ln505">  {</a>
+<a name="ln506">    StackType neighbour[4];</a>
+<a name="ln507">    StackType original;</a>
+<a name="ln508">    int count,i,j;</a>
+<a name="ln509">    ByteCode *ptr;</a>
+<a name="ln510">    bool done,found;</a>
+<a name="ln511"> </a>
+<a name="ln512">    if( curr != prev )</a>
+<a name="ln513">      {</a>
+<a name="ln514">        if( MonoAtom[curr].atomid &lt; ATOMMINAMINO )</a>
+<a name="ln515">          {</a>
+<a name="ln516">            found = false;</a>
+<a name="ln517">            while( *node &amp;&amp; ((*node)-&gt;type==BC_IDENT) )</a>
+<a name="ln518">              {</a>
+<a name="ln519">                if( (*node)-&gt;ident.value == MonoAtom[curr].atomid )</a>
+<a name="ln520">                  {</a>
+<a name="ln521">                    node  = (ByteCode**)&amp;(*node)-&gt;ident.tcond;</a>
+<a name="ln522">                    found = true;</a>
+<a name="ln523">                    break;</a>
+<a name="ln524">                  }</a>
+<a name="ln525">                else</a>
+<a name="ln526">                  node = (ByteCode**)&amp;(*node)-&gt;ident.fcond;</a>
+<a name="ln527">              }</a>
+<a name="ln528"> </a>
+<a name="ln529">            if (!found)</a>
+<a name="ln530">              {</a>
+<a name="ln531">                ptr = AllocateByteCode(BC_IDENT);</a>
+<a name="ln532">                ptr-&gt;ident.tcond = nullptr;</a>
+<a name="ln533">                ptr-&gt;ident.fcond = *node;</a>
+<a name="ln534">                *node = ptr;</a>
+<a name="ln535">                node = (ByteCode**)&amp;ptr-&gt;ident.tcond;</a>
+<a name="ln536">                ptr-&gt;ident.value = MonoAtom[curr].atomid;</a>
+<a name="ln537">              }</a>
+<a name="ln538">            MonoBond[bond].index = BondIndex++;</a>
+<a name="ln539">            done = true;</a>
+<a name="ln540">          }</a>
+<a name="ln541">        else if( MonoAtom[curr].index != -1 )</a>
+<a name="ln542">          {</a>
+<a name="ln543">            while( *node &amp;&amp; ((*node)-&gt;type==BC_IDENT) )</a>
+<a name="ln544">              node = (ByteCode**)&amp;(*node)-&gt;ident.fcond;</a>
+<a name="ln545"> </a>
+<a name="ln546">            found = false;</a>
+<a name="ln547">            while( *node &amp;&amp; ((*node)-&gt;type==BC_LOCAL) )</a>
+<a name="ln548">              {</a>
+<a name="ln549">                if( (*node)-&gt;local.value == MonoAtom[curr].index )</a>
+<a name="ln550">                  {</a>
+<a name="ln551">                    node = (ByteCode**)&amp;(*node)-&gt;local.tcond;</a>
+<a name="ln552">                    found = true;</a>
+<a name="ln553">                    break;</a>
+<a name="ln554">                  }</a>
+<a name="ln555">                else</a>
+<a name="ln556">                  node = (ByteCode**)&amp;(*node)-&gt;local.fcond;</a>
+<a name="ln557">              }</a>
+<a name="ln558"> </a>
+<a name="ln559">            if (!found)</a>
+<a name="ln560">              {</a>
+<a name="ln561">                ptr = AllocateByteCode(BC_LOCAL);</a>
+<a name="ln562">                ptr-&gt;local.tcond = nullptr;</a>
+<a name="ln563">                ptr-&gt;local.fcond = *node;</a>
+<a name="ln564">                *node = ptr;</a>
+<a name="ln565">                node = (ByteCode**)&amp;ptr-&gt;local.tcond;</a>
+<a name="ln566">                ptr-&gt;local.value = MonoAtom[curr].index;</a>
+<a name="ln567">              }</a>
+<a name="ln568"> </a>
+<a name="ln569">            MonoBond[bond].index = BondIndex++;</a>
+<a name="ln570">            done = true;</a>
+<a name="ln571">          }</a>
+<a name="ln572">        else</a>
+<a name="ln573">          {</a>
+<a name="ln574">            while( *node &amp;&amp; ((*node)-&gt;type==BC_IDENT) )</a>
+<a name="ln575">              node = (ByteCode**)&amp;(*node)-&gt;ident.fcond;</a>
+<a name="ln576">            while( *node &amp;&amp; ((*node)-&gt;type==BC_LOCAL) )</a>
+<a name="ln577">              node = (ByteCode**)&amp;(*node)-&gt;local.fcond;</a>
+<a name="ln578"> </a>
+<a name="ln579">            found = false;</a>
+<a name="ln580">            while( *node &amp;&amp; ((*node)-&gt;type==BC_ELEM) )</a>
+<a name="ln581">              {</a>
+<a name="ln582">                if( (*node)-&gt;elem.value == MonoAtom[curr].elem )</a>
+<a name="ln583">                  {</a>
+<a name="ln584">                    node = (ByteCode**)&amp;(*node)-&gt;elem.tcond;</a>
+<a name="ln585">                    found = true;</a>
+<a name="ln586">                    break;</a>
+<a name="ln587">                  }</a>
+<a name="ln588">                else</a>
+<a name="ln589">                  node = (ByteCode**)&amp;(*node)-&gt;elem.fcond;</a>
+<a name="ln590">              }</a>
+<a name="ln591"> </a>
+<a name="ln592">            if( !found )</a>
+<a name="ln593">              {</a>
+<a name="ln594">                ptr = AllocateByteCode(BC_ELEM);</a>
+<a name="ln595">                ptr-&gt;elem.tcond = nullptr;</a>
+<a name="ln596">                ptr-&gt;elem.fcond = *node;</a>
+<a name="ln597">                *node = ptr;</a>
+<a name="ln598">                node = (ByteCode**)&amp;ptr-&gt;elem.tcond;</a>
+<a name="ln599">                ptr-&gt;elem.value = MonoAtom[curr].elem;</a>
+<a name="ln600">              }</a>
+<a name="ln601"> </a>
+<a name="ln602">            MonoAtom[curr].index = AtomIndex++;</a>
+<a name="ln603">            MonoBond[bond].index = BondIndex++;</a>
+<a name="ln604">            done = false;</a>
+<a name="ln605">          }</a>
+<a name="ln606">      }</a>
+<a name="ln607">    else</a>
+<a name="ln608">      {</a>
+<a name="ln609">        MonoAtom[curr].index = AtomIndex++;</a>
+<a name="ln610">        done = false;</a>
+<a name="ln611">      }</a>
+<a name="ln612"> </a>
+<a name="ln613">    count = 0;</a>
+<a name="ln614">    if (!done)</a>
+<a name="ln615">      {</a>
+<a name="ln616">        for( i=0; i&lt;MonoBondCount; i++ )</a>
+<a name="ln617">          {</a>
+<a name="ln618">            if( MonoBond[i].src == curr )</a>
+<a name="ln619">              {</a>
+<a name="ln620">                if( MonoBond[i].dst != prev )</a>
+<a name="ln621">                  {</a>
+<a name="ln622">                    neighbour[count].atom = MonoBond[i].dst;</a>
+<a name="ln623">                    neighbour[count].bond = i;</a>
+<a name="ln624">                    count++;</a>
+<a name="ln625">                  }</a>
+<a name="ln626">              }</a>
+<a name="ln627">            else if( MonoBond[i].dst == curr )</a>
+<a name="ln628">              {</a>
+<a name="ln629">                if( MonoBond[i].src != prev )</a>
+<a name="ln630">                  {</a>
+<a name="ln631">                    neighbour[count].atom = MonoBond[i].src;</a>
+<a name="ln632">                    neighbour[count].bond = i;</a>
+<a name="ln633">                    count++;</a>
+<a name="ln634">                  }</a>
+<a name="ln635">              }</a>
+<a name="ln636">          }</a>
+<a name="ln637"> </a>
+<a name="ln638">        if ( *node &amp;&amp; ((*node)-&gt;type==BC_EVAL) )</a>
+<a name="ln639">          {</a>
+<a name="ln640">            found = false;</a>
+<a name="ln641">            node  = (ByteCode**)&amp;(*node)-&gt;eval.next;</a>
+<a name="ln642">            while( *node &amp;&amp; ((*node)-&gt;type==BC_COUNT) )</a>
+<a name="ln643">              {</a>
+<a name="ln644">                if( (*node)-&gt;count.value == count )</a>
+<a name="ln645">                  {</a>
+<a name="ln646">                    node = (ByteCode**)&amp;(*node)-&gt;count.tcond;</a>
+<a name="ln647">                    found = true;</a>
+<a name="ln648">                    break;</a>
+<a name="ln649">                  }</a>
+<a name="ln650">                else</a>
+<a name="ln651">                  node = (ByteCode**)&amp;(*node)-&gt;count.fcond;</a>
+<a name="ln652">              }</a>
+<a name="ln653"> </a>
+<a name="ln654">            if( !found )</a>
+<a name="ln655">              {</a>
+<a name="ln656">                ptr = AllocateByteCode(BC_COUNT);</a>
+<a name="ln657">                ptr-&gt;count.tcond = nullptr;</a>
+<a name="ln658">                ptr-&gt;count.fcond = *node;</a>
+<a name="ln659">                *node = ptr;</a>
+<a name="ln660">                node = (ByteCode**)&amp;ptr-&gt;count.tcond;</a>
+<a name="ln661">                ptr-&gt;count.value = count;</a>
+<a name="ln662">              }</a>
+<a name="ln663">          }</a>
+<a name="ln664">        else if( count || StrictFlag || StackPtr )</a>
+<a name="ln665">          {</a>
+<a name="ln666">            ptr = AllocateByteCode(BC_EVAL);</a>
+<a name="ln667">            ptr-&gt;eval.next = *node;</a>
+<a name="ln668">            *node = ptr;</a>
+<a name="ln669">            node = (ByteCode**)&amp;ptr-&gt;eval.next;</a>
+<a name="ln670"> </a>
+<a name="ln671">            ptr = AllocateByteCode(BC_COUNT);</a>
+<a name="ln672">            ptr-&gt;count.tcond = nullptr;</a>
+<a name="ln673">            ptr-&gt;count.fcond = *node;</a>
+<a name="ln674">            *node = ptr;</a>
+<a name="ln675">            node = (ByteCode**)&amp;ptr-&gt;count.tcond;</a>
+<a name="ln676">            ptr-&gt;count.value = count;</a>
+<a name="ln677">          }</a>
+<a name="ln678">      }</a>
+<a name="ln679"> </a>
+<a name="ln680">    if( count == 1 )</a>
+<a name="ln681">      {</a>
+<a name="ln682">        GenerateByteCodes(node,resid,neighbour[0].atom, curr,neighbour[0].bond);</a>
+<a name="ln683">      }</a>
+<a name="ln684">    else if( count == 2 )</a>
+<a name="ln685">      {</a>
+<a name="ln686">        original = Stack[StackPtr++];</a>
+<a name="ln687">        Stack[StackPtr-1] = neighbour[0];</a>
+<a name="ln688">        Stack[StackPtr-1].prev = curr;</a>
+<a name="ln689">        GenerateByteCodes(node,resid,neighbour[1].atom,</a>
+<a name="ln690">                          curr,neighbour[1].bond);</a>
+<a name="ln691">        Stack[StackPtr-1] = neighbour[1];</a>
+<a name="ln692">        Stack[StackPtr-1].prev = curr;</a>
+<a name="ln693">        GenerateByteCodes(node,resid,neighbour[0].atom,</a>
+<a name="ln694">                          curr,neighbour[0].bond);</a>
+<a name="ln695">        Stack[--StackPtr] = original;</a>
+<a name="ln696">      }</a>
+<a name="ln697">    else if( count )</a>
+<a name="ln698">      {</a>
+<a name="ln699">        stringstream errorMsg;</a>
+<a name="ln700">        errorMsg &lt;&lt; &quot;Maximum Monomer Fanout Exceeded!&quot; &lt;&lt; endl;</a>
+<a name="ln701">        errorMsg &lt;&lt; &quot;Residue &quot; &lt;&lt; ChainsResName[resid] &lt;&lt; &quot; atom &quot;</a>
+<a name="ln702">                 &lt;&lt; curr &lt;&lt; endl;</a>
+<a name="ln703">        errorMsg &lt;&lt; &quot;Previous = &quot; &lt;&lt; prev &lt;&lt; &quot; Fanout = &quot; &lt;&lt; count &lt;&lt; endl;</a>
+<a name="ln704">        obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obWarning);</a>
+<a name="ln705">      }</a>
+<a name="ln706">    else if( StackPtr )</a>
+<a name="ln707">      {</a>
+<a name="ln708">        StackPtr--;</a>
+<a name="ln709">        GenerateByteCodes(node,resid,Stack[StackPtr].atom,</a>
+<a name="ln710">                          Stack[StackPtr].prev,Stack[StackPtr].bond);</a>
+<a name="ln711">        StackPtr++;</a>
+<a name="ln712">      }</a>
+<a name="ln713">    else if( !(*node) )</a>
+<a name="ln714">      {</a>
+<a name="ln715">        ptr = AllocateByteCode(BC_ASSIGN);</a>
+<a name="ln716">        ptr-&gt;assign.resid = resid;</a>
+<a name="ln717">        ptr-&gt;assign.atomid = new int[AtomIndex];</a>
+<a name="ln718">        if( !ptr-&gt;assign.atomid )</a>
+<a name="ln719">          FatalMemoryError();</a>
+<a name="ln720">        for( i=0; i&lt;MonoAtomCount; i++ )</a>
+<a name="ln721">          if( (j=MonoAtom[i].index) != -1 )</a>
+<a name="ln722">            ptr-&gt;assign.atomid[j] = MonoAtom[i].atomid;</a>
+<a name="ln723">        if( BondIndex )</a>
+<a name="ln724">          {</a>
+<a name="ln725">            ptr-&gt;assign.bflags = new int[BondIndex];</a>
+<a name="ln726">            for( i=0; i&lt;MonoBondCount; i++ )</a>
+<a name="ln727">              if( (j=MonoBond[i].index) != -1 )</a>
+<a name="ln728">                ptr-&gt;assign.bflags[j] = MonoBond[i].flag;</a>
+<a name="ln729">          }</a>
+<a name="ln730">        *node = ptr;</a>
+<a name="ln731">      }</a>
+<a name="ln732">    else if( (*node)-&gt;type == BC_ASSIGN )</a>
+<a name="ln733">      {</a>
+<a name="ln734">        if( (*node)-&gt;assign.resid != resid )</a>
+<a name="ln735">          {</a>
+<a name="ln736">            stringstream errorMsg;</a>
+<a name="ln737">            errorMsg &lt;&lt; &quot;Duplicated Monomer Specification!\n&quot;;</a>
+<a name="ln738">            errorMsg &lt;&lt; &quot;Residue &quot; &lt;&lt; ChainsResName[resid]</a>
+<a name="ln739">                     &lt;&lt; &quot; matches residue &quot;;</a>
+<a name="ln740">            errorMsg &lt;&lt; ChainsResName[(*node)-&gt;assign.resid] &lt;&lt; endl;</a>
+<a name="ln741">            obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obWarning);</a>
+<a name="ln742">          }</a>
+<a name="ln743">      }</a>
+<a name="ln744"> </a>
+<a name="ln745">    /* Restore State! */</a>
+<a name="ln746">    if( curr != prev )</a>
+<a name="ln747">      {</a>
+<a name="ln748">        if( !done )</a>
+<a name="ln749">          {</a>
+<a name="ln750">            MonoAtom[curr].index = -1;</a>
+<a name="ln751">            AtomIndex--;</a>
+<a name="ln752">          }</a>
+<a name="ln753">        MonoBond[bond].index = -1;</a>
+<a name="ln754">        BondIndex--;</a>
+<a name="ln755">      }</a>
+<a name="ln756">  }</a>
+<a name="ln757"> </a>
+<a name="ln758">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln759">  // Constructors / Destructors</a>
+<a name="ln760">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln761"> </a>
+<a name="ln762">  // validated</a>
+<a name="ln763">  OBChainsParser::OBChainsParser(void)</a>
+<a name="ln764">  {</a>
+<a name="ln765">    int i, res = RESIDMIN;</a>
+<a name="ln766"> </a>
+<a name="ln767">    PDecisionTree = (ByteCode*)nullptr;</a>
+<a name="ln768">    for( i=0 ; i &lt; AMINOMAX ; i++ )</a>
+<a name="ln769">      {</a>
+<a name="ln770">        strncpy(ChainsResName[res],AminoAcids[i].name, sizeof(ChainsResName[res]) - 1);</a>
+<a name="ln771">        ChainsResName[res][sizeof(ChainsResName[res]) - 1] = '\0';</a>
+<a name="ln772">        DefineMonomer(&amp;PDecisionTree,res,AminoAcids[i].data);</a>
+<a name="ln773">        res++;</a>
+<a name="ln774">      }</a>
+<a name="ln775"> </a>
+<a name="ln776">    NDecisionTree = (ByteCode*)nullptr;</a>
+<a name="ln777">    for( i=0 ; i&lt; NUCLEOMAX ; i++ )</a>
+<a name="ln778">      {</a>
+<a name="ln779">        strncpy(ChainsResName[res],Nucleotides[i].name, sizeof(ChainsResName[res]) - 1);</a>
+<a name="ln780">        ChainsResName[res][sizeof(ChainsResName[res]) - 1] = '\0';</a>
+<a name="ln781">        DefineMonomer(&amp;NDecisionTree,res,Nucleotides[i].data);</a>
+<a name="ln782">        res++;</a>
+<a name="ln783">      }</a>
+<a name="ln784">  }</a>
+<a name="ln785"> </a>
+<a name="ln786">  OBChainsParser::~OBChainsParser(void)</a>
+<a name="ln787">  {</a>
+<a name="ln788">    DeleteByteCode((ByteCode*)PDecisionTree);</a>
+<a name="ln789">    DeleteByteCode((ByteCode*)NDecisionTree);</a>
+<a name="ln790">  }</a>
+<a name="ln791"> </a>
+<a name="ln792">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln793">  // Setup / Cleanup Functions</a>
+<a name="ln794">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln795"> </a>
+<a name="ln796">  //! Setup parsing for this molecule --</a>
+<a name="ln797">  void OBChainsParser::SetupMol(OBMol &amp;mol)</a>
+<a name="ln798">  {</a>
+<a name="ln799">    CleanupMol();</a>
+<a name="ln800"> </a>
+<a name="ln801">    int i;</a>
+<a name="ln802">    int asize = mol.NumAtoms();</a>
+<a name="ln803">    int bsize = mol.NumBonds();</a>
+<a name="ln804"> </a>
+<a name="ln805">    bitmasks.resize(asize, 0);</a>
+<a name="ln806">    visits.resize(asize, 0);</a>
+<a name="ln807">    resids.resize(asize, 0);</a>
+<a name="ln808">    flags.resize(bsize, 0);</a>
+<a name="ln809">    hetflags.resize(asize, 0);</a>
+<a name="ln810">    atomids.resize(asize, 0);</a>
+<a name="ln811">    resnos.resize(asize, 0);</a>
+<a name="ln812">    sernos.resize(asize, 0);</a>
+<a name="ln813">    hcounts.resize(asize, 0);</a>
+<a name="ln814">    chains.resize(asize, ' ');</a>
+<a name="ln815"> </a>
+<a name="ln816">    for ( i = 0 ; i &lt; asize ; i++ )</a>
+<a name="ln817">      {</a>
+<a name="ln818">        atomids[i]  = -1;</a>
+<a name="ln819">      }</a>
+<a name="ln820">  }</a>
+<a name="ln821"> </a>
+<a name="ln822">  //! Clean up any molecular data left in memory -- frees all memory afterwards</a>
+<a name="ln823">  //! Used by OBChainsParser::SetupMol()</a>
+<a name="ln824">  void OBChainsParser::CleanupMol(void)</a>
+<a name="ln825">  {</a>
+<a name="ln826">    bitmasks.clear();</a>
+<a name="ln827">    visits.clear();</a>
+<a name="ln828">    resids.clear();</a>
+<a name="ln829">    flags.clear();</a>
+<a name="ln830">    hetflags.clear();</a>
+<a name="ln831">    atomids.clear();</a>
+<a name="ln832">    resnos.clear();</a>
+<a name="ln833">    sernos.clear();</a>
+<a name="ln834">    hcounts.clear();</a>
+<a name="ln835">    chains.clear();</a>
+<a name="ln836">  }</a>
+<a name="ln837"> </a>
+<a name="ln838">  //! Clear all residue information for a supplied molecule</a>
+<a name="ln839">  void OBChainsParser::ClearResidueInformation(OBMol &amp;mol)</a>
+<a name="ln840">  {</a>
+<a name="ln841">    OBResidue *residue;</a>
+<a name="ln842">    vector&lt;OBResidue*&gt; residues;</a>
+<a name="ln843">    vector&lt;OBResidue*&gt;::iterator r;</a>
+<a name="ln844"> </a>
+<a name="ln845">    if (mol.NumResidues() == 0)</a>
+<a name="ln846">      return; // Done!</a>
+<a name="ln847"> </a>
+<a name="ln848">    for (residue = mol.BeginResidue(r) ; residue ; residue = mol.NextResidue(r))</a>
+<a name="ln849">      residues.push_back(residue);</a>
+<a name="ln850"> </a>
+<a name="ln851">    for ( unsigned int i = 0 ; i &lt; residues.size() ; i++ )</a>
+<a name="ln852">      mol.DeleteResidue(residues[i]);</a>
+<a name="ln853"> </a>
+<a name="ln854">    residues.clear();</a>
+<a name="ln855">  }</a>
+<a name="ln856"> </a>
+<a name="ln857">  void OBChainsParser::SetResidueInformation(OBMol &amp;mol, bool nukeSingleResidue)</a>
+<a name="ln858">  {</a>
+<a name="ln859">    char buffer[BUFF_SIZE];</a>
+<a name="ln860">    const char *symbol;</a>
+<a name="ln861">    string atomid, name;</a>
+<a name="ln862"> </a>
+<a name="ln863">    OBAtom    *atom;</a>
+<a name="ln864">    OBResidue *residue;</a>
+<a name="ln865">    map&lt;char, map&lt;short, OBResidue*&gt; &gt; resmap;</a>
+<a name="ln866">    unsigned int numAtoms = mol.NumAtoms();</a>
+<a name="ln867"> </a>
+<a name="ln868">    //DumpState();</a>
+<a name="ln869"> </a>
+<a name="ln870">    // correct serine OG</a>
+<a name="ln871">    for ( unsigned int i = 0 ; i &lt; numAtoms ; i++ ) {</a>
+<a name="ln872">      if (resids[i] == RESIDMIN + 17) // serine</a>
+<a name="ln873">        if (atomids[i] == -1) {</a>
+<a name="ln874">          atom = mol.GetAtom(i+1);</a>
+<a name="ln875"> </a>
+<a name="ln876">          FOR_NBORS_OF_ATOM (nbr, atom) {</a>
+<a name="ln877">            if (atomids[nbr-&gt;GetIdx()-1] == 4) // CB</a>
+<a name="ln878">              atomids[i] = 6; // OG</a>
+<a name="ln879">          }</a>
+<a name="ln880">        }</a>
+<a name="ln881">    }</a>
+<a name="ln882"> </a>
+<a name="ln883">    for ( unsigned int i = 0 ; i &lt; numAtoms ; i++ ) {</a>
+<a name="ln884">      atom = mol.GetAtom(i+1); // WARNING: ATOM INDEX ISSUE</a>
+<a name="ln885"> </a>
+<a name="ln886">      if (atomids[i] == -1) {</a>
+<a name="ln887">        symbol = OBElements::GetSymbol(atom-&gt;GetAtomicNum());</a>
+<a name="ln888">        if ( symbol[1] ) {</a>
+<a name="ln889">          buffer[0] = symbol[0];</a>
+<a name="ln890">          buffer[1] = (char) toupper(symbol[1]);</a>
+<a name="ln891">        } else {</a>
+<a name="ln892">          buffer[0] = ' ';</a>
+<a name="ln893">          buffer[1] = symbol[0];</a>
+<a name="ln894">        }</a>
+<a name="ln895">        buffer[2] = ' ';</a>
+<a name="ln896">        buffer[3] = ' ';</a>
+<a name="ln897">        buffer[4] = '\0';</a>
+<a name="ln898">      } else if (atom-&gt;GetAtomicNum() == OBElements::Hydrogen) {</a>
+<a name="ln899">        if (hcounts[i]) {</a>
+<a name="ln900">          snprintf(buffer, BUFF_SIZE, &quot;H%.2s%c&quot;, ChainsAtomName[atomids[i]]+2, hcounts[i]+'0');</a>
+<a name="ln901">          if (buffer[1] == ' ') {</a>
+<a name="ln902">            buffer[1] = buffer[3];</a>
+<a name="ln903">            buffer[2] = '\0';</a>
+<a name="ln904">          }</a>
+<a name="ln905">          else if (buffer[2] == ' ') {</a>
+<a name="ln906">            buffer[2] = buffer[3];</a>
+<a name="ln907">            buffer[3] = '\0';</a>
+<a name="ln908">          }</a>
+<a name="ln909">        } else {</a>
+<a name="ln910">          snprintf(buffer, BUFF_SIZE, &quot;H%.2s&quot;, ChainsAtomName[atomids[i]]+2);</a>
+<a name="ln911">        }</a>
+<a name="ln912">      } else</a>
+<a name="ln913">        snprintf(buffer, BUFF_SIZE, &quot;%.4s&quot;, ChainsAtomName[atomids[i]]);</a>
+<a name="ln914"> </a>
+<a name="ln915">      if (buffer[3] == ' ')</a>
+<a name="ln916">        buffer[3] = '\0';</a>
+<a name="ln917"> </a>
+<a name="ln918">      //cout &lt;&lt; &quot;  (2) --&gt; = &quot; &lt;&lt; buffer &lt;&lt; endl;</a>
+<a name="ln919"> </a>
+<a name="ln920">      atomid = (buffer[0] == ' ') ? buffer + 1 : buffer;</a>
+<a name="ln921"> </a>
+<a name="ln922">      //cout &lt;&lt; &quot;  (3) --&gt; = &quot; &lt;&lt; buffer &lt;&lt; endl;</a>
+<a name="ln923"> </a>
+<a name="ln924">      if (resmap[chains[i]].find(resnos[i]) != resmap[chains[i]].end()) {</a>
+<a name="ln925">        residue = resmap[chains[i]][resnos[i]];</a>
+<a name="ln926">        residue-&gt;AddAtom(atom);</a>
+<a name="ln927">        residue-&gt;SetAtomID(atom, atomid);</a>
+<a name="ln928">        residue-&gt;SetHetAtom(atom, hetflags[i]);</a>
+<a name="ln929">        residue-&gt;SetSerialNum(atom, sernos[i]);</a>
+<a name="ln930">      } else {</a>
+<a name="ln931">        name    = ChainsResName[resids[i]];</a>
+<a name="ln932"> </a>
+<a name="ln933">        residue = mol.NewResidue();</a>
+<a name="ln934">        residue-&gt;SetName(name);</a>
+<a name="ln935">        residue-&gt;SetNum(resnos[i]);</a>
+<a name="ln936">        residue-&gt;SetChain(chains[i]);</a>
+<a name="ln937"> </a>
+<a name="ln938">        residue-&gt;AddAtom(atom);</a>
+<a name="ln939">        residue-&gt;SetAtomID(atom, atomid);</a>
+<a name="ln940">        residue-&gt;SetHetAtom(atom, hetflags[i]);</a>
+<a name="ln941">        residue-&gt;SetSerialNum(atom, sernos[i]);</a>
+<a name="ln942"> </a>
+<a name="ln943">        resmap[chains[i]][resnos[i]] = residue;</a>
+<a name="ln944">      }</a>
+<a name="ln945">    }</a>
+<a name="ln946"> </a>
+<a name="ln947">    if (mol.NumResidues() == 1 &amp;&amp; nukeSingleResidue)</a>
+<a name="ln948">      mol.DeleteResidue(mol.GetResidue(0));</a>
+<a name="ln949">    else if (mol.NumResidues() == 1 &amp;&amp; (mol.GetResidue(0))-&gt;GetName() == &quot;UNK&quot;)</a>
+<a name="ln950">      mol.DeleteResidue(mol.GetResidue(0));</a>
+<a name="ln951">  }</a>
+<a name="ln952"> </a>
+<a name="ln953">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln954">  // Perception Functions</a>
+<a name="ln955">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln956"> </a>
+<a name="ln957">  bool OBChainsParser::PerceiveChains(OBMol &amp;mol, bool nukeSingleResidue)</a>
+<a name="ln958">  {</a>
+<a name="ln959">    bool result = true;</a>
+<a name="ln960">    unsigned int idx;</a>
+<a name="ln961"> </a>
+<a name="ln962">    SetupMol(mol);</a>
+<a name="ln963">    ClearResidueInformation(mol);</a>
+<a name="ln964"> </a>
+<a name="ln965">    result = DetermineHetAtoms(mol)          &amp;&amp; result;</a>
+<a name="ln966">    result = DetermineConnectedChains(mol)   &amp;&amp; result;</a>
+<a name="ln967">    result = DeterminePeptideBackbone(mol)   &amp;&amp; result;</a>
+<a name="ln968">    result = DeterminePeptideSidechains(mol) &amp;&amp; result;</a>
+<a name="ln969">    result = DetermineNucleicBackbone(mol)   &amp;&amp; result;</a>
+<a name="ln970">    result = DetermineNucleicSidechains(mol) &amp;&amp; result;</a>
+<a name="ln971">    result = DetermineHydrogens(mol)         &amp;&amp; result;</a>
+<a name="ln972"> </a>
+<a name="ln973">    // Partially identified residues</a>
+<a name="ln974">    // example: CSD in 1LWF (CYS with two Os on the S)</a>
+<a name="ln975">    bool changed;</a>
+<a name="ln976">    vector&lt;pair&lt;char,short&gt; &gt; invalidResidues;</a>
+<a name="ln977">    do {</a>
+<a name="ln978">      changed = false;</a>
+<a name="ln979"> </a>
+<a name="ln980">      FOR_ATOMS_OF_MOL (atom, mol) {</a>
+<a name="ln981">        idx = atom-&gt;GetIdx() - 1;</a>
+<a name="ln982"> </a>
+<a name="ln983">        if (resids[idx] == 0) { // UNK</a>
+<a name="ln984">          FOR_NBORS_OF_ATOM (nbr, &amp;*atom) {</a>
+<a name="ln985">            unsigned int idx2 = nbr-&gt;GetIdx() - 1;</a>
+<a name="ln986">            if (resids[idx2] != 0) { // !UNK</a>
+<a name="ln987">	      if (atomids[idx2] == AI_N || atomids[idx2] == AI_C) {</a>
+<a name="ln988">		// bound to backbone-N/C</a>
+<a name="ln989">		hetflags[idx] = true;</a>
+<a name="ln990">		resids[idx] = 3; // ACE</a>
+<a name="ln991">		atomids[idx] = -1;</a>
+<a name="ln992">	      } else {</a>
+<a name="ln993">		resnos[idx] = resnos[idx2];</a>
+<a name="ln994">		resids[idx] = resids[idx2];</a>
+<a name="ln995">		changed = true;</a>
+<a name="ln996"> </a>
+<a name="ln997">		bool addResidue = true;</a>
+<a name="ln998">		for (unsigned int i = 0; i &lt; invalidResidues.size(); ++i)</a>
+<a name="ln999">		  if ( (invalidResidues[i].first == chains[idx2]) &amp;&amp;</a>
+<a name="ln1000">		       (invalidResidues[i].second == resnos[idx2]) )</a>
+<a name="ln1001">		    addResidue = false;</a>
+<a name="ln1002">		if (addResidue)</a>
+<a name="ln1003">		  invalidResidues.push_back(pair&lt;char,short&gt;(chains[idx2], resnos[idx2]));</a>
+<a name="ln1004">	      }</a>
+<a name="ln1005">            }</a>
+<a name="ln1006">          }</a>
+<a name="ln1007">        }</a>
+<a name="ln1008"> </a>
+<a name="ln1009">      }</a>
+<a name="ln1010">    } while (changed);</a>
+<a name="ln1011">    for (unsigned int i = 0; i &lt; invalidResidues.size(); ++i) {</a>
+<a name="ln1012">      FOR_ATOMS_OF_MOL (atom, mol) {</a>
+<a name="ln1013">        idx = atom-&gt;GetIdx() - 1;</a>
+<a name="ln1014">        if ( (invalidResidues[i].first == chains[idx]) &amp;&amp;</a>
+<a name="ln1015">             (invalidResidues[i].second == resnos[idx]) ) {</a>
+<a name="ln1016">          hetflags[idx] = true;</a>
+<a name="ln1017">          resids[idx] = 0; // UNK</a>
+<a name="ln1018">          atomids[idx] = -1;</a>
+<a name="ln1019">        }</a>
+<a name="ln1020">      }</a>
+<a name="ln1021">    }</a>
+<a name="ln1022">    invalidResidues.clear();</a>
+<a name="ln1023"> </a>
+<a name="ln1024">    // number the element in the ' ' chain (water, ions, ligands, ...)</a>
+<a name="ln1025">    short resno = 1;</a>
+<a name="ln1026">    FOR_ATOMS_OF_MOL (atom, mol) {</a>
+<a name="ln1027">      idx = atom-&gt;GetIdx() - 1;</a>
+<a name="ln1028"> </a>
+<a name="ln1029">      if (atom-&gt;GetHvyDegree() == 0) {</a>
+<a name="ln1030">        chains[idx] = ' ';</a>
+<a name="ln1031">        resnos[idx] = resno;</a>
+<a name="ln1032">        resno++;</a>
+<a name="ln1033">      } else {</a>
+<a name="ln1034">        if (resids[idx] != 0) // UNK</a>
+<a name="ln1035">          continue;</a>
+<a name="ln1036">        if (hetflags[idx])</a>
+<a name="ln1037">          continue;</a>
+<a name="ln1038"> </a>
+<a name="ln1039">        char chain = chains[idx];</a>
+<a name="ln1040">        FOR_ATOMS_OF_MOL (b, mol) {</a>
+<a name="ln1041">          unsigned int idx2 = b-&gt;GetIdx() - 1;</a>
+<a name="ln1042">          if (chains[idx2] == chain &amp;&amp; !hetflags[idx2]) {</a>
+<a name="ln1043">            hetflags[idx2] = true;</a>
+<a name="ln1044">            chains[idx2] = ' ';</a>
+<a name="ln1045">            resnos[idx2] = resno;</a>
+<a name="ln1046">            resids[idx2] = 2; // unknown ligand</a>
+<a name="ln1047">          }</a>
+<a name="ln1048">        }</a>
+<a name="ln1049"> </a>
+<a name="ln1050">        resno++;</a>
+<a name="ln1051">      }</a>
+<a name="ln1052"> </a>
+<a name="ln1053">    }</a>
+<a name="ln1054"> </a>
+<a name="ln1055">    SetResidueInformation(mol, nukeSingleResidue);</a>
+<a name="ln1056">    CleanupMol();</a>
+<a name="ln1057"> </a>
+<a name="ln1058">    mol.SetChainsPerceived();</a>
+<a name="ln1059"> </a>
+<a name="ln1060">    obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln1061">                          &quot;Ran OpenBabel::PerceiveChains&quot;, obAuditMsg);</a>
+<a name="ln1062"> </a>
+<a name="ln1063">    return result;</a>
+<a name="ln1064">  }</a>
+<a name="ln1065"> </a>
+<a name="ln1066">  /////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1067">  // Hetero Atom Perception</a>
+<a name="ln1068">  /////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1069"> </a>
+<a name="ln1070">  bool OBChainsParser::DetermineHetAtoms(OBMol &amp;mol)</a>
+<a name="ln1071">  {</a>
+<a name="ln1072">    OBAtom *atom;</a>
+<a name="ln1073">    vector&lt;OBAtom *&gt;::iterator a;</a>
+<a name="ln1074"> </a>
+<a name="ln1075">    // find un-connected atoms (e.g., HOH oxygen atoms)</a>
+<a name="ln1076">    for (atom = mol.BeginAtom(a) ; atom ; atom = mol.NextAtom(a)) {</a>
+<a name="ln1077">      if (atom-&gt;GetAtomicNum() == OBElements::Hydrogen || atom-&gt;GetHvyDegree() != 0)</a>
+<a name="ln1078">        continue;</a>
+<a name="ln1079"> </a>
+<a name="ln1080">      unsigned int idx = atom-&gt;GetIdx() - 1;</a>
+<a name="ln1081"> </a>
+<a name="ln1082">      if (atom-&gt;GetAtomicNum() == OBElements::Oxygen) {</a>
+<a name="ln1083">        resids[idx]   = 1;</a>
+<a name="ln1084">        hetflags[idx] = true;</a>
+<a name="ln1085">      }</a>
+<a name="ln1086">    }</a>
+<a name="ln1087"> </a>
+<a name="ln1088">    return true;</a>
+<a name="ln1089">  }</a>
+<a name="ln1090"> </a>
+<a name="ln1091">  /////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1092">  // Connected Chain Perception</a>
+<a name="ln1093">  /////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1094"> </a>
+<a name="ln1095">  bool OBChainsParser::DetermineConnectedChains(OBMol &amp;mol)</a>
+<a name="ln1096">  {</a>
+<a name="ln1097">    int resid;</a>
+<a name="ln1098">    unsigned int size;</a>
+<a name="ln1099">    unsigned int i, idx;</a>
+<a name="ln1100"> </a>
+<a name="ln1101">    int resno = 1;</a>
+<a name="ln1102">    int count = 0;</a>
+<a name="ln1103">    unsigned int numAtoms = mol.NumAtoms();</a>
+<a name="ln1104"> </a>
+<a name="ln1105">    OBAtom *atom;</a>
+<a name="ln1106">    vector&lt;OBAtom *&gt;::iterator a;</a>
+<a name="ln1107">    for (atom = mol.BeginAtom(a) ; atom ; atom = mol.NextAtom(a)) {</a>
+<a name="ln1108">      idx = atom-&gt;GetIdx() - 1;</a>
+<a name="ln1109">      if (!hetflags[idx] &amp;&amp; chains[idx] == ' ' &amp;&amp; atom-&gt;GetAtomicNum() != OBElements::Hydrogen) {</a>
+<a name="ln1110">        size = RecurseChain(mol, idx, 'A' + count);</a>
+<a name="ln1111"> </a>
+<a name="ln1112">        // size = number of heavy atoms in residue chain</a>
+<a name="ln1113">        if (size &lt; 4) { // small ligand, probably</a>
+<a name="ln1114">          if (size == 1 &amp;&amp; atom-&gt;GetAtomicNum() == OBElements::Oxygen)</a>
+<a name="ln1115">            resid = 1; /* HOH */</a>
+<a name="ln1116">          else</a>
+<a name="ln1117">            resid = 2; /* Unknown ligand */</a>
+<a name="ln1118"> </a>
+<a name="ln1119">          for (i = 0 ; i &lt; numAtoms ; ++i) {</a>
+<a name="ln1120">            if (chains[i] == ('A' + count)) {</a>
+<a name="ln1121">              hetflags[i] = true;</a>
+<a name="ln1122">              resids[i]   = resid;</a>
+<a name="ln1123">              resnos[i]   = resno;</a>
+<a name="ln1124">              chains[i]   = ' ';</a>
+<a name="ln1125">            }</a>
+<a name="ln1126">          }</a>
+<a name="ln1127">          resno++;</a>
+<a name="ln1128">        } else {</a>
+<a name="ln1129">          count++; // number of connected chains</a>
+<a name="ln1130">          if (count &gt; 26) // out of chain IDs</a>
+<a name="ln1131">            break;</a>
+<a name="ln1132">        }</a>
+<a name="ln1133">      }</a>
+<a name="ln1134">    }</a>
+<a name="ln1135"> </a>
+<a name="ln1136">    /*</a>
+<a name="ln1137">       if( count == 1 )</a>
+<a name="ln1138">       for ( i = 0 ; i &lt; numAtoms ; i++ )</a>
+<a name="ln1139">       chains[i] = ' ';</a>
+<a name="ln1140">    */</a>
+<a name="ln1141"> </a>
+<a name="ln1142">    return true;</a>
+<a name="ln1143">  }</a>
+<a name="ln1144"> </a>
+<a name="ln1145">  ///@todo atom index</a>
+<a name="ln1146">  unsigned int OBChainsParser::RecurseChain(OBMol &amp;mol, unsigned int i, int c)</a>
+<a name="ln1147">  {</a>
+<a name="ln1148">    OBAtom *atom, *nbr;</a>
+<a name="ln1149">    vector&lt;OBBond *&gt;::iterator b;</a>
+<a name="ln1150">    unsigned int result, index;</a>
+<a name="ln1151"> </a>
+<a name="ln1152">    atom = mol.GetAtom(i + 1);</a>
+<a name="ln1153"> </a>
+<a name="ln1154">    // ignore hydrogens</a>
+<a name="ln1155">    if (atom-&gt;GetAtomicNum() == OBElements::Hydrogen )</a>
+<a name="ln1156">      return 0;</a>
+<a name="ln1157"> </a>
+<a name="ln1158">    result    = 1;</a>
+<a name="ln1159">    chains[i] = c;</a>
+<a name="ln1160"> </a>
+<a name="ln1161">    // recurse till we have all atoms for this chain</a>
+<a name="ln1162">    for (nbr = atom-&gt;BeginNbrAtom(b); nbr; nbr = atom-&gt;NextNbrAtom(b)) {</a>
+<a name="ln1163">      index = nbr-&gt;GetIdx() - 1;</a>
+<a name="ln1164">      if (chains[index] == ' ')</a>
+<a name="ln1165">        result += RecurseChain(mol, index, c);</a>
+<a name="ln1166">    }</a>
+<a name="ln1167"> </a>
+<a name="ln1168">    // and return how many we found</a>
+<a name="ln1169">    return result;</a>
+<a name="ln1170">  }</a>
+<a name="ln1171"> </a>
+<a name="ln1172">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1173">  // Peptide Backbone Perception</a>
+<a name="ln1174">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1175"> </a>
+<a name="ln1176">  bool OBChainsParser::DeterminePeptideBackbone(OBMol &amp;mol)</a>
+<a name="ln1177">  {</a>
+<a name="ln1178">    ConstrainBackbone(mol, Peptide, MAXPEPTIDE);</a>
+<a name="ln1179"> </a>
+<a name="ln1180">    unsigned int i, numAtoms = mol.NumAtoms();</a>
+<a name="ln1181"> </a>
+<a name="ln1182">    // Cyclic peptides have no NTer (1SKI)</a>
+<a name="ln1183">    // timvdm 30/06/08</a>
+<a name="ln1184">    bool foundNTer = false;</a>
+<a name="ln1185">    for (i = 0 ; i &lt; numAtoms; i++)</a>
+<a name="ln1186">      if (bitmasks[i] &amp; BitNTer)</a>
+<a name="ln1187">        foundNTer = true;</a>
+<a name="ln1188">    if (!foundNTer)</a>
+<a name="ln1189">      for (i = 0 ; i &lt; numAtoms; i++)</a>
+<a name="ln1190">        if (bitmasks[i] &amp; BitNAll)</a>
+<a name="ln1191">          bitmasks[i] |= BitNTer;</a>
+<a name="ln1192"> </a>
+<a name="ln1193"> </a>
+<a name="ln1194">    /* Order Peptide Backbone */</a>
+<a name="ln1195"> </a>
+<a name="ln1196">    for ( i = 0 ; i &lt; numAtoms ; i++ )</a>
+<a name="ln1197">      if (atomids[i] == -1)</a>
+<a name="ln1198">        {</a>
+<a name="ln1199">          if( bitmasks[i] &amp; BitNTer )</a>
+<a name="ln1200">            {</a>
+<a name="ln1201">              atomids[i] = AI_N;</a>
+<a name="ln1202">              TracePeptideChain(mol,i,1);</a>
+<a name="ln1203">            }</a>
+<a name="ln1204">          else if( (bitmasks[i]&amp;BitNPT) &amp;&amp; !(bitmasks[i]&amp;BitN) )</a>
+<a name="ln1205">            {</a>
+<a name="ln1206">              atomids[i] = AI_N;</a>
+<a name="ln1207">              TracePeptideChain(mol,i,1);</a>
+<a name="ln1208">            }</a>
+<a name="ln1209">        }</a>
+<a name="ln1210"> </a>
+<a name="ln1211">    /* Carbonyl Double Bond */</a>
+<a name="ln1212"> </a>
+<a name="ln1213">    OBBond *bond;</a>
+<a name="ln1214">    vector&lt;OBBond*&gt;::iterator b;</a>
+<a name="ln1215">    for (bond = mol.BeginBond(b) ; bond ; bond = mol.NextBond(b))</a>
+<a name="ln1216">      {</a>
+<a name="ln1217">        if ((atomids[bond-&gt;GetBeginAtomIdx()-1] == 2 &amp;&amp; atomids[bond-&gt;GetEndAtomIdx()-1] == 3) ||</a>
+<a name="ln1218">            (atomids[bond-&gt;GetBeginAtomIdx()-1] == 3 &amp;&amp; atomids[bond-&gt;GetEndAtomIdx()-1] == 2))</a>
+<a name="ln1219">          flags[bond-&gt;GetIdx()] |= BF_DOUBLE;</a>
+<a name="ln1220">      }</a>
+<a name="ln1221"> </a>
+<a name="ln1222">    return true;</a>
+<a name="ln1223">  }</a>
+<a name="ln1224"> </a>
+<a name="ln1225">  void OBChainsParser::ConstrainBackbone(OBMol &amp;mol, Template *templ, int tmax)</a>
+<a name="ln1226">  {</a>
+<a name="ln1227">    static OBAtom *neighbour[6];</a>
+<a name="ln1228">    Template *pep;</a>
+<a name="ln1229">    OBAtom *na = nullptr;</a>
+<a name="ln1230">    OBAtom *nb = nullptr;</a>
+<a name="ln1231">    OBAtom *nc = nullptr;</a>
+<a name="ln1232">    OBAtom *nd = nullptr;</a>
+<a name="ln1233">    OBAtom *atom, *nbr;</a>
+<a name="ln1234">    bool change, result;</a>
+<a name="ln1235">    int i, count;</a>
+<a name="ln1236">    unsigned int idx;</a>
+<a name="ln1237"> </a>
+<a name="ln1238">    vector&lt;OBAtom *&gt;::iterator a;</a>
+<a name="ln1239">    vector&lt;OBBond *&gt;::iterator b;</a>
+<a name="ln1240"> </a>
+<a name="ln1241">    /* First Pass */</a>
+<a name="ln1242"> </a>
+<a name="ln1243">    for (atom = mol.BeginAtom(a) ; atom ; atom = mol.NextAtom(a))</a>
+<a name="ln1244">      {</a>
+<a name="ln1245">        idx = atom-&gt;GetIdx() - 1;</a>
+<a name="ln1246">        bitmasks[idx] = 0;</a>
+<a name="ln1247">        for ( i = 0 ; i &lt; tmax ; i++ )</a>
+<a name="ln1248">          if ( (static_cast&lt;unsigned int&gt;(templ[i].elem)  == atom-&gt;GetAtomicNum()) &amp;&amp;</a>
+<a name="ln1249">               (static_cast&lt;unsigned int&gt;(templ[i].count) == atom-&gt;GetHvyDegree()))</a>
+<a name="ln1250">            bitmasks[idx] |= templ[i].flag;</a>
+<a name="ln1251">      }</a>
+<a name="ln1252"> </a>
+<a name="ln1253">    /* Second Pass */</a>
+<a name="ln1254"> </a>
+<a name="ln1255">    do</a>
+<a name="ln1256">      {</a>
+<a name="ln1257">        change = false;</a>
+<a name="ln1258">        for (atom = mol.BeginAtom(a) ; atom ; atom = mol.NextAtom(a))</a>
+<a name="ln1259">          {</a>
+<a name="ln1260">            idx = atom-&gt;GetIdx() - 1;</a>
+<a name="ln1261">            if (bitmasks[idx]) // Determine Neighbours</a>
+<a name="ln1262">              {</a>
+<a name="ln1263">                count = 0;</a>
+<a name="ln1264">                for (nbr = atom-&gt;BeginNbrAtom(b) ; nbr ; nbr = atom-&gt;NextNbrAtom(b))</a>
+<a name="ln1265">                  if (nbr-&gt;GetAtomicNum() != OBElements::Hydrogen)</a>
+<a name="ln1266">                    neighbour[count++] = nbr;</a>
+<a name="ln1267"> </a>
+<a name="ln1268">                if (count &gt;= 1)</a>
+<a name="ln1269">                  na = neighbour[0];</a>
+<a name="ln1270">                if (count &gt;= 2)</a>
+<a name="ln1271">                  nb = neighbour[1];</a>
+<a name="ln1272">                if (count &gt;= 3)</a>
+<a name="ln1273">                  nc = neighbour[2];</a>
+<a name="ln1274">                if (count &gt;= 4)</a>
+<a name="ln1275">                  nd = neighbour[3];</a>
+<a name="ln1276"> </a>
+<a name="ln1277">                for ( i = 0 ; i &lt; tmax ; i++ )</a>
+<a name="ln1278">                  if ( templ[i].flag &amp; bitmasks[idx] )</a>
+<a name="ln1279">                    {</a>
+<a name="ln1280">                      pep    = &amp;templ[i];</a>
+<a name="ln1281">                      result = true;</a>
+<a name="ln1282"> </a>
+<a name="ln1283">                      if (count == 4)</a>
+<a name="ln1284">                        result = Match4Constraints(pep,na,nb,nc,nd);</a>
+<a name="ln1285">                      else if (count == 3)</a>
+<a name="ln1286">                        result = Match3Constraints(pep,na,nb,nc);</a>
+<a name="ln1287">                      else if (count == 2)</a>
+<a name="ln1288">                        result = Match2Constraints(pep,na,nb);</a>
+<a name="ln1289">                      else if (count == 1)</a>
+<a name="ln1290">                        result = MatchConstraint(na,pep-&gt;n1);</a>
+<a name="ln1291"> </a>
+<a name="ln1292">                      if(result == false)</a>
+<a name="ln1293">                        {</a>
+<a name="ln1294">                          bitmasks[idx] &amp;= ~pep-&gt;flag;</a>
+<a name="ln1295">                          change = true;</a>
+<a name="ln1296">                        }</a>
+<a name="ln1297">                    }</a>
+<a name="ln1298">              }</a>
+<a name="ln1299">          }</a>
+<a name="ln1300">      }</a>
+<a name="ln1301">    while( change );</a>
+<a name="ln1302">  }</a>
+<a name="ln1303"> </a>
+<a name="ln1304">  bool OBChainsParser::MatchConstraint(OBAtom *atom, int mask)</a>
+<a name="ln1305">  {</a>
+<a name="ln1306">    if (atom == nullptr)</a>
+<a name="ln1307">      return (false);</a>
+<a name="ln1308"> </a>
+<a name="ln1309">    if( mask &lt; 0 )</a>
+<a name="ln1310">      return(atom-&gt;GetAtomicNum() == static_cast&lt;unsigned int&gt;(-mask));</a>
+<a name="ln1311">    else</a>
+<a name="ln1312">      return(((bitmasks[atom-&gt;GetIdx()-1]&amp;mask) == 0) ? false : true);</a>
+<a name="ln1313">  }</a>
+<a name="ln1314"> </a>
+<a name="ln1315">  bool OBChainsParser::Match2Constraints(Template *tmpl, OBAtom *na, OBAtom *nb)</a>
+<a name="ln1316">  {</a>
+<a name="ln1317">    if (na == nullptr || nb == nullptr)</a>
+<a name="ln1318">      return (false); // don't even try to evaluate it</a>
+<a name="ln1319"> </a>
+<a name="ln1320">    if( MatchConstraint(na,tmpl-&gt;n2) )</a>
+<a name="ln1321">      if( MatchConstraint(nb,tmpl-&gt;n1) )</a>
+<a name="ln1322">        return( true );</a>
+<a name="ln1323">    if( MatchConstraint(nb,tmpl-&gt;n2) )</a>
+<a name="ln1324">      if( MatchConstraint(na,tmpl-&gt;n1) )</a>
+<a name="ln1325">        return( true );</a>
+<a name="ln1326">    return( false );</a>
+<a name="ln1327">  }</a>
+<a name="ln1328"> </a>
+<a name="ln1329">  bool OBChainsParser::Match3Constraints(Template *tmpl, OBAtom *na, OBAtom *nb, OBAtom *nc)</a>
+<a name="ln1330">  {</a>
+<a name="ln1331">    if (na == nullptr || nb == nullptr || nc == nullptr)</a>
+<a name="ln1332">      return (false); // don't even try to evaluate it</a>
+<a name="ln1333"> </a>
+<a name="ln1334">    if( MatchConstraint(na,tmpl-&gt;n3) )</a>
+<a name="ln1335">      if( Match2Constraints(tmpl,nb,nc) )</a>
+<a name="ln1336">        return( true );</a>
+<a name="ln1337">    if( MatchConstraint(nb,tmpl-&gt;n3) )</a>
+<a name="ln1338">      if( Match2Constraints(tmpl,na,nc) )</a>
+<a name="ln1339">        return( true );</a>
+<a name="ln1340">    if( MatchConstraint(nc,tmpl-&gt;n3) )</a>
+<a name="ln1341">      if( Match2Constraints(tmpl,na,nb) )</a>
+<a name="ln1342">        return( true );</a>
+<a name="ln1343">    return( false );</a>
+<a name="ln1344">  }</a>
+<a name="ln1345"> </a>
+<a name="ln1346">  bool OBChainsParser::Match4Constraints(Template *tmpl, OBAtom *na, OBAtom *nb, OBAtom *nc, OBAtom *nd)</a>
+<a name="ln1347">  {</a>
+<a name="ln1348">    if (na == nullptr || nb == nullptr || nc == nullptr || nd == nullptr)</a>
+<a name="ln1349">      return (false); // don't even try to evaluate it</a>
+<a name="ln1350"> </a>
+<a name="ln1351">    if( MatchConstraint(na,tmpl-&gt;n4) )</a>
+<a name="ln1352">      if( Match3Constraints(tmpl,nb,nc,nd) )</a>
+<a name="ln1353">        return( true );</a>
+<a name="ln1354">    if( MatchConstraint(nb,tmpl-&gt;n4) )</a>
+<a name="ln1355">      if( Match3Constraints(tmpl,na,nc,nd) )</a>
+<a name="ln1356">        return( true );</a>
+<a name="ln1357">    if( MatchConstraint(nc,tmpl-&gt;n4) )</a>
+<a name="ln1358">      if( Match3Constraints(tmpl,na,nb,nd) )</a>
+<a name="ln1359">        return( true );</a>
+<a name="ln1360">    if( MatchConstraint(nd,tmpl-&gt;n4) )</a>
+<a name="ln1361">      if( Match3Constraints(tmpl,na,nb,nc) )</a>
+<a name="ln1362">        return( true );</a>
+<a name="ln1363">    return( false );</a>
+<a name="ln1364">  }</a>
+<a name="ln1365"> </a>
+<a name="ln1366">  void OBChainsParser::TracePeptideChain(OBMol &amp;mol, unsigned int i, int r)</a>
+<a name="ln1367">  {</a>
+<a name="ln1368">    unsigned int neighbour[4];</a>
+<a name="ln1369">    unsigned int na = 0;</a>
+<a name="ln1370">    unsigned int nb = 0;</a>
+<a name="ln1371">    unsigned int nc = 0;</a>
+<a name="ln1372">    OBAtom *atom, *nbr;</a>
+<a name="ln1373">    int count;</a>
+<a name="ln1374">    int j,k;</a>
+<a name="ln1375">    unsigned int idx;</a>
+<a name="ln1376"> </a>
+<a name="ln1377">    j = k = 0; // ignore warning</a>
+<a name="ln1378"> </a>
+<a name="ln1379">    vector&lt;OBBond *&gt;::iterator b;</a>
+<a name="ln1380"> </a>
+<a name="ln1381">    /* Determine Neighbours */</a>
+<a name="ln1382"> </a>
+<a name="ln1383">    atom = mol.GetAtom(i+1);</a>
+<a name="ln1384">    idx  = atom-&gt;GetIdx() - 1;</a>
+<a name="ln1385">    if (visits[i])</a>
+<a name="ln1386">      return;</a>
+<a name="ln1387">    visits[i] = true;</a>
+<a name="ln1388"> </a>
+<a name="ln1389">    count = 0;</a>
+<a name="ln1390">    for (nbr = atom-&gt;BeginNbrAtom(b) ; nbr ; nbr = atom-&gt;NextNbrAtom(b))</a>
+<a name="ln1391">      if (nbr-&gt;GetAtomicNum() != OBElements::Hydrogen)</a>
+<a name="ln1392">        neighbour[count++] = nbr-&gt;GetIdx()-1;</a>
+<a name="ln1393"> </a>
+<a name="ln1394">    resnos[idx] = r;</a>
+<a name="ln1395"> </a>
+<a name="ln1396">    if (count &gt;= 1)</a>
+<a name="ln1397">      na = neighbour[0];</a>
+<a name="ln1398">    if (count &gt;= 2)</a>
+<a name="ln1399">      nb = neighbour[1];</a>
+<a name="ln1400">    if (count &gt;= 3)</a>
+<a name="ln1401">      nc = neighbour[2];</a>
+<a name="ln1402"> </a>
+<a name="ln1403">    switch( atomids[i] )</a>
+<a name="ln1404">      {</a>
+<a name="ln1405">      case(AI_N):</a>
+<a name="ln1406">        for( j=0; j&lt;count; j++ )</a>
+<a name="ln1407">          if (bitmasks[neighbour[j]] &amp; BitCAAll)</a>
+<a name="ln1408">            {</a>
+<a name="ln1409">              atomids[neighbour[j]] = AI_CA;</a>
+<a name="ln1410">              if (!visits[neighbour[j]])</a>
+<a name="ln1411">                TracePeptideChain(mol,neighbour[j],r);</a>
+<a name="ln1412">            }</a>
+<a name="ln1413">        break;</a>
+<a name="ln1414"> </a>
+<a name="ln1415">      case(AI_CA):</a>
+<a name="ln1416">        if( count == 3 )</a>
+<a name="ln1417">          {</a>
+<a name="ln1418">            if ( bitmasks[na] &amp; BitNAll )</a>
+<a name="ln1419">              na = nc;</a>
+<a name="ln1420">            else if ( bitmasks[nb] &amp; BitNAll )</a>
+<a name="ln1421">              nb = nc;</a>
+<a name="ln1422"> </a>
+<a name="ln1423">            if ( bitmasks[na] &amp; BitC )</a>
+<a name="ln1424">              {</a>
+<a name="ln1425">                j = na;</a>
+<a name="ln1426">                k = nb;</a>
+<a name="ln1427">              }</a>
+<a name="ln1428">            else if ( bitmasks[nb] &amp; BitC )</a>
+<a name="ln1429">              {</a>
+<a name="ln1430">                j = nb;</a>
+<a name="ln1431">                k = na;</a>
+<a name="ln1432">              }</a>
+<a name="ln1433">            else if( bitmasks[na] &amp; BitCAll )</a>
+<a name="ln1434">              {</a>
+<a name="ln1435">                j = na;</a>
+<a name="ln1436">                k = nb;</a>
+<a name="ln1437">              }</a>
+<a name="ln1438">            else if (bitmasks[nb] &amp; BitCAll )</a>
+<a name="ln1439">              {</a>
+<a name="ln1440">                j = nb;</a>
+<a name="ln1441">                k = na;</a>
+<a name="ln1442">              }</a>
+<a name="ln1443"> </a>
+<a name="ln1444">            atomids[j]  = AI_C;</a>
+<a name="ln1445">            bitmasks[k] = 0;</a>
+<a name="ln1446"> </a>
+<a name="ln1447">            if (!visits[j])</a>
+<a name="ln1448">              TracePeptideChain(mol,j,r);</a>
+<a name="ln1449">          }</a>
+<a name="ln1450">        else if (count == 2)</a>
+<a name="ln1451">          {</a>
+<a name="ln1452">            if ( bitmasks[na] &amp; BitCAll )</a>
+<a name="ln1453">              {</a>
+<a name="ln1454">                atomids[na] = AI_C;</a>
+<a name="ln1455">                if (!visits[na])</a>
+<a name="ln1456">                  TracePeptideChain(mol,na,r);</a>
+<a name="ln1457">              }</a>
+<a name="ln1458">            else if ( bitmasks[nb] &amp; BitCAll )</a>
+<a name="ln1459">              {</a>
+<a name="ln1460">                atomids[nb] = AI_C;</a>
+<a name="ln1461">                if (!visits[nb])</a>
+<a name="ln1462">                  TracePeptideChain(mol,nb,r);</a>
+<a name="ln1463">              }</a>
+<a name="ln1464">          }</a>
+<a name="ln1465">        break;</a>
+<a name="ln1466"> </a>
+<a name="ln1467">      case(AI_C):</a>
+<a name="ln1468">        k = AI_O;</a>
+<a name="ln1469">        for ( j = 0; j &lt; count; j++ )</a>
+<a name="ln1470">          {</a>
+<a name="ln1471">            if ( bitmasks[neighbour[j]] &amp; BitNAll )</a>
+<a name="ln1472">              {</a>
+<a name="ln1473">                atomids[neighbour[j]] = AI_N;</a>
+<a name="ln1474">                if (!visits[neighbour[j]])</a>
+<a name="ln1475">                  TracePeptideChain(mol,neighbour[j],r+1);</a>
+<a name="ln1476">              }</a>
+<a name="ln1477">            else if( bitmasks[neighbour[j]] &amp; BitOAll )</a>
+<a name="ln1478">              {</a>
+<a name="ln1479">                atomids[neighbour[j]] = k;</a>
+<a name="ln1480">                resnos[neighbour[j]]  = r;</a>
+<a name="ln1481">                k = AI_OXT;  /* OXT */</a>
+<a name="ln1482">              }</a>
+<a name="ln1483">          }</a>
+<a name="ln1484">        break;</a>
+<a name="ln1485">      }</a>
+<a name="ln1486">  }</a>
+<a name="ln1487"> </a>
+<a name="ln1488">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1489">  // Peptide Sidechains Perception</a>
+<a name="ln1490">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1491"> </a>
+<a name="ln1492">  bool OBChainsParser::DeterminePeptideSidechains(OBMol &amp;mol)</a>
+<a name="ln1493">  {</a>
+<a name="ln1494">    int resid;</a>
+<a name="ln1495">    int max = mol.NumAtoms();</a>
+<a name="ln1496"> </a>
+<a name="ln1497">    for (int i = 0 ; i &lt; max ; ++i)</a>
+<a name="ln1498">      if (atomids[i] == AI_CA)</a>
+<a name="ln1499">        {</a>
+<a name="ln1500">          resid = IdentifyResidue(PDecisionTree, mol, i, resnos[i]);</a>
+<a name="ln1501">          AssignResidue(mol,resnos[i],chains[i],resid);</a>
+<a name="ln1502">        }</a>
+<a name="ln1503"> </a>
+<a name="ln1504">    return true;</a>
+<a name="ln1505">  }</a>
+<a name="ln1506"> </a>
+<a name="ln1507">  void OBChainsParser::AssignResidue(OBMol &amp;mol, int r, int c, int i)</a>
+<a name="ln1508">  {</a>
+<a name="ln1509">    int max = mol.NumAtoms();</a>
+<a name="ln1510"> </a>
+<a name="ln1511">    for (int j = 0 ; j &lt; max ; ++j)</a>
+<a name="ln1512">      if ((resnos[j] == r) &amp;&amp; (chains[j] == c) &amp;&amp; !hetflags[j])</a>
+<a name="ln1513">        resids[j] = i;</a>
+<a name="ln1514">  }</a>
+<a name="ln1515"> </a>
+<a name="ln1516">  int OBChainsParser::IdentifyResidue(void *tree, OBMol &amp;mol, unsigned int seed,</a>
+<a name="ln1517">                                      int resno)</a>
+<a name="ln1518">  {</a>
+<a name="ln1519">    ByteCode *ptr;</a>
+<a name="ln1520"> </a>
+<a name="ln1521">    int AtomCount, BondCount;</a>
+<a name="ln1522">    int curr,prev,bond;</a>
+<a name="ln1523">    int bcount;</a>
+<a name="ln1524">    int i,j;</a>
+<a name="ln1525"> </a>
+<a name="ln1526">    ptr    = (ByteCode *) tree;</a>
+<a name="ln1527">    bcount = 0;</a>
+<a name="ln1528"> </a>
+<a name="ln1529">    Stack[0].atom = seed;</a>
+<a name="ln1530">    Stack[0].prev = seed;</a>
+<a name="ln1531">    StackPtr = 0;</a>
+<a name="ln1532"> </a>
+<a name="ln1533">    ResMonoAtom[0] = seed;</a>
+<a name="ln1534">    AtomCount = 1;</a>
+<a name="ln1535">    BondCount = 0;</a>
+<a name="ln1536"> </a>
+<a name="ln1537">    OBAtom *atom, *nbr;</a>
+<a name="ln1538">    vector&lt;OBBond *&gt;::iterator b;</a>
+<a name="ln1539"> </a>
+<a name="ln1540">    while( ptr ) {</a>
+<a name="ln1541">      switch(ptr-&gt;type)</a>
+<a name="ln1542">        {</a>
+<a name="ln1543">        case(BC_IDENT):  curr = Stack[StackPtr-1].atom;</a>
+<a name="ln1544">          if( atomids[curr] == ptr-&gt;ident.value )</a>
+<a name="ln1545">            {</a>
+<a name="ln1546">              bond = Stack[StackPtr-1].bond;</a>
+<a name="ln1547">              ResMonoBond[BondCount++] = bond;</a>
+<a name="ln1548">              ptr = ptr-&gt;ident.tcond;</a>
+<a name="ln1549">              StackPtr--;</a>
+<a name="ln1550">            }</a>
+<a name="ln1551">          else</a>
+<a name="ln1552">            ptr = ptr-&gt;ident.fcond;</a>
+<a name="ln1553">          break;</a>
+<a name="ln1554"> </a>
+<a name="ln1555">        case(BC_LOCAL):  curr = Stack[StackPtr-1].atom;</a>
+<a name="ln1556">          if( curr == ResMonoAtom[ptr-&gt;local.value] )</a>
+<a name="ln1557">            {</a>
+<a name="ln1558">              bond = Stack[StackPtr-1].bond;</a>
+<a name="ln1559">              ResMonoBond[BondCount++] = bond;</a>
+<a name="ln1560">              ptr = ptr-&gt;local.tcond;</a>
+<a name="ln1561">              StackPtr--;</a>
+<a name="ln1562">            }</a>
+<a name="ln1563">          else</a>
+<a name="ln1564">            ptr = ptr-&gt;local.fcond;</a>
+<a name="ln1565">          break;</a>
+<a name="ln1566"> </a>
+<a name="ln1567">        case(BC_ELEM):   curr = Stack[StackPtr-1].atom;</a>
+<a name="ln1568">          if( mol.GetAtom(curr+1)-&gt;GetAtomicNum() == static_cast&lt;unsigned int&gt;(ptr-&gt;elem.value) )</a>
+<a name="ln1569">            {</a>
+<a name="ln1570">              bond = Stack[StackPtr-1].bond;</a>
+<a name="ln1571">              ResMonoAtom[AtomCount++] = curr;</a>
+<a name="ln1572">              ResMonoBond[BondCount++] = bond;</a>
+<a name="ln1573">              resnos[curr] = resno;</a>
+<a name="ln1574">              ptr = ptr-&gt;elem.tcond;</a>
+<a name="ln1575">              StackPtr--;</a>
+<a name="ln1576">            }</a>
+<a name="ln1577">          else</a>
+<a name="ln1578">            ptr = ptr-&gt;elem.fcond;</a>
+<a name="ln1579">          break;</a>
+<a name="ln1580"> </a>
+<a name="ln1581">        case(BC_EVAL):   bcount = 0;</a>
+<a name="ln1582">          curr = Stack[StackPtr].atom;</a>
+<a name="ln1583">          prev = Stack[StackPtr].prev;</a>
+<a name="ln1584"> </a>
+<a name="ln1585">          atom = mol.GetAtom(curr+1); // WARNING, potential atom index issue</a>
+<a name="ln1586">          for (nbr = atom-&gt;BeginNbrAtom(b); nbr; nbr = atom-&gt;NextNbrAtom(b))</a>
+<a name="ln1587">            {</a>
+<a name="ln1588">              if (nbr-&gt;GetAtomicNum() == OBElements::Hydrogen)</a>
+<a name="ln1589">                continue;</a>
+<a name="ln1590"> </a>
+<a name="ln1591">              j = nbr-&gt;GetIdx() - 1;</a>
+<a name="ln1592">              if (!((curr == prev) &amp;&amp; bitmasks[j]) &amp;&amp; (j != prev))</a>
+<a name="ln1593">                {</a>
+<a name="ln1594">                  Stack[StackPtr].prev = curr;</a>
+<a name="ln1595">                  Stack[StackPtr].atom = j;</a>
+<a name="ln1596">                  Stack[StackPtr].bond = (*b)-&gt;GetIdx();</a>
+<a name="ln1597">                  StackPtr++;</a>
+<a name="ln1598">                  bcount++;</a>
+<a name="ln1599">                }</a>
+<a name="ln1600">            }</a>
+<a name="ln1601"> </a>
+<a name="ln1602">          ptr = ptr-&gt;eval.next;</a>
+<a name="ln1603">          break;</a>
+<a name="ln1604"> </a>
+<a name="ln1605">        case(BC_COUNT):</a>
+<a name="ln1606">          if( bcount == ptr-&gt;count.value )</a>
+<a name="ln1607">            {</a>
+<a name="ln1608">              ptr = ptr-&gt;count.tcond;</a>
+<a name="ln1609">            }</a>
+<a name="ln1610">          else</a>
+<a name="ln1611">            ptr = ptr-&gt;count.fcond;</a>
+<a name="ln1612">          break;</a>
+<a name="ln1613"> </a>
+<a name="ln1614">        case(BC_ASSIGN):</a>
+<a name="ln1615">          for( i=0; i&lt;AtomCount; i++ ) {</a>
+<a name="ln1616">            if( !bitmasks[ResMonoAtom[i]])</a>
+<a name="ln1617">              {</a>
+<a name="ln1618">                j = ptr-&gt;assign.atomid[i];</a>
+<a name="ln1619">                atomids[ResMonoAtom[i]] = j;</a>
+<a name="ln1620">              }</a>
+<a name="ln1621">          }</a>
+<a name="ln1622">          for( i=0; i&lt;BondCount; i++ )</a>
+<a name="ln1623">            {</a>
+<a name="ln1624">              j = ptr-&gt;assign.bflags[i];</a>
+<a name="ln1625">              flags[ResMonoBond[i]] = j;</a>
+<a name="ln1626">            }</a>
+<a name="ln1627">          return( ptr-&gt;assign.resid );</a>
+<a name="ln1628">          break;</a>
+<a name="ln1629"> </a>
+<a name="ln1630">        default:  /* Illegal Instruction! */</a>
+<a name="ln1631">          return( 0 );</a>
+<a name="ln1632">        } // (switch)</a>
+<a name="ln1633">    } // while (loop through atoms)</a>
+<a name="ln1634">    return 0;</a>
+<a name="ln1635">  }</a>
+<a name="ln1636"> </a>
+<a name="ln1637">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1638">  // Nucleic Backbone Perception</a>
+<a name="ln1639">  /////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1640"> </a>
+<a name="ln1641">  bool OBChainsParser::DetermineNucleicBackbone(OBMol &amp;mol)</a>
+<a name="ln1642">  {</a>
+<a name="ln1643">    ConstrainBackbone(mol, Nucleotide, MAXNUCLEIC);</a>
+<a name="ln1644"> </a>
+<a name="ln1645">    int i, max = mol.NumAtoms();</a>
+<a name="ln1646"> </a>
+<a name="ln1647">    /* Order Nucleic Backbone */</a>
+<a name="ln1648"> </a>
+<a name="ln1649">    for( i = 0 ; i &lt; max ; i++ )</a>
+<a name="ln1650">      if( atomids[i] == -1 )</a>
+<a name="ln1651">        {</a>
+<a name="ln1652">          if( bitmasks[i] &amp; BitPTer )</a>
+<a name="ln1653">            {</a>
+<a name="ln1654">              atomids[i] = AI_P;</a>
+<a name="ln1655">              TraceNucleicChain(mol,i,1);</a>
+<a name="ln1656">            }</a>
+<a name="ln1657">          else if( bitmasks[i] &amp; BitO5Ter )</a>
+<a name="ln1658">            {</a>
+<a name="ln1659">              atomids[i] = AI_O5;</a>
+<a name="ln1660">              TraceNucleicChain(mol,i,1);</a>
+<a name="ln1661">            }</a>
+<a name="ln1662">        }</a>
+<a name="ln1663"> </a>
+<a name="ln1664">    return true;</a>
+<a name="ln1665">  }</a>
+<a name="ln1666"> </a>
+<a name="ln1667">  void OBChainsParser::TraceNucleicChain(OBMol &amp;mol, unsigned int i, int r)</a>
+<a name="ln1668">  {</a>
+<a name="ln1669">    unsigned int neighbour[4];</a>
+<a name="ln1670">    int count;</a>
+<a name="ln1671">    int j,k;</a>
+<a name="ln1672"> </a>
+<a name="ln1673">    OBAtom *atom, *nbr;</a>
+<a name="ln1674">    vector&lt;OBBond *&gt;::iterator b;</a>
+<a name="ln1675"> </a>
+<a name="ln1676">    if (visits[i])</a>
+<a name="ln1677">      return;</a>
+<a name="ln1678">    visits[i] = true;</a>
+<a name="ln1679"> </a>
+<a name="ln1680">    count = 0;</a>
+<a name="ln1681">    atom  = mol.GetAtom(i + 1);</a>
+<a name="ln1682">    for (nbr = atom-&gt;BeginNbrAtom(b) ; nbr ; nbr = atom-&gt;NextNbrAtom(b))</a>
+<a name="ln1683">      if (nbr-&gt;GetAtomicNum() != OBElements::Hydrogen)</a>
+<a name="ln1684">        neighbour[count++] = nbr-&gt;GetIdx() - 1;</a>
+<a name="ln1685"> </a>
+<a name="ln1686">    resnos[i] = r;</a>
+<a name="ln1687"> </a>
+<a name="ln1688">    switch( atomids[i] )</a>
+<a name="ln1689">      {</a>
+<a name="ln1690">      case(AI_P):</a>
+<a name="ln1691">        k = AI_O1P;  /* O1P */</a>
+<a name="ln1692">        for( j=0; j&lt;count; j++ )</a>
+<a name="ln1693">          {</a>
+<a name="ln1694">            if( bitmasks[neighbour[j]] &amp; BitO5 )</a>
+<a name="ln1695">              {</a>
+<a name="ln1696">                atomids[neighbour[j]] = AI_O5;</a>
+<a name="ln1697">                if (!visits[neighbour[j]])</a>
+<a name="ln1698">                  TraceNucleicChain(mol,neighbour[j],r);</a>
+<a name="ln1699">              }</a>
+<a name="ln1700">            else if( bitmasks[neighbour[j]] &amp; BitOP )</a>
+<a name="ln1701">              {</a>
+<a name="ln1702">                atomids[neighbour[j]] = k;</a>
+<a name="ln1703">                resnos[neighbour[j]]  = r;</a>
+<a name="ln1704">                k = AI_O2P;  /* O2P */</a>
+<a name="ln1705">              }</a>
+<a name="ln1706">          }</a>
+<a name="ln1707"> </a>
+<a name="ln1708">        break;</a>
+<a name="ln1709"> </a>
+<a name="ln1710">      case(AI_O5):</a>
+<a name="ln1711">        for( j=0; j&lt;count; j++ )</a>
+<a name="ln1712">          if( bitmasks[neighbour[j]] &amp; BitC5 )</a>
+<a name="ln1713">            {</a>
+<a name="ln1714">              atomids[neighbour[j]] = AI_C5;</a>
+<a name="ln1715">              if (!visits[neighbour[j]])</a>
+<a name="ln1716">                TraceNucleicChain(mol,neighbour[j],r);</a>
+<a name="ln1717">            }</a>
+<a name="ln1718"> </a>
+<a name="ln1719">        break;</a>
+<a name="ln1720"> </a>
+<a name="ln1721">      case(AI_C5):</a>
+<a name="ln1722">        for( j=0 ; j&lt;count; j++ )</a>
+<a name="ln1723">          if( bitmasks[neighbour[j]] &amp; BitC4 )</a>
+<a name="ln1724">            {</a>
+<a name="ln1725">              atomids[neighbour[j]] = AI_C4;</a>
+<a name="ln1726">              if (!visits[neighbour[j]])</a>
+<a name="ln1727">                TraceNucleicChain(mol,neighbour[j],r);</a>
+<a name="ln1728">            }</a>
+<a name="ln1729"> </a>
+<a name="ln1730">        break;</a>
+<a name="ln1731"> </a>
+<a name="ln1732">      case(AI_C4):</a>
+<a name="ln1733">        for( j=0; j&lt;count; j++ )</a>
+<a name="ln1734">          {</a>
+<a name="ln1735">            if( bitmasks[neighbour[j]] &amp; BitC3 )</a>
+<a name="ln1736">              {</a>
+<a name="ln1737">                atomids[neighbour[j]] = AI_C3;</a>
+<a name="ln1738">                if (!visits[neighbour[j]])</a>
+<a name="ln1739">                  TraceNucleicChain(mol,neighbour[j],r);</a>
+<a name="ln1740">              }</a>
+<a name="ln1741">            else if( bitmasks[neighbour[j]] &amp; BitO4 )</a>
+<a name="ln1742">              {</a>
+<a name="ln1743">                atomids[neighbour[j]] = AI_O4;</a>
+<a name="ln1744">                resnos[neighbour[j]]  = r;</a>
+<a name="ln1745">              }</a>
+<a name="ln1746">          }</a>
+<a name="ln1747"> </a>
+<a name="ln1748">        break;</a>
+<a name="ln1749"> </a>
+<a name="ln1750">      case(AI_C3):</a>
+<a name="ln1751">        for( j=0; j&lt;count; j++ )</a>
+<a name="ln1752">          {</a>
+<a name="ln1753">            if( bitmasks[neighbour[j]] &amp; BitO3All )</a>
+<a name="ln1754">              {</a>
+<a name="ln1755">                atomids[neighbour[j]] = AI_O3;</a>
+<a name="ln1756">                if (!visits[neighbour[j]])</a>
+<a name="ln1757">                  TraceNucleicChain(mol,neighbour[j],r);</a>
+<a name="ln1758">              }</a>
+<a name="ln1759">            else if( bitmasks[neighbour[j]] &amp; BitC2All )</a>
+<a name="ln1760">              {</a>
+<a name="ln1761">                atomids[neighbour[j]] = AI_C2;</a>
+<a name="ln1762">                if (!visits[neighbour[j]])</a>
+<a name="ln1763">                  TraceNucleicChain(mol,neighbour[j],r);</a>
+<a name="ln1764">              }</a>
+<a name="ln1765">          }</a>
+<a name="ln1766"> </a>
+<a name="ln1767">        break;</a>
+<a name="ln1768"> </a>
+<a name="ln1769">      case(AI_O3):</a>
+<a name="ln1770">        for( j=0; j&lt;count; j++ )</a>
+<a name="ln1771">          if( bitmasks[neighbour[j]] &amp; BitP )</a>
+<a name="ln1772">            {</a>
+<a name="ln1773">              atomids[neighbour[j]] = AI_P;</a>
+<a name="ln1774">              if (!visits[neighbour[j]])</a>
+<a name="ln1775">                TraceNucleicChain(mol,neighbour[j],r+1);</a>
+<a name="ln1776">            }</a>
+<a name="ln1777"> </a>
+<a name="ln1778">        break;</a>
+<a name="ln1779"> </a>
+<a name="ln1780">      case(AI_C2):</a>
+<a name="ln1781">        for( j=0; j&lt;count; j++ )</a>
+<a name="ln1782">          {</a>
+<a name="ln1783">            if( bitmasks[neighbour[j]] &amp; BitC1 )</a>
+<a name="ln1784">              {</a>
+<a name="ln1785">                atomids[neighbour[j]] = AI_C1;</a>
+<a name="ln1786">                resnos[neighbour[j]]  = r;</a>
+<a name="ln1787">              }</a>
+<a name="ln1788">            else if( bitmasks[neighbour[j]] &amp; BitO2 )</a>
+<a name="ln1789">              {</a>
+<a name="ln1790">                atomids[neighbour[j]] = AI_O2;</a>
+<a name="ln1791">                resnos[neighbour[j]]  = r;</a>
+<a name="ln1792">              }</a>
+<a name="ln1793">          }</a>
+<a name="ln1794"> </a>
+<a name="ln1795">        break;</a>
+<a name="ln1796">      }</a>
+<a name="ln1797">  }</a>
+<a name="ln1798"> </a>
+<a name="ln1799">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1800">  // Nucleic Sidechains Perception</a>
+<a name="ln1801">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1802"> </a>
+<a name="ln1803">  bool OBChainsParser::DetermineNucleicSidechains(OBMol &amp;mol)</a>
+<a name="ln1804">  {</a>
+<a name="ln1805">    for( unsigned int i = 0 ; i &lt; mol.NumAtoms() ; i++ )</a>
+<a name="ln1806">      if( atomids[i] == 49 )</a>
+<a name="ln1807">        {</a>
+<a name="ln1808">          int resid = IdentifyResidue(NDecisionTree,mol,i,resnos[i]);</a>
+<a name="ln1809">          AssignResidue(mol,resnos[i],chains[i],resid);</a>
+<a name="ln1810">        }</a>
+<a name="ln1811"> </a>
+<a name="ln1812">    return true;</a>
+<a name="ln1813">  }</a>
+<a name="ln1814"> </a>
+<a name="ln1815">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1816">  // Hydrogens Perception</a>
+<a name="ln1817">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1818"> </a>
+<a name="ln1819">  bool OBChainsParser::DetermineHydrogens(OBMol &amp;mol)</a>
+<a name="ln1820">  {</a>
+<a name="ln1821">    OBAtom *atom, *nbr;</a>
+<a name="ln1822">    int idx,sidx;</a>
+<a name="ln1823"> </a>
+<a name="ln1824">    int max = mol.NumAtoms();</a>
+<a name="ln1825">    for ( int i = 0 ; i &lt; max ; i++ )</a>
+<a name="ln1826">      hcounts[i] = 0;</a>
+<a name="ln1827"> </a>
+<a name="ln1828">    /* First Pass */</a>
+<a name="ln1829"> </a>
+<a name="ln1830">    vector&lt;OBAtom*&gt;::iterator a;</a>
+<a name="ln1831">    vector&lt;OBBond*&gt;::iterator b;</a>
+<a name="ln1832"> </a>
+<a name="ln1833">    for(atom = mol.BeginAtom(a); atom ; atom = mol.NextAtom(a))</a>
+<a name="ln1834">      if(atom-&gt;GetAtomicNum() == OBElements::Hydrogen)</a>
+<a name="ln1835">        {</a>
+<a name="ln1836">          nbr = atom-&gt;BeginNbrAtom(b);</a>
+<a name="ln1837">          if (nbr != nullptr)</a>
+<a name="ln1838">            {</a>
+<a name="ln1839">              idx  = atom-&gt;GetIdx() - 1;</a>
+<a name="ln1840">              sidx = nbr-&gt;GetIdx() - 1;</a>
+<a name="ln1841"> </a>
+<a name="ln1842">              hcounts[idx]  = ++hcounts[sidx];</a>
+<a name="ln1843">              hetflags[idx] = hetflags[sidx];</a>
+<a name="ln1844">              atomids[idx]  = atomids[sidx];</a>
+<a name="ln1845">              resids[idx]   = resids[sidx];</a>
+<a name="ln1846">              resnos[idx]   = resnos[sidx];</a>
+<a name="ln1847">              chains[idx]   = chains[sidx];</a>
+<a name="ln1848">            }</a>
+<a name="ln1849">        }</a>
+<a name="ln1850"> </a>
+<a name="ln1851">    /* Second Pass */</a>
+<a name="ln1852"> </a>
+<a name="ln1853">    for(atom = mol.BeginAtom(a) ; atom ; atom = mol.NextAtom(a))</a>
+<a name="ln1854">      if (atom-&gt;GetAtomicNum() == OBElements::Hydrogen)</a>
+<a name="ln1855">        {</a>
+<a name="ln1856">          nbr = atom-&gt;BeginNbrAtom(b);</a>
+<a name="ln1857">          if (nbr != nullptr &amp;&amp; hcounts[nbr-&gt;GetIdx()-1] == 1)</a>
+<a name="ln1858">            hcounts[atom-&gt;GetIdx()-1] = 0;</a>
+<a name="ln1859">        }</a>
+<a name="ln1860"> </a>
+<a name="ln1861">    return true;</a>
+<a name="ln1862">  }</a>
+<a name="ln1863"> </a>
+<a name="ln1864">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1865">  // Utility Functions</a>
+<a name="ln1866">  //////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1867"> </a>
+<a name="ln1868">  // validated</a>
+<a name="ln1869">  void OBChainsParser::DefineMonomer(void **tree, int resid, const char *smiles)</a>
+<a name="ln1870">  {</a>
+<a name="ln1871">    int i;</a>
+<a name="ln1872"> </a>
+<a name="ln1873">    MonoAtomCount = 0;</a>
+<a name="ln1874">    MonoBondCount = 0;</a>
+<a name="ln1875"> </a>
+<a name="ln1876">    ParseSmiles(smiles,-1);</a>
+<a name="ln1877"> </a>
+<a name="ln1878">    for( i=0; i&lt;MonoBondCount; i++ )</a>
+<a name="ln1879">      MonoBond[i].index = -1;</a>
+<a name="ln1880">    for( i=0; i&lt;MonoAtomCount; i++ )</a>
+<a name="ln1881">      MonoAtom[i].index = -1;</a>
+<a name="ln1882">    AtomIndex = BondIndex = 0;</a>
+<a name="ln1883"> </a>
+<a name="ln1884">    StackPtr = 0;</a>
+<a name="ln1885">    GenerateByteCodes((ByteCode**)tree, resid, 0, 0, 0 );</a>
+<a name="ln1886">  }</a>
+<a name="ln1887"> </a>
+<a name="ln1888">  int OBChainsParser::IdentifyElement(char *ptr)</a>
+<a name="ln1889">  {</a>
+<a name="ln1890">    int ch;</a>
+<a name="ln1891"> </a>
+<a name="ln1892">    ch = toupper(ptr[1]);</a>
+<a name="ln1893">    switch( toupper(ptr[0]) )</a>
+<a name="ln1894">      {</a>
+<a name="ln1895">      case(' '):  switch( ch )</a>
+<a name="ln1896">          {</a>
+<a name="ln1897">          case('B'):  return(  5 );</a>
+<a name="ln1898">          case('C'):  return(  6 );</a>
+<a name="ln1899">          case('D'):  return(  1 );</a>
+<a name="ln1900">          case('F'):  return(  9 );</a>
+<a name="ln1901">          case('H'):  return(  1 );</a>
+<a name="ln1902">          case('I'):  return( 53 );</a>
+<a name="ln1903">          case('K'):  return( 19 );</a>
+<a name="ln1904">          case('L'):  return(  1 );</a>
+<a name="ln1905">          case('N'):  return(  7 );</a>
+<a name="ln1906">          case('O'):  return(  8 );</a>
+<a name="ln1907">          case('P'):  return( 15 );</a>
+<a name="ln1908">          case('S'):  return( 16 );</a>
+<a name="ln1909">          case('U'):  return( 92 );</a>
+<a name="ln1910">          case('V'):  return( 23 );</a>
+<a name="ln1911">          case('W'):  return( 74 );</a>
+<a name="ln1912">          case('Y'):  return( 39 );</a>
+<a name="ln1913">          }</a>
+<a name="ln1914">        break;</a>
+<a name="ln1915"> </a>
+<a name="ln1916">      case('A'):  switch( ch )</a>
+<a name="ln1917">          {</a>
+<a name="ln1918">          case('C'):  return( 89 );</a>
+<a name="ln1919">          case('G'):  return( 47 );</a>
+<a name="ln1920">          case('L'):  return( 13 );</a>
+<a name="ln1921">          case('M'):  return( 95 );</a>
+<a name="ln1922">          case('R'):  return( 18 );</a>
+<a name="ln1923">          case('S'):  return( 33 );</a>
+<a name="ln1924">          case('T'):  return( 85 );</a>
+<a name="ln1925">          case('U'):  return( 79 );</a>
+<a name="ln1926">          }</a>
+<a name="ln1927">        break;</a>
+<a name="ln1928"> </a>
+<a name="ln1929">      case('B'):  switch( ch )</a>
+<a name="ln1930">          {</a>
+<a name="ln1931">          case('A'):  return( 56 );</a>
+<a name="ln1932">          case('E'):  return(  4 );</a>
+<a name="ln1933">          case('I'):  return( 83 );</a>
+<a name="ln1934">          case('K'):  return( 97 );</a>
+<a name="ln1935">          case('R'):  return( 35 );</a>
+<a name="ln1936">          case(' '):  return(  5 );</a>
+<a name="ln1937">          }</a>
+<a name="ln1938">        break;</a>
+<a name="ln1939"> </a>
+<a name="ln1940">      case('C'):  switch( ch )</a>
+<a name="ln1941">          {</a>
+<a name="ln1942">          case('A'):  return( 20 );</a>
+<a name="ln1943">          case('D'):  return( 48 );</a>
+<a name="ln1944">          case('E'):  return( 58 );</a>
+<a name="ln1945">          case('F'):  return( 98 );</a>
+<a name="ln1946">          case('L'):  return( 17 );</a>
+<a name="ln1947">          case('M'):  return( 96 );</a>
+<a name="ln1948">          case('O'):  return( 27 );</a>
+<a name="ln1949">          case('R'):  return( 24 );</a>
+<a name="ln1950">          case('S'):  return( 55 );</a>
+<a name="ln1951">          case('U'):  return( 29 );</a>
+<a name="ln1952">          case(' '):  return(  6 );</a>
+<a name="ln1953">          }</a>
+<a name="ln1954">        break;</a>
+<a name="ln1955"> </a>
+<a name="ln1956">      case('D'):  if( ch=='Y' )</a>
+<a name="ln1957">          {</a>
+<a name="ln1958">            return( 66 );</a>
+<a name="ln1959">          }</a>
+<a name="ln1960">        else if( ch==' ' )</a>
+<a name="ln1961">          return( 1 );</a>
+<a name="ln1962">        break;</a>
+<a name="ln1963"> </a>
+<a name="ln1964">      case('E'):  if( ch=='R' )</a>
+<a name="ln1965">          {</a>
+<a name="ln1966">            return( 68 );</a>
+<a name="ln1967">          }</a>
+<a name="ln1968">        else if( ch=='S' )</a>
+<a name="ln1969">          {</a>
+<a name="ln1970">            return( 99 );</a>
+<a name="ln1971">          }</a>
+<a name="ln1972">        else if( ch=='U' )</a>
+<a name="ln1973">          return( 63 );</a>
+<a name="ln1974">        break;</a>
+<a name="ln1975"> </a>
+<a name="ln1976">      case('F'):  if( ch=='E' )</a>
+<a name="ln1977">          {</a>
+<a name="ln1978">            return(  26 );</a>
+<a name="ln1979">          }</a>
+<a name="ln1980">        else if( ch=='M' )</a>
+<a name="ln1981">          {</a>
+<a name="ln1982">            return( 100 );</a>
+<a name="ln1983">          }</a>
+<a name="ln1984">        else if( ch=='R' )</a>
+<a name="ln1985">          {</a>
+<a name="ln1986">            return(  87 );</a>
+<a name="ln1987">          }</a>
+<a name="ln1988">        else if( ch=='F' )</a>
+<a name="ln1989">          return(   9 );</a>
+<a name="ln1990">        break;</a>
+<a name="ln1991"> </a>
+<a name="ln1992">      case('G'):  if( ch=='A' )</a>
+<a name="ln1993">          {</a>
+<a name="ln1994">            return( 31 );</a>
+<a name="ln1995">          }</a>
+<a name="ln1996">        else if( ch=='D' )</a>
+<a name="ln1997">          {</a>
+<a name="ln1998">            return( 64 );</a>
+<a name="ln1999">          }</a>
+<a name="ln2000">        else if( ch=='E' )</a>
+<a name="ln2001">          return( 32 );</a>
+<a name="ln2002">        break;</a>
+<a name="ln2003"> </a>
+<a name="ln2004">      case('H'):  if( ch=='E' )</a>
+<a name="ln2005">          {</a>
+<a name="ln2006">            return(  2 );</a>
+<a name="ln2007">          }</a>
+<a name="ln2008">        else if( ch=='F' )</a>
+<a name="ln2009">          {</a>
+<a name="ln2010">            return( 72 );</a>
+<a name="ln2011">          }</a>
+<a name="ln2012">        else if( ch=='G' )</a>
+<a name="ln2013">          {</a>
+<a name="ln2014">            return( 80 );</a>
+<a name="ln2015">          }</a>
+<a name="ln2016">        else if( ch=='O' )</a>
+<a name="ln2017">          {</a>
+<a name="ln2018">            return( 67 );</a>
+<a name="ln2019">          }</a>
+<a name="ln2020">        else if( ch==' ' )</a>
+<a name="ln2021">          return(  1 );</a>
+<a name="ln2022">        break;</a>
+<a name="ln2023"> </a>
+<a name="ln2024">      case('I'):  if( ch=='N' )</a>
+<a name="ln2025">          {</a>
+<a name="ln2026">            return( 49 );</a>
+<a name="ln2027">          }</a>
+<a name="ln2028">        else if( ch=='R' )</a>
+<a name="ln2029">          {</a>
+<a name="ln2030">            return( 77 );</a>
+<a name="ln2031">          }</a>
+<a name="ln2032">        else if( ch==' ' )</a>
+<a name="ln2033">          return( 53 );</a>
+<a name="ln2034">        break;</a>
+<a name="ln2035"> </a>
+<a name="ln2036">      case('K'):  if( ch=='R' )</a>
+<a name="ln2037">          {</a>
+<a name="ln2038">            return( 36 );</a>
+<a name="ln2039">          }</a>
+<a name="ln2040">        else if( ch==' ' )</a>
+<a name="ln2041">          return( 19 );</a>
+<a name="ln2042">        break;</a>
+<a name="ln2043"> </a>
+<a name="ln2044">      case('L'):  if( ch=='A' )</a>
+<a name="ln2045">          {</a>
+<a name="ln2046">            return(  57 );</a>
+<a name="ln2047">          }</a>
+<a name="ln2048">        else if( ch=='I' )</a>
+<a name="ln2049">          {</a>
+<a name="ln2050">            return(   3 );</a>
+<a name="ln2051">          }</a>
+<a name="ln2052">        else if( (ch=='R') || (ch=='W') )</a>
+<a name="ln2053">          {</a>
+<a name="ln2054">            return( 103 );</a>
+<a name="ln2055">          }</a>
+<a name="ln2056">        else if( ch=='U' )</a>
+<a name="ln2057">          {</a>
+<a name="ln2058">            return(  71 );</a>
+<a name="ln2059">          }</a>
+<a name="ln2060">        else if( ch==' ' )</a>
+<a name="ln2061">          return(   1 );</a>
+<a name="ln2062">        break;</a>
+<a name="ln2063"> </a>
+<a name="ln2064">      case('M'):  if( ch=='D' )</a>
+<a name="ln2065">          {</a>
+<a name="ln2066">            return( 101 );</a>
+<a name="ln2067">          }</a>
+<a name="ln2068">        else if( ch=='G' )</a>
+<a name="ln2069">          {</a>
+<a name="ln2070">            return(  12 );</a>
+<a name="ln2071">          }</a>
+<a name="ln2072">        else if( ch=='N' )</a>
+<a name="ln2073">          {</a>
+<a name="ln2074">            return(  25 );</a>
+<a name="ln2075">          }</a>
+<a name="ln2076">        else if( ch=='O' )</a>
+<a name="ln2077">          return(  42 );</a>
+<a name="ln2078">        break;</a>
+<a name="ln2079"> </a>
+<a name="ln2080">      case('N'):  switch( ch )</a>
+<a name="ln2081">          {</a>
+<a name="ln2082">          case('A'):  return(  11 );</a>
+<a name="ln2083">          case('B'):  return(  41 );</a>
+<a name="ln2084">          case('D'):  return(  60 );</a>
+<a name="ln2085">          case('E'):  return(  10 );</a>
+<a name="ln2086">          case('I'):  return(  28 );</a>
+<a name="ln2087">          case('O'):  return( 102 );</a>
+<a name="ln2088">          case('P'):  return(  93 );</a>
+<a name="ln2089">          case(' '):  return(   7 );</a>
+<a name="ln2090">          }</a>
+<a name="ln2091">        break;</a>
+<a name="ln2092"> </a>
+<a name="ln2093">      case('O'):  if( ch=='S' )</a>
+<a name="ln2094">          {</a>
+<a name="ln2095">            return( 76 );</a>
+<a name="ln2096">          }</a>
+<a name="ln2097">        else if( ch==' ' )</a>
+<a name="ln2098">          return( 8 );</a>
+<a name="ln2099">        break;</a>
+<a name="ln2100"> </a>
+<a name="ln2101">      case('P'):  switch( ch )</a>
+<a name="ln2102">          {</a>
+<a name="ln2103">          case('A'):  return( 91 );</a>
+<a name="ln2104">          case('B'):  return( 82 );</a>
+<a name="ln2105">          case('D'):  return( 46 );</a>
+<a name="ln2106">          case('M'):  return( 61 );</a>
+<a name="ln2107">          case('O'):  return( 84 );</a>
+<a name="ln2108">          case('R'):  return( 59 );</a>
+<a name="ln2109">          case('T'):  return( 78 );</a>
+<a name="ln2110">          case('U'):  return( 94 );</a>
+<a name="ln2111">          case(' '):  return( 15 );</a>
+<a name="ln2112">          }</a>
+<a name="ln2113">        break;</a>
+<a name="ln2114"> </a>
+<a name="ln2115">      case('R'):  switch( ch )</a>
+<a name="ln2116">          {</a>
+<a name="ln2117">          case('A'):  return( 88 );</a>
+<a name="ln2118">          case('B'):  return( 37 );</a>
+<a name="ln2119">          case('E'):  return( 75 );</a>
+<a name="ln2120">          case('H'):  return( 45 );</a>
+<a name="ln2121">          case('N'):  return( 86 );</a>
+<a name="ln2122">          case('U'):  return( 44 );</a>
+<a name="ln2123">          }</a>
+<a name="ln2124">        break;</a>
+<a name="ln2125"> </a>
+<a name="ln2126">      case('S'):  switch( ch )</a>
+<a name="ln2127">          {</a>
+<a name="ln2128">          case('B'):  return( 51 );</a>
+<a name="ln2129">          case('C'):  return( 21 );</a>
+<a name="ln2130">          case('E'):  return( 34 );</a>
+<a name="ln2131">          case('I'):  return( 14 );</a>
+<a name="ln2132">          case('M'):  return( 62 );</a>
+<a name="ln2133">          case('N'):  return( 50 );</a>
+<a name="ln2134">          case('R'):  return( 38 );</a>
+<a name="ln2135">          case(' '):  return( 16 );</a>
+<a name="ln2136">          }</a>
+<a name="ln2137">        break;</a>
+<a name="ln2138"> </a>
+<a name="ln2139">      case('T'):  switch( ch )</a>
+<a name="ln2140">          {</a>
+<a name="ln2141">          case('A'):  return( 73 );</a>
+<a name="ln2142">          case('B'):  return( 65 );</a>
+<a name="ln2143">          case('C'):  return( 43 );</a>
+<a name="ln2144">          case('E'):  return( 52 );</a>
+<a name="ln2145">          case('H'):  return( 90 );</a>
+<a name="ln2146">          case('I'):  return( 22 );</a>
+<a name="ln2147">          case('L'):  return( 81 );</a>
+<a name="ln2148">          case('M'):  return( 69 );</a>
+<a name="ln2149">          }</a>
+<a name="ln2150">        break;</a>
+<a name="ln2151"> </a>
+<a name="ln2152">      case('U'):  if( ch==' ' )</a>
+<a name="ln2153">          return( 92 );</a>
+<a name="ln2154">        break;</a>
+<a name="ln2155"> </a>
+<a name="ln2156">      case('V'):  if( ch==' ' )</a>
+<a name="ln2157">          return( 23 );</a>
+<a name="ln2158">        break;</a>
+<a name="ln2159"> </a>
+<a name="ln2160">      case('W'):  if( ch==' ' )</a>
+<a name="ln2161">          return( 74 );</a>
+<a name="ln2162">        break;</a>
+<a name="ln2163"> </a>
+<a name="ln2164">      case('X'):  if( ch=='E' )</a>
+<a name="ln2165">          return( 54 );</a>
+<a name="ln2166">        break;</a>
+<a name="ln2167"> </a>
+<a name="ln2168">      case('Y'):  if( ch=='B' )</a>
+<a name="ln2169">          {</a>
+<a name="ln2170">            return( 70 );</a>
+<a name="ln2171">          }</a>
+<a name="ln2172">        else if( ch==' ' )</a>
+<a name="ln2173">          return( 39 );</a>
+<a name="ln2174">        break;</a>
+<a name="ln2175"> </a>
+<a name="ln2176">      case('Z'):  if( ch=='N' )</a>
+<a name="ln2177">          {</a>
+<a name="ln2178">            return( 30 );</a>
+<a name="ln2179">          }</a>
+<a name="ln2180">        else if( ch=='R' )</a>
+<a name="ln2181">          return( 40 );</a>
+<a name="ln2182">        break;</a>
+<a name="ln2183">      }</a>
+<a name="ln2184"> </a>
+<a name="ln2185">    if( (*ptr&gt;='0') &amp;&amp; (*ptr&lt;='9') )</a>
+<a name="ln2186">      if( (ch=='H') || (ch=='D') )</a>
+<a name="ln2187">        return( 1 ); /* Hydrogen */</a>
+<a name="ln2188"> </a>
+<a name="ln2189">    return( 0 );</a>
+<a name="ln2190">  }</a>
+<a name="ln2191"> </a>
+<a name="ln2192">  const char *OBChainsParser::ParseSmiles(const char *ptr, int prev)</a>
+<a name="ln2193">  {</a>
+<a name="ln2194">    char *name;</a>
+<a name="ln2195">    int atomid;</a>
+<a name="ln2196">    int next;</a>
+<a name="ln2197">    int type;</a>
+<a name="ln2198">    int ch;</a>
+<a name="ln2199"> </a>
+<a name="ln2200">    type = 0;</a>
+<a name="ln2201">    while( (ch = *ptr++) )</a>
+<a name="ln2202">      {</a>
+<a name="ln2203">        switch( ch )</a>
+<a name="ln2204">          {</a>
+<a name="ln2205">          case('-'): type = BF_SINGLE;</a>
+<a name="ln2206">            break;</a>
+<a name="ln2207">          case('='): type = BF_DOUBLE;</a>
+<a name="ln2208">            break;</a>
+<a name="ln2209">          case('#'): type = BF_TRIPLE;</a>
+<a name="ln2210">            break;</a>
+<a name="ln2211">          case('^'): type = BF_SINGLE|BF_AROMATIC;</a>
+<a name="ln2212">            break;</a>
+<a name="ln2213">          case('~'): type = BF_DOUBLE|BF_AROMATIC;</a>
+<a name="ln2214">            break;</a>
+<a name="ln2215"> </a>
+<a name="ln2216">          case(')'): return( ptr );</a>
+<a name="ln2217">          case('.'): prev = -1;</a>
+<a name="ln2218">            break;</a>
+<a name="ln2219">          case('('): ptr = ParseSmiles(ptr,prev);</a>
+<a name="ln2220">            break;</a>
+<a name="ln2221"> </a>
+<a name="ln2222">          default:</a>
+<a name="ln2223">            atomid = ch-'0';</a>
+<a name="ln2224">            while( isdigit(*ptr) )</a>
+<a name="ln2225">              atomid = (atomid*10)+(*ptr++)-'0';</a>
+<a name="ln2226"> </a>
+<a name="ln2227">            for( next=0; next&lt;MonoAtomCount; next++ )</a>
+<a name="ln2228">              if( MonoAtom[next].atomid == atomid )</a>
+<a name="ln2229">                break;</a>
+<a name="ln2230"> </a>
+<a name="ln2231">            if( next == MonoAtomCount )</a>
+<a name="ln2232">              {</a>
+<a name="ln2233">                name = ChainsAtomName[atomid];</a>
+<a name="ln2234">                MonoAtom[next].elem = IdentifyElement(name);</a>
+<a name="ln2235">                MonoAtom[next].atomid = atomid;</a>
+<a name="ln2236">                MonoAtom[next].bcount = 0;</a>
+<a name="ln2237">                MonoAtomCount++;</a>
+<a name="ln2238">              }</a>
+<a name="ln2239"> </a>
+<a name="ln2240">            if( prev != -1 )</a>
+<a name="ln2241">              {</a>
+<a name="ln2242">                MonoBond[MonoBondCount].flag = type;</a>
+<a name="ln2243">                MonoBond[MonoBondCount].src = prev;</a>
+<a name="ln2244">                MonoBond[MonoBondCount].dst = next;</a>
+<a name="ln2245">                MonoBondCount++;</a>
+<a name="ln2246"> </a>
+<a name="ln2247">                MonoAtom[prev].bcount++;</a>
+<a name="ln2248">                MonoAtom[next].bcount++;</a>
+<a name="ln2249">              }</a>
+<a name="ln2250">            prev = next;</a>
+<a name="ln2251">          }</a>
+<a name="ln2252">      }</a>
+<a name="ln2253">    return( ptr-1 );</a>
+<a name="ln2254">  }</a>
+<a name="ln2255"> </a>
+<a name="ln2256">} // end namespace OpenBabel</a>
+<a name="ln2257"> </a>
+<a name="ln2258">//! \file chains.cpp</a>
+<a name="ln2259">//! \brief Parse for macromolecule chains and residues.</a>
+
+</code></pre>
+<div class="balloon" rel="422"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v668/" target="_blank">V668</a> There is no sense in testing the 'result' pointer against null, as the memory was allocated using the 'new' operator. The exception will be generated in the case of memory allocation error.</p></div>
+<div class="balloon" rel="718"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v668/" target="_blank">V668</a> There is no sense in testing the 'ptr->assign.atomid' pointer against null, as the memory was allocated using the 'new' operator. The exception will be generated in the case of memory allocation error.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

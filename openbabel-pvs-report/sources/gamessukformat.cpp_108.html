@@ -1,0 +1,1334 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>gamessukformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">  (C) 2008-2010 by Jens Thomas</a>
+<a name="ln3"> </a>
+<a name="ln4">  This program is free software; you can redistribute it and/or modify</a>
+<a name="ln5">  it under the terms of the GNU General Public License as published by</a>
+<a name="ln6">  the Free Software Foundation version 2 of the License.</a>
+<a name="ln7"> </a>
+<a name="ln8">  This program is distributed in the hope that it will be useful,</a>
+<a name="ln9">  but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln10">  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln11">  GNU General Public License for more details.</a>
+<a name="ln12">***********************************************************************/</a>
+<a name="ln13">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln14">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln15">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln16">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln17">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln18">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/internalcoord.h&gt;</a>
+<a name="ln22"> </a>
+<a name="ln23"> </a>
+<a name="ln24">#include &lt;algorithm&gt;</a>
+<a name="ln25">#include &lt;cmath&gt;</a>
+<a name="ln26"> </a>
+<a name="ln27">#ifdef _MSC_VER</a>
+<a name="ln28">#include &lt;regex&gt;</a>
+<a name="ln29">#else</a>
+<a name="ln30">#include &lt;regex.h&gt;</a>
+<a name="ln31">#endif</a>
+<a name="ln32"> </a>
+<a name="ln33">using namespace std;</a>
+<a name="ln34"> </a>
+<a name="ln35">namespace OpenBabel</a>
+<a name="ln36">{</a>
+<a name="ln37">#define BOHR_TO_ANGSTROM 0.529177249</a>
+<a name="ln38">#define ANGSTROM_TO_BOHR 1.889725989</a>
+<a name="ln39"> </a>
+<a name="ln40">  class GAMESSUKFormat</a>
+<a name="ln41">  {</a>
+<a name="ln42">    /* Base class for GAMESS-UK readers with various utility functions that are used by</a>
+<a name="ln43">     * both input and output readers.</a>
+<a name="ln44">     *</a>
+<a name="ln45">     * The most important is ReadGeometry, which takes a list of strings defining the</a>
+<a name="ln46">     * geometry (in the style of a GAMESS-UK input deck) and creates the OBMol from it.</a>
+<a name="ln47">     * This routine supports both Zmatrix and Cartesian formats, although currently not</a>
+<a name="ln48">     * mixed decks.</a>
+<a name="ln49">     */</a>
+<a name="ln50"> </a>
+<a name="ln51">  public:</a>
+<a name="ln52">    bool ReadGeometry(OBMol &amp;mol, vector&lt;string&gt; &amp;geomList);</a>
+<a name="ln53">    bool ReadVariables(istream &amp;ifs, double factor, string stopstr);</a>
+<a name="ln54">    bool ReadLineCartesian(OBAtom *atom, vector&lt;string&gt; &amp;tokens, double factor);</a>
+<a name="ln55">    bool ReadLineZmatrix(OBMol &amp;mol, OBAtom *atom, vector&lt;string&gt; &amp;tokens, double factor, int *zmatLineCount);</a>
+<a name="ln56">    double Rescale(string text);</a>
+<a name="ln57">    bool IsUnits(string text);</a>
+<a name="ln58">    /**</a>
+<a name="ln59">     * Converts a string to a numerical type</a>
+<a name="ln60">     * This purloined from: http://www.codeguru.com/forum/showthread.php?t=231054</a>
+<a name="ln61">     */</a>
+<a name="ln62">    template &lt;class T&gt;</a>
+<a name="ln63">    bool from_string(T&amp; t, const std::string&amp; s,</a>
+<a name="ln64">                     std::ios_base&amp; (*f)(std::ios_base&amp;))</a>
+<a name="ln65">    {</a>
+<a name="ln66">      std::istringstream iss(s);</a>
+<a name="ln67">      return !(iss &gt;&gt; f &gt;&gt; t).fail();</a>
+<a name="ln68">    }</a>
+<a name="ln69"> </a>
+<a name="ln70">    // Variables</a>
+<a name="ln71">    enum ReadMode_t {CARTESIAN, ZMATRIX, VARIABLES, CONSTANTS, SKIP};</a>
+<a name="ln72">    ReadMode_t ReadMode;</a>
+<a name="ln73">    char buffer[BUFF_SIZE];</a>
+<a name="ln74">    stringstream errorMsg;</a>
+<a name="ln75"> </a>
+<a name="ln76">  private:</a>
+<a name="ln77">    map&lt;string, double&gt; variables; // map from variable name to value</a>
+<a name="ln78">    vector&lt;OBInternalCoord*&gt; vic; // Holds lists of internal coordinates</a>
+<a name="ln79">    int LabelToAtomicNumber(string label);</a>
+<a name="ln80">  };</a>
+<a name="ln81"> </a>
+<a name="ln82"> </a>
+<a name="ln83">  bool GAMESSUKFormat::ReadGeometry(OBMol &amp;mol, vector&lt;string&gt; &amp;geomList)</a>
+<a name="ln84">  {</a>
+<a name="ln85"> </a>
+<a name="ln86">    /* Read a geometry from a list. Any variables that appear in the geometry need</a>
+<a name="ln87">     * to be in the variables map that should have been populated before this is called.</a>
+<a name="ln88">     */</a>
+<a name="ln89"> </a>
+<a name="ln90">    if (geomList.size()==0){</a>
+<a name="ln91">      obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln92">                            &quot;Problems reading a GAMESS-UK Input file: ReadGeometry got empty list&quot;,</a>
+<a name="ln93">                            obWarning);</a>
+<a name="ln94">      return false;</a>
+<a name="ln95">    }</a>
+<a name="ln96"> </a>
+<a name="ln97">    vector&lt;string&gt; tokens; // list of lines and list of tokens on a line</a>
+<a name="ln98">    string line; // For convenience so we can refer to lines from the iterator as 'line'</a>
+<a name="ln99">    double factor=BOHR_TO_ANGSTROM; // The coordinate conversion factor for handling bohr/angstrom issues</a>
+<a name="ln100"> </a>
+<a name="ln101">    mol.BeginModify();</a>
+<a name="ln102">    // Clear out any existing information</a>
+<a name="ln103">    mol.Clear();</a>
+<a name="ln104">    vic.clear();</a>
+<a name="ln105"> </a>
+<a name="ln106">    ReadMode=SKIP;</a>
+<a name="ln107">    bool ContainsZmatrix=false;</a>
+<a name="ln108">    int zmatLineCount=0;</a>
+<a name="ln109"> </a>
+<a name="ln110">    /*</a>
+<a name="ln111">      cerr &lt;&lt; &quot;ReadGeometry got geometry list: \n&quot;;</a>
+<a name="ln112">      for (vector&lt;string&gt;::iterator i=geomList.begin(); i !=geomList.end(); i++) {</a>
+<a name="ln113"> </a>
+<a name="ln114">      // Alias the line</a>
+<a name="ln115">      line = *i;</a>
+<a name="ln116">      cerr &lt;&lt; &quot;line: &quot; &lt;&lt; line &lt;&lt; endl;</a>
+<a name="ln117">      }</a>
+<a name="ln118">    */</a>
+<a name="ln119"> </a>
+<a name="ln120">    for (vector&lt;string&gt;::iterator i=geomList.begin(); i !=geomList.end(); ++i) {</a>
+<a name="ln121"> </a>
+<a name="ln122">      // Alias the line</a>
+<a name="ln123">      line = *i;</a>
+<a name="ln124"> </a>
+<a name="ln125">      //cerr &lt;&lt; &quot;ReadGeometry line is: &quot; &lt;&lt; line &lt;&lt; endl;</a>
+<a name="ln126"> </a>
+<a name="ln127">      // Check for commas &amp; split with that as the separator if necessary</a>
+<a name="ln128">      if (line.find(',')!=string::npos) {</a>
+<a name="ln129">        tokenize(tokens, line, &quot;,&quot;);</a>
+<a name="ln130">      } else {</a>
+<a name="ln131">        tokenize(tokens, line, &quot; \t\n&quot;);</a>
+<a name="ln132">      }</a>
+<a name="ln133"> </a>
+<a name="ln134"> </a>
+<a name="ln135">      // Set the mode</a>
+<a name="ln136">      if (line.compare(0, 4, &quot;zmat&quot;)==0 || line.compare(0, 4, &quot;inte&quot;)==0) {</a>
+<a name="ln137">        ReadMode=ZMATRIX;</a>
+<a name="ln138">        //cout &lt;&lt; &quot;ZMATRIX mode &quot; &lt;&lt; ReadMode &lt;&lt; endl;</a>
+<a name="ln139">        //cout &lt;&lt; &quot;tokens.size()&quot; &lt;&lt; tokens.size() &lt;&lt; endl;</a>
+<a name="ln140">        if (tokens.size()&gt;1) if (IsUnits(tokens[1])) factor=Rescale(tokens[1]);</a>
+<a name="ln141">        ContainsZmatrix=true;</a>
+<a name="ln142">        vic.push_back(nullptr); // OBMol indexed from 1 -- potential atom index problem</a>
+<a name="ln143">      } else if (line.compare(0, 4, &quot;coor&quot;)==0 || line.compare(0, 4, &quot;cart&quot;)==0 ||line.compare(0, 4, &quot;geom&quot;)==0) {</a>
+<a name="ln144">        ReadMode=CARTESIAN;</a>
+<a name="ln145">        //cout &lt;&lt; &quot;CARTESIAN mode &quot; &lt;&lt; ReadMode &lt;&lt; endl;</a>
+<a name="ln146">        if (tokens.size()&gt;1) if (IsUnits(tokens[1])) factor=Rescale(tokens[1]);</a>
+<a name="ln147"> </a>
+<a name="ln148">        /*</a>
+<a name="ln149">          We need to have read the variables first</a>
+<a name="ln150">          } else if (line.compare(0, 4, &quot;vari&quot;)==0) {</a>
+<a name="ln151">          ReadMode=VARIABLES;</a>
+<a name="ln152">          //cout &lt;&lt; &quot;VARIABLES mode &quot;&lt;&lt; ReadMode &lt;&lt; endl;</a>
+<a name="ln153">          if (tokens.size() == 2) factor=Rescale(tokens[1]);</a>
+<a name="ln154">          //cout &lt;&lt; &quot;Factor now &quot; &lt;&lt; factor &lt;&lt; endl;</a>
+<a name="ln155">          } else if (line.compare(0, 4, &quot;cons&quot;)==0) {</a>
+<a name="ln156">          ReadMode=CONSTANTS;</a>
+<a name="ln157">          //cout &lt;&lt; &quot;CONSTANTS mode\n&quot;;</a>
+<a name="ln158">          if (tokens.size() == 2)</a>
+<a name="ln159">          factor=Rescale(tokens[1]);</a>
+<a name="ln160">          //cout &lt;&lt; &quot;Factor now &quot; &lt;&lt; factor &lt;&lt; endl;</a>
+<a name="ln161">          */</a>
+<a name="ln162"> </a>
+<a name="ln163">      } else if (line.compare(0, 3, &quot;end&quot;)==0) {</a>
+<a name="ln164">        ReadMode=SKIP;</a>
+<a name="ln165">        //cout &lt;&lt; &quot;SKIP mode &quot; &lt;&lt; ReadMode &lt;&lt; endl;</a>
+<a name="ln166">      } else {</a>
+<a name="ln167">        if (ReadMode==SKIP) continue;</a>
+<a name="ln168">        if (ReadMode==ZMATRIX) {</a>
+<a name="ln169">          // Create an atom</a>
+<a name="ln170">          OBAtom *atom = mol.NewAtom();</a>
+<a name="ln171">          // Read the ZMatrix definition line</a>
+<a name="ln172">          if (! ReadLineZmatrix(mol,atom,tokens,factor,&amp;zmatLineCount) )</a>
+<a name="ln173">            {</a>
+<a name="ln174">              errorMsg &lt;&lt; &quot;Problems reading a GAMESS-UK Input file: &quot;</a>
+<a name="ln175">                       &lt;&lt; &quot;Could not read zmat line: &quot; &lt;&lt; line;</a>
+<a name="ln176">              obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() ,</a>
+<a name="ln177">                                    obWarning);</a>
+<a name="ln178">              return (false);</a>
+<a name="ln179">            }</a>
+<a name="ln180"> </a>
+<a name="ln181">        } // End ReadMode ZMATRIX</a>
+<a name="ln182"> </a>
+<a name="ln183">        if (ReadMode==CARTESIAN) {</a>
+<a name="ln184">          OBAtom *atom = mol.NewAtom();</a>
+<a name="ln185">          if (! ReadLineCartesian(atom,tokens,factor) )</a>
+<a name="ln186">            {</a>
+<a name="ln187">              errorMsg &lt;&lt; &quot;Problems reading a GAMESS-UK Input file: &quot;</a>
+<a name="ln188">                       &lt;&lt; &quot;Could not read xyz line: &quot; &lt;&lt; line;</a>
+<a name="ln189">              obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() ,</a>
+<a name="ln190">                                    obWarning);</a>
+<a name="ln191">              return (false);</a>
+<a name="ln192">            }</a>
+<a name="ln193"> </a>
+<a name="ln194">        } // End ReadMode CARTESIAN</a>
+<a name="ln195"> </a>
+<a name="ln196"> </a>
+<a name="ln197">      } // End Test for first chars on line</a>
+<a name="ln198">    } // End loop over lines</a>
+<a name="ln199"> </a>
+<a name="ln200"> </a>
+<a name="ln201">    if (ContainsZmatrix)InternalToCartesian(vic,mol);</a>
+<a name="ln202">    mol.EndModify();</a>
+<a name="ln203"> </a>
+<a name="ln204">    return true;</a>
+<a name="ln205">  } // End Read Geometry</a>
+<a name="ln206"> </a>
+<a name="ln207">  bool GAMESSUKFormat::IsUnits(string text)</a>
+<a name="ln208">  {</a>
+<a name="ln209">    /* See if the supplied string specifies a unit */</a>
+<a name="ln210"> </a>
+<a name="ln211">    if ( text.compare(0, 4, &quot;angs&quot;)==0 ||</a>
+<a name="ln212">         text.compare(0, 4, &quot;bohr&quot;)==0 ||</a>
+<a name="ln213">         text.compare(0, 4, &quot;a.u.&quot;)==0 ||</a>
+<a name="ln214">         text.compare(0, 2, &quot;au&quot;)==0) {</a>
+<a name="ln215">      return true;</a>
+<a name="ln216">    } else {</a>
+<a name="ln217">      return false;</a>
+<a name="ln218">    }</a>
+<a name="ln219">  }</a>
+<a name="ln220"> </a>
+<a name="ln221">  double GAMESSUKFormat::Rescale(string text)</a>
+<a name="ln222">  {</a>
+<a name="ln223">    /* Return the correct scale factor given a string identifying the units */</a>
+<a name="ln224"> </a>
+<a name="ln225">    if (! IsUnits(text) ){</a>
+<a name="ln226">      errorMsg &lt;&lt; &quot;Problems reading GUK input - bad scale factor: &quot; &lt;&lt; text;</a>
+<a name="ln227">      obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obWarning);</a>
+<a name="ln228">      return -1.0;</a>
+<a name="ln229">    }</a>
+<a name="ln230"> </a>
+<a name="ln231">    if (text.compare(0, 4, &quot;angs&quot;)==0) {</a>
+<a name="ln232">      return 1.0;</a>
+<a name="ln233">    } else if (text.compare(0, 4, &quot;bohr&quot;)==0||text.compare(0, 4, &quot;a.u.&quot;)==0</a>
+<a name="ln234">               ||text.compare(0, 2, &quot;au&quot;)==0) {</a>
+<a name="ln235">      return BOHR_TO_ANGSTROM;</a>
+<a name="ln236">    } else {</a>
+<a name="ln237">      return -1.0;</a>
+<a name="ln238">    }</a>
+<a name="ln239">  }</a>
+<a name="ln240"> </a>
+<a name="ln241">  int GAMESSUKFormat::LabelToAtomicNumber(string label)</a>
+<a name="ln242">  {</a>
+<a name="ln243">    /*</a>
+<a name="ln244">     * Given a string with the label for an atom return the atomic number</a>
+<a name="ln245">     * As we are using the GetAtomicNum function case is not important</a>
+<a name="ln246">     */</a>
+<a name="ln247"> </a>
+<a name="ln248">    // See if the first 2 characters give us a valid atomic #</a>
+<a name="ln249">    int Z=OBElements::GetAtomicNum(label.substr(0,2).c_str());</a>
+<a name="ln250"> </a>
+<a name="ln251">    // If not try the first one</a>
+<a name="ln252">    if (Z==0) Z=OBElements::GetAtomicNum(label.substr(0,1).c_str());</a>
+<a name="ln253"> </a>
+<a name="ln254">    if (Z==0){</a>
+<a name="ln255">      // Check if it's an x (dummy) atom</a>
+<a name="ln256">      if(  label.substr(0,1) != &quot;x&quot; &amp;&amp; label.substr(0,1) != &quot;X&quot; )</a>
+<a name="ln257">        {</a>
+<a name="ln258">          // Houston...</a>
+<a name="ln259">          errorMsg &lt;&lt; &quot;LabelToAtomicNumber got bad Label: &quot; &lt;&lt; label &lt;&lt; std::endl;</a>
+<a name="ln260">          obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obWarning);</a>
+<a name="ln261">        }</a>
+<a name="ln262">    }</a>
+<a name="ln263">    return Z;</a>
+<a name="ln264">  }</a>
+<a name="ln265"> </a>
+<a name="ln266">  bool GAMESSUKFormat::ReadLineCartesian(OBAtom *atom, vector&lt;string&gt; &amp;tokens, double factor)</a>
+<a name="ln267">  {</a>
+<a name="ln268"> </a>
+<a name="ln269">    /*  Read a line defining the Cartesian coordinates for an atom</a>
+<a name="ln270">     * This assumes the line is formatted in GAMESS-UK input style as:</a>
+<a name="ln271">     * x y z AtomicNumber Label</a>
+<a name="ln272">     */</a>
+<a name="ln273">    </a>
+<a name="ln274">    bool ok=false;</a>
+<a name="ln275">    int Z;</a>
+<a name="ln276">    double x,y,z;</a>
+<a name="ln277"> </a>
+<a name="ln278">    // 4th field is the atomic number</a>
+<a name="ln279">    ok = from_string&lt;int&gt;(Z, tokens.at(3), std::dec);</a>
+<a name="ln280">    atom-&gt;SetAtomicNum(Z);</a>
+<a name="ln281"> </a>
+<a name="ln282">    // Read the atom coordinates</a>
+<a name="ln283">    ok = from_string&lt;double&gt;(x, tokens.at(0), std::dec);</a>
+<a name="ln284">    if ( ! ok)</a>
+<a name="ln285">      {</a>
+<a name="ln286">        // Can't convert to double so see if it's in the variables</a>
+<a name="ln287">        if (variables.find(tokens[0])==variables.end()) return false;</a>
+<a name="ln288">        x = variables[tokens[0]];</a>
+<a name="ln289">      }</a>
+<a name="ln290"> </a>
+<a name="ln291">    ok = from_string&lt;double&gt;(y, tokens.at(1), std::dec);</a>
+<a name="ln292">    if ( ! ok)</a>
+<a name="ln293">      {</a>
+<a name="ln294">        // Can't convert to double so see if it's in the variables</a>
+<a name="ln295">        if (variables.find(tokens[1])==variables.end()) return false;</a>
+<a name="ln296">        y = variables[tokens[1]];</a>
+<a name="ln297">      }</a>
+<a name="ln298"> </a>
+<a name="ln299">    ok = from_string&lt;double&gt;(z, tokens.at(2), std::dec);</a>
+<a name="ln300">    if ( ! ok)</a>
+<a name="ln301">      {</a>
+<a name="ln302">        // Can't convert to double so see if it's in the variables</a>
+<a name="ln303">        if (variables.find(tokens[2])==variables.end()) return false;</a>
+<a name="ln304">        z = variables[tokens[2]];</a>
+<a name="ln305">      }</a>
+<a name="ln306"> </a>
+<a name="ln307">    // Convert to Angstroms</a>
+<a name="ln308">    x=x*factor;</a>
+<a name="ln309">    y=y*factor;</a>
+<a name="ln310">    z=z*factor;</a>
+<a name="ln311">    atom-&gt;SetVector(x, y, z); //set coordinates</a>
+<a name="ln312">    return true;</a>
+<a name="ln313">  }</a>
+<a name="ln314"> </a>
+<a name="ln315">  bool GAMESSUKFormat::ReadLineZmatrix(OBMol &amp;mol, OBAtom *atom, vector&lt;string&gt; &amp;tokens, double factor, int *zmatLineCount)</a>
+<a name="ln316">  {</a>
+<a name="ln317">    /*</a>
+<a name="ln318">     * Read a line from a GAMESS-UK input defining an atom in Inernal Coordinates.</a>
+<a name="ln319">     * We create a list of OBInternalCoords that match the list of atoms in the molecule</a>
+<a name="ln320">     * that are defined using internal coordinates</a>
+<a name="ln321">     */</a>
+<a name="ln322"> </a>
+<a name="ln323">    double var;</a>
+<a name="ln324">    bool ok=false;</a>
+<a name="ln325">    int n;</a>
+<a name="ln326"> </a>
+<a name="ln327">    vic.push_back(new OBInternalCoord);</a>
+<a name="ln328">    atom-&gt;SetAtomicNum(LabelToAtomicNumber(tokens[0]));</a>
+<a name="ln329"> </a>
+<a name="ln330">    switch (*zmatLineCount) {</a>
+<a name="ln331">    case 0:</a>
+<a name="ln332">      break;</a>
+<a name="ln333"> </a>
+<a name="ln334">    case 1:</a>
+<a name="ln335">      if (tokens.size() &lt; 3) {return false;}</a>
+<a name="ln336"> </a>
+<a name="ln337">      // Specify the atom that defines the distance to this one</a>
+<a name="ln338">      ok = from_string&lt;int&gt;(n, tokens.at(1), std::dec);</a>
+<a name="ln339">      vic[*zmatLineCount]-&gt;_a = mol.GetAtom(n);</a>
+<a name="ln340"> </a>
+<a name="ln341">      // Get the distance</a>
+<a name="ln342">      ok = from_string&lt;double&gt;(var, tokens.at(2), std::dec);</a>
+<a name="ln343">      if ( !ok )</a>
+<a name="ln344">        {</a>
+<a name="ln345">          // Can't convert to double so see if it's in the variables</a>
+<a name="ln346">          if (variables.find(tokens[2])==variables.end()) return false;</a>
+<a name="ln347">          var = variables[tokens[2]];</a>
+<a name="ln348">        }</a>
+<a name="ln349">      vic[*zmatLineCount]-&gt;_dst = var;</a>
+<a name="ln350">      break;</a>
+<a name="ln351"> </a>
+<a name="ln352">    case 2:</a>
+<a name="ln353">      if (tokens.size() &lt; 5) {return false;}</a>
+<a name="ln354"> </a>
+<a name="ln355">      // Specify the atom that defines the distance to this one</a>
+<a name="ln356">      ok = from_string&lt;int&gt;(n, tokens.at(1), std::dec);</a>
+<a name="ln357">      vic[*zmatLineCount]-&gt;_a = mol.GetAtom(n);</a>
+<a name="ln358"> </a>
+<a name="ln359">      // Get the distance</a>
+<a name="ln360">      ok = from_string&lt;double&gt;(var, tokens.at(2), std::dec);</a>
+<a name="ln361">      if ( !ok )</a>
+<a name="ln362">        {</a>
+<a name="ln363">          // Can't convert to double so see if it's in the variables</a>
+<a name="ln364">          if (variables.find(tokens[2])==variables.end()) return false;</a>
+<a name="ln365">          var = variables[tokens[2]];</a>
+<a name="ln366">        }</a>
+<a name="ln367">      vic[*zmatLineCount]-&gt;_dst = var;</a>
+<a name="ln368"> </a>
+<a name="ln369">      // Specify atom defining angle</a>
+<a name="ln370">      ok = from_string&lt;int&gt;(n, tokens.at(3), std::dec);</a>
+<a name="ln371">      vic[*zmatLineCount]-&gt;_b = mol.GetAtom(n);</a>
+<a name="ln372">      // Get the angle</a>
+<a name="ln373">      ok = from_string&lt;double&gt;(var, tokens.at(4), std::dec);</a>
+<a name="ln374">      if ( !ok )</a>
+<a name="ln375">        {</a>
+<a name="ln376">          // Can't convert to double so see if it's in the variables</a>
+<a name="ln377">          if (variables.find(tokens[4])==variables.end()) return false;</a>
+<a name="ln378">          var = variables[tokens[4]];</a>
+<a name="ln379">        }</a>
+<a name="ln380">      vic[*zmatLineCount]-&gt;_ang = var;</a>
+<a name="ln381">      break;</a>
+<a name="ln382"> </a>
+<a name="ln383">    default:</a>
+<a name="ln384">      if (tokens.size() &lt; 7) {return false;}</a>
+<a name="ln385"> </a>
+<a name="ln386">      ok = from_string&lt;int&gt;(n, tokens.at(1), std::dec);</a>
+<a name="ln387">      vic[*zmatLineCount]-&gt;_a = mol.GetAtom(n);</a>
+<a name="ln388">      // Get the distance</a>
+<a name="ln389">      ok = from_string&lt;double&gt;(var, tokens.at(2), std::dec);</a>
+<a name="ln390">      if ( !ok )</a>
+<a name="ln391">        {</a>
+<a name="ln392">          // Can't convert to double so see if it's in the variables</a>
+<a name="ln393">          if (variables.find(tokens[2])==variables.end()) return false;</a>
+<a name="ln394">          var = variables[tokens[2]];</a>
+<a name="ln395">        }</a>
+<a name="ln396">      vic[*zmatLineCount]-&gt;_dst = var;</a>
+<a name="ln397"> </a>
+<a name="ln398">      ok = from_string&lt;int&gt;(n, tokens.at(3), std::dec);</a>
+<a name="ln399">      vic[*zmatLineCount]-&gt;_b = mol.GetAtom(n);</a>
+<a name="ln400">      // Get the angle</a>
+<a name="ln401">      ok = from_string&lt;double&gt;(var, tokens.at(4), std::dec);</a>
+<a name="ln402">      if ( !ok )</a>
+<a name="ln403">        {</a>
+<a name="ln404">          // Can't convert to double so see if it's in the variables</a>
+<a name="ln405">          if (variables.find(tokens[4])==variables.end()) return false;</a>
+<a name="ln406">          var = variables[tokens[4]];</a>
+<a name="ln407">        }</a>
+<a name="ln408">      vic[*zmatLineCount]-&gt;_ang = var;</a>
+<a name="ln409">      </a>
+<a name="ln410">      ok = from_string&lt;int&gt;(n, tokens.at(5), std::dec);</a>
+<a name="ln411">      vic[*zmatLineCount]-&gt;_c = mol.GetAtom(n);</a>
+<a name="ln412">      // Get the torsion angle</a>
+<a name="ln413">      ok = from_string&lt;double&gt;(var, tokens.at(6), std::dec);</a>
+<a name="ln414">      if ( !ok )</a>
+<a name="ln415">        {</a>
+<a name="ln416">          // Can't convert to double so see if it's in the variables</a>
+<a name="ln417">          if (variables.find(tokens[6])==variables.end()) return false;</a>
+<a name="ln418">          var = variables[tokens[6]];</a>
+<a name="ln419">        }</a>
+<a name="ln420">      vic[*zmatLineCount]-&gt;_tor = var;</a>
+<a name="ln421">    }</a>
+<a name="ln422"> </a>
+<a name="ln423">    (*zmatLineCount)++;</a>
+<a name="ln424">    return true;</a>
+<a name="ln425">  }</a>
+<a name="ln426"> </a>
+<a name="ln427">  bool GAMESSUKFormat::ReadVariables(istream &amp;ifs, double factor, string stopstr)</a>
+<a name="ln428">  {</a>
+<a name="ln429">    /*</a>
+<a name="ln430">     * This takes an input stream that is positioned where the list of variables</a>
+<a name="ln431">     * starts and the reads the variables into the supplied map</a>
+<a name="ln432">     *</a>
+<a name="ln433">     * This is different to ReadGeometry (which takes a vector of strings as input) because</a>
+<a name="ln434">     * currently the variables always need to be read after the geometry, so we need to save the</a>
+<a name="ln435">     * geometry and then read the variables. However this means that we can parse the variables</a>
+<a name="ln436">     * directly into a map and don't need to keep a copy of the specifcation as strings.</a>
+<a name="ln437">     *</a>
+<a name="ln438">     * stopstr is a string that defines when we stop reading</a>
+<a name="ln439">     */</a>
+<a name="ln440"> </a>
+<a name="ln441">    string line;</a>
+<a name="ln442">    vector&lt;string&gt; tokens;</a>
+<a name="ln443">    bool ok=false;</a>
+<a name="ln444">    double var;</a>
+<a name="ln445"> </a>
+<a name="ln446">    // Now read in all the varibles</a>
+<a name="ln447">    while (ifs.good() &amp;&amp; ifs.getline(buffer, BUFF_SIZE)) {</a>
+<a name="ln448"> </a>
+<a name="ln449">      // Skip commnents</a>
+<a name="ln450">      if (EQn(buffer, &quot;#&quot;, 1) || EQn(buffer, &quot;?&quot;, 1))</a>
+<a name="ln451">        continue;</a>
+<a name="ln452"> </a>
+<a name="ln453">      // Copy line to a C++ string and convert to lower case</a>
+<a name="ln454">      // &amp; remove leading and trailing spaces</a>
+<a name="ln455">      line = buffer;</a>
+<a name="ln456">      // transform(method.begin(), method.end(), method.begin(), ::tolower);</a>
+<a name="ln457">      ToLower(line);</a>
+<a name="ln458">      Trim(line);</a>
+<a name="ln459"> </a>
+<a name="ln460">      // Check for end of variables</a>
+<a name="ln461">      if (line.length()==0 &amp;&amp; stopstr.length()==0) break;</a>
+<a name="ln462">      if (stopstr.length()&gt;0 &amp;&amp; line.compare(0, stopstr.length(), stopstr)==0) break;</a>
+<a name="ln463"> </a>
+<a name="ln464">      // Check for commas &amp; split with that as the separator if necessary</a>
+<a name="ln465">      if (line.find(',')!=string::npos) {</a>
+<a name="ln466">        tokenize(tokens, line, &quot;,&quot;);</a>
+<a name="ln467">      } else {</a>
+<a name="ln468">        tokenize(tokens, line, &quot; \t\n&quot;);</a>
+<a name="ln469">      }</a>
+<a name="ln470"> </a>
+<a name="ln471">      ok = from_string&lt;double&gt;(var, tokens.at(3), std::dec);</a>
+<a name="ln472">      if ( !ok )</a>
+<a name="ln473">        {</a>
+<a name="ln474">          errorMsg &lt;&lt; &quot;Problems reading a GAMESS-UK  file: &quot;</a>
+<a name="ln475">                   &lt;&lt; &quot;Could not read variable line: &quot; &lt;&lt; line;</a>
+<a name="ln476">          obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() , obWarning);</a>
+<a name="ln477">          return false;</a>
+<a name="ln478">        }</a>
+<a name="ln479">      // Add to list of variables</a>
+<a name="ln480">      variables[tokens[0]]=var*factor;</a>
+<a name="ln481">    }</a>
+<a name="ln482"> </a>
+<a name="ln483">    /*</a>
+<a name="ln484">      cerr &lt;&lt; &quot;Got list of variables: &quot; &lt;&lt; endl;</a>
+<a name="ln485">      for (map&lt;string,double&gt;::iterator i=variables.begin(); i</a>
+<a name="ln486">      != variables.end(); i++) {</a>
+<a name="ln487">      cerr &lt;&lt; &quot;Name: &quot; &lt;&lt; i-&gt;first &lt;&lt; &quot; Value: &quot; &lt;&lt; i-&gt;second &lt;&lt; endl;</a>
+<a name="ln488">      }</a>
+<a name="ln489">    */</a>
+<a name="ln490"> </a>
+<a name="ln491">    return true;</a>
+<a name="ln492"> </a>
+<a name="ln493">  } // end Read Variables</a>
+<a name="ln494"> </a>
+<a name="ln495"> </a>
+<a name="ln496">  class GAMESSUKInputFormat : public OBMoleculeFormat, public GAMESSUKFormat</a>
+<a name="ln497">  {</a>
+<a name="ln498">  public:</a>
+<a name="ln499">    //Register this format type ID</a>
+<a name="ln500">    GAMESSUKInputFormat()</a>
+<a name="ln501">    {</a>
+<a name="ln502">      OBConversion::RegisterFormat(&quot;gukin&quot;,this, &quot;chemical/x-gamess-input&quot;);</a>
+<a name="ln503">      // Command-line keywords</a>
+<a name="ln504">      //OBConversion::RegisterOptionParam(&quot;k&quot;, NULL, 1, OBConversion::OUTOPTIONS);</a>
+<a name="ln505">      // Command-line keyword file</a>
+<a name="ln506">      //OBConversion::RegisterOptionParam(&quot;f&quot;, NULL, 1, OBConversion::OUTOPTIONS);</a>
+<a name="ln507">    }</a>
+<a name="ln508"> </a>
+<a name="ln509"> </a>
+<a name="ln510">    virtual const char* Description() //required</a>
+<a name="ln511">    {</a>
+<a name="ln512">      return</a>
+<a name="ln513">        &quot;GAMESS-UK Input\n&quot;;</a>
+<a name="ln514">    };</a>
+<a name="ln515"> </a>
+<a name="ln516">    virtual const char* SpecificationURL()</a>
+<a name="ln517">    {return &quot;http://www.cfs.dl.ac.uk&quot;;}; //optional</a>
+<a name="ln518"> </a>
+<a name="ln519">    virtual const char* GetMIMEType()</a>
+<a name="ln520">    { return &quot;chemical/x-gamessuk-input&quot;; };</a>
+<a name="ln521"> </a>
+<a name="ln522">    //Flags() can return be any the following combined by | or be omitted if none apply</a>
+<a name="ln523">    // NOTREADABLE  READONEONLY  NOTWRITABLE  WRITEONEONLY</a>
+<a name="ln524">    virtual unsigned int Flags()</a>
+<a name="ln525">    {</a>
+<a name="ln526">      return READONEONLY; // | NOTREADABLE;</a>
+<a name="ln527">    };</a>
+<a name="ln528"> </a>
+<a name="ln529">    ////////////////////////////////////////////////////</a>
+<a name="ln530">    /// The &quot;API&quot; interface functions</a>
+<a name="ln531">    virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln532">    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln533">  };</a>
+<a name="ln534"> </a>
+<a name="ln535">  //Make an instance of the format class</a>
+<a name="ln536">  GAMESSUKInputFormat theGAMESSUKInputFormat;</a>
+<a name="ln537"> </a>
+<a name="ln538"> </a>
+<a name="ln539">  bool GAMESSUKInputFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln540"> </a>
+<a name="ln541">  {</a>
+<a name="ln542">    /*</a>
+<a name="ln543">     * Stuff to think about:</a>
+<a name="ln544">     * - At outset check whether we are in zmatrix, cartesian or nw-chem format</a>
+<a name="ln545">     *   (we currently only suppot homogeneous formats - not mixed).</a>
+<a name="ln546">     *</a>
+<a name="ln547">     * For each line need to check:</a>
+<a name="ln548">     * - Is this a comment (?,#)</a>
+<a name="ln549">     * - Are the tokens separated by commas, if so use tokenize to split at commas</a>
+<a name="ln550">     * - Is there an 'end' token on the line</a>
+<a name="ln551">     *</a>
+<a name="ln552">     * For each line we want to check that we haven't hit a change from c to zm or vv</a>
+<a name="ln553">     *</a>
+<a name="ln554">     */</a>
+<a name="ln555"> </a>
+<a name="ln556">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln557">    if (pmol == nullptr)</a>
+<a name="ln558">      return false;</a>
+<a name="ln559"> </a>
+<a name="ln560">    //Define some references so we can use the old parameter names</a>
+<a name="ln561">    istream&amp; ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln562">    OBMol &amp;mol = *pmol;</a>
+<a name="ln563"> </a>
+<a name="ln564">    // Get a default title as the filename</a>
+<a name="ln565">    const char* title = pConv-&gt;GetTitle();</a>
+<a name="ln566">    mol.BeginModify();</a>
+<a name="ln567">    mol.SetTitle(title);</a>
+<a name="ln568">    mol.EndModify();</a>
+<a name="ln569"> </a>
+<a name="ln570">    vector&lt;string&gt; geomList, tokens; // list of lines and list of tokens on a line</a>
+<a name="ln571">    string line; // For convenience so we can refer to lines from the iterator as 'line'</a>
+<a name="ln572">    ReadMode_t ReadMode=SKIP;</a>
+<a name="ln573">    double factor=BOHR_TO_ANGSTROM;</a>
+<a name="ln574"> </a>
+<a name="ln575">    // Read File and copy geometry specification into geomList</a>
+<a name="ln576">    while (ifs.good() &amp;&amp; ifs.getline(buffer, BUFF_SIZE)) {</a>
+<a name="ln577"> </a>
+<a name="ln578">      // Skip commnents</a>
+<a name="ln579">      if (EQn(buffer, &quot;#&quot;, 1) || EQn(buffer, &quot;?&quot;, 1)) continue;</a>
+<a name="ln580"> </a>
+<a name="ln581">      // Copy line to a C++ string and convert to lower case</a>
+<a name="ln582">      // &amp; remove leading and trailing spaces</a>
+<a name="ln583">      line = buffer;</a>
+<a name="ln584">      // transform(method.begin(), method.end(), method.begin(), ::tolower);</a>
+<a name="ln585">      ToLower(line);</a>
+<a name="ln586">      Trim(line);</a>
+<a name="ln587"> </a>
+<a name="ln588">      // Start of coordinate specifiation</a>
+<a name="ln589">      if (line.compare(0, 4, &quot;zmat&quot;)==0)</a>
+<a name="ln590">	{</a>
+<a name="ln591">	  ReadMode=ZMATRIX;</a>
+<a name="ln592">	  geomList.push_back(line);</a>
+<a name="ln593">	  continue;</a>
+<a name="ln594">	}</a>
+<a name="ln595">      else if (line.compare(0, 4, &quot;geom&quot;)==0)</a>
+<a name="ln596">	{</a>
+<a name="ln597">	  ReadMode=CARTESIAN;</a>
+<a name="ln598">	  geomList.push_back(line);</a>
+<a name="ln599">	  continue;</a>
+<a name="ln600">	}</a>
+<a name="ln601"> </a>
+<a name="ln602">      // Reading the coordinate specification into the list</a>
+<a name="ln603">      if (ReadMode==ZMATRIX || ReadMode==CARTESIAN)</a>
+<a name="ln604">	{</a>
+<a name="ln605"> </a>
+<a name="ln606">	  // Variables specification - process directly from filestream</a>
+<a name="ln607">	  // and then remove from the geometry specification</a>
+<a name="ln608">	  if (line.compare(0, 4, &quot;vari&quot;)==0 || line.compare(0, 4, &quot;const&quot;)==0)</a>
+<a name="ln609">	    {</a>
+<a name="ln610"> </a>
+<a name="ln611">	      // Check for commas &amp; split with that as the separator if necessary</a>
+<a name="ln612">	      if (line.find(',')!=string::npos)</a>
+<a name="ln613">		tokenize(tokens, line, &quot;,&quot;);</a>
+<a name="ln614">	      else</a>
+<a name="ln615">		tokenize(tokens, line, &quot; \t\n&quot;);</a>
+<a name="ln616"> </a>
+<a name="ln617">	      // See if we need to rescale</a>
+<a name="ln618">	      if (IsUnits(tokens[1])) factor=Rescale(tokens[1]);</a>
+<a name="ln619"> </a>
+<a name="ln620">	      if (! ReadVariables(ifs, factor, &quot;end&quot;)) return false;</a>
+<a name="ln621"> </a>
+<a name="ln622">	      ReadMode=SKIP;</a>
+<a name="ln623">	      geomList.push_back(&quot;end\n&quot;);</a>
+<a name="ln624">	      continue;</a>
+<a name="ln625">	    }</a>
+<a name="ln626"> </a>
+<a name="ln627">	  if (line.compare(0, 3, &quot;end&quot;)==0) ReadMode=SKIP;</a>
+<a name="ln628"> </a>
+<a name="ln629">	  geomList.push_back(line);</a>
+<a name="ln630">	}</a>
+<a name="ln631"> </a>
+<a name="ln632">    }// End while reading loop</a>
+<a name="ln633"> </a>
+<a name="ln634">    // Now go and process the coordinate specification if we got any</a>
+<a name="ln635">    bool ok = ReadGeometry(mol, geomList);</a>
+<a name="ln636"> </a>
+<a name="ln637">    if (mol.NumAtoms() == 0) { // e.g., if we're at the end of a file PR#1737209</a>
+<a name="ln638">      mol.EndModify();</a>
+<a name="ln639">      return false;</a>
+<a name="ln640">    } else {</a>
+<a name="ln641">      if (!pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln642">        mol.ConnectTheDots();</a>
+<a name="ln643">      if (!pConv-&gt;IsOption(&quot;s&quot;,OBConversion::INOPTIONS) &amp;&amp; !pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln644">        mol.PerceiveBondOrders();</a>
+<a name="ln645">      return ok;</a>
+<a name="ln646">    }</a>
+<a name="ln647"> </a>
+<a name="ln648">  } // End ReadMolecule</a>
+<a name="ln649"> </a>
+<a name="ln650">  ////////////////////////////////////////////////////////////////</a>
+<a name="ln651"> </a>
+<a name="ln652">  bool GAMESSUKInputFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln653">  {</a>
+<a name="ln654">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln655">    if (pmol == nullptr)</a>
+<a name="ln656">      return false;</a>
+<a name="ln657"> </a>
+<a name="ln658">    //Define some references so we can use the old parameter names</a>
+<a name="ln659">    ostream &amp;ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln660">    OBMol &amp;mol = *pmol;</a>
+<a name="ln661"> </a>
+<a name="ln662">    char buffer[BUFF_SIZE];</a>
+<a name="ln663"> </a>
+<a name="ln664">    ofs &lt;&lt; &quot;title&quot; &lt;&lt; endl;</a>
+<a name="ln665">    ofs &lt;&lt; mol.GetTitle() &lt;&lt; endl &lt;&lt; endl;</a>
+<a name="ln666"> </a>
+<a name="ln667">    ofs &lt;&lt; &quot;#&quot; &lt;&lt; endl;</a>
+<a name="ln668">    ofs &lt;&lt; &quot;# NB: Class I directives (e.g. memory, multiplicity, charge etc) go here&quot; &lt;&lt; endl;</a>
+<a name="ln669">    ofs &lt;&lt; &quot;#&quot; &lt;&lt; endl;</a>
+<a name="ln670">    ofs &lt;&lt; &quot;# For more information see: http://www.cfs.dl.ac.uk/docs/index.shtml&quot; &lt;&lt; endl;</a>
+<a name="ln671">    ofs &lt;&lt; &quot;#&quot; &lt;&lt; endl;</a>
+<a name="ln672">    ofs &lt;&lt; endl;</a>
+<a name="ln673"> </a>
+<a name="ln674">    ofs &lt;&lt; &quot;geometry angstrom&quot; &lt;&lt; endl;</a>
+<a name="ln675">    FOR_ATOMS_OF_MOL(atom, mol)</a>
+<a name="ln676">      {</a>
+<a name="ln677">        snprintf(buffer, BUFF_SIZE, &quot;%15.8f %15.8f %15.8f %3d %3s\n&quot;,</a>
+<a name="ln678">		 atom-&gt;GetX(),</a>
+<a name="ln679">		 atom-&gt;GetY(),</a>
+<a name="ln680">		 atom-&gt;GetZ(),</a>
+<a name="ln681">		 atom-&gt;GetAtomicNum(),</a>
+<a name="ln682">		 OBElements::GetSymbol(atom-&gt;GetAtomicNum())</a>
+<a name="ln683">		 );</a>
+<a name="ln684">	ofs &lt;&lt; buffer;</a>
+<a name="ln685">      }</a>
+<a name="ln686">    ofs &lt;&lt; &quot;end&quot; &lt;&lt; endl &lt;&lt; endl;</a>
+<a name="ln687"> </a>
+<a name="ln688">    ofs &lt;&lt; endl;</a>
+<a name="ln689">    ofs &lt;&lt; &quot;basis 6-31G&quot; &lt;&lt; endl;</a>
+<a name="ln690">    ofs &lt;&lt; endl;</a>
+<a name="ln691"> </a>
+<a name="ln692">    ofs &lt;&lt; &quot;#&quot; &lt;&lt; endl;</a>
+<a name="ln693">    ofs &lt;&lt; &quot;# NB: Class II directives go here&quot; &lt;&lt; endl;</a>
+<a name="ln694">    ofs &lt;&lt; &quot;#&quot; &lt;&lt; endl;</a>
+<a name="ln695">    ofs &lt;&lt; &quot;# To perform a dft calculation with b3lyp and medium quadrature uncomment the below&quot; &lt;&lt; endl;</a>
+<a name="ln696">    ofs &lt;&lt; &quot;# dft b3lyp&quot; &lt;&lt; endl;</a>
+<a name="ln697">    ofs &lt;&lt; &quot;# dft quadrature medium&quot; &lt;&lt; endl;</a>
+<a name="ln698">    ofs &lt;&lt; &quot;#&quot; &lt;&lt; endl;</a>
+<a name="ln699">    ofs &lt;&lt; endl;</a>
+<a name="ln700"> </a>
+<a name="ln701">    ofs &lt;&lt; &quot;runtype scf&quot; &lt;&lt; endl;</a>
+<a name="ln702">    ofs &lt;&lt; endl;</a>
+<a name="ln703">    ofs &lt;&lt; &quot;enter&quot; &lt;&lt; endl;</a>
+<a name="ln704"> </a>
+<a name="ln705">    return(true);</a>
+<a name="ln706">  } //End WriteMolecule</a>
+<a name="ln707"> </a>
+<a name="ln708"> </a>
+<a name="ln709">  class GAMESSUKOutputFormat : public OBMoleculeFormat, public GAMESSUKFormat</a>
+<a name="ln710">  {</a>
+<a name="ln711">  public:</a>
+<a name="ln712">    //Register this format type ID</a>
+<a name="ln713">    GAMESSUKOutputFormat()</a>
+<a name="ln714">    { OBConversion::RegisterFormat(&quot;gukout&quot;,this, &quot;chemical/x-gamess-output&quot;); }</a>
+<a name="ln715"> </a>
+<a name="ln716">    virtual const char* Description() //required</a>
+<a name="ln717">    { return &quot;GAMESS-UK Output\n&quot;; };</a>
+<a name="ln718"> </a>
+<a name="ln719">    virtual const char* SpecificationURL()</a>
+<a name="ln720">    {return &quot;http://www.cfs.dl.ac.uk&quot;;}; //optional</a>
+<a name="ln721"> </a>
+<a name="ln722">    virtual const char* GetMIMEType()</a>
+<a name="ln723">    { return &quot;chemical/x-gamessuk-output&quot;; };</a>
+<a name="ln724"> </a>
+<a name="ln725">    ////////////////////////////////////////////////////</a>
+<a name="ln726">    /// The &quot;API&quot; interface functions</a>
+<a name="ln727">    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln728"> </a>
+<a name="ln729">  private:</a>
+<a name="ln730">    enum RunType_t { UNKNOWN, SINGLEPOINT, OPTXYZ, OPTZMAT, SADDLE, FREQUENCIES };</a>
+<a name="ln731">    vector&lt;string&gt; tokens, geomList; // list of lines and list of tokens on a line</a>
+<a name="ln732">    string line; // For convenience so we can refer to lines from the iterator as 'line'</a>
+<a name="ln733">    bool ReadInputZmatrix( OBMol &amp;mol, std::istream &amp;ifs );</a>
+<a name="ln734">    bool ReadInitialCartesian( OBMol &amp;mol, std::istream &amp;ifs );</a>
+<a name="ln735">    bool ReadOptGeomXyz1( OBMol &amp;mol, std::istream &amp;ifs );</a>
+<a name="ln736">    bool ReadOptGeomXyz2( OBMol &amp;mol, std::istream &amp;ifs );</a>
+<a name="ln737">    bool ReadNormalModesHessian( OBMol &amp;mol, std::istream &amp;ifs);</a>
+<a name="ln738">    bool ReadNormalModesForce( OBMol &amp;mol, std::istream &amp;ifs);</a>
+<a name="ln739">  };</a>
+<a name="ln740"> </a>
+<a name="ln741">  //Make an instance of the format class</a>
+<a name="ln742">  GAMESSUKOutputFormat theGAMESSUKOutputFormat;</a>
+<a name="ln743"> </a>
+<a name="ln744">  bool GAMESSUKOutputFormat::ReadInputZmatrix( OBMol &amp;mol, std::istream &amp;ifs )</a>
+<a name="ln745">  {</a>
+<a name="ln746">    /* The zmatrix entered by the user</a>
+<a name="ln747">     * REM:  need to add stuff for &quot;automatic z-matrix generation&quot; as we currently</a>
+<a name="ln748">     * ignore the zmatrix &amp; just read the cartesian coordinates</a>
+<a name="ln749">     */</a>
+<a name="ln750">    geomList.clear();</a>
+<a name="ln751">    </a>
+<a name="ln752">    // skip 2 lines</a>
+<a name="ln753">    ifs.getline(buffer, BUFF_SIZE) &amp;&amp; ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln754">    </a>
+<a name="ln755">    // Stick a header line first</a>
+<a name="ln756">    geomList.push_back(&quot;zmatrix bohr&quot;);</a>
+<a name="ln757">    </a>
+<a name="ln758">    // Read zmatrix into list until blank line</a>
+<a name="ln759">    while (ifs.good() &amp;&amp; ifs.getline(buffer, BUFF_SIZE) &amp;&amp; strlen(buffer) != 0)</a>
+<a name="ln760">      {</a>
+<a name="ln761">        line = buffer;</a>
+<a name="ln762">        // transform(method.begin(), method.end(), method.begin(), ::tolower);</a>
+<a name="ln763">        ToLower(line);</a>
+<a name="ln764">        Trim(line);</a>
+<a name="ln765">        geomList.push_back(line);</a>
+<a name="ln766">      }</a>
+<a name="ln767">      </a>
+<a name="ln768">    // Skip 2 lines</a>
+<a name="ln769">    ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln770">    ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln771">      </a>
+<a name="ln772">    // Check if line is variables line</a>
+<a name="ln773">    if (strstr(buffer,&quot;name            input  type     hessian         minima&quot;) != nullptr)</a>
+<a name="ln774">      {</a>
+<a name="ln775">        // Skip additional line to be where variables are printed</a>
+<a name="ln776">        ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln777">        // Read in the variables till we hit blank line</a>
+<a name="ln778">        if (! ReadVariables(ifs, 1.0, &quot;&quot;)) return false;</a>
+<a name="ln779">      }</a>
+<a name="ln780">      </a>
+<a name="ln781">    // Now go and process the geometry</a>
+<a name="ln782">    return ReadGeometry(mol, geomList);</a>
+<a name="ln783">  } // ReadInputZmatrix</a>
+<a name="ln784"> </a>
+<a name="ln785">  bool GAMESSUKOutputFormat::ReadInitialCartesian( OBMol &amp;mol, std::istream &amp;ifs )</a>
+<a name="ln786">  {</a>
+<a name="ln787">    bool ok=false;</a>
+<a name="ln788">    double x,y,z;</a>
+<a name="ln789">    int n;</a>
+<a name="ln790"> </a>
+<a name="ln791">    // Skip 3 lines</a>
+<a name="ln792">    ifs.getline(buffer, BUFF_SIZE) &amp;&amp;</a>
+<a name="ln793">      ifs.getline(buffer, BUFF_SIZE) &amp;&amp;</a>
+<a name="ln794">      ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln795"> </a>
+<a name="ln796">    // Create regex for the coords</a>
+<a name="ln797">    //                     ------label--------   -------charge-------- &lt; seems enough for a match</a>
+<a name="ln798">    string pattern(&quot; *\\* *[a-zA-Z]{1,2}[0-9]* *[0-9]{1,3}\\.[0-9]{1}&quot;);</a>
+<a name="ln799">    bool iok;</a>
+<a name="ln800">#ifdef _MSC_VER</a>
+<a name="ln801">    std::tr1::regex myregex;</a>
+<a name="ln802">    try {</a>
+<a name="ln803">      myregex.assign(pattern,</a>
+<a name="ln804">                     std::tr1::regex_constants::extended |</a>
+<a name="ln805">                     std::tr1::regex_constants::nosubs);</a>
+<a name="ln806">      iok = true;</a>
+<a name="ln807">    } catch (std::tr1::regex_error ex) {</a>
+<a name="ln808">      iok = false;</a>
+<a name="ln809">    }</a>
+<a name="ln810">#else</a>
+<a name="ln811">    regex_t *myregex = new regex_t;</a>
+<a name="ln812">    iok = regcomp(myregex, pattern.c_str(), REG_EXTENDED | REG_NOSUB)==0;</a>
+<a name="ln813">#endif</a>
+<a name="ln814">    if (!iok) cerr &lt;&lt; &quot;Error compiling regex in GUK OUTPUT!\n&quot;;</a>
+<a name="ln815"> </a>
+<a name="ln816">    // Read in the coordinates - we process them directly rather</a>
+<a name="ln817">    // then use ReadGeometry as we probably should do...</a>
+<a name="ln818">    mol.BeginModify();</a>
+<a name="ln819">    while (ifs.good() &amp;&amp; ifs.getline(buffer, BUFF_SIZE)){</a>
+<a name="ln820"> </a>
+<a name="ln821">      // End of geometry block</a>
+<a name="ln822">      if (strstr(buffer, &quot;*************************&quot;) != nullptr) break;</a>
+<a name="ln823">#ifdef _MSC_VER</a>
+<a name="ln824">      if (std::tr1::regex_search(buffer, myregex)) {</a>
+<a name="ln825">#else</a>
+<a name="ln826">        if (regexec(myregex, buffer, 0, nullptr, 0) == 0) {</a>
+<a name="ln827">#endif</a>
+<a name="ln828">          //cerr &lt;&lt; &quot;Got Coord line: &quot; &lt;&lt; buffer &lt;&lt; endl;</a>
+<a name="ln829">          OBAtom *atom = mol.NewAtom();</a>
+<a name="ln830">          tokenize(tokens,buffer,&quot; &quot;);</a>
+<a name="ln831"> </a>
+<a name="ln832">          ok = from_string&lt;int&gt;(n, tokens.at(2), std::dec);</a>
+<a name="ln833">          atom-&gt;SetAtomicNum(n);</a>
+<a name="ln834">          ok = from_string&lt;double&gt;(x, tokens.at(3), std::dec);</a>
+<a name="ln835">          x=x*BOHR_TO_ANGSTROM;</a>
+<a name="ln836">          ok = from_string&lt;double&gt;(y, tokens.at(4), std::dec);</a>
+<a name="ln837">          y=y*BOHR_TO_ANGSTROM;</a>
+<a name="ln838">          ok = from_string&lt;double&gt;(z, tokens.at(5), std::dec);</a>
+<a name="ln839">          z=z*BOHR_TO_ANGSTROM;</a>
+<a name="ln840">          atom-&gt;SetVector(x, y, z);</a>
+<a name="ln841">        }</a>
+<a name="ln842">      }</a>
+<a name="ln843">      mol.EndModify();</a>
+<a name="ln844">#ifndef _MSC_VER</a>
+<a name="ln845">      regfree(myregex);</a>
+<a name="ln846">#endif</a>
+<a name="ln847">      return true;</a>
+<a name="ln848">    } // End ReadInitalCartesian</a>
+<a name="ln849"> </a>
+<a name="ln850"> </a>
+<a name="ln851">    bool GAMESSUKOutputFormat::ReadOptGeomXyz1( OBMol &amp;mol, std::istream &amp;ifs )</a>
+<a name="ln852">    {</a>
+<a name="ln853">      bool ok=false;</a>
+<a name="ln854">      double x,y,z;</a>
+<a name="ln855">      int n;</a>
+<a name="ln856">      </a>
+<a name="ln857">      // Clear the Molecule as we're going to start from scratch again.</a>
+<a name="ln858">      mol.BeginModify();</a>
+<a name="ln859">      mol.Clear();</a>
+<a name="ln860"> </a>
+<a name="ln861">      // FF to start of coordinate specification</a>
+<a name="ln862">      while (ifs.good() &amp;&amp; ifs.getline(buffer, BUFF_SIZE)) {</a>
+<a name="ln863">        if (strstr(buffer,</a>
+<a name="ln864">                   &quot;atom     znuc       x             y             z&quot;) != nullptr) break;</a>
+<a name="ln865">      }</a>
+<a name="ln866"> </a>
+<a name="ln867">      // Skip 2 lines - should then be at the coordinates</a>
+<a name="ln868">      ifs.getline(buffer, BUFF_SIZE) &amp;&amp;</a>
+<a name="ln869">        ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln870"> </a>
+<a name="ln871">      // Read in the coordinates - we process them directly rather</a>
+<a name="ln872">      // then use ReadGeometry as we probably should do...</a>
+<a name="ln873">      while (ifs.good() &amp;&amp; ifs.getline(buffer, BUFF_SIZE)){</a>
+<a name="ln874"> </a>
+<a name="ln875">        // End of geometry block</a>
+<a name="ln876">        if (strstr(buffer, &quot;*************************&quot;) != nullptr) break;</a>
+<a name="ln877"> </a>
+<a name="ln878">        //cerr &lt;&lt; &quot;Got Coord line: &quot; &lt;&lt; buffer &lt;&lt; endl;</a>
+<a name="ln879">        OBAtom *atom = mol.NewAtom();</a>
+<a name="ln880">        tokenize(tokens,buffer,&quot; &quot;);</a>
+<a name="ln881"> </a>
+<a name="ln882">        ok = from_string&lt;int&gt;(n, tokens.at(2), std::dec);</a>
+<a name="ln883">        atom-&gt;SetAtomicNum(n);</a>
+<a name="ln884">        ok = from_string&lt;double&gt;(x, tokens.at(3), std::dec);</a>
+<a name="ln885">        x=x*BOHR_TO_ANGSTROM;</a>
+<a name="ln886">        ok = from_string&lt;double&gt;(y, tokens.at(4), std::dec);</a>
+<a name="ln887">        y=y*BOHR_TO_ANGSTROM;</a>
+<a name="ln888">        ok = from_string&lt;double&gt;(z, tokens.at(5), std::dec);</a>
+<a name="ln889">        z=z*BOHR_TO_ANGSTROM;</a>
+<a name="ln890">        atom-&gt;SetVector(x, y, z);</a>
+<a name="ln891"> </a>
+<a name="ln892">      }</a>
+<a name="ln893"> </a>
+<a name="ln894">      mol.EndModify();</a>
+<a name="ln895">      return true;</a>
+<a name="ln896">    } // End ReadOptGeomXyz</a>
+<a name="ln897"> </a>
+<a name="ln898">    bool GAMESSUKOutputFormat::ReadOptGeomXyz2( OBMol &amp;mol, std::istream &amp;ifs )</a>
+<a name="ln899">    {</a>
+<a name="ln900">      bool ok=false;</a>
+<a name="ln901">      double x,y,z;</a>
+<a name="ln902">      int n;</a>
+<a name="ln903"> </a>
+<a name="ln904">      // Clear the Molecule as we're going to start from scratch again.</a>
+<a name="ln905">      mol.BeginModify();</a>
+<a name="ln906">      mol.Clear();</a>
+<a name="ln907"> </a>
+<a name="ln908">      while (ifs.good() &amp;&amp; ifs.getline(buffer, BUFF_SIZE)) {</a>
+<a name="ln909">        if (strstr(buffer,</a>
+<a name="ln910">                   &quot;       x              y              z            chg  tag&quot;) != nullptr) break;</a>
+<a name="ln911">      }</a>
+<a name="ln912"> </a>
+<a name="ln913">      // Skip 1 line - should then be at the coordinates</a>
+<a name="ln914">      ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln915"> </a>
+<a name="ln916">      // Read in the coordinates - we process them directly rather</a>
+<a name="ln917">      // then use ReadGeometry as we probably should do...</a>
+<a name="ln918">      while (ifs.good() &amp;&amp; ifs.getline(buffer, BUFF_SIZE)){</a>
+<a name="ln919"> </a>
+<a name="ln920">        // End of geometry block</a>
+<a name="ln921">        if (strstr(buffer, &quot;============================================================&quot;) != nullptr) break;</a>
+<a name="ln922"> </a>
+<a name="ln923">        //cerr &lt;&lt; &quot;Got Coord line: &quot; &lt;&lt; buffer &lt;&lt; endl;</a>
+<a name="ln924">        OBAtom *atom = mol.NewAtom();</a>
+<a name="ln925">        tokenize(tokens,buffer,&quot; &quot;);</a>
+<a name="ln926"> </a>
+<a name="ln927">        ok = from_string&lt;int&gt;(n, tokens.at(3), std::dec);</a>
+<a name="ln928">        atom-&gt;SetAtomicNum(n);</a>
+<a name="ln929">        ok = from_string&lt;double&gt;(x, tokens.at(0), std::dec);</a>
+<a name="ln930">        x=x*BOHR_TO_ANGSTROM;</a>
+<a name="ln931">        ok = from_string&lt;double&gt;(y, tokens.at(1), std::dec);</a>
+<a name="ln932">        y=y*BOHR_TO_ANGSTROM;</a>
+<a name="ln933">        ok = from_string&lt;double&gt;(z, tokens.at(2), std::dec);</a>
+<a name="ln934">        z=z*BOHR_TO_ANGSTROM;</a>
+<a name="ln935">        atom-&gt;SetVector(x, y, z);</a>
+<a name="ln936">      }</a>
+<a name="ln937"> </a>
+<a name="ln938">      mol.EndModify();</a>
+<a name="ln939">      return true;</a>
+<a name="ln940"> </a>
+<a name="ln941">    } // End ReadOptGeomZmat</a>
+<a name="ln942"> </a>
+<a name="ln943">    bool GAMESSUKOutputFormat::ReadNormalModesHessian( OBMol &amp;mol, std::istream &amp;ifs)</a>
+<a name="ln944">    {</a>
+<a name="ln945"> </a>
+<a name="ln946">      bool ok=false;</a>
+<a name="ln947">      double dtmp,dtmp2;</a>
+<a name="ln948"> </a>
+<a name="ln949">      int ncols = 8; // Think this is always the case</a>
+<a name="ln950">      int natoms = mol.NumAtoms();</a>
+<a name="ln951">      int maxroot = natoms*3;</a>
+<a name="ln952">    </a>
+<a name="ln953">      // Create data structures</a>
+<a name="ln954">      std::vector&lt; double &gt; frequencies, intensities;</a>
+<a name="ln955">      std::vector&lt; std::vector&lt; vector3 &gt; &gt; Lx;</a>
+<a name="ln956">      </a>
+<a name="ln957">      // Set up data structures with null data</a>
+<a name="ln958">      for( int i=0; i&lt;maxroot; i++ )</a>
+<a name="ln959">        {</a>
+<a name="ln960">          std::vector&lt; vector3 &gt; atoml;</a>
+<a name="ln961">          for( int j=0; j &lt; natoms; j++ )</a>
+<a name="ln962">            {</a>
+<a name="ln963">              atoml.push_back( vector3(0.0,0.0,0.0) );</a>
+<a name="ln964">            }</a>
+<a name="ln965">          Lx.push_back( atoml );</a>
+<a name="ln966">        }</a>
+<a name="ln967">      </a>
+<a name="ln968">      ifs.getline(buffer, BUFF_SIZE); // skip &quot;===============&quot; line</a>
+<a name="ln969"> </a>
+<a name="ln970">      int root7;</a>
+<a name="ln971">      for ( int root1=0; root1 &lt; maxroot; root1+=ncols )</a>
+<a name="ln972">        {</a>
+<a name="ln973">          root7 = root1 + ncols;</a>
+<a name="ln974">          root7 = min(maxroot,root7);</a>
+<a name="ln975"> </a>
+<a name="ln976">          //Skip 6 lines to col header with frequencies</a>
+<a name="ln977">          for( int j=0; j &lt; 6; j++ )</a>
+<a name="ln978">            ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln979"> </a>
+<a name="ln980">          tokenize(tokens,buffer,&quot; \t\n&quot;);</a>
+<a name="ln981">          for( std::size_t si=0; si &lt; tokens.size(); si++ )</a>
+<a name="ln982">            {</a>
+<a name="ln983">              ok = from_string&lt;double&gt;(dtmp, tokens.at(si), std::dec);</a>
+<a name="ln984">              frequencies.push_back(dtmp);</a>
+<a name="ln985">              intensities.push_back( 0.0 ); // Add placeholder data</a>
+<a name="ln986">            }</a>
+<a name="ln987"> </a>
+<a name="ln988">          // Skip 2 lines to where data matrix starts</a>
+<a name="ln989">          ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln990">          ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln991"> </a>
+<a name="ln992">          int mycols=root7-root1;</a>
+<a name="ln993">          // Loop over atoms &amp; the x,y,z</a>
+<a name="ln994">          int atomcount=0;</a>
+<a name="ln995">          for ( int i=0; i&lt;maxroot; i+=3 )</a>
+<a name="ln996">            {</a>
+<a name="ln997">              for ( int j=0; j&lt;3; j++ )</a>
+<a name="ln998">                {</a>
+<a name="ln999">                  ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln1000">                  //std::cout &lt;&lt; &quot;GOT LINE:&quot; &lt;&lt; buffer &lt;&lt;std::endl;</a>
+<a name="ln1001">                  tokenize(tokens,buffer,&quot; \t\n&quot;);</a>
+<a name="ln1002">                  int start=1;</a>
+<a name="ln1003">                  if ( j == 0 )</a>
+<a name="ln1004">                    start=3;</a>
+<a name="ln1005">                  for ( int k=0; k&lt;mycols; k++ )</a>
+<a name="ln1006">                    {</a>
+<a name="ln1007">                      //std::cout &lt;&lt; &quot;Lx[ &quot; &lt;&lt; root1+k &lt;&lt; &quot; ]&quot; &lt;&lt;</a>
+<a name="ln1008">                      //  &quot;][ &quot; &lt;&lt; atomcount &lt;&lt; &quot; ] [ &quot; &lt;&lt; j &lt;&lt; &quot; ] = &quot; &lt;&lt; tokens.at(start+k) &lt;&lt; std::endl;</a>
+<a name="ln1009">                      ok = from_string&lt;double&gt;(dtmp, tokens.at(start+k), std::dec);</a>
+<a name="ln1010">                      if ( j==0)</a>
+<a name="ln1011">                        Lx[ root1+k ][ atomcount ].SetX( dtmp );</a>
+<a name="ln1012">                      else if ( j==1 )</a>
+<a name="ln1013">                        Lx[ root1+k ][ atomcount ].SetY( dtmp );</a>
+<a name="ln1014">                      else if ( j==2 )</a>
+<a name="ln1015">                        Lx[ root1+k ][ atomcount ].SetZ( dtmp );</a>
+<a name="ln1016">                    }</a>
+<a name="ln1017">                } // End j loop</a>
+<a name="ln1018">              atomcount+=1;</a>
+<a name="ln1019">            } // End loop over atoms</a>
+<a name="ln1020">        } // loop over root1</a>
+<a name="ln1021"> </a>
+<a name="ln1022">      // Now skip down to read in intensities</a>
+<a name="ln1023">      for( int i=0; i&lt;7; i++ )</a>
+<a name="ln1024">        {</a>
+<a name="ln1025">          ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln1026">        }</a>
+<a name="ln1027">      </a>
+<a name="ln1028">      // loop until we've read them all in</a>
+<a name="ln1029">      for( std::size_t si=0; si&lt;frequencies.size(); si++ )</a>
+<a name="ln1030">        {</a>
+<a name="ln1031">          ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln1032">          // End of info</a>
+<a name="ln1033">          if (strstr(buffer, &quot;============&quot;) != nullptr) break;</a>
+<a name="ln1034">          tokenize(tokens,buffer,&quot; \t\n&quot;);</a>
+<a name="ln1035">          </a>
+<a name="ln1036">          ok = from_string&lt;double&gt;(dtmp, tokens.at(1), std::dec);</a>
+<a name="ln1037">          ok = from_string&lt;double&gt;(dtmp2, tokens.at(6), std::dec);</a>
+<a name="ln1038">          // Now match them up</a>
+<a name="ln1039">          for( std::size_t sj=0; sj&lt;frequencies.size(); sj++ )</a>
+<a name="ln1040">            {</a>
+<a name="ln1041">              if ( std::abs( frequencies.at(sj) - dtmp ) &lt; 0.01 )</a>
+<a name="ln1042">                {</a>
+<a name="ln1043">                  intensities[sj]= dtmp2;</a>
+<a name="ln1044">                  continue;</a>
+<a name="ln1045">                }</a>
+<a name="ln1046">            }</a>
+<a name="ln1047">        }</a>
+<a name="ln1048"> </a>
+<a name="ln1049">      //for (int i=0; i&lt; frequencies.size(); i++ )</a>
+<a name="ln1050">      //  std::cout &lt;&lt; &quot;Frequency: &quot; &lt;&lt; frequencies.at(i) &lt;&lt; &quot; : &quot; &lt;&lt; intensities.at(i) &lt;&lt; std::endl;</a>
+<a name="ln1051">      </a>
+<a name="ln1052">      if(frequencies.size()&gt;0)</a>
+<a name="ln1053">        {</a>
+<a name="ln1054">          OBVibrationData* vd = new OBVibrationData;</a>
+<a name="ln1055">          vd-&gt;SetData(Lx, frequencies, intensities);</a>
+<a name="ln1056">          vd-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln1057">          mol.SetData(vd);</a>
+<a name="ln1058">        }</a>
+<a name="ln1059">      return ok;</a>
+<a name="ln1060">    } // End ReadNormalModesHessian</a>
+<a name="ln1061"> </a>
+<a name="ln1062">    bool GAMESSUKOutputFormat::ReadNormalModesForce( OBMol &amp;mol, std::istream &amp;ifs)</a>
+<a name="ln1063">    {</a>
+<a name="ln1064"> </a>
+<a name="ln1065">      bool ok=false;</a>
+<a name="ln1066">      double dtmp;</a>
+<a name="ln1067"> </a>
+<a name="ln1068">      int ncols = 9; // Think this is always the case</a>
+<a name="ln1069">      int natoms = mol.NumAtoms();</a>
+<a name="ln1070">      int maxroot = natoms*3;</a>
+<a name="ln1071">      int start,mycols;</a>
+<a name="ln1072"> </a>
+<a name="ln1073">      // Create data structures</a>
+<a name="ln1074">      std::vector&lt; double &gt; frequencies, intensities;</a>
+<a name="ln1075">      std::vector&lt; std::vector&lt; vector3 &gt; &gt; Lx;</a>
+<a name="ln1076">      </a>
+<a name="ln1077">      // Set up data structures with null data</a>
+<a name="ln1078">      for( int i=0; i&lt;maxroot; i++ )</a>
+<a name="ln1079">        {</a>
+<a name="ln1080">          std::vector&lt; vector3 &gt; atoml;</a>
+<a name="ln1081">          for( int j=0; j &lt; natoms; j++ )</a>
+<a name="ln1082">            {</a>
+<a name="ln1083">              atoml.push_back( vector3(0.0,0.0,0.0) );</a>
+<a name="ln1084">            }</a>
+<a name="ln1085">          Lx.push_back( atoml );</a>
+<a name="ln1086">        }</a>
+<a name="ln1087">      </a>
+<a name="ln1088">      ifs.getline(buffer, BUFF_SIZE); // skip &quot;===============&quot; line</a>
+<a name="ln1089"> </a>
+<a name="ln1090">      int root7;</a>
+<a name="ln1091">      for ( int root1=0; root1 &lt; maxroot; root1+=ncols )</a>
+<a name="ln1092">        {</a>
+<a name="ln1093">          root7 = root1 + ncols;</a>
+<a name="ln1094">          root7 = min(maxroot,root7);</a>
+<a name="ln1095">          mycols=root7-root1;</a>
+<a name="ln1096"> </a>
+<a name="ln1097">          //Skip 6 lines to col header with frequencies</a>
+<a name="ln1098">          for( int j=0; j &lt; 6; j++ )</a>
+<a name="ln1099">            ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln1100"> </a>
+<a name="ln1101">          line=buffer;</a>
+<a name="ln1102">          // Need  to manually chop up line</a>
+<a name="ln1103">          start=20; // Numbers start at col 20 &amp; are 11 characters long</a>
+<a name="ln1104">          for( int i=0; i&lt;mycols; i++)</a>
+<a name="ln1105">            {</a>
+<a name="ln1106">              ok = from_string&lt;double&gt;(dtmp, line.substr(start,12), std::dec);</a>
+<a name="ln1107">              frequencies.push_back(dtmp);</a>
+<a name="ln1108">              intensities.push_back( 10.0 ); // Intensities aren't printed so just use 10</a>
+<a name="ln1109">              start+=12;</a>
+<a name="ln1110">            }</a>
+<a name="ln1111"> </a>
+<a name="ln1112">          // Skip 2 lines to where data matrix starts</a>
+<a name="ln1113">          ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln1114">          ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln1115"> </a>
+<a name="ln1116">          // Loop over atoms &amp; the x,y,z</a>
+<a name="ln1117">          int atomcount=0;</a>
+<a name="ln1118">          for ( int i=0; i&lt;maxroot; i+=3 )</a>
+<a name="ln1119">            {</a>
+<a name="ln1120">              //for j in range(3):</a>
+<a name="ln1121">              for ( int j=0; j&lt;3; j++ )</a>
+<a name="ln1122">                {</a>
+<a name="ln1123">                  ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln1124">                  //std::cout &lt;&lt; &quot;GOT LINE:&quot; &lt;&lt; buffer &lt;&lt;std::endl;</a>
+<a name="ln1125">                  tokenize(tokens,buffer,&quot; \t\n&quot;);</a>
+<a name="ln1126">                  start=1;</a>
+<a name="ln1127">                  if ( j == 0 )</a>
+<a name="ln1128">                    start=3;</a>
+<a name="ln1129">                  for ( int k=0; k&lt;mycols; k++ )</a>
+<a name="ln1130">                    {</a>
+<a name="ln1131">                      // std::cout &lt;&lt; &quot;Lx[ &quot; &lt;&lt; root1+k &lt;&lt; &quot; ]&quot; &lt;&lt;</a>
+<a name="ln1132">                      //  &quot;][ &quot; &lt;&lt; atomcount &lt;&lt; &quot; ] [ &quot; &lt;&lt; j &lt;&lt; &quot; ] = &quot; &lt;&lt; tokens.at(start+k) &lt;&lt; std::endl;</a>
+<a name="ln1133">                      ok = from_string&lt;double&gt;(dtmp, tokens.at(start+k), std::dec);</a>
+<a name="ln1134">                      if ( j==0)</a>
+<a name="ln1135">                        Lx[ root1+k ][ atomcount ].SetX( dtmp );</a>
+<a name="ln1136">                      else if ( j==1 )</a>
+<a name="ln1137">                        Lx[ root1+k ][ atomcount ].SetY( dtmp );</a>
+<a name="ln1138">                      else if ( j==2 )</a>
+<a name="ln1139">                        Lx[ root1+k ][ atomcount ].SetZ( dtmp );</a>
+<a name="ln1140">                    }</a>
+<a name="ln1141">                } // End j loop</a>
+<a name="ln1142">              atomcount+=1;</a>
+<a name="ln1143">            } // End loop over atoms</a>
+<a name="ln1144">        } // loop over root1</a>
+<a name="ln1145"> </a>
+<a name="ln1146"> </a>
+<a name="ln1147">      //for (int i=0; i&lt; frequencies.size(); i++ )</a>
+<a name="ln1148">      //  std::cout &lt;&lt; &quot;Frequency: &quot; &lt;&lt; frequencies.at(i) &lt;&lt; &quot; : &quot; &lt;&lt; intensities.at(i) &lt;&lt; std::endl;</a>
+<a name="ln1149"> </a>
+<a name="ln1150">      if(frequencies.size()&gt;0)</a>
+<a name="ln1151">        {</a>
+<a name="ln1152">          OBVibrationData* vd = new OBVibrationData;</a>
+<a name="ln1153">          vd-&gt;SetData(Lx, frequencies, intensities);</a>
+<a name="ln1154">          vd-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln1155">          mol.SetData(vd);</a>
+<a name="ln1156">        }</a>
+<a name="ln1157">      return ok;</a>
+<a name="ln1158">    } // End ReadNormalModesForce</a>
+<a name="ln1159"> </a>
+<a name="ln1160">    /*</a>
+<a name="ln1161">      bool GAMESSUKOutputFormat::ReadOptGeomZmat( OBMol &amp;mol, std::istream &amp;ifs )</a>
+<a name="ln1162">      {</a>
+<a name="ln1163">  </a>
+<a name="ln1164">      //Below was for reading in zmatricies - ignore for the time being</a>
+<a name="ln1165"> </a>
+<a name="ln1166">      // Original geometry specification should still be in geomList</a>
+<a name="ln1167">      // So just update the variables</a>
+<a name="ln1168">      //cerr &lt;&lt; &quot;Got converged for OPTZMAT\n&quot;;</a>
+<a name="ln1169"> </a>
+<a name="ln1170">      // FF to variable specification</a>
+<a name="ln1171">      while (ifs.good() &amp;&amp; ifs.getline(buffer, BUFF_SIZE)) {</a>
+<a name="ln1172">      if (strstr(buffer,</a>
+<a name="ln1173">      &quot; variable           value                hessian&quot;) != NULL) break;</a>
+<a name="ln1174">      }</a>
+<a name="ln1175">      // Skip a line - should then be at variable specification</a>
+<a name="ln1176">      ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln1177"> </a>
+<a name="ln1178">      // Process them</a>
+<a name="ln1179">      if (! ReadVariables(ifs, BOHR_TO_ANGSTROM,</a>
+<a name="ln1180">      &quot;===============================================&quot;)) return false;</a>
+<a name="ln1181"> </a>
+<a name="ln1182">      // Now go and process with the geometry we read before</a>
+<a name="ln1183">      return ReadGeometry(mol, geomList);</a>
+<a name="ln1184"> </a>
+<a name="ln1185">      } //ReadOptGeomZmat</a>
+<a name="ln1186">    */</a>
+<a name="ln1187"> </a>
+<a name="ln1188">    bool GAMESSUKOutputFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv) {</a>
+<a name="ln1189"> </a>
+<a name="ln1190">      /*</a>
+<a name="ln1191">        Read a GAMESS-UK output file. The reader is currently set up to only return one molecule, i.e</a>
+<a name="ln1192">        if the run is some sort of optimisation run, then only the optimised geometry is returned.</a>
+<a name="ln1193">        </a>
+<a name="ln1194">        Previously we parsed in the z-matrix - and the code to do that is still here and should work.</a>
+<a name="ln1195">        However, the zmatrix is not actually used anywhere in OpenBabel currently - it's just converted</a>
+<a name="ln1196">        to Cartesians, and this code appears to be buggy, so for the time being we just stick to reading</a>
+<a name="ln1197">        Cartesians.</a>
+<a name="ln1198">      */</a>
+<a name="ln1199"> </a>
+<a name="ln1200">      OBMol *pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln1201">      if (pmol == nullptr)</a>
+<a name="ln1202">        return false;</a>
+<a name="ln1203"> </a>
+<a name="ln1204">      //Define some references so we can use the old parameter names</a>
+<a name="ln1205">      istream&amp; ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln1206">      OBMol &amp;mol = *pmol;</a>
+<a name="ln1207"> </a>
+<a name="ln1208">      // Get a default title as the filename</a>
+<a name="ln1209">      const char* title = pConv-&gt;GetTitle();</a>
+<a name="ln1210">      mol.BeginModify();</a>
+<a name="ln1211">      mol.SetTitle(title);</a>
+<a name="ln1212">      mol.EndModify();</a>
+<a name="ln1213"> </a>
+<a name="ln1214">      RunType_t RunType=UNKNOWN;</a>
+<a name="ln1215">      bool ok;</a>
+<a name="ln1216">      std::string runt;</a>
+<a name="ln1217"> </a>
+<a name="ln1218">      while (ifs.good() &amp;&amp; ifs.getline(buffer, BUFF_SIZE))</a>
+<a name="ln1219">        {</a>
+<a name="ln1220"> </a>
+<a name="ln1221">          if (strstr(buffer, &quot;                              input z-matrix&quot;) != nullptr)</a>
+<a name="ln1222">            {</a>
+<a name="ln1223">              /* OpenBabel's handling of zmatricies is currently too buggy and the zmatrix</a>
+<a name="ln1224">               * read in isn't currently used - it's just converted to cartesians, so we</a>
+<a name="ln1225">               * can skip this for the time being</a>
+<a name="ln1226">               */</a>
+<a name="ln1227">              continue;</a>
+<a name="ln1228">              /*</a>
+<a name="ln1229">                ok = ReadInputZmatrix( mol, ifs );</a>
+<a name="ln1230">                // Set Runtype to SINGLEPOINT so we don't read in the cartesians</a>
+<a name="ln1231">                RunType=SINGLEPOINT;</a>
+<a name="ln1232">              */</a>
+<a name="ln1233">            } // End Reading user z-matrix</a>
+<a name="ln1234">          </a>
+<a name="ln1235">          // Read the cartesian coordinates if we've not read in the ZMATRIX</a>
+<a name="ln1236">          if (strstr(buffer, &quot;*            charge       x             y              z       shells&quot;) != nullptr &amp;&amp;</a>
+<a name="ln1237">              RunType==UNKNOWN)</a>
+<a name="ln1238">            ok = ReadInitialCartesian( mol, ifs );</a>
+<a name="ln1239">          </a>
+<a name="ln1240">          // Determine the RunType - affects how we move on from here.</a>
+<a name="ln1241">          if (strstr(buffer, &quot; * RUN TYPE&quot;) != nullptr)</a>
+<a name="ln1242">            {</a>
+<a name="ln1243">              tokenize(tokens,buffer,&quot; \t\n&quot;);</a>
+<a name="ln1244">              runt=tokens[3].substr(0,5);</a>
+<a name="ln1245">              if(runt==&quot;optxy&quot;) RunType=OPTXYZ;</a>
+<a name="ln1246">              else if (runt==&quot;optim&quot;) RunType=OPTZMAT;</a>
+<a name="ln1247">              else if (runt==&quot;saddl&quot;) RunType=SADDLE;</a>
+<a name="ln1248">              continue;</a>
+<a name="ln1249">            } // End RUNTYPE</a>
+<a name="ln1250">          </a>
+<a name="ln1251">          // Read the optimised geometry</a>
+<a name="ln1252">          if (strstr(buffer, &quot;optimization converged&quot;) != nullptr)</a>
+<a name="ln1253">            {</a>
+<a name="ln1254">              if (RunType==OPTXYZ)</a>
+<a name="ln1255">                ok = ReadOptGeomXyz1( mol, ifs );</a>
+<a name="ln1256">              else if (RunType==OPTZMAT || RunType==SADDLE)</a>
+<a name="ln1257">                ok = ReadOptGeomXyz2( mol, ifs );</a>
+<a name="ln1258">            } // End read optimised geometry</a>
+<a name="ln1259"> </a>
+<a name="ln1260">          // Frequencies for runtype hessian</a>
+<a name="ln1261">          if (strstr(buffer, &quot;cartesians to normal&quot;) != nullptr)</a>
+<a name="ln1262">            ok = ReadNormalModesHessian( mol, ifs);</a>
+<a name="ln1263"> </a>
+<a name="ln1264">          // Frequencies for runtype force</a>
+<a name="ln1265">          if (strstr(buffer, &quot;eigenvectors of cartesian&quot;) != nullptr)</a>
+<a name="ln1266">            ok = ReadNormalModesForce( mol, ifs);</a>
+<a name="ln1267">          </a>
+<a name="ln1268">        } // End Reading loop</a>
+<a name="ln1269">    </a>
+<a name="ln1270">      if (mol.NumAtoms() == 0) { // Something went wrong</a>
+<a name="ln1271">        mol.EndModify();</a>
+<a name="ln1272">        return false;</a>
+<a name="ln1273">      } else {</a>
+<a name="ln1274">        mol.BeginModify();</a>
+<a name="ln1275">        if (!pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln1276">          mol.ConnectTheDots();</a>
+<a name="ln1277">        if (!pConv-&gt;IsOption(&quot;s&quot;,OBConversion::INOPTIONS) &amp;&amp; !pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln1278">          mol.PerceiveBondOrders();</a>
+<a name="ln1279">        mol.EndModify();</a>
+<a name="ln1280">        return true;</a>
+<a name="ln1281">      }</a>
+<a name="ln1282">    </a>
+<a name="ln1283">    } // End GAMESSUKOutputFormat::ReadMolecule</a>
+<a name="ln1284">  </a>
+<a name="ln1285">  </a>
+<a name="ln1286">  } //namespace OpenBabel</a>
+
+</code></pre>
+<div class="balloon" rel="753"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v501/" target="_blank">V501</a> There are identical sub-expressions 'ifs.getline(buffer, 32768)' to the left and to the right of the '&&' operator.</p></div>
+<div class="balloon" rel="868"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v501/" target="_blank">V501</a> There are identical sub-expressions 'ifs.getline(buffer, 32768)' to the left and to the right of the '&&' operator.</p></div>
+<div class="balloon" rel="1037"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v519/" target="_blank">V519</a> The 'ok' variable is assigned values twice successively. Perhaps this is a mistake. Check lines: 1036, 1037.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

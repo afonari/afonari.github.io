@@ -1,0 +1,503 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>sha2.c</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/*</a>
+<a name="ln2"> * FIPS-180-2 compliant SHA-256 implementation</a>
+<a name="ln3"> *</a>
+<a name="ln4"> * Copyright (C) Brainspark B.V.</a>
+<a name="ln5"> *</a>
+<a name="ln6"> * IUPAC/InChI-Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln7"> * Software version 1.0.</a>
+<a name="ln8"> * Copyright (C) IUPAC and InChI Trust Limited</a>
+<a name="ln9"> * </a>
+<a name="ln10"> * This library is free software; you can redistribute it and/or modify it under the </a>
+<a name="ln11"> * terms of the IUPAC/InChI Trust Licence for the International Chemical Identifier </a>
+<a name="ln12"> * (InChI) Software version 1.0; either version 1.0 of the License, or </a>
+<a name="ln13"> * (at your option) any later version.</a>
+<a name="ln14"> * </a>
+<a name="ln15"> * This library is distributed in the hope that it will be useful, </a>
+<a name="ln16"> * but WITHOUT ANY WARRANTY; without even the implied warranty of </a>
+<a name="ln17"> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  </a>
+<a name="ln18"> * See the IUPAC/InChI Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln19"> * Software version 1.0 for more details.</a>
+<a name="ln20"> * </a>
+<a name="ln21"> * You should have received a copy of the IUPAC/InChI Trust Licence for the </a>
+<a name="ln22"> * International Chemical Identifier (InChI) Software version 1.0 along with </a>
+<a name="ln23"> * this library; if not, write to:</a>
+<a name="ln24"> * </a>
+<a name="ln25"> * The InChI Trust</a>
+<a name="ln26"> * c/o FIZ CHEMIE Berlin</a>
+<a name="ln27"> * Franklinstrasse 11</a>
+<a name="ln28"> * 10587 Berlin</a>
+<a name="ln29"> * GERMANY</a>
+<a name="ln30"> * </a>
+<a name="ln31"> */</a>
+<a name="ln32"> </a>
+<a name="ln33"> </a>
+<a name="ln34">/*</a>
+<a name="ln35"> *  The SHA-256 standard was published by NIST in 2002.</a>
+<a name="ln36"> *</a>
+<a name="ln37"> *  http://csrc.nist.gov/publications/fips/fips180-2/fips180-2.pdf</a>
+<a name="ln38"> */</a>
+<a name="ln39"> </a>
+<a name="ln40">#ifndef _CRT_SECURE_NO_DEPRECATE</a>
+<a name="ln41">#define _CRT_SECURE_NO_DEPRECATE 1</a>
+<a name="ln42">#endif</a>
+<a name="ln43"> </a>
+<a name="ln44">#include &lt;string.h&gt;</a>
+<a name="ln45">#include &lt;stdio.h&gt;</a>
+<a name="ln46"> </a>
+<a name="ln47">#include &quot;sha2.h&quot;</a>
+<a name="ln48"> </a>
+<a name="ln49">/*</a>
+<a name="ln50"> * 32-bit integer manipulation macros (big endian)</a>
+<a name="ln51"> */</a>
+<a name="ln52">#ifndef GET_UINT32_BE</a>
+<a name="ln53">#define GET_UINT32_BE(n,b,i)                            \</a>
+<a name="ln54">{                                                       \</a>
+<a name="ln55">    (n) = ( (unsigned long) (b)[(i)    ] &lt;&lt; 24 )        \</a>
+<a name="ln56">        | ( (unsigned long) (b)[(i) + 1] &lt;&lt; 16 )        \</a>
+<a name="ln57">        | ( (unsigned long) (b)[(i) + 2] &lt;&lt;  8 )        \</a>
+<a name="ln58">        | ( (unsigned long) (b)[(i) + 3]       );       \</a>
+<a name="ln59">}</a>
+<a name="ln60">#endif</a>
+<a name="ln61">#ifndef PUT_UINT32_BE</a>
+<a name="ln62">#define PUT_UINT32_BE(n,b,i)                            \</a>
+<a name="ln63">{                                                       \</a>
+<a name="ln64">    (b)[(i)    ] = (unsigned char) ( (n) &gt;&gt; 24 );       \</a>
+<a name="ln65">    (b)[(i) + 1] = (unsigned char) ( (n) &gt;&gt; 16 );       \</a>
+<a name="ln66">    (b)[(i) + 2] = (unsigned char) ( (n) &gt;&gt;  8 );       \</a>
+<a name="ln67">    (b)[(i) + 3] = (unsigned char) ( (n)       );       \</a>
+<a name="ln68">}</a>
+<a name="ln69">#endif</a>
+<a name="ln70"> </a>
+<a name="ln71">/*</a>
+<a name="ln72"> * SHA-2 context setup</a>
+<a name="ln73"> */</a>
+<a name="ln74">void sha2_starts( sha2_context *ctx )</a>
+<a name="ln75">{</a>
+<a name="ln76">    ctx-&gt;total[0] = 0;</a>
+<a name="ln77">    ctx-&gt;total[1] = 0;</a>
+<a name="ln78"> </a>
+<a name="ln79">    ctx-&gt;state[0] = 0x6A09E667;</a>
+<a name="ln80">    ctx-&gt;state[1] = 0xBB67AE85;</a>
+<a name="ln81">    ctx-&gt;state[2] = 0x3C6EF372;</a>
+<a name="ln82">    ctx-&gt;state[3] = 0xA54FF53A;</a>
+<a name="ln83">    ctx-&gt;state[4] = 0x510E527F;</a>
+<a name="ln84">    ctx-&gt;state[5] = 0x9B05688C;</a>
+<a name="ln85">    ctx-&gt;state[6] = 0x1F83D9AB;</a>
+<a name="ln86">    ctx-&gt;state[7] = 0x5BE0CD19;</a>
+<a name="ln87">}</a>
+<a name="ln88"> </a>
+<a name="ln89">static void sha2_process( sha2_context *ctx, unsigned char data[64] )</a>
+<a name="ln90">{</a>
+<a name="ln91">    unsigned long temp1, temp2, W[64];</a>
+<a name="ln92">    unsigned long A, B, C, D, E, F, G, H;</a>
+<a name="ln93"> </a>
+<a name="ln94">    GET_UINT32_BE( W[0],  data,  0 );</a>
+<a name="ln95">    GET_UINT32_BE( W[1],  data,  4 );</a>
+<a name="ln96">    GET_UINT32_BE( W[2],  data,  8 );</a>
+<a name="ln97">    GET_UINT32_BE( W[3],  data, 12 );</a>
+<a name="ln98">    GET_UINT32_BE( W[4],  data, 16 );</a>
+<a name="ln99">    GET_UINT32_BE( W[5],  data, 20 );</a>
+<a name="ln100">    GET_UINT32_BE( W[6],  data, 24 );</a>
+<a name="ln101">    GET_UINT32_BE( W[7],  data, 28 );</a>
+<a name="ln102">    GET_UINT32_BE( W[8],  data, 32 );</a>
+<a name="ln103">    GET_UINT32_BE( W[9],  data, 36 );</a>
+<a name="ln104">    GET_UINT32_BE( W[10], data, 40 );</a>
+<a name="ln105">    GET_UINT32_BE( W[11], data, 44 );</a>
+<a name="ln106">    GET_UINT32_BE( W[12], data, 48 );</a>
+<a name="ln107">    GET_UINT32_BE( W[13], data, 52 );</a>
+<a name="ln108">    GET_UINT32_BE( W[14], data, 56 );</a>
+<a name="ln109">    GET_UINT32_BE( W[15], data, 60 );</a>
+<a name="ln110"> </a>
+<a name="ln111">#define  SHR(x,n) ((x &amp; 0xFFFFFFFF) &gt;&gt; n)</a>
+<a name="ln112">#define ROTR(x,n) (SHR(x,n) | (x &lt;&lt; (32 - n)))</a>
+<a name="ln113"> </a>
+<a name="ln114">#define S0(x) (ROTR(x, 7) ^ ROTR(x,18) ^  SHR(x, 3))</a>
+<a name="ln115">#define S1(x) (ROTR(x,17) ^ ROTR(x,19) ^  SHR(x,10))</a>
+<a name="ln116"> </a>
+<a name="ln117">#define S2(x) (ROTR(x, 2) ^ ROTR(x,13) ^ ROTR(x,22))</a>
+<a name="ln118">#define S3(x) (ROTR(x, 6) ^ ROTR(x,11) ^ ROTR(x,25))</a>
+<a name="ln119"> </a>
+<a name="ln120">#define F0(x,y,z) ((x &amp; y) | (z &amp; (x | y)))</a>
+<a name="ln121">#define F1(x,y,z) (z ^ (x &amp; (y ^ z)))</a>
+<a name="ln122"> </a>
+<a name="ln123">#define R(t)                                    \</a>
+<a name="ln124">(                                               \</a>
+<a name="ln125">    W[t] = S1(W[t -  2]) + W[t -  7] +          \</a>
+<a name="ln126">           S0(W[t - 15]) + W[t - 16]            \</a>
+<a name="ln127">)</a>
+<a name="ln128"> </a>
+<a name="ln129">#define P(a,b,c,d,e,f,g,h,x,K)                  \</a>
+<a name="ln130">{                                               \</a>
+<a name="ln131">    temp1 = h + S3(e) + F1(e,f,g) + K + x;      \</a>
+<a name="ln132">    temp2 = S2(a) + F0(a,b,c);                  \</a>
+<a name="ln133">    d += temp1; h = temp1 + temp2;              \</a>
+<a name="ln134">}</a>
+<a name="ln135"> </a>
+<a name="ln136">    A = ctx-&gt;state[0];</a>
+<a name="ln137">    B = ctx-&gt;state[1];</a>
+<a name="ln138">    C = ctx-&gt;state[2];</a>
+<a name="ln139">    D = ctx-&gt;state[3];</a>
+<a name="ln140">    E = ctx-&gt;state[4];</a>
+<a name="ln141">    F = ctx-&gt;state[5];</a>
+<a name="ln142">    G = ctx-&gt;state[6];</a>
+<a name="ln143">    H = ctx-&gt;state[7];</a>
+<a name="ln144"> </a>
+<a name="ln145">    P( A, B, C, D, E, F, G, H, W[ 0], 0x428A2F98 );</a>
+<a name="ln146">    P( H, A, B, C, D, E, F, G, W[ 1], 0x71374491 );</a>
+<a name="ln147">    P( G, H, A, B, C, D, E, F, W[ 2], 0xB5C0FBCF );</a>
+<a name="ln148">    P( F, G, H, A, B, C, D, E, W[ 3], 0xE9B5DBA5 );</a>
+<a name="ln149">    P( E, F, G, H, A, B, C, D, W[ 4], 0x3956C25B );</a>
+<a name="ln150">    P( D, E, F, G, H, A, B, C, W[ 5], 0x59F111F1 );</a>
+<a name="ln151">    P( C, D, E, F, G, H, A, B, W[ 6], 0x923F82A4 );</a>
+<a name="ln152">    P( B, C, D, E, F, G, H, A, W[ 7], 0xAB1C5ED5 );</a>
+<a name="ln153">    P( A, B, C, D, E, F, G, H, W[ 8], 0xD807AA98 );</a>
+<a name="ln154">    P( H, A, B, C, D, E, F, G, W[ 9], 0x12835B01 );</a>
+<a name="ln155">    P( G, H, A, B, C, D, E, F, W[10], 0x243185BE );</a>
+<a name="ln156">    P( F, G, H, A, B, C, D, E, W[11], 0x550C7DC3 );</a>
+<a name="ln157">    P( E, F, G, H, A, B, C, D, W[12], 0x72BE5D74 );</a>
+<a name="ln158">    P( D, E, F, G, H, A, B, C, W[13], 0x80DEB1FE );</a>
+<a name="ln159">    P( C, D, E, F, G, H, A, B, W[14], 0x9BDC06A7 );</a>
+<a name="ln160">    P( B, C, D, E, F, G, H, A, W[15], 0xC19BF174 );</a>
+<a name="ln161">    P( A, B, C, D, E, F, G, H, R(16), 0xE49B69C1 );</a>
+<a name="ln162">    P( H, A, B, C, D, E, F, G, R(17), 0xEFBE4786 );</a>
+<a name="ln163">    P( G, H, A, B, C, D, E, F, R(18), 0x0FC19DC6 );</a>
+<a name="ln164">    P( F, G, H, A, B, C, D, E, R(19), 0x240CA1CC );</a>
+<a name="ln165">    P( E, F, G, H, A, B, C, D, R(20), 0x2DE92C6F );</a>
+<a name="ln166">    P( D, E, F, G, H, A, B, C, R(21), 0x4A7484AA );</a>
+<a name="ln167">    P( C, D, E, F, G, H, A, B, R(22), 0x5CB0A9DC );</a>
+<a name="ln168">    P( B, C, D, E, F, G, H, A, R(23), 0x76F988DA );</a>
+<a name="ln169">    P( A, B, C, D, E, F, G, H, R(24), 0x983E5152 );</a>
+<a name="ln170">    P( H, A, B, C, D, E, F, G, R(25), 0xA831C66D );</a>
+<a name="ln171">    P( G, H, A, B, C, D, E, F, R(26), 0xB00327C8 );</a>
+<a name="ln172">    P( F, G, H, A, B, C, D, E, R(27), 0xBF597FC7 );</a>
+<a name="ln173">    P( E, F, G, H, A, B, C, D, R(28), 0xC6E00BF3 );</a>
+<a name="ln174">    P( D, E, F, G, H, A, B, C, R(29), 0xD5A79147 );</a>
+<a name="ln175">    P( C, D, E, F, G, H, A, B, R(30), 0x06CA6351 );</a>
+<a name="ln176">    P( B, C, D, E, F, G, H, A, R(31), 0x14292967 );</a>
+<a name="ln177">    P( A, B, C, D, E, F, G, H, R(32), 0x27B70A85 );</a>
+<a name="ln178">    P( H, A, B, C, D, E, F, G, R(33), 0x2E1B2138 );</a>
+<a name="ln179">    P( G, H, A, B, C, D, E, F, R(34), 0x4D2C6DFC );</a>
+<a name="ln180">    P( F, G, H, A, B, C, D, E, R(35), 0x53380D13 );</a>
+<a name="ln181">    P( E, F, G, H, A, B, C, D, R(36), 0x650A7354 );</a>
+<a name="ln182">    P( D, E, F, G, H, A, B, C, R(37), 0x766A0ABB );</a>
+<a name="ln183">    P( C, D, E, F, G, H, A, B, R(38), 0x81C2C92E );</a>
+<a name="ln184">    P( B, C, D, E, F, G, H, A, R(39), 0x92722C85 );</a>
+<a name="ln185">    P( A, B, C, D, E, F, G, H, R(40), 0xA2BFE8A1 );</a>
+<a name="ln186">    P( H, A, B, C, D, E, F, G, R(41), 0xA81A664B );</a>
+<a name="ln187">    P( G, H, A, B, C, D, E, F, R(42), 0xC24B8B70 );</a>
+<a name="ln188">    P( F, G, H, A, B, C, D, E, R(43), 0xC76C51A3 );</a>
+<a name="ln189">    P( E, F, G, H, A, B, C, D, R(44), 0xD192E819 );</a>
+<a name="ln190">    P( D, E, F, G, H, A, B, C, R(45), 0xD6990624 );</a>
+<a name="ln191">    P( C, D, E, F, G, H, A, B, R(46), 0xF40E3585 );</a>
+<a name="ln192">    P( B, C, D, E, F, G, H, A, R(47), 0x106AA070 );</a>
+<a name="ln193">    P( A, B, C, D, E, F, G, H, R(48), 0x19A4C116 );</a>
+<a name="ln194">    P( H, A, B, C, D, E, F, G, R(49), 0x1E376C08 );</a>
+<a name="ln195">    P( G, H, A, B, C, D, E, F, R(50), 0x2748774C );</a>
+<a name="ln196">    P( F, G, H, A, B, C, D, E, R(51), 0x34B0BCB5 );</a>
+<a name="ln197">    P( E, F, G, H, A, B, C, D, R(52), 0x391C0CB3 );</a>
+<a name="ln198">    P( D, E, F, G, H, A, B, C, R(53), 0x4ED8AA4A );</a>
+<a name="ln199">    P( C, D, E, F, G, H, A, B, R(54), 0x5B9CCA4F );</a>
+<a name="ln200">    P( B, C, D, E, F, G, H, A, R(55), 0x682E6FF3 );</a>
+<a name="ln201">    P( A, B, C, D, E, F, G, H, R(56), 0x748F82EE );</a>
+<a name="ln202">    P( H, A, B, C, D, E, F, G, R(57), 0x78A5636F );</a>
+<a name="ln203">    P( G, H, A, B, C, D, E, F, R(58), 0x84C87814 );</a>
+<a name="ln204">    P( F, G, H, A, B, C, D, E, R(59), 0x8CC70208 );</a>
+<a name="ln205">    P( E, F, G, H, A, B, C, D, R(60), 0x90BEFFFA );</a>
+<a name="ln206">    P( D, E, F, G, H, A, B, C, R(61), 0xA4506CEB );</a>
+<a name="ln207">    P( C, D, E, F, G, H, A, B, R(62), 0xBEF9A3F7 );</a>
+<a name="ln208">    P( B, C, D, E, F, G, H, A, R(63), 0xC67178F2 );</a>
+<a name="ln209"> </a>
+<a name="ln210">    ctx-&gt;state[0] += A;</a>
+<a name="ln211">    ctx-&gt;state[1] += B;</a>
+<a name="ln212">    ctx-&gt;state[2] += C;</a>
+<a name="ln213">    ctx-&gt;state[3] += D;</a>
+<a name="ln214">    ctx-&gt;state[4] += E;</a>
+<a name="ln215">    ctx-&gt;state[5] += F;</a>
+<a name="ln216">    ctx-&gt;state[6] += G;</a>
+<a name="ln217">    ctx-&gt;state[7] += H;</a>
+<a name="ln218">}</a>
+<a name="ln219"> </a>
+<a name="ln220">/*</a>
+<a name="ln221"> * SHA-2 process buffer</a>
+<a name="ln222"> */</a>
+<a name="ln223">void sha2_update( sha2_context *ctx, unsigned char *input, int ilen )</a>
+<a name="ln224">{</a>
+<a name="ln225">    int fill;</a>
+<a name="ln226">    unsigned long left;</a>
+<a name="ln227"> </a>
+<a name="ln228">    if( ilen &lt;= 0 )</a>
+<a name="ln229">        return;</a>
+<a name="ln230"> </a>
+<a name="ln231">    left = ctx-&gt;total[0] &amp; 0x3F;</a>
+<a name="ln232">    fill = 64 - left;</a>
+<a name="ln233"> </a>
+<a name="ln234">    ctx-&gt;total[0] += ilen;</a>
+<a name="ln235">    ctx-&gt;total[0] &amp;= 0xFFFFFFFF;</a>
+<a name="ln236"> </a>
+<a name="ln237">    if( ctx-&gt;total[0] &lt; (unsigned long) ilen )</a>
+<a name="ln238">        ctx-&gt;total[1]++;</a>
+<a name="ln239"> </a>
+<a name="ln240">    if( left &amp;&amp; ilen &gt;= fill )</a>
+<a name="ln241">    {</a>
+<a name="ln242">        memcpy( (void *) (ctx-&gt;buffer + left),</a>
+<a name="ln243">                (void *) input, fill );</a>
+<a name="ln244">        sha2_process( ctx, ctx-&gt;buffer );</a>
+<a name="ln245">        input += fill;</a>
+<a name="ln246">        ilen  -= fill;</a>
+<a name="ln247">        left = 0;</a>
+<a name="ln248">    }</a>
+<a name="ln249"> </a>
+<a name="ln250">    while( ilen &gt;= 64 )</a>
+<a name="ln251">    {</a>
+<a name="ln252">        sha2_process( ctx, input );</a>
+<a name="ln253">        input += 64;</a>
+<a name="ln254">        ilen  -= 64;</a>
+<a name="ln255">    }</a>
+<a name="ln256"> </a>
+<a name="ln257">    if( ilen &gt; 0 )</a>
+<a name="ln258">    {</a>
+<a name="ln259">        memcpy( (void *) (ctx-&gt;buffer + left),</a>
+<a name="ln260">                (void *) input, ilen );</a>
+<a name="ln261">    }</a>
+<a name="ln262">}</a>
+<a name="ln263"> </a>
+<a name="ln264">static const unsigned char sha2_padding[64] =</a>
+<a name="ln265">{</a>
+<a name="ln266"> 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,</a>
+<a name="ln267">    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,</a>
+<a name="ln268">    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,</a>
+<a name="ln269">    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0</a>
+<a name="ln270">};</a>
+<a name="ln271"> </a>
+<a name="ln272">/*</a>
+<a name="ln273"> * SHA-2 final digest</a>
+<a name="ln274"> */</a>
+<a name="ln275">void sha2_finish( sha2_context *ctx, unsigned char output[32] )</a>
+<a name="ln276">{</a>
+<a name="ln277">    unsigned long last, padn;</a>
+<a name="ln278">    unsigned long high, low;</a>
+<a name="ln279">    unsigned char msglen[8];</a>
+<a name="ln280"> </a>
+<a name="ln281">    high = ( ctx-&gt;total[0] &gt;&gt; 29 )</a>
+<a name="ln282">         | ( ctx-&gt;total[1] &lt;&lt;  3 );</a>
+<a name="ln283">    low  = ( ctx-&gt;total[0] &lt;&lt;  3 );</a>
+<a name="ln284"> </a>
+<a name="ln285">    PUT_UINT32_BE( high, msglen, 0 );</a>
+<a name="ln286">    PUT_UINT32_BE( low,  msglen, 4 );</a>
+<a name="ln287"> </a>
+<a name="ln288">    last = ctx-&gt;total[0] &amp; 0x3F;</a>
+<a name="ln289">    padn = ( last &lt; 56 ) ? ( 56 - last ) : ( 120 - last );</a>
+<a name="ln290"> </a>
+<a name="ln291">    sha2_update( ctx, (unsigned char *) sha2_padding, padn );</a>
+<a name="ln292">    sha2_update( ctx, msglen, 8 );</a>
+<a name="ln293"> </a>
+<a name="ln294">    PUT_UINT32_BE( ctx-&gt;state[0], output,  0 );</a>
+<a name="ln295">    PUT_UINT32_BE( ctx-&gt;state[1], output,  4 );</a>
+<a name="ln296">    PUT_UINT32_BE( ctx-&gt;state[2], output,  8 );</a>
+<a name="ln297">    PUT_UINT32_BE( ctx-&gt;state[3], output, 12 );</a>
+<a name="ln298">    PUT_UINT32_BE( ctx-&gt;state[4], output, 16 );</a>
+<a name="ln299">    PUT_UINT32_BE( ctx-&gt;state[5], output, 20 );</a>
+<a name="ln300">    PUT_UINT32_BE( ctx-&gt;state[6], output, 24 );</a>
+<a name="ln301">    PUT_UINT32_BE( ctx-&gt;state[7], output, 28 );</a>
+<a name="ln302">}</a>
+<a name="ln303"> </a>
+<a name="ln304">/*</a>
+<a name="ln305"> * Output = SHA-2( file contents )</a>
+<a name="ln306"> */</a>
+<a name="ln307">int sha2_file( char *path, unsigned char output[32] )</a>
+<a name="ln308">{</a>
+<a name="ln309">    FILE *f;</a>
+<a name="ln310">    size_t n;</a>
+<a name="ln311">    sha2_context ctx;</a>
+<a name="ln312">    unsigned char buf[1024];</a>
+<a name="ln313"> </a>
+<a name="ln314">    if( ( f = fopen( path, &quot;rb&quot; ) ) == NULL )</a>
+<a name="ln315">        return( 1 );</a>
+<a name="ln316"> </a>
+<a name="ln317">    sha2_starts( &amp;ctx );</a>
+<a name="ln318"> </a>
+<a name="ln319">    while( ( n = fread( buf, 1, sizeof( buf ), f ) ) &gt; 0 )</a>
+<a name="ln320">        sha2_update( &amp;ctx, buf, (int) n );</a>
+<a name="ln321"> </a>
+<a name="ln322">    sha2_finish( &amp;ctx, output );</a>
+<a name="ln323"> </a>
+<a name="ln324">    fclose( f );</a>
+<a name="ln325">    return( 0 );</a>
+<a name="ln326">}</a>
+<a name="ln327"> </a>
+<a name="ln328">/*</a>
+<a name="ln329"> * Output = SHA-2( input buffer )</a>
+<a name="ln330"> */</a>
+<a name="ln331">void sha2_csum( unsigned char *input, int ilen,</a>
+<a name="ln332">                unsigned char output[32] )</a>
+<a name="ln333">{</a>
+<a name="ln334">    sha2_context ctx;</a>
+<a name="ln335"> </a>
+<a name="ln336">    sha2_starts( &amp;ctx );</a>
+<a name="ln337">    sha2_update( &amp;ctx, input, ilen );</a>
+<a name="ln338">    sha2_finish( &amp;ctx, output );</a>
+<a name="ln339">}</a>
+<a name="ln340"> </a>
+<a name="ln341">/*</a>
+<a name="ln342"> * Output = HMAC-SHA-2( input buffer, hmac key )</a>
+<a name="ln343"> */</a>
+<a name="ln344">void sha2_hmac( unsigned char *key, int keylen,</a>
+<a name="ln345">                unsigned char *input, int ilen,</a>
+<a name="ln346">                unsigned char output[32] )</a>
+<a name="ln347">{</a>
+<a name="ln348">    int i;</a>
+<a name="ln349">    sha2_context ctx;</a>
+<a name="ln350">    unsigned char k_ipad[64];</a>
+<a name="ln351">    unsigned char k_opad[64];</a>
+<a name="ln352">    unsigned char tmpbuf[32];</a>
+<a name="ln353"> </a>
+<a name="ln354">    memset( k_ipad, 0x36, 64 );</a>
+<a name="ln355">    memset( k_opad, 0x5C, 64 );</a>
+<a name="ln356"> </a>
+<a name="ln357">    for( i = 0; i &lt; keylen; i++ )</a>
+<a name="ln358">    {</a>
+<a name="ln359">        if( i &gt;= 64 ) break;</a>
+<a name="ln360"> </a>
+<a name="ln361">        k_ipad[i] ^= key[i];</a>
+<a name="ln362">        k_opad[i] ^= key[i];</a>
+<a name="ln363">    }</a>
+<a name="ln364"> </a>
+<a name="ln365">    sha2_starts( &amp;ctx );</a>
+<a name="ln366">    sha2_update( &amp;ctx, k_ipad, 64 );</a>
+<a name="ln367">    sha2_update( &amp;ctx, input, ilen );</a>
+<a name="ln368">    sha2_finish( &amp;ctx, tmpbuf );</a>
+<a name="ln369"> </a>
+<a name="ln370">    sha2_starts( &amp;ctx );</a>
+<a name="ln371">    sha2_update( &amp;ctx, k_opad, 64 );</a>
+<a name="ln372">    sha2_update( &amp;ctx, tmpbuf, 32 );</a>
+<a name="ln373">    sha2_finish( &amp;ctx, output );</a>
+<a name="ln374"> </a>
+<a name="ln375">    memset( k_ipad, 0, 64 );</a>
+<a name="ln376">    memset( k_opad, 0, 64 );</a>
+<a name="ln377">    memset( tmpbuf, 0, 32 );</a>
+<a name="ln378">    memset( &amp;ctx, 0, sizeof( sha2_context ) );</a>
+<a name="ln379">}</a>
+<a name="ln380"> </a>
+<a name="ln381">#ifdef SELF_TEST</a>
+<a name="ln382">/*</a>
+<a name="ln383"> * FIPS-180-2 test vectors</a>
+<a name="ln384"> */</a>
+<a name="ln385">static const char sha2_test_str[3][57] = </a>
+<a name="ln386">{</a>
+<a name="ln387">    { &quot;abc&quot; },</a>
+<a name="ln388">    { &quot;abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq&quot; },</a>
+<a name="ln389">    { &quot;&quot; }</a>
+<a name="ln390">};</a>
+<a name="ln391"> </a>
+<a name="ln392">static const unsigned char sha2_test_sum[3][32] =</a>
+<a name="ln393">{</a>
+<a name="ln394">    { 0xBA, 0x78, 0x16, 0xBF, 0x8F, 0x01, 0xCF, 0xEA,</a>
+<a name="ln395">      0x41, 0x41, 0x40, 0xDE, 0x5D, 0xAE, 0x22, 0x23,</a>
+<a name="ln396">      0xB0, 0x03, 0x61, 0xA3, 0x96, 0x17, 0x7A, 0x9C,</a>
+<a name="ln397">      0xB4, 0x10, 0xFF, 0x61, 0xF2, 0x00, 0x15, 0xAD },</a>
+<a name="ln398">    { 0x24, 0x8D, 0x6A, 0x61, 0xD2, 0x06, 0x38, 0xB8,</a>
+<a name="ln399">      0xE5, 0xC0, 0x26, 0x93, 0x0C, 0x3E, 0x60, 0x39,</a>
+<a name="ln400">      0xA3, 0x3C, 0xE4, 0x59, 0x64, 0xFF, 0x21, 0x67,</a>
+<a name="ln401">      0xF6, 0xEC, 0xED, 0xD4, 0x19, 0xDB, 0x06, 0xC1 },</a>
+<a name="ln402">    { 0xCD, 0xC7, 0x6E, 0x5C, 0x99, 0x14, 0xFB, 0x92,</a>
+<a name="ln403">      0x81, 0xA1, 0xC7, 0xE2, 0x84, 0xD7, 0x3E, 0x67,</a>
+<a name="ln404">      0xF1, 0x80, 0x9A, 0x48, 0xA4, 0x97, 0x20, 0x0E,</a>
+<a name="ln405">      0x04, 0x6D, 0x39, 0xCC, 0xC7, 0x11, 0x2C, 0xD0 }</a>
+<a name="ln406">};</a>
+<a name="ln407"> </a>
+<a name="ln408">/*</a>
+<a name="ln409"> * Checkup routine</a>
+<a name="ln410"> */</a>
+<a name="ln411">int sha2_self_test( void )</a>
+<a name="ln412">{</a>
+<a name="ln413">    int i, j;</a>
+<a name="ln414">    unsigned char buf[1000];</a>
+<a name="ln415">    unsigned char sha2sum[32];</a>
+<a name="ln416">    sha2_context ctx;</a>
+<a name="ln417"> </a>
+<a name="ln418">    for( i = 0; i &lt; 3; i++ )</a>
+<a name="ln419">    {</a>
+<a name="ln420">        printf( &quot;  SHA-256 test #%d: &quot;, i + 1 );</a>
+<a name="ln421"> </a>
+<a name="ln422">        sha2_starts( &amp;ctx );</a>
+<a name="ln423"> </a>
+<a name="ln424">        if( i &lt; 2 )</a>
+<a name="ln425">            sha2_update( &amp;ctx, (unsigned char *) sha2_test_str[i],</a>
+<a name="ln426">                         strlen( sha2_test_str[i] ) );</a>
+<a name="ln427">        else</a>
+<a name="ln428">        {</a>
+<a name="ln429">            memset( buf, 'a', 1000 );</a>
+<a name="ln430">            for( j = 0; j &lt; 1000; j++ )</a>
+<a name="ln431">                sha2_update( &amp;ctx, buf, 1000 );</a>
+<a name="ln432">        }</a>
+<a name="ln433"> </a>
+<a name="ln434">        sha2_finish( &amp;ctx, sha2sum );</a>
+<a name="ln435"> </a>
+<a name="ln436">        if( memcmp( sha2sum, sha2_test_sum[i], 20 ) != 0 )</a>
+<a name="ln437">        {</a>
+<a name="ln438">            printf( &quot;failed\n&quot; );</a>
+<a name="ln439">            return( 1 );</a>
+<a name="ln440">        }</a>
+<a name="ln441"> </a>
+<a name="ln442">        printf( &quot;passed\n&quot; );</a>
+<a name="ln443">    }</a>
+<a name="ln444"> </a>
+<a name="ln445">    printf( &quot;\n&quot; );</a>
+<a name="ln446">    return( 0 );</a>
+<a name="ln447">}</a>
+<a name="ln448">#else</a>
+<a name="ln449">int sha2_self_test( void )</a>
+<a name="ln450">{</a>
+<a name="ln451">    return( 0 );</a>
+<a name="ln452">}</a>
+<a name="ln453">#endif</a>
+<a name="ln454"> </a>
+
+</code></pre>
+<div class="balloon" rel="375"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v597/" target="_blank">V597</a> The compiler could delete the 'memset' function call, which is used to flush 'k_ipad' buffer. The memset_s() function should be used to erase the private data.</p></div>
+<div class="balloon" rel="376"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v597/" target="_blank">V597</a> The compiler could delete the 'memset' function call, which is used to flush 'k_opad' buffer. The memset_s() function should be used to erase the private data.</p></div>
+<div class="balloon" rel="377"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v597/" target="_blank">V597</a> The compiler could delete the 'memset' function call, which is used to flush 'tmpbuf' buffer. The memset_s() function should be used to erase the private data.</p></div>
+<div class="balloon" rel="378"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v597/" target="_blank">V597</a> The compiler could delete the 'memset' function call, which is used to flush 'ctx' object. The memset_s() function should be used to erase the private data.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

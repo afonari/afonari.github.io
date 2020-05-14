@@ -1,0 +1,2656 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>inchi_dll_a2.c</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/*</a>
+<a name="ln2"> * International Chemical Identifier (InChI)</a>
+<a name="ln3"> * Version 1</a>
+<a name="ln4"> * Software version 1.04</a>
+<a name="ln5"> * September 9, 2011</a>
+<a name="ln6"> *</a>
+<a name="ln7"> * The InChI library and programs are free software developed under the</a>
+<a name="ln8"> * auspices of the International Union of Pure and Applied Chemistry (IUPAC).</a>
+<a name="ln9"> * Originally developed at NIST. Modifications and additions by IUPAC </a>
+<a name="ln10"> * and the InChI Trust.</a>
+<a name="ln11"> *</a>
+<a name="ln12"> * IUPAC/InChI-Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln13"> * Software version 1.0.</a>
+<a name="ln14"> * Copyright (C) IUPAC and InChI Trust Limited</a>
+<a name="ln15"> * </a>
+<a name="ln16"> * This library is free software; you can redistribute it and/or modify it under the </a>
+<a name="ln17"> * terms of the IUPAC/InChI Trust Licence for the International Chemical Identifier </a>
+<a name="ln18"> * (InChI) Software version 1.0; either version 1.0 of the License, or </a>
+<a name="ln19"> * (at your option) any later version.</a>
+<a name="ln20"> * </a>
+<a name="ln21"> * This library is distributed in the hope that it will be useful, </a>
+<a name="ln22"> * but WITHOUT ANY WARRANTY; without even the implied warranty of </a>
+<a name="ln23"> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  </a>
+<a name="ln24"> * See the IUPAC/InChI Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln25"> * Software version 1.0 for more details.</a>
+<a name="ln26"> * </a>
+<a name="ln27"> * You should have received a copy of the IUPAC/InChI Trust Licence for the </a>
+<a name="ln28"> * International Chemical Identifier (InChI) Software version 1.0 along with </a>
+<a name="ln29"> * this library; if not, write to:</a>
+<a name="ln30"> * </a>
+<a name="ln31"> * The InChI Trust</a>
+<a name="ln32"> * c/o FIZ CHEMIE Berlin</a>
+<a name="ln33"> * Franklinstrasse 11</a>
+<a name="ln34"> * 10587 Berlin</a>
+<a name="ln35"> * GERMANY</a>
+<a name="ln36"> * </a>
+<a name="ln37"> */</a>
+<a name="ln38"> </a>
+<a name="ln39">#include &lt;stdio.h&gt;</a>
+<a name="ln40">#include &lt;stdlib.h&gt;</a>
+<a name="ln41">#include &lt;string.h&gt;</a>
+<a name="ln42">#include &lt;ctype.h&gt;</a>
+<a name="ln43">#include &lt;stdarg.h&gt;</a>
+<a name="ln44">/* #include &lt;varargs.h&gt; */</a>
+<a name="ln45">#include &lt;errno.h&gt;</a>
+<a name="ln46">#include &lt;limits.h&gt;</a>
+<a name="ln47"> </a>
+<a name="ln48"> </a>
+<a name="ln49">/*^^^  */</a>
+<a name="ln50"> </a>
+<a name="ln51">#include &quot;mode.h&quot;      </a>
+<a name="ln52"> </a>
+<a name="ln53">#include &quot;ichitime.h&quot;</a>
+<a name="ln54"> </a>
+<a name="ln55"> </a>
+<a name="ln56">#include &quot;inpdef.h&quot;</a>
+<a name="ln57">#include &quot;ichi.h&quot;</a>
+<a name="ln58">#include &quot;strutil.h&quot;</a>
+<a name="ln59">#include &quot;util.h&quot;</a>
+<a name="ln60">#include &quot;ichidrp.h&quot;</a>
+<a name="ln61">#include &quot;ichierr.h&quot;</a>
+<a name="ln62">#include &quot;ichimain.h&quot;</a>
+<a name="ln63">#include &quot;extr_ct.h&quot;</a>
+<a name="ln64">#include &quot;ichitaut.h&quot;</a>
+<a name="ln65">#include &quot;ichi_io.h&quot;</a>
+<a name="ln66"> </a>
+<a name="ln67">#include &quot;ichinorm.h&quot;</a>
+<a name="ln68">#include &quot;ichicant.h&quot;</a>
+<a name="ln69">#include &quot;ichicano.h&quot;</a>
+<a name="ln70">#include &quot;ichicomn.h&quot;</a>
+<a name="ln71">#include &quot;ichimake.h&quot;</a>
+<a name="ln72">#include &quot;ichister.h&quot;</a>
+<a name="ln73">/*^^^ */</a>
+<a name="ln74"> </a>
+<a name="ln75"> </a>
+<a name="ln76">#ifdef INCHI_LIB</a>
+<a name="ln77">#include &quot;ichi_lib.h&quot;</a>
+<a name="ln78">#endif</a>
+<a name="ln79"> </a>
+<a name="ln80">#include &quot;ichicomp.h&quot;</a>
+<a name="ln81"> </a>
+<a name="ln82">#if( ADD_CMLPP == 1 )</a>
+<a name="ln83">#include &quot;readcml.hpp&quot;</a>
+<a name="ln84">#include &quot;debug.h&quot;</a>
+<a name="ln85">#endif</a>
+<a name="ln86">/*^^^  */</a>
+<a name="ln87"> </a>
+<a name="ln88">/* for DisplayTheWholeStructure() */</a>
+<a name="ln89"> </a>
+<a name="ln90">#define COMP_ORIG_0_MAIN  0x0001</a>
+<a name="ln91">#define COMP_ORIG_0_RECN  0x0002</a>
+<a name="ln92">#define COMP_PREP_0_MAIN  0x0004</a>
+<a name="ln93">#define COMP_PREP_0_RECN  0x0008</a>
+<a name="ln94">#define COMP_ORIG_1_MAIN  0x0010</a>
+<a name="ln95">#define COMP_ORIG_1_RECN  0x0020</a>
+<a name="ln96"> </a>
+<a name="ln97">#include &quot;ichisize.h&quot;</a>
+<a name="ln98">#include &quot;mode.h&quot;</a>
+<a name="ln99">#include &quot;inchi_api.h&quot;</a>
+<a name="ln100">#include &quot;inchi_dll_a.h&quot; /* not inchi_api.h as it hides internal data types */</a>
+<a name="ln101"> </a>
+<a name="ln102"> </a>
+<a name="ln103">int  GetProcessingWarnings(INChI *cur_INChI[], INP_ATOM_DATA **inp_norm_data, STRUCT_DATA *sd);</a>
+<a name="ln104"> </a>
+<a name="ln105">/*^^^ */</a>
+<a name="ln106"> </a>
+<a name="ln107"> </a>
+<a name="ln108">int inp2spATOM( inp_ATOM *inp_at, int num_inp_at, sp_ATOM *at );</a>
+<a name="ln109">int CheckCanonNumberingCorrectness(</a>
+<a name="ln110">                 int num_atoms, int num_at_tg,</a>
+<a name="ln111">                 sp_ATOM *at, CANON_STAT *pCS, int bTautomeric,</a>
+<a name="ln112">                 char *pStrErrStruct );</a>
+<a name="ln113"> </a>
+<a name="ln114">int CreateCompositeNormAtom( COMP_ATOM_DATA *composite_norm_data, </a>
+<a name="ln115">                             INP_ATOM_DATA2 *all_inp_norm_data,</a>
+<a name="ln116">                             int num_components);</a>
+<a name="ln117"> </a>
+<a name="ln118">int CopyLinearCTStereoToINChIStereo( INChI_Stereo *Stereo,</a>
+<a name="ln119">           AT_STEREO_CARB *LinearCTStereoCarb, int nLenLinearCTStereoCarb,</a>
+<a name="ln120">           AT_STEREO_DBLE *LinearCTStereoDble, int nLenLinearCTStereoDble</a>
+<a name="ln121">           , AT_NUMB *pCanonOrd, AT_RANK *pCanonRank, sp_ATOM *at, int bIsotopic</a>
+<a name="ln122">           , AT_STEREO_CARB *LinearCTStereoCarbInv</a>
+<a name="ln123">           , AT_STEREO_DBLE *LinearCTStereoDbleInv</a>
+<a name="ln124">           , AT_NUMB *pCanonOrdInv, AT_RANK *pCanonRankInv );</a>
+<a name="ln125">int MarkAmbiguousStereo( sp_ATOM *at, inp_ATOM *norm_at, int bIsotopic, AT_NUMB *pCanonOrd,</a>
+<a name="ln126">           AT_STEREO_CARB *LinearCTStereoCarb, int nLenLinearCTStereoCarb,</a>
+<a name="ln127">           AT_STEREO_DBLE *LinearCTStereoDble, int nLenLinearCTStereoDble );</a>
+<a name="ln128"> </a>
+<a name="ln129">INCHI_MODE UnmarkAllUndefinedUnknownStereo( INChI_Stereo *Stereo, INCHI_MODE nUserMode );</a>
+<a name="ln130">int FillOutINChIReducedWarn( INChI *pINChI, INChI_Aux *pINChI_Aux,</a>
+<a name="ln131">                 int num_atoms, int num_at_tg, int num_removed_H,</a>
+<a name="ln132">                 sp_ATOM *at, inp_ATOM *norm_at, CANON_STAT *pCS, int bTautomeric,</a>
+<a name="ln133">                 INCHI_MODE nUserMode, char *pStrErrStruct );</a>
+<a name="ln134"> </a>
+<a name="ln135">int NormOneStructureINChI(INCHIGEN_DATA *gendata, INCHIGEN_CONTROL *genctl, </a>
+<a name="ln136">                          int iINChI, INCHI_IOSTREAM *inp_file);</a>
+<a name="ln137">int CanonOneStructureINChI(INCHIGEN_CONTROL *genctl, int iINChI, INCHI_IOSTREAM *inp_file);</a>
+<a name="ln138"> </a>
+<a name="ln139">int NormOneComponentINChI(INCHIGEN_CONTROL *genctl, int iINChI, int i);</a>
+<a name="ln140">int CanonOneComponentINChI(INCHIGEN_CONTROL *genctl, int iINChI, int i);</a>
+<a name="ln141">int  Normalization_step( INChI **ppINChI, INChI_Aux **ppINChI_Aux, </a>
+<a name="ln142">                        inp_ATOM *inp_at, INP_ATOM_DATA *out_norm_data[2],</a>
+<a name="ln143">                        int num_inp_at,</a>
+<a name="ln144">                        INCHI_MODE *pbTautFlags, </a>
+<a name="ln145">                        INCHI_MODE *pbTautFlagsDone,</a>
+<a name="ln146">                        COMPONENT_TREAT_INFO *cti);</a>
+<a name="ln147">int  Canonicalization_step( INChI **ppINChI, INChI_Aux **ppINChI_Aux, </a>
+<a name="ln148">                        INP_ATOM_DATA *out_norm_data[2],</a>
+<a name="ln149">                        struct tagInchiTime *ulMaxTime, </a>
+<a name="ln150">                        T_GROUP_INFO *ti_out, </a>
+<a name="ln151">                        char *pStrErrStruct,</a>
+<a name="ln152">                        COMPONENT_TREAT_INFO *cti);</a>
+<a name="ln153"> </a>
+<a name="ln154"> </a>
+<a name="ln155"> </a>
+<a name="ln156"> </a>
+<a name="ln157"> </a>
+<a name="ln158">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/</a>
+<a name="ln159">int NormOneStructureINChI(INCHIGEN_DATA *gendata, </a>
+<a name="ln160">                          INCHIGEN_CONTROL *genctl, </a>
+<a name="ln161">                          int iINChI,</a>
+<a name="ln162">                          INCHI_IOSTREAM *inp_file)</a>
+<a name="ln163">{</a>
+<a name="ln164">int k, i, j, nRet = 0;</a>
+<a name="ln165">int nStrLen = PSTR_BUFFER_SIZE;</a>
+<a name="ln166"> </a>
+<a name="ln167"> </a>
+<a name="ln168">STRUCT_DATA *sd = &amp;(genctl-&gt;StructData);</a>
+<a name="ln169"> </a>
+<a name="ln170">INPUT_PARMS *ip = &amp;(genctl-&gt;InpParms);</a>
+<a name="ln171">ORIG_ATOM_DATA *prep_inp_data = &amp;(genctl-&gt;PrepInpData[0]);</a>
+<a name="ln172">ORIG_ATOM_DATA *orig_inp_data = &amp;(genctl-&gt;OrigInpData);</a>
+<a name="ln173">INCHI_IOSTREAM *output_file = genctl-&gt;inchi_file, *log_file = genctl-&gt;inchi_file+1;   </a>
+<a name="ln174">INCHI_IOSTREAM prbstr, *prb_file=&amp;prbstr;</a>
+<a name="ln175"> </a>
+<a name="ln176">PINChI2 **pINChI2 = genctl-&gt;pINChI; </a>
+<a name="ln177">PINChI_Aux2 **pINChI_Aux2 = genctl-&gt;pINChI_Aux;</a>
+<a name="ln178">NORM_CANON_FLAGS *pncFlags = &amp;(genctl-&gt;ncFlags);    </a>
+<a name="ln179">    </a>
+<a name="ln180"> </a>
+<a name="ln181">INP_ATOM_DATA *inp_cur_data = NULL;</a>
+<a name="ln182"> </a>
+<a name="ln183">long num_inp = genctl-&gt;num_inp;</a>
+<a name="ln184">char *pStr = genctl-&gt;pStr;</a>
+<a name="ln185">    </a>
+<a name="ln186">INP_ATOM_DATA *inp_norm_data[TAUT_NUM]; /*  = { &amp;InpNormAtData, &amp;InpNormTautData }; */</a>
+<a name="ln187">ORIG_ATOM_DATA *cur_prep_inp_data = prep_inp_data + iINChI;</a>
+<a name="ln188"> </a>
+<a name="ln189">inchiTime      ulTStart;</a>
+<a name="ln190"> </a>
+<a name="ln191">    /*^^^ To save intermediate data... */</a>
+<a name="ln192"> </a>
+<a name="ln193">    COMP_ATOM_DATA *composite_norm_data = genctl-&gt;composite_norm_data[iINChI];</a>
+<a name="ln194">    INP_ATOM_DATA2 *all_inp_norm_data = NULL;</a>
+<a name="ln195">    memset( composite_norm_data+TAUT_NON, 0, sizeof( composite_norm_data[0] ) );</a>
+<a name="ln196">    memset( composite_norm_data+TAUT_YES, 0, sizeof( composite_norm_data[0] ) );</a>
+<a name="ln197">    memset( composite_norm_data+TAUT_INI, 0, sizeof( composite_norm_data[0] ) );</a>
+<a name="ln198"> </a>
+<a name="ln199">    inchi_ios_init(prb_file, INCHI_IOSTREAM_FILE, NULL);</a>
+<a name="ln200"> </a>
+<a name="ln201">    /*</a>
+<a name="ln202">        if ( orig_inp_data is NOT empty AND</a>
+<a name="ln203">             prep_inp_data[0] IS empty ) then:</a>
+<a name="ln204"> </a>
+<a name="ln205">            1. copy orig_inp_data --&gt; prep_inp_data[0]</a>
+<a name="ln206">            2. fix odd things in prep_inp_data[0]</a>
+<a name="ln207">            3. if( orig_inp_data-&gt;bDisconnectSalts ) then</a>
+<a name="ln208">                  -- disconnect salts in prep_inp_data[0]</a>
+<a name="ln209">            4. move protons to neutralize charges on heteroatoms</a>
+<a name="ln210">            5. if( orig_inp_data-&gt;bDisconnectCoord ) then</a>
+<a name="ln211">                  -- copy prep_inp_data[0] --&gt; prep_inp_data[1]</a>
+<a name="ln212">                  -- disconnect metals in prep_inp_data[0]</a>
+<a name="ln213"> </a>
+<a name="ln214">            [ This all is done in PreprocessOneStructure() ]</a>
+<a name="ln215"> </a>
+<a name="ln216">        iINChI = 0</a>
+<a name="ln217">        =========</a>
+<a name="ln218">        (normal/disconnected layer)</a>
+<a name="ln219"> </a>
+<a name="ln220">            1. normalize prep_inp_data[0] in inp_norm_data[0,1]</a>
+<a name="ln221">            2. create INChI[ iINChI ] out of inp_norm_data[0,1]</a>
+<a name="ln222"> </a>
+<a name="ln223"> </a>
+<a name="ln224">        iINChI = 1 AND orig_inp_data-&gt;bDisconnectCoord &gt; 0</a>
+<a name="ln225">        =================================================</a>
+<a name="ln226">        (reconnected layer)</a>
+<a name="ln227"> </a>
+<a name="ln228">            1. normalize prep_inp_data[1] in inp_norm_data[0,1]</a>
+<a name="ln229">            2. create INChI[ iINChI ] out of inp_norm_data[0,1]</a>
+<a name="ln230"> </a>
+<a name="ln231">    */</a>
+<a name="ln232"> </a>
+<a name="ln233"> </a>
+<a name="ln234"> </a>
+<a name="ln235">    ip-&gt;msec_LeftTime = ip-&gt;msec_MaxTime; /* start timeout countdown for each component */</a>
+<a name="ln236"> </a>
+<a name="ln237"> </a>
+<a name="ln238"> </a>
+<a name="ln239"> </a>
+<a name="ln240">    if ( ip-&gt;bAllowEmptyStructure &amp;&amp; !orig_inp_data-&gt;at &amp;&amp; !orig_inp_data-&gt;num_inp_atoms ) {</a>
+<a name="ln241">        ;</a>
+<a name="ln242">    } else</a>
+<a name="ln243">    if ( !orig_inp_data-&gt;at || !orig_inp_data-&gt;num_inp_atoms ) {</a>
+<a name="ln244">        return 0; /* nothing to do */</a>
+<a name="ln245">    }</a>
+<a name="ln246">    if ( iINChI == 1 &amp;&amp; orig_inp_data-&gt;bDisconnectCoord &lt;= 0 ) {</a>
+<a name="ln247">        return 0;</a>
+<a name="ln248">    }</a>
+<a name="ln249"> </a>
+<a name="ln250">   /* m = iINChI; */ /* orig_inp_data index */</a>
+<a name="ln251"> </a>
+<a name="ln252">    if ( iINChI != INCHI_BAS &amp;&amp; iINChI != INCHI_REC ) {</a>
+<a name="ln253">        AddMOLfileError(sd-&gt;pStrErrStruct, &quot;Fatal undetermined program error&quot;);</a>
+<a name="ln254">        sd-&gt;nStructReadError =  97;</a>
+<a name="ln255">        nRet = sd-&gt;nErrorType = _IS_FATAL;</a>
+<a name="ln256">        goto exit_function;</a>
+<a name="ln257">    }</a>
+<a name="ln258"> </a>
+<a name="ln259">    /*******************************************************************</a>
+<a name="ln260">     *                                                                 *</a>
+<a name="ln261">     *                                                                 *</a>
+<a name="ln262">     *  Whole structure preprocessing: 1st step of the normalization   *</a>
+<a name="ln263">     *                                                                 *</a>
+<a name="ln264">     *  Happen only on the first call to CreateOneStructureINChI()      *</a>
+<a name="ln265">     *                                                                 *</a>
+<a name="ln266">     *                                                                 *</a>
+<a name="ln267">     *******************************************************************/</a>
+<a name="ln268"> </a>
+<a name="ln269">    if ( (!prep_inp_data-&gt;at || !prep_inp_data-&gt;num_inp_atoms) &amp;&amp; orig_inp_data-&gt;num_inp_atoms &gt; 0 ) </a>
+<a name="ln270">    {</a>
+<a name="ln271">        /* the structure has not been preprocessed */</a>
+<a name="ln272">        if ( ip-&gt;msec_MaxTime ) </a>
+<a name="ln273">        {</a>
+<a name="ln274">            InchiTimeGet( &amp;ulTStart );</a>
+<a name="ln275">        }</a>
+<a name="ln276"> </a>
+<a name="ln277">        PreprocessOneStructure( sd, ip, orig_inp_data, prep_inp_data );</a>
+<a name="ln278">        pncFlags-&gt;bTautFlags[iINChI][TAUT_YES] =</a>
+<a name="ln279">        pncFlags-&gt;bTautFlags[iINChI][TAUT_NON] = sd-&gt;bTautFlags[INCHI_BAS] | ip-&gt;bTautFlags;</a>
+<a name="ln280">        pncFlags-&gt;bTautFlagsDone[iINChI][TAUT_YES] =</a>
+<a name="ln281">        pncFlags-&gt;bTautFlagsDone[iINChI][TAUT_NON] = sd-&gt;bTautFlagsDone[INCHI_BAS] | ip-&gt;bTautFlagsDone;</a>
+<a name="ln282"> </a>
+<a name="ln283">        switch (sd-&gt;nErrorType) </a>
+<a name="ln284">        {</a>
+<a name="ln285">        case _IS_ERROR:</a>
+<a name="ln286">        case _IS_FATAL:</a>
+<a name="ln287">            /* error message */</a>
+<a name="ln288">            nRet = TreatReadTheStructureErrors( sd, ip, LOG_MASK_ALL, inp_file, log_file, output_file, prb_file,</a>
+<a name="ln289">                                                prep_inp_data, &amp;num_inp, pStr, nStrLen );</a>
+<a name="ln290">            goto exit_function;</a>
+<a name="ln291">        }</a>
+<a name="ln292">    }</a>
+<a name="ln293"> </a>
+<a name="ln294">    /*^^^ To save intermediate data... */</a>
+<a name="ln295">    if ( prep_inp_data[iINChI].num_components &gt; 1) </a>
+<a name="ln296">    {</a>
+<a name="ln297">        all_inp_norm_data = (INP_ATOM_DATA2 *)inchi_calloc( prep_inp_data[iINChI].num_components, sizeof(all_inp_norm_data[0]));</a>
+<a name="ln298">    }</a>
+<a name="ln299"> </a>
+<a name="ln300"> </a>
+<a name="ln301"> </a>
+<a name="ln302">    /* allocate pINChI[iINChI] and pINChI_Aux2[iINChI] -- arrays of pointers to INChI and INChI_Aux */</a>
+<a name="ln303">    /* assign values to sd-&gt;num_components[]                                                  */</a>
+<a name="ln304"> </a>
+<a name="ln305">    MYREALLOC2(PINChI2, PINChI_Aux2, pINChI2[iINChI], pINChI_Aux2[iINChI], sd-&gt;num_components[iINChI], cur_prep_inp_data-&gt;num_components, k);</a>
+<a name="ln306">    if ( k ) </a>
+<a name="ln307">    {</a>
+<a name="ln308">        AddMOLfileError(sd-&gt;pStrErrStruct, &quot;Cannot allocate output data. Terminating&quot;);</a>
+<a name="ln309">        sd-&gt;nStructReadError =  99;</a>
+<a name="ln310">        sd-&gt;nErrorType = _IS_FATAL;</a>
+<a name="ln311">        goto exit_function;</a>
+<a name="ln312">    }</a>
+<a name="ln313"> </a>
+<a name="ln314"> </a>
+<a name="ln315">    /*^^^ Allocate */</a>
+<a name="ln316"> </a>
+<a name="ln317">    /*^^^ visible */</a>
+<a name="ln318">    gendata-&gt;NormAtomsNontaut[iINChI] = (NORM_ATOMS *)inchi_calloc( sd-&gt;num_components[iINChI], sizeof(NORM_ATOMS));  </a>
+<a name="ln319">    gendata-&gt;NormAtomsTaut[iINChI] = (NORM_ATOMS *)inchi_calloc( sd-&gt;num_components[iINChI], sizeof(NORM_ATOMS));  </a>
+<a name="ln320">    /*^^^ invisible */</a>
+<a name="ln321">    genctl-&gt;InpNormAtData[iINChI] = (INP_ATOM_DATA *)inchi_calloc( sd-&gt;num_components[iINChI], sizeof(INP_ATOM_DATA)); </a>
+<a name="ln322">    genctl-&gt;InpNormTautData[iINChI] = (INP_ATOM_DATA *)inchi_calloc( sd-&gt;num_components[iINChI], sizeof(INP_ATOM_DATA)); </a>
+<a name="ln323">    genctl-&gt;InpCurAtData[iINChI] = (INP_ATOM_DATA *)inchi_calloc( sd-&gt;num_components[iINChI], sizeof(INP_ATOM_DATA)); </a>
+<a name="ln324">    genctl-&gt;cti[iINChI] = (COMPONENT_TREAT_INFO *)inchi_calloc( sd-&gt;num_components[iINChI], sizeof(COMPONENT_TREAT_INFO)); </a>
+<a name="ln325">    memset (genctl-&gt;cti[iINChI], 0, sd-&gt;num_components[iINChI]*sizeof(COMPONENT_TREAT_INFO));</a>
+<a name="ln326"> </a>
+<a name="ln327"> </a>
+<a name="ln328"> </a>
+<a name="ln329"> </a>
+<a name="ln330">    /*^^^ Second normalization step - component by component */</a>
+<a name="ln331"> </a>
+<a name="ln332"> </a>
+<a name="ln333">    for ( i = 0, nRet = 0; !sd-&gt;bUserQuitComponent &amp;&amp; i &lt; cur_prep_inp_data-&gt;num_components; i ++ ) </a>
+<a name="ln334">    {</a>
+<a name="ln335"> </a>
+<a name="ln336">        if (ip-&gt;msec_MaxTime) InchiTimeGet( &amp;ulTStart );</a>
+<a name="ln337"> </a>
+<a name="ln338">        inp_cur_data = &amp;(genctl-&gt;InpCurAtData[iINChI][i]);</a>
+<a name="ln339">        </a>
+<a name="ln340">        /*  a) allocate memory and extract current component */</a>
+<a name="ln341">        nRet = GetOneComponent( sd, ip, log_file, output_file, inp_cur_data, </a>
+<a name="ln342">                                cur_prep_inp_data, i, num_inp, pStr, nStrLen );</a>
+<a name="ln343">        </a>
+<a name="ln344">        if (ip-&gt;msec_MaxTime)   ip-&gt;msec_LeftTime -= InchiTimeElapsed( &amp;ulTStart );</a>
+<a name="ln345">        </a>
+<a name="ln346">        switch (nRet)           </a>
+<a name="ln347">        { </a>
+<a name="ln348">            case _IS_ERROR: </a>
+<a name="ln349">            case _IS_FATAL: </a>
+<a name="ln350">                goto exit_cycle; </a>
+<a name="ln351">        }</a>
+<a name="ln352"> </a>
+<a name="ln353"> </a>
+<a name="ln354"> </a>
+<a name="ln355">        /*  c) Create the component's INChI ( copies ip-&gt;bTautFlags into sd-&gt;bTautFlags)*/</a>
+<a name="ln356"> </a>
+<a name="ln357">        inp_norm_data[TAUT_NON] = &amp;(genctl-&gt;InpNormAtData[iINChI][i]);</a>
+<a name="ln358">        memset( inp_norm_data[TAUT_NON], 0, sizeof( *inp_norm_data[0] ) );</a>
+<a name="ln359">        inp_norm_data[TAUT_YES] = &amp;(genctl-&gt;InpNormTautData[iINChI][i]);</a>
+<a name="ln360">        memset( inp_norm_data[TAUT_YES], 0, sizeof( *inp_norm_data[0] ) );</a>
+<a name="ln361">        </a>
+<a name="ln362"> </a>
+<a name="ln363">        nRet = NormOneComponentINChI(genctl, iINChI, i);</a>
+<a name="ln364"> </a>
+<a name="ln365">        /*^^^ To save intermediate data... */</a>
+<a name="ln366">        if ( all_inp_norm_data ) </a>
+<a name="ln367">        {</a>
+<a name="ln368">            for ( j = 0; j &lt; TAUT_NUM; j ++ ) </a>
+<a name="ln369">            {</a>
+<a name="ln370">                if ( inp_norm_data[j]-&gt;bExists ) </a>
+<a name="ln371">                {</a>
+<a name="ln372">                    all_inp_norm_data[i][j] = *inp_norm_data[j];</a>
+<a name="ln373">                    memset( inp_norm_data[j], 0, sizeof(*inp_norm_data[0]) );</a>
+<a name="ln374">                }</a>
+<a name="ln375">            }</a>
+<a name="ln376">        }</a>
+<a name="ln377"> </a>
+<a name="ln378"> </a>
+<a name="ln379">        if (nRet) </a>
+<a name="ln380">        {</a>
+<a name="ln381">            nRet = TreatCreateOneComponentINChIError(sd, ip, cur_prep_inp_data, i, num_inp,</a>
+<a name="ln382">                                 inp_file, log_file, output_file, prb_file,pStr, nStrLen );</a>
+<a name="ln383">            break;</a>
+<a name="ln384">        }</a>
+<a name="ln385">    }</a>
+<a name="ln386"> </a>
+<a name="ln387"> </a>
+<a name="ln388">exit_cycle:</a>
+<a name="ln389"> </a>
+<a name="ln390">    switch ( nRet ) </a>
+<a name="ln391">    {</a>
+<a name="ln392">    case _IS_FATAL:</a>
+<a name="ln393">    case _IS_ERROR: break;</a>
+<a name="ln394">    default:</a>
+<a name="ln395"> </a>
+<a name="ln396">        /*^^^ To save intermediate data... */</a>
+<a name="ln397">        if ( all_inp_norm_data ) </a>
+<a name="ln398">        {</a>
+<a name="ln399">             int res = CreateCompositeNormAtom( composite_norm_data, </a>
+<a name="ln400">                                                all_inp_norm_data, </a>
+<a name="ln401">                                                prep_inp_data[iINChI].num_components);</a>
+<a name="ln402">        }</a>
+<a name="ln403">        break;</a>
+<a name="ln404">    }</a>
+<a name="ln405"> </a>
+<a name="ln406"> </a>
+<a name="ln407">    /*^^^ When saving intermediate data - avoid memory leaks in case of error */</a>
+<a name="ln408">    if ( all_inp_norm_data ) </a>
+<a name="ln409">    {</a>
+<a name="ln410">        for ( i = 0; i &lt; prep_inp_data[iINChI].num_components; i ++ ) </a>
+<a name="ln411">        {</a>
+<a name="ln412">            for ( k = 0; k &lt; TAUT_NUM; k ++ ) </a>
+<a name="ln413">            {</a>
+<a name="ln414">                FreeInpAtomData( &amp;all_inp_norm_data[i][k] );</a>
+<a name="ln415">            }</a>
+<a name="ln416">        }</a>
+<a name="ln417">        inchi_free( all_inp_norm_data );</a>
+<a name="ln418">        all_inp_norm_data = NULL;</a>
+<a name="ln419">    }</a>
+<a name="ln420"> </a>
+<a name="ln421"> </a>
+<a name="ln422"> </a>
+<a name="ln423"> </a>
+<a name="ln424"> </a>
+<a name="ln425"> </a>
+<a name="ln426"> </a>
+<a name="ln427">exit_function:</a>
+<a name="ln428"> </a>
+<a name="ln429">    return nRet;</a>
+<a name="ln430">}</a>
+<a name="ln431"> </a>
+<a name="ln432"> </a>
+<a name="ln433"> </a>
+<a name="ln434"> </a>
+<a name="ln435">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/</a>
+<a name="ln436">int CanonOneStructureINChI(INCHIGEN_CONTROL *genctl, int iINChI, INCHI_IOSTREAM *inp_file)</a>
+<a name="ln437">{</a>
+<a name="ln438">int i, /*m,*/ nRet = 0;</a>
+<a name="ln439"> </a>
+<a name="ln440">STRUCT_DATA *sd = &amp;(genctl-&gt;StructData);</a>
+<a name="ln441"> </a>
+<a name="ln442">INPUT_PARMS *ip = &amp;(genctl-&gt;InpParms);</a>
+<a name="ln443">INCHI_IOSTREAM *output_file = genctl-&gt;inchi_file, *log_file = genctl-&gt;inchi_file+1;</a>
+<a name="ln444">INCHI_IOSTREAM prbstr, *prb_file=&amp;prbstr; </a>
+<a name="ln445"> </a>
+<a name="ln446">ORIG_ATOM_DATA *prep_inp_data = &amp;(genctl-&gt;PrepInpData[0]);</a>
+<a name="ln447">PINChI2 **pINChI2 = genctl-&gt;pINChI; </a>
+<a name="ln448">PINChI_Aux2 **pINChI_Aux2 = genctl-&gt;pINChI_Aux;</a>
+<a name="ln449"> </a>
+<a name="ln450">long num_inp = genctl-&gt;num_inp;</a>
+<a name="ln451">char *pStr = genctl-&gt;pStr;</a>
+<a name="ln452">int nStrLen = PSTR_BUFFER_SIZE;</a>
+<a name="ln453"> </a>
+<a name="ln454"> </a>
+<a name="ln455"> </a>
+<a name="ln456">    INP_ATOM_DATA *inp_cur_data = NULL;</a>
+<a name="ln457"> </a>
+<a name="ln458">    INP_ATOM_DATA *inp_norm_data[TAUT_NUM]; /*  = { &amp;InpNormAtData, &amp;InpNormTautData }; */</a>
+<a name="ln459"> </a>
+<a name="ln460">    ORIG_ATOM_DATA *cur_prep_inp_data = prep_inp_data + iINChI;</a>
+<a name="ln461"> </a>
+<a name="ln462">    inchiTime      ulTStart;</a>
+<a name="ln463"> </a>
+<a name="ln464">    inchi_ios_init(prb_file, INCHI_IOSTREAM_FILE, NULL);</a>
+<a name="ln465"> </a>
+<a name="ln466">    for (i = 0; i &lt; TAUT_NUM; i ++) /* initialize in case no InChI to generate 2008-12-23 DT */</a>
+<a name="ln467">        inp_norm_data[i]=NULL;</a>
+<a name="ln468"> </a>
+<a name="ln469">    /**************************************************************************/</a>
+<a name="ln470">    /*                                                                        */</a>
+<a name="ln471">    /*                                                                        */</a>
+<a name="ln472">    /*   M A I N   C Y C L E:   P R O C E S S    C O M P O N E N T S          */</a>
+<a name="ln473">    /*                                                                        */</a>
+<a name="ln474">    /*                                                                        */</a>
+<a name="ln475">    /*                     O N E   B Y   O N E                                */</a>
+<a name="ln476">    /*                                                                        */</a>
+<a name="ln477">    /*                                                                        */</a>
+<a name="ln478">    /**************************************************************************/</a>
+<a name="ln479"> </a>
+<a name="ln480">    for ( i = 0, nRet = 0; !sd-&gt;bUserQuitComponent &amp;&amp; i &lt; cur_prep_inp_data-&gt;num_components; i ++ ) </a>
+<a name="ln481">    {</a>
+<a name="ln482"> </a>
+<a name="ln483">        if ( ip-&gt;msec_MaxTime ) </a>
+<a name="ln484">            InchiTimeGet( &amp;ulTStart );</a>
+<a name="ln485"> </a>
+<a name="ln486"> </a>
+<a name="ln487"> </a>
+<a name="ln488"> </a>
+<a name="ln489">        /*****************************************************/</a>
+<a name="ln490">        /*  a) allocate memory and extract current component */</a>
+<a name="ln491">        /*****************************************************/</a>
+<a name="ln492"> </a>
+<a name="ln493">        inp_cur_data = &amp;(genctl-&gt;InpCurAtData[iINChI][i]);</a>
+<a name="ln494"> </a>
+<a name="ln495"> </a>
+<a name="ln496">        nRet = GetOneComponent( sd, ip, log_file, output_file, inp_cur_data, cur_prep_inp_data, </a>
+<a name="ln497">                                i, num_inp, pStr, nStrLen );</a>
+<a name="ln498">        </a>
+<a name="ln499">        if ( ip-&gt;msec_MaxTime ) </a>
+<a name="ln500">            ip-&gt;msec_LeftTime -= InchiTimeElapsed( &amp;ulTStart );</a>
+<a name="ln501">        </a>
+<a name="ln502">        switch ( nRet ) { case _IS_ERROR: case _IS_FATAL: goto exit_cycle; }</a>
+<a name="ln503"> </a>
+<a name="ln504">#ifndef TARGET_API_LIB</a>
+<a name="ln505">        /*  console request: Display the component? */</a>
+<a name="ln506">        if ( ip-&gt;bDisplay &amp;&amp; inp_file != stdin ) </a>
+<a name="ln507">        {</a>
+<a name="ln508">            if ( user_quit(&quot;Enter=Display Component, Esc=Stop ?&quot;, ip-&gt;ulDisplTime) ) </a>
+<a name="ln509">            {</a>
+<a name="ln510">                sd-&gt;bUserQuitComponent = 1;</a>
+<a name="ln511">                break;</a>
+<a name="ln512">            }</a>
+<a name="ln513">        }</a>
+<a name="ln514">#endif</a>
+<a name="ln515"> </a>
+<a name="ln516"> </a>
+<a name="ln517"> </a>
+<a name="ln518"> </a>
+<a name="ln519">        /*******************************************************************************/</a>
+<a name="ln520">        /*                                                                             */</a>
+<a name="ln521">        /*                      C A N O N I C A L I Z A T I O N                        */</a>
+<a name="ln522">        /*                                                                             */</a>
+<a name="ln523">        /*         (both tautomeric and non-tautomeric if requested)                   */</a>
+<a name="ln524">        /*                                                                             */</a>
+<a name="ln525">        /*******************************************************************************/</a>
+<a name="ln526">        /*  c) Create the component's INChI ( copies ip-&gt;bTautFlags into sd-&gt;bTautFlags)*/</a>
+<a name="ln527">        /*******************************************************************************/</a>
+<a name="ln528"> </a>
+<a name="ln529">        inp_norm_data[TAUT_NON] = &amp;(genctl-&gt;InpNormAtData[iINChI][i]);</a>
+<a name="ln530">        inp_norm_data[TAUT_YES] = &amp;(genctl-&gt;InpNormTautData[iINChI][i]);</a>
+<a name="ln531"> </a>
+<a name="ln532">        nRet = CanonOneComponentINChI(genctl, iINChI, i);</a>
+<a name="ln533"> </a>
+<a name="ln534"> </a>
+<a name="ln535"> </a>
+<a name="ln536">        </a>
+<a name="ln537">        if ( nRet ) </a>
+<a name="ln538">        {</a>
+<a name="ln539">            nRet = TreatCreateOneComponentINChIError(sd, ip, cur_prep_inp_data, i, num_inp,</a>
+<a name="ln540">                                 inp_file, log_file, output_file, prb_file,pStr, nStrLen );</a>
+<a name="ln541">            break;</a>
+<a name="ln542">        }</a>
+<a name="ln543">    }</a>
+<a name="ln544">    /**************************************************************************/</a>
+<a name="ln545">    /*                                                                        */</a>
+<a name="ln546">    /*                                                                        */</a>
+<a name="ln547">    /*   E N D   O F   T H E    M A I N   C Y C L E   P R O C E S S I N G     */</a>
+<a name="ln548">    /*                                                                        */</a>
+<a name="ln549">    /*          C O M P O N E N T S    O N E   B Y   O N E                    */</a>
+<a name="ln550">    /*                                                                        */</a>
+<a name="ln551">    /*                                                                        */</a>
+<a name="ln552">    /**************************************************************************/</a>
+<a name="ln553"> </a>
+<a name="ln554"> </a>
+<a name="ln555">exit_cycle:</a>
+<a name="ln556"> </a>
+<a name="ln557">    switch ( nRet ) </a>
+<a name="ln558">    {</a>
+<a name="ln559">    case _IS_FATAL:</a>
+<a name="ln560">    case _IS_ERROR: break;</a>
+<a name="ln561">    default:</a>
+<a name="ln562"> </a>
+<a name="ln563">        break;</a>
+<a name="ln564">    }</a>
+<a name="ln565"> </a>
+<a name="ln566"> </a>
+<a name="ln567"> </a>
+<a name="ln568"> </a>
+<a name="ln569">    for (i = 0; i &lt; TAUT_NUM; i ++) </a>
+<a name="ln570">        FreeInpAtomData( inp_norm_data[i] );</a>
+<a name="ln571"> </a>
+<a name="ln572"> </a>
+<a name="ln573"> </a>
+<a name="ln574">    return nRet;</a>
+<a name="ln575">}</a>
+<a name="ln576"> </a>
+<a name="ln577"> </a>
+<a name="ln578"> </a>
+<a name="ln579"> </a>
+<a name="ln580">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/</a>
+<a name="ln581">int NormOneComponentINChI(INCHIGEN_CONTROL * genctl, int iINChI, int i)</a>
+<a name="ln582">{</a>
+<a name="ln583">STRUCT_DATA *sd = &amp;(genctl-&gt;StructData);</a>
+<a name="ln584">INPUT_PARMS *ip = &amp;(genctl-&gt;InpParms);</a>
+<a name="ln585">PINChI2 **pINChI2 = genctl-&gt;pINChI; </a>
+<a name="ln586">PINChI_Aux2 **pINChI_Aux2 = genctl-&gt;pINChI_Aux;</a>
+<a name="ln587">NORM_CANON_FLAGS *pncFlags = &amp;(genctl-&gt;ncFlags);</a>
+<a name="ln588"> </a>
+<a name="ln589">    inchiTime     ulTStart, ulTEnd, *pulTEnd = NULL;</a>
+<a name="ln590">    int           k, num_at, ret = 0;</a>
+<a name="ln591">    int           bOrigCoord;</a>
+<a name="ln592">    INCHI_MODE     bTautFlags     = ip-&gt;bTautFlags;</a>
+<a name="ln593">    INCHI_MODE     bTautFlagsDone = (ip-&gt;bTautFlagsDone | sd-&gt;bTautFlagsDone[INCHI_BAS]);</a>
+<a name="ln594">    long          lElapsedTime;</a>
+<a name="ln595">    /*</a>
+<a name="ln596">    PINChI2     *pINChI     = pINChI2[iINChI];</a>
+<a name="ln597">    PINChI_Aux2 *pINChI_Aux = pINChI_Aux2[iINChI];</a>
+<a name="ln598">    */</a>
+<a name="ln599"> </a>
+<a name="ln600">PINChI2     *pINChI     = NULL;</a>
+<a name="ln601">PINChI_Aux2 *pINChI_Aux = NULL;</a>
+<a name="ln602"> </a>
+<a name="ln603">INChI       *cur_INChI[TAUT_NUM];</a>
+<a name="ln604">INChI_Aux   *cur_INChI_Aux[TAUT_NUM];</a>
+<a name="ln605">    </a>
+<a name="ln606"> </a>
+<a name="ln607">/* pINChI2[m=iINChI-1][j&lt; prep_inp_data[m].num_components][TAUT_NON] */</a>
+<a name="ln608"> </a>
+<a name="ln609">INP_ATOM_DATA *inp_norm_data[TAUT_NUM]; /*  = { &amp;InpNormAtData, &amp;InpNormTautData }; */</a>
+<a name="ln610">INP_ATOM_DATA *inp_cur_data = NULL;</a>
+<a name="ln611"> </a>
+<a name="ln612">COMPONENT_TREAT_INFO *cti = NULL;</a>
+<a name="ln613"> </a>
+<a name="ln614"> </a>
+<a name="ln615"> </a>
+<a name="ln616">    inp_cur_data = &amp;(genctl-&gt;InpCurAtData[iINChI][i]);</a>
+<a name="ln617">    </a>
+<a name="ln618">    cti = &amp;(genctl-&gt;cti[iINChI][i]);</a>
+<a name="ln619"> </a>
+<a name="ln620">    inp_norm_data[TAUT_NON] = &amp;(genctl-&gt;InpNormAtData[iINChI][i]);</a>
+<a name="ln621">    inp_norm_data[TAUT_YES] = &amp;(genctl-&gt;InpNormTautData[iINChI][i]);</a>
+<a name="ln622">    </a>
+<a name="ln623"> </a>
+<a name="ln624">    pINChI     = pINChI2[iINChI];</a>
+<a name="ln625">    pINChI_Aux = pINChI_Aux2[iINChI];</a>
+<a name="ln626">    </a>
+<a name="ln627">    </a>
+<a name="ln628">    InchiTimeGet( &amp;ulTStart );</a>
+<a name="ln629">    bOrigCoord = !(ip-&gt;bINChIOutputOptions &amp; (INCHI_OUT_NO_AUX_INFO | INCHI_OUT_SHORT_AUX_INFO));</a>
+<a name="ln630"> </a>
+<a name="ln631"> </a>
+<a name="ln632">    for ( k = 0; k &lt; TAUT_NUM; k ++ ) </a>
+<a name="ln633">    {</a>
+<a name="ln634">        cur_INChI[k] = pINChI[i][k];</a>
+<a name="ln635">        cur_INChI_Aux[k] = pINChI_Aux[i][k];</a>
+<a name="ln636">    }</a>
+<a name="ln637">    </a>
+<a name="ln638">    </a>
+<a name="ln639">    /*  allocate memory for non-tautimeric (k=0) and tautomeric (k=1) results */</a>
+<a name="ln640">    for ( k = 0; k &lt; TAUT_NUM; k ++ ) </a>
+<a name="ln641">    {</a>
+<a name="ln642">        int nAllocMode = (k==TAUT_YES? REQ_MODE_TAUT:0) |</a>
+<a name="ln643">                         (bTautFlagsDone &amp; ( TG_FLAG_FOUND_ISOTOPIC_H_DONE |</a>
+<a name="ln644">                                             TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE ))?</a>
+<a name="ln645">                         (ip-&gt;nMode &amp; REQ_MODE_ISO):0;</a>
+<a name="ln646"> </a>
+<a name="ln647">        if ( (k==TAUT_NON &amp;&amp; (ip-&gt;nMode &amp; REQ_MODE_BASIC )) ||</a>
+<a name="ln648">             (k==TAUT_YES &amp;&amp; (ip-&gt;nMode &amp; REQ_MODE_TAUT ))     )</a>
+<a name="ln649">        {</a>
+<a name="ln650">            /*  alloc INChI and INChI_Aux */</a>
+<a name="ln651">            cur_INChI[k]     = Alloc_INChI( inp_cur_data-&gt;at, inp_cur_data-&gt;num_at, &amp;inp_cur_data-&gt;num_bonds,</a>
+<a name="ln652">                                          &amp;inp_cur_data-&gt;num_isotopic, nAllocMode );</a>
+<a name="ln653">            cur_INChI_Aux[k] = Alloc_INChI_Aux( inp_cur_data-&gt;num_at,</a>
+<a name="ln654">                                          inp_cur_data-&gt;num_isotopic, nAllocMode, bOrigCoord );</a>
+<a name="ln655">            if ( cur_INChI_Aux[k] ) </a>
+<a name="ln656">                cur_INChI_Aux[k]-&gt;bIsIsotopic = inp_cur_data-&gt;num_isotopic;</a>
+<a name="ln657">            /*  alloc memory for the output structure: non-tautomeric and tautomeric (for displaying) */</a>
+<a name="ln658">            CreateInpAtomData( inp_norm_data[k], inp_cur_data-&gt;num_at, k );</a>
+<a name="ln659">        } </a>
+<a name="ln660">        else </a>
+<a name="ln661">            FreeInpAtomData( inp_norm_data[k] );</a>
+<a name="ln662">        </a>
+<a name="ln663">    }</a>
+<a name="ln664">    </a>
+<a name="ln665">    lElapsedTime = InchiTimeElapsed( &amp;ulTStart );</a>
+<a name="ln666">    if ( ip-&gt;msec_MaxTime ) </a>
+<a name="ln667">        ip-&gt;msec_LeftTime -= lElapsedTime;</a>
+<a name="ln668">    sd-&gt;ulStructTime += lElapsedTime;</a>
+<a name="ln669"> </a>
+<a name="ln670"> </a>
+<a name="ln671">    /******************************************************</a>
+<a name="ln672">     *</a>
+<a name="ln673">     *  Get one component canonical numberings, etc.</a>
+<a name="ln674">     *</a>
+<a name="ln675">     ******************************************************/</a>
+<a name="ln676"> </a>
+<a name="ln677">    /*</a>
+<a name="ln678">     * Create_INChI() return value:</a>
+<a name="ln679">     * num_at &lt;= 0: error code</a>
+<a name="ln680">     * num_at &gt;  0: number of atoms (excluding terminal hydrogen atoms)</a>
+<a name="ln681">     * inp_norm_data[0] =&gt; non-tautomeric, inp_norm_data[1] =&gt; tautomeric</a>
+<a name="ln682">     */</a>
+<a name="ln683">    InchiTimeGet( &amp;ulTStart );</a>
+<a name="ln684">    if ( ip-&gt;msec_MaxTime ) </a>
+<a name="ln685">    {</a>
+<a name="ln686">        ulTEnd = ulTStart;</a>
+<a name="ln687">        pulTEnd = &amp;ulTEnd;</a>
+<a name="ln688">        if ( ip-&gt;msec_LeftTime &gt; 0 ) </a>
+<a name="ln689">            InchiTimeAddMsec( pulTEnd, ip-&gt;msec_LeftTime );</a>
+<a name="ln690">    }</a>
+<a name="ln691"> </a>
+<a name="ln692"> </a>
+<a name="ln693">    cti-&gt;nUserMode = ip-&gt;nMode;</a>
+<a name="ln694"> </a>
+<a name="ln695">    /* vABParityUnknown holds actual value of an internal constant signifying       */</a>
+<a name="ln696">    /* unknown parity: either the same as for undefined parity (default==standard)  */</a>
+<a name="ln697">    /*  or a specific one (non-std; requested by SLUUD switch).                     */</a>
+<a name="ln698">    cti-&gt;vABParityUnknown = AB_PARITY_UNDF;</a>
+<a name="ln699">    if ( 0 != ( ip-&gt;nMode &amp; REQ_MODE_DIFF_UU_STEREO) ) </a>
+<a name="ln700">    {</a>
+<a name="ln701">        /* Make labels for unknown and undefined stereo different */</a>
+<a name="ln702">        cti-&gt;vABParityUnknown = AB_PARITY_UNKN;</a>
+<a name="ln703">    }</a>
+<a name="ln704"> </a>
+<a name="ln705">    num_at = Normalization_step( cur_INChI, cur_INChI_Aux, inp_cur_data-&gt;at,</a>
+<a name="ln706">                          inp_norm_data, inp_cur_data-&gt;num_at,</a>
+<a name="ln707">                          &amp;bTautFlags, &amp;bTautFlagsDone, cti);</a>
+<a name="ln708"> </a>
+<a name="ln709">    SetConnectedComponentNumber( inp_cur_data-&gt;at, inp_cur_data-&gt;num_at, i+1 ); /*  normalization alters structure component number */</a>
+<a name="ln710"> </a>
+<a name="ln711">    for ( k = 0; k &lt; TAUT_NUM; k ++ ) </a>
+<a name="ln712">    {</a>
+<a name="ln713">        if ( cur_INChI_Aux[k] &amp;&amp; cur_INChI_Aux[k]-&gt;nNumberOfAtoms &gt; 0 ) </a>
+<a name="ln714">        {</a>
+<a name="ln715">            pncFlags-&gt;bNormalizationFlags[iINChI][k] |= cur_INChI_Aux[k]-&gt;bNormalizationFlags;</a>
+<a name="ln716">            pncFlags-&gt;bTautFlags[iINChI][k]          |= cur_INChI_Aux[k]-&gt;bTautFlags;</a>
+<a name="ln717">            pncFlags-&gt;bTautFlagsDone[iINChI][k]      |= cur_INChI_Aux[k]-&gt;bTautFlagsDone;</a>
+<a name="ln718">            pncFlags-&gt;nCanonFlags[iINChI][k]         |= cur_INChI_Aux[k]-&gt;nCanonFlags;</a>
+<a name="ln719">        }</a>
+<a name="ln720">    }</a>
+<a name="ln721"> </a>
+<a name="ln722">    /*  Detect errors */</a>
+<a name="ln723">    if ( num_at &lt; 0 ) </a>
+<a name="ln724">        sd-&gt;nErrorCode = num_at;</a>
+<a name="ln725">    else if ( num_at == 0 ) </a>
+<a name="ln726">        sd-&gt;nErrorCode = -1;</a>
+<a name="ln727">    else if ( cur_INChI[TAUT_NON] &amp;&amp; cur_INChI[TAUT_NON]-&gt;nErrorCode ) </a>
+<a name="ln728">        /*  non-tautomeric error */</a>
+<a name="ln729">        sd-&gt;nErrorCode = cur_INChI[TAUT_NON]-&gt;nErrorCode;</a>
+<a name="ln730">    else if ( cur_INChI[TAUT_YES] &amp;&amp; cur_INChI[TAUT_YES]-&gt;nErrorCode ) </a>
+<a name="ln731">        /*  tautomeric error */</a>
+<a name="ln732">        sd-&gt;nErrorCode = cur_INChI[TAUT_YES]-&gt;nErrorCode;</a>
+<a name="ln733">    </a>
+<a name="ln734">    /*  detect and store stereo warnings */</a>
+<a name="ln735">    if ( !sd-&gt;nErrorCode ) </a>
+<a name="ln736">        GetProcessingWarnings(cur_INChI, inp_norm_data, sd);</a>
+<a name="ln737">    </a>
+<a name="ln738"> </a>
+<a name="ln739">    lElapsedTime = InchiTimeElapsed( &amp;ulTStart );</a>
+<a name="ln740">    if ( ip-&gt;msec_MaxTime ) </a>
+<a name="ln741">        ip-&gt;msec_LeftTime -= lElapsedTime;</a>
+<a name="ln742">    </a>
+<a name="ln743">    sd-&gt;ulStructTime += lElapsedTime;</a>
+<a name="ln744">#ifndef TARGET_API_LIB</a>
+<a name="ln745">    /*  Display the results */</a>
+<a name="ln746">    if ( ip-&gt;bDisplay )</a>
+<a name="ln747">        eat_keyboard_input();</a>
+<a name="ln748">#endif</a>
+<a name="ln749">    /*  a) No matter what happened save the allocated INChI pointers */</a>
+<a name="ln750">    /*  save the INChI of the current component */</a>
+<a name="ln751"> </a>
+<a name="ln752">    InchiTimeGet( &amp;ulTStart );</a>
+<a name="ln753">    for ( k = 0; k &lt; TAUT_NUM; k ++ ) </a>
+<a name="ln754">    {</a>
+<a name="ln755">        pINChI[i][k]     = cur_INChI[k];</a>
+<a name="ln756">        pINChI_Aux[i][k] = cur_INChI_Aux[k];</a>
+<a name="ln757"> </a>
+<a name="ln758">        cur_INChI[k]     = NULL;</a>
+<a name="ln759">        cur_INChI_Aux[k] = NULL;</a>
+<a name="ln760">    }</a>
+<a name="ln761"> </a>
+<a name="ln762">    /*  b) Count one component structure and/or INChI results only if there was no error */</a>
+<a name="ln763">    /*     Set inp_norm_data[j]-&gt;num_removed_H = number of removed explicit H           */</a>
+<a name="ln764"> </a>
+<a name="ln765">    if ( !sd-&gt;nErrorCode ) </a>
+<a name="ln766">    {</a>
+<a name="ln767"> </a>
+<a name="ln768">        /*  find where the current processed structure is located */</a>
+<a name="ln769">        int cur_is_in_non_taut = (pINChI[i][TAUT_NON] &amp;&amp; pINChI[i][TAUT_NON]-&gt;nNumberOfAtoms&gt;0);</a>
+<a name="ln770">        int cur_is_in_taut     = (pINChI[i][TAUT_YES] &amp;&amp; pINChI[i][TAUT_YES]-&gt;nNumberOfAtoms&gt;0);</a>
+<a name="ln771">        int cur_is_non_taut = (cur_is_in_non_taut &amp;&amp; 0 == pINChI[i][TAUT_NON]-&gt;lenTautomer) ||</a>
+<a name="ln772">                              (cur_is_in_taut     &amp;&amp; 0 == pINChI[i][TAUT_YES]-&gt;lenTautomer);</a>
+<a name="ln773">        int cur_is_taut     = cur_is_in_taut     &amp;&amp; 0 &lt;  pINChI[i][TAUT_YES]-&gt;lenTautomer;</a>
+<a name="ln774"> </a>
+<a name="ln775">        if ( cur_is_non_taut + cur_is_taut ) </a>
+<a name="ln776">        {</a>
+<a name="ln777">            /*  count tautomeric and non-tautomeric components of the structures */</a>
+<a name="ln778">            int j1 = cur_is_in_non_taut? TAUT_NON:TAUT_YES;</a>
+<a name="ln779">            int j2 = cur_is_in_taut?     TAUT_YES:TAUT_NON;</a>
+<a name="ln780">            int j;</a>
+<a name="ln781">            sd-&gt;num_non_taut[iINChI] += cur_is_non_taut;</a>
+<a name="ln782">            sd-&gt;num_taut[iINChI]     += cur_is_taut;</a>
+<a name="ln783">            for ( j = j1; j &lt;= j2; j ++ ) </a>
+<a name="ln784">            {</a>
+<a name="ln785">                int bIsotopic = (pINChI[i][j]-&gt;nNumberOfIsotopicAtoms ||</a>
+<a name="ln786">                                 pINChI[i][j]-&gt;nNumberOfIsotopicTGroups ||</a>
+<a name="ln787">                                 (pINChI[i][j]-&gt;nPossibleLocationsOfIsotopicH &amp;&amp; pINChI[i][j]-&gt;nPossibleLocationsOfIsotopicH[0]&gt;1));</a>
+<a name="ln788">                if ( j == TAUT_YES ) {</a>
+<a name="ln789">                    bIsotopic |= (0 &lt; pINChI_Aux[i][j]-&gt;nNumRemovedIsotopicH[0] + </a>
+<a name="ln790">                                      pINChI_Aux[i][j]-&gt;nNumRemovedIsotopicH[1] +</a>
+<a name="ln791">                                      pINChI_Aux[i][j]-&gt;nNumRemovedIsotopicH[2]);</a>
+<a name="ln792">                }</a>
+<a name="ln793">                inp_norm_data[j]-&gt;bExists = 1; /*  j=0: non-taut exists, j=1: taut exists */</a>
+<a name="ln794">                inp_norm_data[j]-&gt;bHasIsotopicLayer = bIsotopic;</a>
+<a name="ln795">            }</a>
+<a name="ln796">        }</a>
+<a name="ln797">    }</a>
+<a name="ln798"> </a>
+<a name="ln799">    if ( sd-&gt;nErrorCode==CT_OUT_OF_RAM || sd-&gt;nErrorCode==CT_USER_QUIT_ERR ) </a>
+<a name="ln800">        ret = _IS_FATAL;</a>
+<a name="ln801">    else if ( sd-&gt;nErrorCode ) </a>
+<a name="ln802">        ret = _IS_ERROR;</a>
+<a name="ln803">    </a>
+<a name="ln804">    lElapsedTime = InchiTimeElapsed( &amp;ulTStart );</a>
+<a name="ln805">    if ( ip-&gt;msec_MaxTime ) </a>
+<a name="ln806">        ip-&gt;msec_LeftTime -= lElapsedTime;</a>
+<a name="ln807">    </a>
+<a name="ln808">    sd-&gt;ulStructTime += lElapsedTime;</a>
+<a name="ln809">    return ret;</a>
+<a name="ln810">}</a>
+<a name="ln811"> </a>
+<a name="ln812"> </a>
+<a name="ln813"> </a>
+<a name="ln814">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/</a>
+<a name="ln815">int CanonOneComponentINChI(INCHIGEN_CONTROL *genctl, int iINChI, int i)</a>
+<a name="ln816">{</a>
+<a name="ln817">STRUCT_DATA *sd = &amp;(genctl-&gt;StructData);</a>
+<a name="ln818">INPUT_PARMS *ip = &amp;(genctl-&gt;InpParms);</a>
+<a name="ln819">PINChI2 **pINChI2 = genctl-&gt;pINChI; </a>
+<a name="ln820">PINChI_Aux2 **pINChI_Aux2 = genctl-&gt;pINChI_Aux;</a>
+<a name="ln821">NORM_CANON_FLAGS *pncFlags = &amp;(genctl-&gt;ncFlags);</a>
+<a name="ln822"> </a>
+<a name="ln823">    inchiTime     ulTStart, ulTEnd, *pulTEnd = NULL;</a>
+<a name="ln824">    int           k, num_at, ret = 0;</a>
+<a name="ln825">    INChI       *cur_INChI[TAUT_NUM];</a>
+<a name="ln826">    INChI_Aux   *cur_INChI_Aux[TAUT_NUM];</a>
+<a name="ln827">    long          lElapsedTime;</a>
+<a name="ln828">    /*</a>
+<a name="ln829">    PINChI2     *pINChI     = pINChI2[iINChI];</a>
+<a name="ln830">    PINChI_Aux2 *pINChI_Aux = pINChI_Aux2[iINChI];</a>
+<a name="ln831">    */</a>
+<a name="ln832"> </a>
+<a name="ln833">PINChI2     *pINChI     = NULL;</a>
+<a name="ln834">PINChI_Aux2 *pINChI_Aux = NULL;</a>
+<a name="ln835">    </a>
+<a name="ln836">INP_ATOM_DATA *inp_norm_data[TAUT_NUM]; /*  = { &amp;InpNormAtData, &amp;InpNormTautData }; */</a>
+<a name="ln837">INP_ATOM_DATA *inp_cur_data = NULL;</a>
+<a name="ln838"> </a>
+<a name="ln839">COMPONENT_TREAT_INFO *cti = NULL;</a>
+<a name="ln840"> </a>
+<a name="ln841"> </a>
+<a name="ln842">    inp_cur_data = &amp;(genctl-&gt;InpCurAtData[iINChI][i]);</a>
+<a name="ln843">    </a>
+<a name="ln844">    cti = &amp;(genctl-&gt;cti[iINChI][i]);</a>
+<a name="ln845"> </a>
+<a name="ln846">    inp_norm_data[TAUT_NON] = &amp;(genctl-&gt;InpNormAtData[iINChI][i]);</a>
+<a name="ln847">    inp_norm_data[TAUT_YES] = &amp;(genctl-&gt;InpNormTautData[iINChI][i]);</a>
+<a name="ln848">    </a>
+<a name="ln849">    </a>
+<a name="ln850"> </a>
+<a name="ln851">    pINChI     = pINChI2[iINChI];</a>
+<a name="ln852">    pINChI_Aux = pINChI_Aux2[iINChI];</a>
+<a name="ln853"> </a>
+<a name="ln854">    InchiTimeGet( &amp;ulTStart );</a>
+<a name="ln855"> </a>
+<a name="ln856">    for ( k = 0; k &lt; TAUT_NUM; k ++ ) </a>
+<a name="ln857">    {</a>
+<a name="ln858">        cur_INChI[k] = pINChI[i][k];</a>
+<a name="ln859">        cur_INChI_Aux[k] = pINChI_Aux[i][k];</a>
+<a name="ln860">    }</a>
+<a name="ln861"> </a>
+<a name="ln862">    </a>
+<a name="ln863">    </a>
+<a name="ln864">    lElapsedTime = InchiTimeElapsed( &amp;ulTStart );</a>
+<a name="ln865">    if ( ip-&gt;msec_MaxTime ) {</a>
+<a name="ln866">        ip-&gt;msec_LeftTime -= lElapsedTime;</a>
+<a name="ln867">    }</a>
+<a name="ln868">    sd-&gt;ulStructTime += lElapsedTime;</a>
+<a name="ln869"> </a>
+<a name="ln870"> </a>
+<a name="ln871">    /******************************************************</a>
+<a name="ln872">     *</a>
+<a name="ln873">     *  Get one component canonical numberings, etc.</a>
+<a name="ln874">     *</a>
+<a name="ln875">     ******************************************************/</a>
+<a name="ln876"> </a>
+<a name="ln877">    /*</a>
+<a name="ln878">     * Create_INChI() return value:</a>
+<a name="ln879">     * num_at &lt;= 0: error code</a>
+<a name="ln880">     * num_at &gt;  0: number of atoms (excluding terminal hydrogen atoms)</a>
+<a name="ln881">     * inp_norm_data[0] =&gt; non-tautomeric, inp_norm_data[1] =&gt; tautomeric</a>
+<a name="ln882">     */</a>
+<a name="ln883">    InchiTimeGet( &amp;ulTStart );</a>
+<a name="ln884">    if ( ip-&gt;msec_MaxTime ) {</a>
+<a name="ln885">        ulTEnd = ulTStart;</a>
+<a name="ln886">        pulTEnd = &amp;ulTEnd;</a>
+<a name="ln887">        if ( ip-&gt;msec_LeftTime &gt; 0 ) {</a>
+<a name="ln888">            InchiTimeAddMsec( pulTEnd, ip-&gt;msec_LeftTime );</a>
+<a name="ln889">        }</a>
+<a name="ln890">    }</a>
+<a name="ln891">    num_at = Canonicalization_step(cur_INChI, cur_INChI_Aux, inp_norm_data, </a>
+<a name="ln892">                                   pulTEnd, NULL, sd-&gt;pStrErrStruct, cti);</a>
+<a name="ln893"> </a>
+<a name="ln894">    num_at = cti-&gt;num_atoms;</a>
+<a name="ln895"> </a>
+<a name="ln896">    SetConnectedComponentNumber( inp_cur_data-&gt;at, inp_cur_data-&gt;num_at, i+1 ); /*  normalization alters structure component number */</a>
+<a name="ln897">    for ( k = 0; k &lt; TAUT_NUM; k ++ ) </a>
+<a name="ln898">    {</a>
+<a name="ln899">        if ( cur_INChI_Aux[k] &amp;&amp; cur_INChI_Aux[k]-&gt;nNumberOfAtoms &gt; 0 ) </a>
+<a name="ln900">        {</a>
+<a name="ln901">            pncFlags-&gt;bNormalizationFlags[iINChI][k] |= cur_INChI_Aux[k]-&gt;bNormalizationFlags;</a>
+<a name="ln902">            pncFlags-&gt;bTautFlags[iINChI][k]          |= cur_INChI_Aux[k]-&gt;bTautFlags;</a>
+<a name="ln903">            pncFlags-&gt;bTautFlagsDone[iINChI][k]      |= cur_INChI_Aux[k]-&gt;bTautFlagsDone;</a>
+<a name="ln904">            pncFlags-&gt;nCanonFlags[iINChI][k]         |= cur_INChI_Aux[k]-&gt;nCanonFlags;</a>
+<a name="ln905">        }</a>
+<a name="ln906">    }</a>
+<a name="ln907"> </a>
+<a name="ln908">    /*  Detect errors */</a>
+<a name="ln909">    if ( num_at &lt; 0 ) </a>
+<a name="ln910">        sd-&gt;nErrorCode = num_at;</a>
+<a name="ln911">    else if ( num_at == 0 ) </a>
+<a name="ln912">        sd-&gt;nErrorCode = -1;</a>
+<a name="ln913">    else if ( cur_INChI[TAUT_NON] &amp;&amp; cur_INChI[TAUT_NON]-&gt;nErrorCode ) </a>
+<a name="ln914">        /*  non-tautomeric error */</a>
+<a name="ln915">        sd-&gt;nErrorCode = cur_INChI[TAUT_NON]-&gt;nErrorCode;</a>
+<a name="ln916">    else if ( cur_INChI[TAUT_YES] &amp;&amp; cur_INChI[TAUT_YES]-&gt;nErrorCode ) </a>
+<a name="ln917">        /*  tautomeric error */</a>
+<a name="ln918">        sd-&gt;nErrorCode = cur_INChI[TAUT_YES]-&gt;nErrorCode;</a>
+<a name="ln919">    </a>
+<a name="ln920">    /*  detect and store stereo warnings */</a>
+<a name="ln921">    if ( !sd-&gt;nErrorCode ) </a>
+<a name="ln922">        GetProcessingWarnings(cur_INChI, inp_norm_data, sd);</a>
+<a name="ln923">    </a>
+<a name="ln924"> </a>
+<a name="ln925">    lElapsedTime = InchiTimeElapsed( &amp;ulTStart );</a>
+<a name="ln926">    if ( ip-&gt;msec_MaxTime ) </a>
+<a name="ln927">        ip-&gt;msec_LeftTime -= lElapsedTime;</a>
+<a name="ln928">    </a>
+<a name="ln929">    sd-&gt;ulStructTime += lElapsedTime;</a>
+<a name="ln930">#ifndef TARGET_API_LIB</a>
+<a name="ln931">    /*  Display the results */</a>
+<a name="ln932">    if ( ip-&gt;bDisplay )</a>
+<a name="ln933">        eat_keyboard_input();</a>
+<a name="ln934">#endif</a>
+<a name="ln935">    /*  a) No matter what happened save the allocated INChI pointers */</a>
+<a name="ln936">    /*  save the INChI of the current component */</a>
+<a name="ln937"> </a>
+<a name="ln938">    InchiTimeGet( &amp;ulTStart );</a>
+<a name="ln939">    for ( k = 0; k &lt; TAUT_NUM; k ++ ) </a>
+<a name="ln940">    {</a>
+<a name="ln941">        pINChI[i][k]     = cur_INChI[k];</a>
+<a name="ln942">        pINChI_Aux[i][k] = cur_INChI_Aux[k];</a>
+<a name="ln943"> </a>
+<a name="ln944">        cur_INChI[k]     = NULL;</a>
+<a name="ln945">        cur_INChI_Aux[k] = NULL;</a>
+<a name="ln946">    }</a>
+<a name="ln947"> </a>
+<a name="ln948">    /*  b) Count one component structure and/or INChI results only if there was no error */</a>
+<a name="ln949">    /*     Set inp_norm_data[j]-&gt;num_removed_H = number of removed explicit H           */</a>
+<a name="ln950"> </a>
+<a name="ln951">    if ( !sd-&gt;nErrorCode ) </a>
+<a name="ln952">    {</a>
+<a name="ln953"> </a>
+<a name="ln954">        /*  find where the current processed structure is located */</a>
+<a name="ln955">        int cur_is_in_non_taut = (pINChI[i][TAUT_NON] &amp;&amp; pINChI[i][TAUT_NON]-&gt;nNumberOfAtoms&gt;0);</a>
+<a name="ln956">        int cur_is_in_taut     = (pINChI[i][TAUT_YES] &amp;&amp; pINChI[i][TAUT_YES]-&gt;nNumberOfAtoms&gt;0);</a>
+<a name="ln957">        int cur_is_non_taut = (cur_is_in_non_taut &amp;&amp; 0 == pINChI[i][TAUT_NON]-&gt;lenTautomer) ||</a>
+<a name="ln958">                              (cur_is_in_taut     &amp;&amp; 0 == pINChI[i][TAUT_YES]-&gt;lenTautomer);</a>
+<a name="ln959">        int cur_is_taut     = cur_is_in_taut     &amp;&amp; 0 &lt;  pINChI[i][TAUT_YES]-&gt;lenTautomer;</a>
+<a name="ln960"> </a>
+<a name="ln961">        if ( cur_is_non_taut + cur_is_taut ) </a>
+<a name="ln962">        {</a>
+<a name="ln963">            /*  count tautomeric and non-tautomeric components of the structures */</a>
+<a name="ln964">            int j1 = cur_is_in_non_taut? TAUT_NON:TAUT_YES;</a>
+<a name="ln965">            int j2 = cur_is_in_taut?     TAUT_YES:TAUT_NON;</a>
+<a name="ln966">            int j;</a>
+<a name="ln967">            sd-&gt;num_non_taut[iINChI] += cur_is_non_taut;</a>
+<a name="ln968">            sd-&gt;num_taut[iINChI]     += cur_is_taut;</a>
+<a name="ln969">            for ( j = j1; j &lt;= j2; j ++ ) </a>
+<a name="ln970">            {</a>
+<a name="ln971">                int bIsotopic = (pINChI[i][j]-&gt;nNumberOfIsotopicAtoms ||</a>
+<a name="ln972">                                 pINChI[i][j]-&gt;nNumberOfIsotopicTGroups ||</a>
+<a name="ln973">                                 (pINChI[i][j]-&gt;nPossibleLocationsOfIsotopicH &amp;&amp; pINChI[i][j]-&gt;nPossibleLocationsOfIsotopicH[0]&gt;1));</a>
+<a name="ln974">                if ( j == TAUT_YES ) {</a>
+<a name="ln975">                    bIsotopic |= (0 &lt; pINChI_Aux[i][j]-&gt;nNumRemovedIsotopicH[0] + </a>
+<a name="ln976">                                      pINChI_Aux[i][j]-&gt;nNumRemovedIsotopicH[1] +</a>
+<a name="ln977">                                      pINChI_Aux[i][j]-&gt;nNumRemovedIsotopicH[2]);</a>
+<a name="ln978">                }</a>
+<a name="ln979">                inp_norm_data[j]-&gt;bExists = 1; /*  j=0: non-taut exists, j=1: taut exists */</a>
+<a name="ln980">                inp_norm_data[j]-&gt;bHasIsotopicLayer = bIsotopic;</a>
+<a name="ln981">            }</a>
+<a name="ln982">        }</a>
+<a name="ln983">    }</a>
+<a name="ln984"> </a>
+<a name="ln985">    if ( sd-&gt;nErrorCode==CT_OUT_OF_RAM || sd-&gt;nErrorCode==CT_USER_QUIT_ERR ) </a>
+<a name="ln986">        ret = _IS_FATAL;</a>
+<a name="ln987">    else if ( sd-&gt;nErrorCode ) </a>
+<a name="ln988">        ret = _IS_ERROR;</a>
+<a name="ln989">    </a>
+<a name="ln990">    lElapsedTime = InchiTimeElapsed( &amp;ulTStart );</a>
+<a name="ln991">    if ( ip-&gt;msec_MaxTime ) </a>
+<a name="ln992">        ip-&gt;msec_LeftTime -= lElapsedTime;</a>
+<a name="ln993">    </a>
+<a name="ln994">    sd-&gt;ulStructTime += lElapsedTime;</a>
+<a name="ln995">    return ret;</a>
+<a name="ln996">}</a>
+<a name="ln997"> </a>
+<a name="ln998"> </a>
+<a name="ln999"> </a>
+<a name="ln1000"> </a>
+<a name="ln1001"> </a>
+<a name="ln1002">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/</a>
+<a name="ln1003">int  Normalization_step( INChI **ppINChI, </a>
+<a name="ln1004">                        INChI_Aux **ppINChI_Aux, </a>
+<a name="ln1005">                        inp_ATOM *inp_at, </a>
+<a name="ln1006">                        INP_ATOM_DATA *out_norm_data[2],</a>
+<a name="ln1007">                        int num_inp_at, </a>
+<a name="ln1008">                        INCHI_MODE *pbTautFlags, </a>
+<a name="ln1009">                        INCHI_MODE *pbTautFlagsDone,</a>
+<a name="ln1010">                        COMPONENT_TREAT_INFO *z)</a>
+<a name="ln1011">{</a>
+<a name="ln1012"> </a>
+<a name="ln1013">int i,ret=0;</a>
+<a name="ln1014"> </a>
+<a name="ln1015"> </a>
+<a name="ln1016"> </a>
+<a name="ln1017">T_GROUP_INFO * /*const*/  t_group_info        = &amp;(z-&gt;vt_group_info);                </a>
+<a name="ln1018">T_GROUP_INFO * /*const*/  t_group_info_orig   = &amp;(z-&gt;vt_group_info_orig);</a>
+<a name="ln1019">    </a>
+<a name="ln1020">    </a>
+<a name="ln1021">    BCN *pBCN = &amp;(z-&gt;Bcn);</a>
+<a name="ln1022"> </a>
+<a name="ln1023">    /*^^^ */</a>
+<a name="ln1024">    z-&gt;fix_isofixedh = 0;</a>
+<a name="ln1025">    z-&gt;fix_termhchrg = 0;</a>
+<a name="ln1026">    /*^^^ */</a>
+<a name="ln1027">    #if( FIX_ISO_FIXEDH_BUG == 1 )</a>
+<a name="ln1028">        if (TG_FLAG_FIX_ISO_FIXEDH_BUG &amp; *pbTautFlags)</a>
+<a name="ln1029">            z-&gt;fix_isofixedh = 1;</a>
+<a name="ln1030">    #endif</a>
+<a name="ln1031">#if( FIX_TERM_H_CHRG_BUG == 1 )</a>
+<a name="ln1032">    if (TG_FLAG_FIX_TERM_H_CHRG_BUG &amp; *pbTautFlags)</a>
+<a name="ln1033">            z-&gt;fix_termhchrg = 1;</a>
+<a name="ln1034">    #endif</a>
+<a name="ln1035"> </a>
+<a name="ln1036"> </a>
+<a name="ln1037">    z-&gt;bPointedEdgeStereo = ((TG_FLAG_POINTED_EDGE_STEREO &amp; *pbTautFlags)? PES_BIT_POINT_EDGE_STEREO:0)</a>
+<a name="ln1038">                                  | ((TG_FLAG_PHOSPHINE_STEREO    &amp; *pbTautFlags)? PES_BIT_PHOSPHINE_STEREO :0)</a>
+<a name="ln1039">                                  | ((TG_FLAG_ARSINE_STEREO       &amp; *pbTautFlags)? PES_BIT_ARSINE_STEREO    :0)</a>
+<a name="ln1040">                                  | ((TG_FLAG_FIX_SP3_BUG         &amp; *pbTautFlags)? PES_BIT_FIX_SP3_BUG      :0);</a>
+<a name="ln1041">    z-&gt;bTautFlags         = (*pbTautFlags     &amp; (~(INCHI_MODE)TG_FLAG_ALL_TAUTOMERIC) );</a>
+<a name="ln1042">    z-&gt;bTautFlagsDone     = (*pbTautFlagsDone /*&amp; (~(INCHI_MODE)TG_FLAG_ALL_TAUTOMERIC) */);</a>
+<a name="ln1043"> </a>
+<a name="ln1044">    z-&gt;out_at = NULL;       /*, *norm_at_fixed_bonds[TAUT_NUM]; */ /*  = {out_norm_nontaut_at, out_norm_taut_at} ; */</a>
+<a name="ln1045"> </a>
+<a name="ln1046">    /* Init: internal structs */</a>
+<a name="ln1047"> </a>
+<a name="ln1048">    memset( z-&gt;s, 0, sizeof(z-&gt;s) );    </a>
+<a name="ln1049"> </a>
+<a name="ln1050">    if ( pBCN ) memset( pBCN, 0, sizeof( pBCN[0] ) );    </a>
+<a name="ln1051"> </a>
+<a name="ln1052">    memset( t_group_info, 0, sizeof(*t_group_info) );</a>
+<a name="ln1053">    memset( t_group_info_orig, 0, sizeof(*t_group_info_orig) );</a>
+<a name="ln1054"> </a>
+<a name="ln1055"> </a>
+<a name="ln1056">    /* Allocate: at[] */</a>
+<a name="ln1057">    </a>
+<a name="ln1058">    for ( i = 0; i &lt; TAUT_NUM; i ++ ) </a>
+<a name="ln1059">    {</a>
+<a name="ln1060">        if ( out_norm_data[i]-&gt;at ) </a>
+<a name="ln1061">        {</a>
+<a name="ln1062">            z-&gt;at[i] = </a>
+<a name="ln1063">                    (sp_ATOM  *) inchi_malloc( num_inp_at * sizeof(*(z-&gt;at[0])) );</a>
+<a name="ln1064">            </a>
+<a name="ln1065">            if ( !z-&gt;at[i] ) ret = -1;</a>
+<a name="ln1066">        } </a>
+<a name="ln1067">        else </a>
+<a name="ln1068">            z-&gt;at[i] = NULL;</a>
+<a name="ln1069"> </a>
+<a name="ln1070">    }</a>
+<a name="ln1071"> </a>
+<a name="ln1072">    if ( (!out_norm_data[TAUT_NON]-&gt;at &amp;&amp; !out_norm_data[TAUT_YES]-&gt;at) || !inp_at || ret )</a>
+<a name="ln1073">    {</a>
+<a name="ln1074">        ret = -1;</a>
+<a name="ln1075">        goto exit_function;</a>
+<a name="ln1076">    }</a>
+<a name="ln1077"> </a>
+<a name="ln1078">    /* the first struct to process: tautomeric if exists else non-tautomeric */</a>
+<a name="ln1079">    </a>
+<a name="ln1080">    z-&gt;out_at = out_norm_data[TAUT_YES]-&gt;at? out_norm_data[TAUT_YES]-&gt;at : out_norm_data[TAUT_NON]-&gt;at;</a>
+<a name="ln1081">    </a>
+<a name="ln1082">    /* copy the input structure to be normalized to the buffer for the normalization data */</a>
+<a name="ln1083">    </a>
+<a name="ln1084">    memcpy( z-&gt;out_at, inp_at, num_inp_at*sizeof(z-&gt;out_at[0]) );</a>
+<a name="ln1085"> </a>
+<a name="ln1086">    </a>
+<a name="ln1087">    /*  tautomeric groups setting */</a>
+<a name="ln1088">    </a>
+<a name="ln1089">    t_group_info-&gt;bIgnoreIsotopic = 0;   /*  include tautomeric group isotopic info in MarkTautomerGroups() */</a>
+<a name="ln1090">    t_group_info-&gt;bTautFlags      = *pbTautFlags;</a>
+<a name="ln1091">    t_group_info-&gt;bTautFlagsDone  = *pbTautFlagsDone;</a>
+<a name="ln1092"> </a>
+<a name="ln1093"> </a>
+<a name="ln1094">    /*  Preprocess the structure; here THE NUMBER OF ATOMS MAY BE REDUCED */</a>
+<a name="ln1095">    /*  ??? Ambiguity: H-D may become HD or DH (that is, H+implicit D or D+implicit H) */</a>
+<a name="ln1096">    </a>
+<a name="ln1097">    if ( TG_FLAG_H_ALREADY_REMOVED &amp; z-&gt;bTautFlags ) </a>
+<a name="ln1098">    {</a>
+<a name="ln1099">        INP_ATOM_DATA *out_norm_data1 = out_norm_data[TAUT_YES]-&gt;at? out_norm_data[TAUT_YES] :</a>
+<a name="ln1100">                                        out_norm_data[TAUT_NON]-&gt;at? out_norm_data[TAUT_NON] : NULL;</a>
+<a name="ln1101">        if ( out_norm_data1 ) </a>
+<a name="ln1102">        {</a>
+<a name="ln1103">            z-&gt;num_at_tg     =</a>
+<a name="ln1104">            z-&gt;num_atoms     = out_norm_data1-&gt;num_at - out_norm_data1-&gt;num_removed_H;</a>
+<a name="ln1105">            z-&gt;num_deleted_H = out_norm_data1-&gt;num_removed_H;</a>
+<a name="ln1106">            t_group_info-&gt;tni.nNumRemovedExplicitH = z-&gt;num_deleted_H;</a>
+<a name="ln1107">        } </a>
+<a name="ln1108">        else </a>
+<a name="ln1109">        {</a>
+<a name="ln1110">            ret = -1;</a>
+<a name="ln1111">            goto exit_function;</a>
+<a name="ln1112">        }</a>
+<a name="ln1113">    } </a>
+<a name="ln1114">    else </a>
+<a name="ln1115">    {</a>
+<a name="ln1116">        z-&gt;num_at_tg = z-&gt;num_atoms = remove_terminal_HDT( num_inp_at, z-&gt;out_at, z-&gt;fix_termhchrg);</a>
+<a name="ln1117">        </a>
+<a name="ln1118">        z-&gt;num_deleted_H = num_inp_at - z-&gt;num_atoms;</a>
+<a name="ln1119">        t_group_info-&gt;tni.nNumRemovedExplicitH = z-&gt;num_deleted_H;</a>
+<a name="ln1120"> </a>
+<a name="ln1121">        add_DT_to_num_H( z-&gt;num_atoms, z-&gt;out_at );</a>
+<a name="ln1122">    }</a>
+<a name="ln1123">    </a>
+<a name="ln1124">    </a>
+<a name="ln1125">    </a>
+<a name="ln1126">    /* fix_odd_things( z-&gt;num_atoms, z-&gt;out_at );*/</a>
+<a name="ln1127"> </a>
+<a name="ln1128"> </a>
+<a name="ln1129">#if( FIND_RING_SYSTEMS == 1 )</a>
+<a name="ln1130">    MarkRingSystemsInp( z-&gt;out_at, z-&gt;num_atoms, 0 );</a>
+<a name="ln1131">#endif</a>
+<a name="ln1132"> </a>
+<a name="ln1133">    /*  duplicate the preprocessed structure so that all supplied out_norm_data[]-&gt;at buffers are filled */</a>
+<a name="ln1134">    if ( z-&gt;out_at != out_norm_data[TAUT_YES]-&gt;at &amp;&amp; out_norm_data[TAUT_YES]-&gt;at ) </a>
+<a name="ln1135">        memcpy( out_norm_data[TAUT_YES]-&gt;at, z-&gt;out_at, num_inp_at*sizeof(z-&gt;out_at[0]) );</a>
+<a name="ln1136">    </a>
+<a name="ln1137">    if ( out_norm_data[TAUT_YES]-&gt;at_fixed_bonds &amp;&amp; out_norm_data[TAUT_YES]-&gt;at ) </a>
+<a name="ln1138">        memcpy( out_norm_data[TAUT_YES]-&gt;at_fixed_bonds, z-&gt;out_at, num_inp_at*sizeof(z-&gt;out_at[0]) );</a>
+<a name="ln1139">    </a>
+<a name="ln1140">    if ( z-&gt;out_at != out_norm_data[TAUT_NON]-&gt;at &amp;&amp; out_norm_data[TAUT_NON]-&gt;at ) </a>
+<a name="ln1141">        memcpy( out_norm_data[TAUT_NON]-&gt;at, z-&gt;out_at, num_inp_at*sizeof(z-&gt;out_at[0]) );</a>
+<a name="ln1142">    </a>
+<a name="ln1143"> </a>
+<a name="ln1144">    /*******************************************************************************</a>
+<a name="ln1145">     * ??? not true ??? duplicate inp_at and keep inp_at[] unchanged after terminal hydrogens removal</a>
+<a name="ln1146">     * set stereo parities in taut_at[], non_taut_at[]</a>
+<a name="ln1147">     * obtain max. lenghts of the name stereo parts</a>
+<a name="ln1148">     * Ignore absence/presence of isotopic stereo for now</a>
+<a name="ln1149">     * mark isotopic atoms</a>
+<a name="ln1150">     *******************************************************************************/</a>
+<a name="ln1151">    </a>
+<a name="ln1152">    if ( out_norm_data[TAUT_YES]-&gt;at &amp;&amp; z-&gt;at[TAUT_YES] ) </a>
+<a name="ln1153">    {</a>
+<a name="ln1154">    </a>
+<a name="ln1155">        /* final normalization of possibly tautomeric structure */</a>
+<a name="ln1156"> </a>
+<a name="ln1157">        ret = </a>
+<a name="ln1158">                mark_alt_bonds_and_taut_groups ( out_norm_data[TAUT_YES]-&gt;at, </a>
+<a name="ln1159">                                                 out_norm_data[TAUT_YES]-&gt;at_fixed_bonds, </a>
+<a name="ln1160">                                                 z-&gt;num_atoms,</a>
+<a name="ln1161">                                                 t_group_info, </a>
+<a name="ln1162">                                                 NULL, NULL );</a>
+<a name="ln1163">        </a>
+<a name="ln1164">        if ( ret &lt; 0 ) </a>
+<a name="ln1165">            goto exit_function;/*  out of RAM or other normalization problem */</a>
+<a name="ln1166">        </a>
+<a name="ln1167">        z-&gt;num_taut_at = ret; /* number of atoms without removed H? */</a>
+<a name="ln1168">        z-&gt;num_deleted_H_taut = t_group_info-&gt;tni.nNumRemovedExplicitH;</a>
+<a name="ln1169">        out_norm_data[TAUT_YES]-&gt;num_at              = z-&gt;num_atoms + z-&gt;num_deleted_H_taut; /* protons might have been removed */</a>
+<a name="ln1170">        out_norm_data[TAUT_YES]-&gt;num_removed_H       = z-&gt;num_deleted_H_taut;</a>
+<a name="ln1171">        out_norm_data[TAUT_YES]-&gt;nNumRemovedProtons += t_group_info-&gt;tni.nNumRemovedProtons;</a>
+<a name="ln1172">        </a>
+<a name="ln1173">        for ( i = 0; i &lt; NUM_H_ISOTOPES; i ++ ) </a>
+<a name="ln1174">        {</a>
+<a name="ln1175">            out_norm_data[TAUT_YES]-&gt;nNumRemovedProtonsIsotopic[i] += t_group_info-&gt;tni.nNumRemovedProtonsIsotopic[i] /*+ t_group_info-&gt;num_iso_H[i]*/;</a>
+<a name="ln1176">            out_norm_data[TAUT_YES]-&gt;num_iso_H[i]                  += t_group_info-&gt;num_iso_H[i];</a>
+<a name="ln1177">        }</a>
+<a name="ln1178"> </a>
+<a name="ln1179">        /* mark deleted isolated tautomeric H(+) */</a>
+<a name="ln1180">        </a>
+<a name="ln1181">        if ( z-&gt;num_taut_at == 1 &amp;&amp; out_norm_data[TAUT_YES]-&gt;at[0].at_type == ATT_PROTON &amp;&amp;</a>
+<a name="ln1182">             t_group_info &amp;&amp; t_group_info-&gt;tni.nNumRemovedProtons == 1 ) </a>
+<a name="ln1183">        {</a>
+<a name="ln1184">            out_norm_data[TAUT_YES]-&gt;bDeleted = 1;</a>
+<a name="ln1185">            </a>
+<a name="ln1186">            FreeInpAtom( &amp;out_norm_data[TAUT_YES]-&gt;at_fixed_bonds );</a>
+<a name="ln1187">        } </a>
+<a name="ln1188">        else if ( (t_group_info-&gt;tni.bNormalizationFlags &amp; FLAG_NORM_CONSIDER_TAUT) &amp;&amp;</a>
+<a name="ln1189">                   out_norm_data[TAUT_YES]-&gt;at_fixed_bonds) </a>
+<a name="ln1190">        {</a>
+<a name="ln1191">             out_norm_data[TAUT_YES]-&gt;bTautPreprocessed = 1;</a>
+<a name="ln1192">        }</a>
+<a name="ln1193"> </a>
+<a name="ln1194">        out_norm_data[TAUT_YES]-&gt;bTautFlags     = *pbTautFlags     = t_group_info-&gt;bTautFlags;</a>
+<a name="ln1195">        out_norm_data[TAUT_YES]-&gt;bTautFlagsDone = *pbTautFlagsDone = t_group_info-&gt;bTautFlagsDone;</a>
+<a name="ln1196">        out_norm_data[TAUT_YES]-&gt;bNormalizationFlags = t_group_info-&gt;tni.bNormalizationFlags;</a>
+<a name="ln1197">        </a>
+<a name="ln1198">        /* create internal sp_ATOM at[] out of out_norm_data[]-&gt;at */</a>
+<a name="ln1199">        </a>
+<a name="ln1200">        inp2spATOM( out_norm_data[TAUT_YES]-&gt;at, num_inp_at, z-&gt;at[TAUT_YES] );</a>
+<a name="ln1201"> </a>
+<a name="ln1202">        </a>
+<a name="ln1203">        </a>
+<a name="ln1204">        /* set stereo parities to at[]; nUserMode: accept alt. stereo bonds, min ring size */</a>
+<a name="ln1205">        </a>
+<a name="ln1206">        ret = </a>
+<a name="ln1207">                set_stereo_parity( out_norm_data[TAUT_YES]-&gt;at, z-&gt;at[TAUT_YES], z-&gt;num_taut_at, z-&gt;num_deleted_H_taut,</a>
+<a name="ln1208">                                 &amp;(z-&gt;s[TAUT_YES].nMaxNumStereoAtoms), </a>
+<a name="ln1209">                                 &amp;(z-&gt;s[TAUT_YES].nMaxNumStereoBonds), z-&gt;nUserMode,</a>
+<a name="ln1210">                                 z-&gt;bPointedEdgeStereo, z-&gt;vABParityUnknown );</a>
+<a name="ln1211">        </a>
+<a name="ln1212">        if ( RETURNED_ERROR(ret) ) goto exit_function; /*  stereo bond error */</a>
+<a name="ln1213">        </a>
+<a name="ln1214"> </a>
+<a name="ln1215">        z-&gt;s[TAUT_YES].bMayHaveStereo    = (z-&gt;s[TAUT_YES].nMaxNumStereoAtoms || z-&gt;s[TAUT_YES].nMaxNumStereoBonds);</a>
+<a name="ln1216"> </a>
+<a name="ln1217">        /* </a>
+<a name="ln1218">         * mark isotopic atoms and atoms that have non-tautomeric</a>
+<a name="ln1219">         * isotopic terminal hydrogen atoms 1H, 2H(D), 3H(T)</a>
+<a name="ln1220">         */</a>
+<a name="ln1221"> </a>
+<a name="ln1222">        z-&gt;s[TAUT_YES].num_isotopic_atoms = </a>
+<a name="ln1223">            </a>
+<a name="ln1224">                    set_atom_iso_sort_keys( z-&gt;num_taut_at, z-&gt;at[TAUT_YES], t_group_info,</a>
+<a name="ln1225">                                            &amp;(z-&gt;s[TAUT_YES].bHasIsotopicTautGroups) );</a>
+<a name="ln1226">        </a>
+<a name="ln1227"> </a>
+<a name="ln1228">        /**************************************************************************</a>
+<a name="ln1229">         *  prepare tautomeric (if no tautomerism found then prepare non-tautomeric)</a>
+<a name="ln1230">         *  structure for canonicalizaton:</a>
+<a name="ln1231">         **************************************************************************</a>
+<a name="ln1232">         *   remove t-groups that have no H,</a>
+<a name="ln1233">         *   remove charges from t-groups if requested</a>
+<a name="ln1234">         *   renumber t-groups and find final t_group_info-&gt;num_t_groups</a>
+<a name="ln1235">         *   add to t-groups lists of endpoints tgroup-&gt;nEndpointAtomNumber[]</a>
+<a name="ln1236">         *   calculate length of the t-group part of the connection table</a>
+<a name="ln1237">         **************************************************************************/</a>
+<a name="ln1238">        </a>
+<a name="ln1239">        z-&gt;s[TAUT_YES].nLenLinearCTTautomer = </a>
+<a name="ln1240">                </a>
+<a name="ln1241">                    CountTautomerGroups( z-&gt;at[TAUT_YES], z-&gt;num_taut_at, t_group_info );</a>
+<a name="ln1242">        </a>
+<a name="ln1243"> </a>
+<a name="ln1244">        if ( RETURNED_ERROR(z-&gt;s[TAUT_YES].nLenLinearCTTautomer) ) </a>
+<a name="ln1245">        { </a>
+<a name="ln1246">            /* added error treatment 9-11-2003 */</a>
+<a name="ln1247">            ret = z-&gt;s[TAUT_YES].nLenLinearCTTautomer;</a>
+<a name="ln1248">            goto exit_function;</a>
+<a name="ln1249">            /*  error has happened; no breakpoint here</a>
+<a name="ln1250">            z-&gt;s[TAUT_YES].nLenLinearCTTautomer = 0;</a>
+<a name="ln1251">            */</a>
+<a name="ln1252">        } </a>
+<a name="ln1253">        else if ( z-&gt;s[TAUT_YES].nLenLinearCTTautomer &gt; 0 ) </a>
+<a name="ln1254">        {</a>
+<a name="ln1255">            z-&gt;num_at_tg = z-&gt;num_taut_at+t_group_info-&gt;num_t_groups;</a>
+<a name="ln1256"> </a>
+<a name="ln1257">            /*  ??? -not true- create t_group_info_orig for multiple calls with atom renumbering */</a>
+<a name="ln1258"> </a>
+<a name="ln1259">            make_a_copy_of_t_group_info( t_group_info_orig /* dest*/, t_group_info /* source*/ );</a>
+<a name="ln1260"> </a>
+<a name="ln1261">            /*  mark isotopic tautomer groups: calculate t_group-&gt;iWeight */</a>
+<a name="ln1262">            z-&gt;s[TAUT_YES].nLenLinearCTIsotopicTautomer=set_tautomer_iso_sort_keys( t_group_info );</a>
+<a name="ln1263">            if ( z-&gt;s[TAUT_YES].nLenLinearCTIsotopicTautomer &lt; 0 ) </a>
+<a name="ln1264">            {</a>
+<a name="ln1265">                /* ??? -error cannot happen- error has happened; no breakpoint here */</a>
+<a name="ln1266">                z-&gt;s[TAUT_YES].nLenLinearCTIsotopicTautomer = 0;</a>
+<a name="ln1267">            }</a>
+<a name="ln1268">            out_norm_data[TAUT_YES]-&gt;bTautomeric = z-&gt;s[TAUT_YES].nLenLinearCTTautomer;</a>
+<a name="ln1269">        }</a>
+<a name="ln1270">        </a>
+<a name="ln1271">        /*  new variable: z-&gt;s[TAUT_YES].nLenCT introduced 7-22-2002 */</a>
+<a name="ln1272"> </a>
+<a name="ln1273">        GetCanonLengths( z-&gt;num_taut_at, z-&gt;at[TAUT_YES], &amp;(z-&gt;s[TAUT_YES]), t_group_info );</a>
+<a name="ln1274"> </a>
+<a name="ln1275"> </a>
+<a name="ln1276">    } /* end of: final normalization of possibly tautomeric structure */</a>
+<a name="ln1277">    </a>
+<a name="ln1278"> </a>
+<a name="ln1279"> </a>
+<a name="ln1280">    if ( out_norm_data[TAUT_NON]-&gt;at &amp;&amp; out_norm_data[TAUT_YES]-&gt;at &amp;&amp; z-&gt;at[TAUT_NON] &amp;&amp; !z-&gt;s[TAUT_YES].nLenLinearCTTautomer ) </a>
+<a name="ln1281">    {</a>
+<a name="ln1282">        /* the structure is non-tautomeric: use tautomeric treatment results only for it */</a>
+<a name="ln1283"> </a>
+<a name="ln1284">        inchi_free( z-&gt;at[TAUT_NON] );</a>
+<a name="ln1285">    </a>
+<a name="ln1286">        z-&gt;at[TAUT_NON] = NULL;</a>
+<a name="ln1287">    } </a>
+<a name="ln1288"> </a>
+<a name="ln1289">    else if ( !out_norm_data[TAUT_NON]-&gt;at &amp;&amp; out_norm_data[TAUT_YES]-&gt;at &amp;&amp;</a>
+<a name="ln1290">         !z-&gt;at[TAUT_NON] &amp;&amp; z-&gt;at[TAUT_YES] &amp;&amp; !z-&gt;s[TAUT_YES].nLenLinearCTTautomer ) </a>
+<a name="ln1291">    {</a>
+<a name="ln1292">        /* requested tautomeric; found non-tautomeric; it is located in out_norm_data[TAUT_YES]-&gt;at */</a>
+<a name="ln1293">    </a>
+<a name="ln1294">        out_norm_data[TAUT_YES]-&gt;bTautomeric = 0;</a>
+<a name="ln1295">    }   </a>
+<a name="ln1296"> </a>
+<a name="ln1297">    else if ( out_norm_data[TAUT_NON]-&gt;at &amp;&amp; z-&gt;at[TAUT_NON] ) </a>
+<a name="ln1298">    {</a>
+<a name="ln1299">        /* the structure needs non-tautomeric treatment: final normalization of non-tautomeric structure */</a>
+<a name="ln1300"> </a>
+<a name="ln1301">        ret = </a>
+<a name="ln1302">                    mark_alt_bonds_and_taut_groups (out_norm_data[TAUT_NON]-&gt;at, </a>
+<a name="ln1303">                                                    NULL, </a>
+<a name="ln1304">                                                    z-&gt;num_atoms, </a>
+<a name="ln1305">                                                    NULL, </a>
+<a name="ln1306">                                                    &amp;(z-&gt;bTautFlags), &amp;(z-&gt;bTautFlagsDone) );</a>
+<a name="ln1307">        </a>
+<a name="ln1308">        if ( ret &lt; 0 ) goto exit_function;  /*  out of RAM or other normalization problem */</a>
+<a name="ln1309">        </a>
+<a name="ln1310">        out_norm_data[TAUT_NON]-&gt;num_at        = z-&gt;num_atoms + z-&gt;num_deleted_H;</a>
+<a name="ln1311">        out_norm_data[TAUT_NON]-&gt;num_removed_H = z-&gt;num_deleted_H;</a>
+<a name="ln1312">        out_norm_data[TAUT_NON]-&gt;bTautFlags     = *pbTautFlags;</a>
+<a name="ln1313">        out_norm_data[TAUT_NON]-&gt;bTautFlagsDone = *pbTautFlagsDone;</a>
+<a name="ln1314">        out_norm_data[TAUT_NON]-&gt;bNormalizationFlags = 0;</a>
+<a name="ln1315">        </a>
+<a name="ln1316">        /* create internal sp_ATOM at[] out of out_norm_data[]-&gt;at */</a>
+<a name="ln1317">        </a>
+<a name="ln1318">        inp2spATOM( out_norm_data[TAUT_NON]-&gt;at, num_inp_at, z-&gt;at[TAUT_NON] );</a>
+<a name="ln1319">        </a>
+<a name="ln1320">        /* set stereo parities to at[]; nUserMode: accept alt. stereo bonds, min ring size */</a>
+<a name="ln1321">        </a>
+<a name="ln1322">        ret = </a>
+<a name="ln1323">                set_stereo_parity( out_norm_data[TAUT_NON]-&gt;at, </a>
+<a name="ln1324">                                   z-&gt;at[TAUT_NON], </a>
+<a name="ln1325">                                   z-&gt;num_atoms, z-&gt;num_deleted_H,</a>
+<a name="ln1326">                                   &amp;(z-&gt;s[TAUT_NON].nMaxNumStereoAtoms), </a>
+<a name="ln1327">                                   &amp;(z-&gt;s[TAUT_NON].nMaxNumStereoBonds), </a>
+<a name="ln1328">                                   z-&gt;nUserMode,</a>
+<a name="ln1329">                                   z-&gt;bPointedEdgeStereo, z-&gt;vABParityUnknown );</a>
+<a name="ln1330"> </a>
+<a name="ln1331">        if ( RETURNED_ERROR( ret ) ) goto exit_function; /*  stereo bond error */</a>
+<a name="ln1332">        </a>
+<a name="ln1333"> </a>
+<a name="ln1334">        z-&gt;s[TAUT_NON].bMayHaveStereo = (z-&gt;s[TAUT_NON].nMaxNumStereoAtoms || z-&gt;s[TAUT_NON].nMaxNumStereoBonds);</a>
+<a name="ln1335">        </a>
+<a name="ln1336">        /* </a>
+<a name="ln1337">         * mark isotopic atoms and atoms that have non-tautomeric</a>
+<a name="ln1338">         * isotopic terminal hydrogen atoms 1H, 2H(D), 3H(T)</a>
+<a name="ln1339">         */</a>
+<a name="ln1340">        </a>
+<a name="ln1341">        z-&gt;s[TAUT_NON].num_isotopic_atoms =         </a>
+<a name="ln1342">                    </a>
+<a name="ln1343">                set_atom_iso_sort_keys( z-&gt;num_atoms, z-&gt;at[TAUT_NON], NULL, NULL );</a>
+<a name="ln1344"> </a>
+<a name="ln1345"> </a>
+<a name="ln1346">        GetCanonLengths( z-&gt;num_atoms, z-&gt;at[TAUT_NON], &amp;(z-&gt;s[TAUT_NON]), NULL);</a>
+<a name="ln1347">        </a>
+<a name="ln1348">        </a>
+<a name="ln1349">        out_norm_data[TAUT_NON]-&gt;bTautomeric = 0;</a>
+<a name="ln1350"> </a>
+<a name="ln1351">    } /* the structure needs non-tautomeric treatment: final normalization of non-tautomeric structure */ </a>
+<a name="ln1352"> </a>
+<a name="ln1353"> </a>
+<a name="ln1354"> </a>
+<a name="ln1355"> </a>
+<a name="ln1356">    /**********************************************************/</a>
+<a name="ln1357"> </a>
+<a name="ln1358">    </a>
+<a name="ln1359"> </a>
+<a name="ln1360"> </a>
+<a name="ln1361">    /*  common */</a>
+<a name="ln1362">    z-&gt;bMayHaveStereo        = z-&gt;s[TAUT_YES].bMayHaveStereo || z-&gt;s[TAUT_NON].bMayHaveStereo;</a>
+<a name="ln1363">    z-&gt;bHasIsotopicAtoms     = z-&gt;s[TAUT_NON].num_isotopic_atoms &gt; 0 || z-&gt;s[TAUT_NON].bHasIsotopicTautGroups &gt; 0 ||</a>
+<a name="ln1364">                            z-&gt;s[TAUT_YES].num_isotopic_atoms &gt; 0 || z-&gt;s[TAUT_YES].bHasIsotopicTautGroups &gt; 0 ;</a>
+<a name="ln1365">/*^^^ */</a>
+<a name="ln1366">    if (z-&gt;fix_isofixedh)  /* 2008-03-21 DT */</a>
+<a name="ln1367">        z-&gt;bHasIsotopicAtoms     = z-&gt;bHasIsotopicAtoms ||</a>
+<a name="ln1368">                                (z-&gt;s[TAUT_YES].nLenLinearCTTautomer &gt; 0 &amp;&amp; t_group_info &amp;&amp;</a>
+<a name="ln1369">                                (0 &lt; NUM_H_ISOTOPES &amp;&amp; t_group_info-&gt;tni.nNumRemovedProtonsIsotopic[0] ||</a>
+<a name="ln1370">                                 (1 &lt; NUM_H_ISOTOPES &amp;&amp; t_group_info-&gt;tni.nNumRemovedProtonsIsotopic[1]) ||</a>
+<a name="ln1371">                                 (2 &lt; NUM_H_ISOTOPES &amp;&amp; t_group_info-&gt;tni.nNumRemovedProtonsIsotopic[2])) );</a>
+<a name="ln1372">/*^^^ */</a>
+<a name="ln1373">        z-&gt;bHasIsotopicAtoms     = z-&gt;bHasIsotopicAtoms ||</a>
+<a name="ln1374">                                (z-&gt;s[TAUT_YES].nLenIsotopicEndpoints &gt; 1 &amp;&amp; t_group_info &amp;&amp;</a>
+<a name="ln1375">                                (t_group_info-&gt;bTautFlagsDone &amp; (TG_FLAG_FOUND_ISOTOPIC_H_DONE|TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE)));</a>
+<a name="ln1376"> </a>
+<a name="ln1377"> </a>
+<a name="ln1378"> </a>
+<a name="ln1379"> </a>
+<a name="ln1380"> </a>
+<a name="ln1381"> </a>
+<a name="ln1382">    /* Set mode */</a>
+<a name="ln1383"> </a>
+<a name="ln1384">    /*  default mode */</a>
+<a name="ln1385">    </a>
+<a name="ln1386">    if ( !(z-&gt;nUserMode &amp; REQ_MODE_DEFAULT) ) </a>
+<a name="ln1387">    {</a>
+<a name="ln1388">        z-&gt;nUserMode |= REQ_MODE_DEFAULT;</a>
+<a name="ln1389">    }</a>
+<a name="ln1390">    </a>
+<a name="ln1391">    </a>
+<a name="ln1392">    /*  adjust the mode to the reality */</a>
+<a name="ln1393">    </a>
+<a name="ln1394">    if ( ( z-&gt;nUserMode &amp; REQ_MODE_ISO ) &amp;&amp; !z-&gt;bHasIsotopicAtoms ) </a>
+<a name="ln1395">    {</a>
+<a name="ln1396">        z-&gt;nUserMode ^= REQ_MODE_ISO;</a>
+<a name="ln1397">        z-&gt;nUserMode |= REQ_MODE_NON_ISO;  /*  at least one is needed */</a>
+<a name="ln1398">    }</a>
+<a name="ln1399">    </a>
+<a name="ln1400">    if ( (z-&gt;nUserMode &amp; REQ_MODE_STEREO) &amp;&amp; ( z-&gt;nUserMode &amp; REQ_MODE_ISO ) ) </a>
+<a name="ln1401">    {</a>
+<a name="ln1402">        z-&gt;nUserMode |= REQ_MODE_ISO_STEREO;</a>
+<a name="ln1403">    }</a>
+<a name="ln1404">    </a>
+<a name="ln1405">    if ( (z-&gt;nUserMode &amp; REQ_MODE_STEREO) &amp;&amp; !( z-&gt;nUserMode &amp; REQ_MODE_NON_ISO ) ) </a>
+<a name="ln1406">    {</a>
+<a name="ln1407">        z-&gt;nUserMode ^= REQ_MODE_STEREO;</a>
+<a name="ln1408">    }</a>
+<a name="ln1409">    </a>
+<a name="ln1410">    if ( !z-&gt;bMayHaveStereo ) </a>
+<a name="ln1411">    {</a>
+<a name="ln1412">        if ( z-&gt;nUserMode &amp; REQ_MODE_STEREO )</a>
+<a name="ln1413">            z-&gt;nUserMode ^= REQ_MODE_STEREO;</a>
+<a name="ln1414">        if ( z-&gt;nUserMode &amp; REQ_MODE_ISO_STEREO )</a>
+<a name="ln1415">            z-&gt;nUserMode ^= REQ_MODE_ISO_STEREO;</a>
+<a name="ln1416">    }</a>
+<a name="ln1417"> </a>
+<a name="ln1418">    if ( (z-&gt;nUserMode &amp; REQ_MODE_BASIC) &amp;&amp; (!out_norm_data[TAUT_NON]-&gt;at || !ppINChI[TAUT_NON] || !ppINChI_Aux[TAUT_NON] || !z-&gt;at[TAUT_NON]) ) </a>
+<a name="ln1419">    {</a>
+<a name="ln1420">        z-&gt;nUserMode ^= REQ_MODE_BASIC;</a>
+<a name="ln1421">    }</a>
+<a name="ln1422">    if ( (z-&gt;nUserMode &amp; REQ_MODE_TAUT) &amp;&amp; (!out_norm_data[TAUT_YES]-&gt;at || !ppINChI[TAUT_YES] || !ppINChI_Aux[TAUT_YES] || !z-&gt;at[TAUT_YES]) ) </a>
+<a name="ln1423">    {</a>
+<a name="ln1424">        z-&gt;nUserMode ^= REQ_MODE_TAUT;</a>
+<a name="ln1425">    }</a>
+<a name="ln1426">        </a>
+<a name="ln1427">    </a>
+<a name="ln1428">    /* Set n1, n2 according to the mode */</a>
+<a name="ln1429"> </a>
+<a name="ln1430">    switch ((int)z-&gt;nUserMode &amp; (REQ_MODE_BASIC | REQ_MODE_TAUT)) </a>
+<a name="ln1431">    {</a>
+<a name="ln1432">    case REQ_MODE_BASIC:</a>
+<a name="ln1433">        z-&gt;n1 = TAUT_NON;</a>
+<a name="ln1434">        z-&gt;n2 = TAUT_NON;</a>
+<a name="ln1435">        break;</a>
+<a name="ln1436">    case REQ_MODE_TAUT:</a>
+<a name="ln1437">        z-&gt;n1 = TAUT_YES;</a>
+<a name="ln1438">        z-&gt;n2 = TAUT_YES;</a>
+<a name="ln1439">        break;</a>
+<a name="ln1440">    case (REQ_MODE_BASIC | REQ_MODE_TAUT):</a>
+<a name="ln1441">        z-&gt;n1 = TAUT_NON;</a>
+<a name="ln1442">        z-&gt;n2 = TAUT_YES;</a>
+<a name="ln1443">        break;</a>
+<a name="ln1444">    default:</a>
+<a name="ln1445">        /*  program error: inconsistent nUserMode or missing taut/non-taut allocation */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln1446">        ret = -3;</a>
+<a name="ln1447">        goto exit_function; </a>
+<a name="ln1448">    }</a>
+<a name="ln1449"> </a>
+<a name="ln1450"> </a>
+<a name="ln1451">    if ( ret == 0 ) </a>
+<a name="ln1452">        ret = z-&gt;num_atoms;</a>
+<a name="ln1453">    </a>
+<a name="ln1454">    /*  treat the results later */</a>
+<a name="ln1455"> </a>
+<a name="ln1456">exit_function:</a>
+<a name="ln1457"> </a>
+<a name="ln1458">    return ret;</a>
+<a name="ln1459"> </a>
+<a name="ln1460">}</a>
+<a name="ln1461"> </a>
+<a name="ln1462"> </a>
+<a name="ln1463"> </a>
+<a name="ln1464"> </a>
+<a name="ln1465"> </a>
+<a name="ln1466"> </a>
+<a name="ln1467">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/</a>
+<a name="ln1468">int  Canonicalization_step( INChI **ppINChI, </a>
+<a name="ln1469">                           INChI_Aux **ppINChI_Aux, </a>
+<a name="ln1470">                           INP_ATOM_DATA *out_norm_data[2],</a>
+<a name="ln1471">                           struct tagInchiTime *ulMaxTime, </a>
+<a name="ln1472">                           T_GROUP_INFO *ti_out, </a>
+<a name="ln1473">                           char *pStrErrStruct,</a>
+<a name="ln1474">                           COMPONENT_TREAT_INFO *z)</a>
+<a name="ln1475">{</a>
+<a name="ln1476">int i,ret=0, ret2=0;</a>
+<a name="ln1477"> </a>
+<a name="ln1478"> </a>
+<a name="ln1479"> </a>
+<a name="ln1480">T_GROUP_INFO * /*const*/  t_group_info        = &amp;(z-&gt;vt_group_info);                </a>
+<a name="ln1481">T_GROUP_INFO * /*const*/  t_group_info_orig   = &amp;(z-&gt;vt_group_info_orig);</a>
+<a name="ln1482">    </a>
+<a name="ln1483">CANON_STAT  CS, CS2;</a>
+<a name="ln1484">CANON_STAT *pCS  = &amp;CS;</a>
+<a name="ln1485">CANON_STAT *pCS2 = &amp;CS2;  /*  save all allocations to avoid memory leaks in case Canon_INChI() removes the pointer */</a>
+<a name="ln1486">    </a>
+<a name="ln1487">    BCN *pBCN = &amp;(z-&gt;Bcn);</a>
+<a name="ln1488"> </a>
+<a name="ln1489"> </a>
+<a name="ln1490">    INChI     *pINChI=NULL;         /* added initialization 2006-03 */</a>
+<a name="ln1491">    INChI_Aux *pINChI_Aux=NULL;     /* added initialization 2006-03 */</a>
+<a name="ln1492"> </a>
+<a name="ln1493"> </a>
+<a name="ln1494"> </a>
+<a name="ln1495">    /************************************************************</a>
+<a name="ln1496">     *                                                          *</a>
+<a name="ln1497">     *       Obtain all non-stereo canonical numberings         *</a>
+<a name="ln1498">     *                                                          *</a>
+<a name="ln1499">     ************************************************************/</a>
+<a name="ln1500"> </a>
+<a name="ln1501">    if ( (z-&gt;nUserMode &amp; REQ_MODE_NON_ISO) &amp;&amp; !(z-&gt;nUserMode &amp; REQ_MODE_ISO) ) </a>
+<a name="ln1502">    {</a>
+<a name="ln1503"> </a>
+<a name="ln1504">        /* added for special non-isotopic test mode 2004-10-04 */</a>
+<a name="ln1505">        if ( t_group_info ) </a>
+<a name="ln1506">        {</a>
+<a name="ln1507">            t_group_info-&gt;bIgnoreIsotopic = 1;</a>
+<a name="ln1508">            if ( t_group_info-&gt;nIsotopicEndpointAtomNumber ) </a>
+<a name="ln1509">            {</a>
+<a name="ln1510">                t_group_info-&gt;nIsotopicEndpointAtomNumber[0] = inchi_min(1, t_group_info-&gt;nIsotopicEndpointAtomNumber[0]);</a>
+<a name="ln1511">            }</a>
+<a name="ln1512">            memset( t_group_info-&gt;num_iso_H, 0, sizeof(t_group_info-&gt;num_iso_H) );</a>
+<a name="ln1513">            memset ( t_group_info-&gt;tni.nNumRemovedProtonsIsotopic, 0, sizeof(t_group_info-&gt;tni.nNumRemovedProtonsIsotopic));</a>
+<a name="ln1514">            t_group_info-&gt;bTautFlagsDone &amp;= ~(TG_FLAG_FOUND_ISOTOPIC_H_DONE|TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE);</a>
+<a name="ln1515">        }</a>
+<a name="ln1516"> </a>
+<a name="ln1517">        for ( i = 0; i &lt; TAUT_NUM; i ++ ) </a>
+<a name="ln1518">        {</a>
+<a name="ln1519">            z-&gt;s[i].bHasIsotopicTautGroups = 0;</a>
+<a name="ln1520">            z-&gt;s[i].bIgnoreIsotopic = 1;</a>
+<a name="ln1521">            z-&gt;s[i].nLenIsotopic = 0;</a>
+<a name="ln1522">            z-&gt;s[i].nLenIsotopicEndpoints = 0;</a>
+<a name="ln1523">            z-&gt;s[i].nLenLinearCTIsotopicTautomer = 0;</a>
+<a name="ln1524">            z-&gt;s[i].num_isotopic_atoms = 0;</a>
+<a name="ln1525">        }</a>
+<a name="ln1526">        z-&gt;bHasIsotopicAtoms = 0;</a>
+<a name="ln1527">    }</a>
+<a name="ln1528"> </a>
+<a name="ln1529">    ret = GetBaseCanonRanking( z-&gt;num_atoms, z-&gt;num_at_tg, z-&gt;at, t_group_info, z-&gt;s, pBCN, ulMaxTime, z-&gt;fix_isofixedh );</a>
+<a name="ln1530"> </a>
+<a name="ln1531">    if ( ret &lt; 0 ) </a>
+<a name="ln1532">        goto exit_function; /*  program error */</a>
+<a name="ln1533">    </a>
+<a name="ln1534"> </a>
+<a name="ln1535">    /* added for special non-isotopic test mode 2004-10-04 */</a>
+<a name="ln1536">    if ( !pBCN-&gt;ftcn[z-&gt;n1].PartitionCt.Rank ) </a>
+<a name="ln1537">        z-&gt;n1 = ALT_TAUT(z-&gt;n1);</a>
+<a name="ln1538">    </a>
+<a name="ln1539">    if ( !pBCN-&gt;ftcn[z-&gt;n2].PartitionCt.Rank ) </a>
+<a name="ln1540">        z-&gt;n2 = ALT_TAUT(z-&gt;n2);</a>
+<a name="ln1541">    </a>
+<a name="ln1542">    if ( z-&gt;n1 &gt; z-&gt;n2 ) </a>
+<a name="ln1543">    {</a>
+<a name="ln1544">        ret = CT_TAUCOUNT_ERR;</a>
+<a name="ln1545">        goto exit_function; /*  program error */</a>
+<a name="ln1546">    }</a>
+<a name="ln1547"> </a>
+<a name="ln1548"> </a>
+<a name="ln1549">    /************************************************************</a>
+<a name="ln1550">     *                                                          *</a>
+<a name="ln1551">     *       Obtain stereo canonical numberings                 *</a>
+<a name="ln1552">     *                                                          *</a>
+<a name="ln1553">     ************************************************************/</a>
+<a name="ln1554"> </a>
+<a name="ln1555">    for ( i = z-&gt;n2; i &gt;= z-&gt;n1 &amp;&amp; !RETURNED_ERROR( ret ); i -- ) </a>
+<a name="ln1556">    {</a>
+<a name="ln1557"> </a>
+<a name="ln1558"> </a>
+<a name="ln1559">        memset( pCS, 0, sizeof(*pCS) );</a>
+<a name="ln1560"> </a>
+<a name="ln1561">        switch (i) </a>
+<a name="ln1562">        {</a>
+<a name="ln1563">        </a>
+<a name="ln1564">        case TAUT_NON: /*  non-tautomeric */</a>
+<a name="ln1565">        </a>
+<a name="ln1566">            z-&gt;nMode  = 0;            </a>
+<a name="ln1567">            z-&gt;nMode  = (z-&gt;s[i].nLenLinearCTTautomer == 0)? CANON_MODE_CT:CANON_MODE_TAUT;</a>
+<a name="ln1568">            z-&gt;nMode |= (z-&gt;bHasIsotopicAtoms &amp;&amp; (z-&gt;nUserMode &amp; REQ_MODE_ISO))? CANON_MODE_ISO:0;</a>
+<a name="ln1569">            z-&gt;nMode |= (z-&gt;s[TAUT_NON].bMayHaveStereo &amp;&amp; (z-&gt;nUserMode &amp; REQ_MODE_STEREO) )? CANON_MODE_STEREO:0;</a>
+<a name="ln1570">            z-&gt;nMode |= (z-&gt;bHasIsotopicAtoms &amp;&amp; z-&gt;s[TAUT_NON].bMayHaveStereo &amp;&amp; (z-&gt;nUserMode &amp; REQ_MODE_ISO_STEREO))? CANON_MODE_ISO_STEREO:0;</a>
+<a name="ln1571">            z-&gt;nMode |= (z-&gt;nUserMode &amp; REQ_MODE_NOEQ_STEREO   )? CMODE_NOEQ_STEREO    : 0;</a>
+<a name="ln1572">            z-&gt;nMode |= (z-&gt;nUserMode &amp; REQ_MODE_REDNDNT_STEREO)? CMODE_REDNDNT_STEREO : 0;</a>
+<a name="ln1573">            z-&gt;nMode |= (z-&gt;nUserMode &amp; REQ_MODE_NO_ALT_SBONDS )? CMODE_NO_ALT_SBONDS  : 0;</a>
+<a name="ln1574"> </a>
+<a name="ln1575">            /* 2010-01-12 */</a>
+<a name="ln1576">            z-&gt;nMode |= (z-&gt;vABParityUnknown==AB_PARITY_UNDF)? 0 : REQ_MODE_DIFF_UU_STEREO;</a>
+<a name="ln1577"> </a>
+<a name="ln1578">            if ( (z-&gt;nMode &amp; CANON_MODE_STEREO)     == CANON_MODE_STEREO ||</a>
+<a name="ln1579">                 (z-&gt;nMode &amp; CANON_MODE_ISO_STEREO) == CANON_MODE_ISO_STEREO ) </a>
+<a name="ln1580">            {</a>
+<a name="ln1581">                z-&gt;nMode |= (z-&gt;nUserMode &amp; REQ_MODE_RELATIVE_STEREO)? CMODE_RELATIVE_STEREO: 0;</a>
+<a name="ln1582">                z-&gt;nMode |= (z-&gt;nUserMode &amp; REQ_MODE_RACEMIC_STEREO )? CMODE_RACEMIC_STEREO : 0;</a>
+<a name="ln1583">                z-&gt;nMode |= (z-&gt;nUserMode &amp; REQ_MODE_SC_IGN_ALL_UU  )? CMODE_SC_IGN_ALL_UU  : 0;</a>
+<a name="ln1584">                z-&gt;nMode |= (z-&gt;nUserMode &amp; REQ_MODE_SB_IGN_ALL_UU  )? CMODE_SB_IGN_ALL_UU  : 0;</a>
+<a name="ln1585">            }</a>
+<a name="ln1586">            </a>
+<a name="ln1587">            if ( (ret= AllocateCS( pCS, z-&gt;num_atoms, z-&gt;num_atoms, z-&gt;s[TAUT_NON].nLenCT, z-&gt;s[TAUT_NON].nLenCTAtOnly,</a>
+<a name="ln1588">                             z-&gt;s[TAUT_NON].nLenLinearCTStereoDble, z-&gt;s[TAUT_NON].nMaxNumStereoBonds,</a>
+<a name="ln1589">                             z-&gt;s[TAUT_NON].nLenLinearCTStereoCarb, z-&gt;s[TAUT_NON].nMaxNumStereoAtoms,</a>
+<a name="ln1590">                             0, 0, z-&gt;s[TAUT_NON].nLenIsotopic, z-&gt;nMode, pBCN )) ) </a>
+<a name="ln1591">            {</a>
+<a name="ln1592">                goto exit_function;</a>
+<a name="ln1593">            }</a>
+<a name="ln1594">            </a>
+<a name="ln1595">            *pCS2 = *pCS;</a>
+<a name="ln1596">            break;</a>
+<a name="ln1597"> </a>
+<a name="ln1598"> </a>
+<a name="ln1599">        case TAUT_YES: /*  tautomeric */</a>
+<a name="ln1600"> </a>
+<a name="ln1601">            z-&gt;nMode  = 0;</a>
+<a name="ln1602">            z-&gt;nMode  = (z-&gt;s[i].nLenLinearCTTautomer == 0)? CANON_MODE_CT:CANON_MODE_TAUT;</a>
+<a name="ln1603">            z-&gt;nMode |= (z-&gt;bHasIsotopicAtoms &amp;&amp; (z-&gt;nUserMode &amp; REQ_MODE_ISO) )? CANON_MODE_ISO:0;</a>
+<a name="ln1604">            z-&gt;nMode |= (z-&gt;s[TAUT_YES].bMayHaveStereo &amp;&amp; (z-&gt;nUserMode &amp; REQ_MODE_STEREO) )? CANON_MODE_STEREO:0;</a>
+<a name="ln1605">            z-&gt;nMode |= (z-&gt;bHasIsotopicAtoms &amp;&amp; z-&gt;s[TAUT_YES].bMayHaveStereo &amp;&amp; (z-&gt;nUserMode &amp; REQ_MODE_ISO_STEREO))? CANON_MODE_ISO_STEREO:0;</a>
+<a name="ln1606">            z-&gt;nMode |= (z-&gt;nUserMode &amp; REQ_MODE_NOEQ_STEREO   )? CMODE_NOEQ_STEREO    : 0;</a>
+<a name="ln1607">            z-&gt;nMode |= (z-&gt;nUserMode &amp; REQ_MODE_REDNDNT_STEREO)? CMODE_REDNDNT_STEREO : 0;</a>
+<a name="ln1608">            z-&gt;nMode |= (z-&gt;nUserMode &amp; REQ_MODE_NO_ALT_SBONDS )? CMODE_NO_ALT_SBONDS  : 0;</a>
+<a name="ln1609"> </a>
+<a name="ln1610">            /* 2010-01-12 */</a>
+<a name="ln1611">            z-&gt;nMode |= (z-&gt;vABParityUnknown==AB_PARITY_UNDF)? 0 : REQ_MODE_DIFF_UU_STEREO;</a>
+<a name="ln1612"> </a>
+<a name="ln1613">            if ( (z-&gt;nMode &amp; CANON_MODE_STEREO)     == CANON_MODE_STEREO ||</a>
+<a name="ln1614">                 (z-&gt;nMode &amp; CANON_MODE_ISO_STEREO) == CANON_MODE_ISO_STEREO ) </a>
+<a name="ln1615">            {</a>
+<a name="ln1616">                z-&gt;nMode |= (z-&gt;nUserMode &amp; REQ_MODE_RELATIVE_STEREO)? CMODE_RELATIVE_STEREO: 0;</a>
+<a name="ln1617">                z-&gt;nMode |= (z-&gt;nUserMode &amp; REQ_MODE_RACEMIC_STEREO )? CMODE_RACEMIC_STEREO : 0;</a>
+<a name="ln1618">                z-&gt;nMode |= (z-&gt;nUserMode &amp; REQ_MODE_SC_IGN_ALL_UU  )? CMODE_SC_IGN_ALL_UU  : 0;</a>
+<a name="ln1619">                z-&gt;nMode |= (z-&gt;nUserMode &amp; REQ_MODE_SB_IGN_ALL_UU  )? CMODE_SB_IGN_ALL_UU  : 0;</a>
+<a name="ln1620">            }</a>
+<a name="ln1621">            </a>
+<a name="ln1622">            if ( (ret= AllocateCS( pCS, z-&gt;num_atoms, z-&gt;num_at_tg, z-&gt;s[TAUT_YES].nLenCT, z-&gt;s[TAUT_YES].nLenCTAtOnly,</a>
+<a name="ln1623">                             z-&gt;s[TAUT_YES].nLenLinearCTStereoDble, z-&gt;s[TAUT_YES].nMaxNumStereoBonds,</a>
+<a name="ln1624">                             z-&gt;s[TAUT_YES].nLenLinearCTStereoCarb, z-&gt;s[TAUT_YES].nMaxNumStereoAtoms,</a>
+<a name="ln1625">                             z-&gt;s[TAUT_YES].nLenLinearCTTautomer, z-&gt;s[TAUT_YES].nLenLinearCTIsotopicTautomer,</a>
+<a name="ln1626">                             z-&gt;s[TAUT_YES].nLenIsotopic, z-&gt;nMode, pBCN )) ) </a>
+<a name="ln1627">            {</a>
+<a name="ln1628">                goto exit_function;</a>
+<a name="ln1629">            }</a>
+<a name="ln1630">            </a>
+<a name="ln1631">            *pCS2 = *pCS;</a>
+<a name="ln1632">            break;</a>
+<a name="ln1633"> </a>
+<a name="ln1634"> </a>
+<a name="ln1635">        } /* switch () */</a>
+<a name="ln1636"> </a>
+<a name="ln1637"> </a>
+<a name="ln1638">        /*  settings */</a>
+<a name="ln1639">        pCS-&gt;lNumDecreasedCT               = -1;                             </a>
+<a name="ln1640">        pCS-&gt;bDoubleBondSquare             =  DOUBLE_BOND_NEIGH_LIST? 2:0;  /*  2 =&gt; special mode */</a>
+<a name="ln1641">        pCS-&gt;bIgnoreIsotopic               =  !((z-&gt;s[TAUT_NON].num_isotopic_atoms ||        </a>
+<a name="ln1642">                                                z-&gt;s[TAUT_YES].num_isotopic_atoms ||    </a>
+<a name="ln1643">                                                z-&gt;s[TAUT_YES].bHasIsotopicTautGroups) ||</a>
+<a name="ln1644">                                               (z-&gt;nUserMode &amp; REQ_MODE_NON_ISO) ||</a>
+<a name="ln1645">                                               !(z-&gt;nUserMode &amp; REQ_MODE_ISO));</a>
+<a name="ln1646">        </a>
+<a name="ln1647">        if ( (z-&gt;nUserMode &amp; REQ_MODE_NON_ISO) &amp;&amp; !(z-&gt;nUserMode &amp; REQ_MODE_ISO) ) </a>
+<a name="ln1648">            pCS-&gt;bIgnoreIsotopic = 1; /* 10-04-2004 */</a>
+<a name="ln1649">        </a>
+<a name="ln1650">        </a>
+<a name="ln1651">        if ( i == TAUT_YES ) </a>
+<a name="ln1652">        {  </a>
+<a name="ln1653">            /* tautomeric */</a>
+<a name="ln1654">            pCS-&gt;t_group_info                  = t_group_info; /*  ??? make a copy or reuse ???  */</a>
+<a name="ln1655">            pCS-&gt;t_group_info-&gt;bIgnoreIsotopic = !(z-&gt;s[TAUT_YES].bHasIsotopicTautGroups ||</a>
+<a name="ln1656">                                                   (z-&gt;nUserMode &amp; REQ_MODE_NON_ISO) ||</a>
+<a name="ln1657">                                                   !(z-&gt;nUserMode &amp; REQ_MODE_ISO));</a>
+<a name="ln1658">            if ( (z-&gt;nUserMode &amp; REQ_MODE_NON_ISO) &amp;&amp; !(z-&gt;nUserMode &amp; REQ_MODE_ISO) ) </a>
+<a name="ln1659">                pCS-&gt;t_group_info-&gt;bIgnoreIsotopic = 1; /* 10-04-2004 */</a>
+<a name="ln1660">            </a>
+<a name="ln1661">        }</a>
+<a name="ln1662">        pCS-&gt;ulTimeOutTime  = pBCN-&gt;ulTimeOutTime;</a>
+<a name="ln1663">        /*=========== Obsolete Mode Bits (bit 0 is Least Significant Bit) ===========</a>
+<a name="ln1664">         *</a>
+<a name="ln1665">         *  Mode      Bits       Description                                </a>
+<a name="ln1666">         *   '0' c    0          Only one connection table canonicalization </a>
+<a name="ln1667">         *   '1' C    1          Recalculate CT using fixed nSymmRank       </a>
+<a name="ln1668">         *   '2' i    1|2        Isotopic canonicalization (internal)       </a>
+<a name="ln1669">         *   '3' I    1|2|4      Isotopic canonicalization (output)</a>
+<a name="ln1670">         *   '4' s    1|8        Stereo canonicalization                    </a>
+<a name="ln1671">         *   '5' S    1|2|4|16   Stereo isotopic canonicalization           </a>
+<a name="ln1672">         *   '6' A    1|2|4|8|16 Output All</a>
+<a name="ln1673">         */</a>
+<a name="ln1674"> </a>
+<a name="ln1675">        /***************************************</a>
+<a name="ln1676">           The last canonicalization step</a>
+<a name="ln1677">         ***************************************/</a>
+<a name="ln1678">        if ( pBCN ) </a>
+<a name="ln1679">        {</a>
+<a name="ln1680">            /* USE_CANON2 == 1 */</a>
+<a name="ln1681">            pCS-&gt;NeighList  = NULL;</a>
+<a name="ln1682">            pCS-&gt;pBCN       = pBCN;</a>
+<a name="ln1683">            ret = Canon_INChI( z-&gt;num_atoms, i?z-&gt;num_at_tg:z-&gt;num_atoms, </a>
+<a name="ln1684">                               z-&gt;at[i], pCS, z-&gt;nMode, i);</a>
+<a name="ln1685">        } </a>
+<a name="ln1686">        else </a>
+<a name="ln1687">        {</a>
+<a name="ln1688">            /* old way */</a>
+<a name="ln1689">            pCS-&gt;NeighList  = CreateNeighList( z-&gt;num_atoms, i?z-&gt;num_at_tg:z-&gt;num_atoms, z-&gt;at[i], pCS-&gt;bDoubleBondSquare, pCS-&gt;t_group_info );</a>
+<a name="ln1690">            pCS-&gt;pBCN       = NULL;</a>
+<a name="ln1691">            ret = Canon_INChI( z-&gt;num_atoms, i?z-&gt;num_at_tg:z-&gt;num_atoms, </a>
+<a name="ln1692">                               z-&gt;at[i], pCS, z-&gt;nMode, i);</a>
+<a name="ln1693">        }</a>
+<a name="ln1694"> </a>
+<a name="ln1695">        pINChI     = ppINChI[i];      /* pointers to already allocated still empty InChI */</a>
+<a name="ln1696">        pINChI_Aux = ppINChI_Aux[i];</a>
+<a name="ln1697">        </a>
+<a name="ln1698">        if ( ret &lt;= 0 ) </a>
+<a name="ln1699">        {</a>
+<a name="ln1700">            /***************************************/</a>
+<a name="ln1701">            /*  failure in Canon_INChI()            */</a>
+<a name="ln1702">            /***************************************/</a>
+<a name="ln1703">            pINChI-&gt;nErrorCode     = ret;</a>
+<a name="ln1704">            pINChI_Aux-&gt;nErrorCode = ret;</a>
+<a name="ln1705">        } </a>
+<a name="ln1706">        else </a>
+<a name="ln1707">        {</a>
+<a name="ln1708">            /***************************************/</a>
+<a name="ln1709">            /*  success Canon_INChI()               */</a>
+<a name="ln1710">            /*  save canonicalization results in   */</a>
+<a name="ln1711">            /*  pINChI and pINChI_Aux                */</a>
+<a name="ln1712">            /***************************************/</a>
+<a name="ln1713">            pINChI-&gt;nErrorCode     = 0;</a>
+<a name="ln1714">            pINChI_Aux-&gt;nErrorCode = 0;</a>
+<a name="ln1715">            pINChI-&gt;bDeleted = pINChI_Aux-&gt;bDeleted = out_norm_data[i]-&gt;bDeleted;</a>
+<a name="ln1716">            pINChI_Aux-&gt;nCanonFlags         = pCS-&gt;nCanonFlags;</a>
+<a name="ln1717">            pINChI_Aux-&gt;bTautFlags          = out_norm_data[i]-&gt;bTautFlags;</a>
+<a name="ln1718">            pINChI_Aux-&gt;bTautFlagsDone      = out_norm_data[i]-&gt;bTautFlagsDone;</a>
+<a name="ln1719">            pINChI_Aux-&gt;bNormalizationFlags = out_norm_data[i]-&gt;bNormalizationFlags;</a>
+<a name="ln1720">            /*  may return an error or a warning */</a>
+<a name="ln1721">            ret = FillOutINChIReducedWarn( pINChI, pINChI_Aux,</a>
+<a name="ln1722">                               z-&gt;num_atoms, i?z-&gt;num_at_tg:z-&gt;num_atoms,</a>
+<a name="ln1723">                               i?z-&gt;num_deleted_H_taut:z-&gt;num_deleted_H, z-&gt;at[i], </a>
+<a name="ln1724">                               out_norm_data[i]-&gt;at, pCS, i, z-&gt;nUserMode, pStrErrStruct );</a>
+<a name="ln1725">            if ( RETURNED_ERROR( ret ) ) </a>
+<a name="ln1726">            {</a>
+<a name="ln1727">                /* failure in FillOutINChI() */</a>
+<a name="ln1728">                pINChI-&gt;nErrorCode      = ret;</a>
+<a name="ln1729">                pINChI_Aux-&gt;nErrorCode  = ret;</a>
+<a name="ln1730">            } </a>
+<a name="ln1731">            else </a>
+<a name="ln1732">            {</a>
+<a name="ln1733">                /****************************/</a>
+<a name="ln1734">                /* success in FillOutINChI() */</a>
+<a name="ln1735">                /****************************/</a>
+<a name="ln1736"> </a>
+<a name="ln1737">                /* mark non-tautomeric representation as having another, tautomeric representation */</a>
+<a name="ln1738">                if ( pINChI_Aux &amp;&amp; z-&gt;s[TAUT_YES].nLenLinearCTTautomer ) </a>
+<a name="ln1739">                    pINChI_Aux-&gt;bIsTautomeric = z-&gt;s[TAUT_YES].nLenLinearCTTautomer;</a>
+<a name="ln1740">                </a>
+<a name="ln1741"> </a>
+<a name="ln1742">                ret2 = CheckCanonNumberingCorrectness(z-&gt;num_atoms, </a>
+<a name="ln1743">                                                      i?z-&gt;num_at_tg:z-&gt;num_atoms,</a>
+<a name="ln1744">                                                      z-&gt;at[i], pCS, i, pStrErrStruct );</a>
+<a name="ln1745">                if (ret2) </a>
+<a name="ln1746">                {</a>
+<a name="ln1747">                    pINChI-&gt;nErrorCode      = ret2;</a>
+<a name="ln1748">                    pINChI_Aux-&gt;nErrorCode  = ret2;</a>
+<a name="ln1749">                    ret = ret2;</a>
+<a name="ln1750">                }</a>
+<a name="ln1751">            } /* success in FillOutINChI */</a>
+<a name="ln1752">        } /* success Canon_INChI */</a>
+<a name="ln1753"> </a>
+<a name="ln1754">        FreeNeighList( pCS-&gt;NeighList );</a>
+<a name="ln1755">        DeAllocateCS( pCS2 );</a>
+<a name="ln1756"> </a>
+<a name="ln1757">        pINChI = NULL;      /* avoid dangling pointers */</a>
+<a name="ln1758">        pINChI_Aux = NULL;  /* avoid dangling pointers */</a>
+<a name="ln1759">    </a>
+<a name="ln1760">    } /* for ( i = z-&gt;n2; i &gt;= z-&gt;n1 &amp;&amp; !RETURNED_ERROR( ret ); i -- )  */</a>
+<a name="ln1761"> </a>
+<a name="ln1762"> </a>
+<a name="ln1763"> </a>
+<a name="ln1764">    if ( ret == 0 ) </a>
+<a name="ln1765">        ret = z-&gt;num_atoms;</a>
+<a name="ln1766"> </a>
+<a name="ln1767"> </a>
+<a name="ln1768">exit_function:</a>
+<a name="ln1769"> </a>
+<a name="ln1770">    DeAllocBCN( pBCN );</a>
+<a name="ln1771">    </a>
+<a name="ln1772">    if ( z-&gt;at[TAUT_YES] )</a>
+<a name="ln1773">    {</a>
+<a name="ln1774">        inchi_free( z-&gt;at[TAUT_YES] );</a>
+<a name="ln1775">        z-&gt;at[TAUT_YES] = NULL;</a>
+<a name="ln1776">    }</a>
+<a name="ln1777">    </a>
+<a name="ln1778">    if ( z-&gt;at[TAUT_NON] )</a>
+<a name="ln1779">    {</a>
+<a name="ln1780">        inchi_free( z-&gt;at[TAUT_NON] );</a>
+<a name="ln1781">        z-&gt;at[TAUT_NON] = NULL;</a>
+<a name="ln1782">    }</a>
+<a name="ln1783"> </a>
+<a name="ln1784">    if ( ti_out ) </a>
+<a name="ln1785">        *ti_out = *t_group_info;</a>
+<a name="ln1786">    else </a>
+<a name="ln1787">    {</a>
+<a name="ln1788">        free_t_group_info( t_group_info );</a>
+<a name="ln1789">        t_group_info = NULL;</a>
+<a name="ln1790">    }</a>
+<a name="ln1791">    </a>
+<a name="ln1792">    free_t_group_info( t_group_info_orig );</a>
+<a name="ln1793"> </a>
+<a name="ln1794">    return ret;</a>
+<a name="ln1795">}</a>
+<a name="ln1796"> </a>
+<a name="ln1797"> </a>
+<a name="ln1798"> </a>
+<a name="ln1799"> </a>
+<a name="ln1800">/****************************************************************************/</a>
+<a name="ln1801">int CreateCompositeNormAtom(COMP_ATOM_DATA *composite_norm_data, INP_ATOM_DATA2 *all_inp_norm_data, int num_components)</a>
+<a name="ln1802">{</a>
+<a name="ln1803">    int i, j, jj, k, n, m, tot_num_at, tot_num_H, cur_num_at, cur_num_H, nNumRemovedProtons;</a>
+<a name="ln1804">    int num_comp[TAUT_NUM+1], num_taut[TAUT_NUM+1], num_del[TAUT_NUM+1], num_at[TAUT_NUM+1], num_inp_at[TAUT_NUM+1];</a>
+<a name="ln1805">    int ret = 0, indicator = 1;</a>
+<a name="ln1806">    inp_ATOM *at, *at_from;</a>
+<a name="ln1807">    memset( num_comp, 0, sizeof(num_comp) );</a>
+<a name="ln1808">    memset( num_taut, 0, sizeof(num_taut) );</a>
+<a name="ln1809">    memset( num_del, 0, sizeof(num_taut) );</a>
+<a name="ln1810">    /* count taut and non-taut components */</a>
+<a name="ln1811">    for ( j = 0; j &lt; TAUT_NUM; j ++ ) {</a>
+<a name="ln1812">        num_comp[j] = num_taut[j] = 0;</a>
+<a name="ln1813">        for ( i = 0; i &lt; num_components; i ++ ) {</a>
+<a name="ln1814">            if ( all_inp_norm_data[i][j].bExists ) {</a>
+<a name="ln1815">                num_del[j]  += (0 != all_inp_norm_data[i][j].bDeleted );</a>
+<a name="ln1816">                num_comp[j] ++;</a>
+<a name="ln1817">                num_taut[j] += (0 != all_inp_norm_data[i][j].bTautomeric);</a>
+<a name="ln1818">            }</a>
+<a name="ln1819">        }</a>
+<a name="ln1820">    }</a>
+<a name="ln1821">    /* count intermediate taut structure components */</a>
+<a name="ln1822">    if ( num_comp[TAUT_YES] &gt; num_del[TAUT_YES] &amp;&amp; num_taut[TAUT_YES] ) {</a>
+<a name="ln1823">        /*</a>
+<a name="ln1824">        num_comp[TAUT_INI] = num_comp[TAUT_YES] - num_del[TAUT_YES];</a>
+<a name="ln1825">        */</a>
+<a name="ln1826"> </a>
+<a name="ln1827">        for ( i = 0, j=TAUT_YES; i &lt; num_components; i ++ ) {</a>
+<a name="ln1828">            if ( all_inp_norm_data[i][j].bExists &amp;&amp;</a>
+<a name="ln1829">                (all_inp_norm_data[i][j].bDeleted ||</a>
+<a name="ln1830">                 (all_inp_norm_data[i][j].bTautomeric &amp;&amp;</a>
+<a name="ln1831">                 all_inp_norm_data[i][j].at_fixed_bonds &amp;&amp;</a>
+<a name="ln1832">                 all_inp_norm_data[i][j].bTautPreprocessed)) ) {</a>
+<a name="ln1833">                num_comp[TAUT_INI] ++;</a>
+<a name="ln1834">            }</a>
+<a name="ln1835">        }</a>
+<a name="ln1836"> </a>
+<a name="ln1837">    }</a>
+<a name="ln1838">    /* count atoms and allocate composite atom data */</a>
+<a name="ln1839">    for ( jj = 0; jj &lt;= TAUT_INI; jj ++ ) {</a>
+<a name="ln1840">        num_at[jj] = num_inp_at[jj] = 0;</a>
+<a name="ln1841">        j = inchi_min (jj, TAUT_YES);</a>
+<a name="ln1842">        if ( num_comp[jj] ) {</a>
+<a name="ln1843">            for ( i = 0; i &lt; num_components; i ++ ) {</a>
+<a name="ln1844">                if ( all_inp_norm_data[i][j].bDeleted )</a>
+<a name="ln1845">                    continue;</a>
+<a name="ln1846">                /* find k = the normaized structure index */</a>
+<a name="ln1847">                if ( jj == TAUT_INI ) {</a>
+<a name="ln1848">                    if ( all_inp_norm_data[i][j].bExists &amp;&amp;</a>
+<a name="ln1849">                         all_inp_norm_data[i][j].at_fixed_bonds ) {</a>
+<a name="ln1850">                        k = j;</a>
+<a name="ln1851">                    } else</a>
+<a name="ln1852">                    if ( all_inp_norm_data[i][ALT_TAUT(j)].bExists &amp;&amp; !all_inp_norm_data[i][ALT_TAUT(j)].bDeleted &amp;&amp;</a>
+<a name="ln1853">                         !all_inp_norm_data[i][j].bDeleted  ) {</a>
+<a name="ln1854">                        k = ALT_TAUT(j);</a>
+<a name="ln1855">                    } else</a>
+<a name="ln1856">                    if ( all_inp_norm_data[i][j].bExists ) {</a>
+<a name="ln1857">                        k = j;</a>
+<a name="ln1858">                    } else {</a>
+<a name="ln1859">                        continue;</a>
+<a name="ln1860">                    }</a>
+<a name="ln1861">                } else {</a>
+<a name="ln1862">                    if ( all_inp_norm_data[i][j].bExists ) {</a>
+<a name="ln1863">                        k = j;</a>
+<a name="ln1864">                    } else</a>
+<a name="ln1865">                    if ( all_inp_norm_data[i][ALT_TAUT(j)].bExists &amp;&amp; !all_inp_norm_data[i][ALT_TAUT(j)].bDeleted) {</a>
+<a name="ln1866">                        k = ALT_TAUT(j);</a>
+<a name="ln1867">                    } else {</a>
+<a name="ln1868">                        continue;</a>
+<a name="ln1869">                    }</a>
+<a name="ln1870">                }</a>
+<a name="ln1871">                num_inp_at[jj] += all_inp_norm_data[i][k].num_at; /* all atoms including terminal H */</a>
+<a name="ln1872">                num_at[jj]     += all_inp_norm_data[i][k].num_at - all_inp_norm_data[i][k].num_removed_H;</a>
+<a name="ln1873">            }</a>
+<a name="ln1874">            if ( num_inp_at[jj] ) {</a>
+<a name="ln1875">                if ( !CreateCompAtomData( composite_norm_data+jj, num_inp_at[jj], num_components, jj == TAUT_INI ) )</a>
+<a name="ln1876">                    goto exit_error;</a>
+<a name="ln1877">                composite_norm_data[jj].num_removed_H = num_inp_at[jj] - num_at[jj];</a>
+<a name="ln1878">            }</a>
+<a name="ln1879">        }</a>
+<a name="ln1880">    }</a>
+<a name="ln1881">    /* fill out composite atom */</a>
+<a name="ln1882">    for ( jj = 0; jj &lt;= TAUT_INI; jj ++, indicator &lt;&lt;= 1 ) {</a>
+<a name="ln1883">        j = inchi_min (jj, TAUT_YES);</a>
+<a name="ln1884">        if ( num_comp[jj] ) {</a>
+<a name="ln1885">            tot_num_at = 0;</a>
+<a name="ln1886">            tot_num_H = 0;</a>
+<a name="ln1887">            for ( i = 0; i &lt; num_components; i ++ ) {</a>
+<a name="ln1888">                if ( all_inp_norm_data[i][j].bDeleted ) {</a>
+<a name="ln1889">                    composite_norm_data[jj].nNumRemovedProtons += all_inp_norm_data[i][j].nNumRemovedProtons;</a>
+<a name="ln1890">                    for ( n = 0; n &lt; NUM_H_ISOTOPES; n ++ ) {</a>
+<a name="ln1891">                        composite_norm_data[jj].nNumRemovedProtonsIsotopic[n] += all_inp_norm_data[i][j].nNumRemovedProtonsIsotopic[n];</a>
+<a name="ln1892">                    }</a>
+<a name="ln1893">                    continue;</a>
+<a name="ln1894">                }</a>
+<a name="ln1895">                nNumRemovedProtons = 0;</a>
+<a name="ln1896">                k = TAUT_NUM;</a>
+<a name="ln1897">                /* find k = the normaized structure index */</a>
+<a name="ln1898">                if ( jj == TAUT_INI ) {</a>
+<a name="ln1899">                    if ( all_inp_norm_data[i][j].bExists &amp;&amp; all_inp_norm_data[i][j].at_fixed_bonds ) {</a>
+<a name="ln1900">                        k = j;</a>
+<a name="ln1901">                    } else</a>
+<a name="ln1902">                    if ( all_inp_norm_data[i][ALT_TAUT(j)].bExists ) {</a>
+<a name="ln1903">                        k = ALT_TAUT(j);</a>
+<a name="ln1904">                    } else</a>
+<a name="ln1905">                    if ( all_inp_norm_data[i][j].bExists &amp;&amp; !all_inp_norm_data[i][ALT_TAUT(j)].bDeleted ) {</a>
+<a name="ln1906">                        k = j;</a>
+<a name="ln1907">                    } else {</a>
+<a name="ln1908">                        continue;</a>
+<a name="ln1909">                    }</a>
+<a name="ln1910">                } else {</a>
+<a name="ln1911">                    if ( all_inp_norm_data[i][j].bExists ) {</a>
+<a name="ln1912">                        k = j;</a>
+<a name="ln1913">                    } else</a>
+<a name="ln1914">                    if ( all_inp_norm_data[i][ALT_TAUT(j)].bExists &amp;&amp; !all_inp_norm_data[i][ALT_TAUT(j)].bDeleted ) {</a>
+<a name="ln1915">                        k = ALT_TAUT(j);</a>
+<a name="ln1916">                    } else {</a>
+<a name="ln1917">                        continue;</a>
+<a name="ln1918">                    }</a>
+<a name="ln1919">                }</a>
+<a name="ln1920">                /* copy main atoms */</a>
+<a name="ln1921">                cur_num_H  = all_inp_norm_data[i][k].num_removed_H;       /* number of terminal H atoms */</a>
+<a name="ln1922">                cur_num_at = all_inp_norm_data[i][k].num_at - cur_num_H;  /* number of all but explicit terminal H atoms */</a>
+<a name="ln1923"> </a>
+<a name="ln1924">                if ( (tot_num_at + cur_num_at) &gt; num_at[jj] ||</a>
+<a name="ln1925">                     (num_at[jj] + tot_num_H + cur_num_H) &gt; num_inp_at[jj] ) {</a>
+<a name="ln1926">                    goto exit_error; /* miscount */</a>
+<a name="ln1927">                }</a>
+<a name="ln1928">                at      = composite_norm_data[jj].at+tot_num_at; /* points to the 1st destination atom */</a>
+<a name="ln1929">                at_from = (jj == TAUT_INI &amp;&amp; k == TAUT_YES &amp;&amp; all_inp_norm_data[i][k].at_fixed_bonds)?</a>
+<a name="ln1930">                          all_inp_norm_data[i][k].at_fixed_bonds : all_inp_norm_data[i][k].at;</a>
+<a name="ln1931">                memcpy( at, at_from, sizeof(composite_norm_data[0].at[0]) * cur_num_at ); /* copy atoms except terminal H */</a>
+<a name="ln1932">                /* shift neighbors of main atoms */</a>
+<a name="ln1933">                for ( n = 0; n &lt; cur_num_at; n ++, at ++ ) {</a>
+<a name="ln1934">                    for ( m = 0; m &lt; at-&gt;valence; m ++ ) {</a>
+<a name="ln1935">                        at-&gt;neighbor[m] += tot_num_at;</a>
+<a name="ln1936">                    }</a>
+<a name="ln1937">                }</a>
+<a name="ln1938">                /* copy explicit H */</a>
+<a name="ln1939">                if ( cur_num_H ) {</a>
+<a name="ln1940">                    at = composite_norm_data[jj].at+num_at[jj]+tot_num_H; /* points to the 1st destination atom */</a>
+<a name="ln1941">                    memcpy( at, at_from+cur_num_at,</a>
+<a name="ln1942">                            sizeof(composite_norm_data[0].at[0]) * cur_num_H );</a>
+<a name="ln1943">                    /* shift neighbors of explicit H atoms */</a>
+<a name="ln1944">                    for ( n = 0; n &lt; cur_num_H; n ++, at ++ ) {</a>
+<a name="ln1945">                        for ( m = 0; m &lt; at-&gt;valence; m ++ ) {</a>
+<a name="ln1946">                            at-&gt;neighbor[m] += tot_num_at;</a>
+<a name="ln1947">                        }</a>
+<a name="ln1948">                    }</a>
+<a name="ln1949">                }</a>
+<a name="ln1950">                /* composite counts */</a>
+<a name="ln1951">                composite_norm_data[jj].bHasIsotopicLayer   |= all_inp_norm_data[i][k].bHasIsotopicLayer;</a>
+<a name="ln1952">                composite_norm_data[jj].num_isotopic        += all_inp_norm_data[i][k].num_isotopic;</a>
+<a name="ln1953">                composite_norm_data[jj].num_bonds           += all_inp_norm_data[i][k].num_bonds;</a>
+<a name="ln1954">                composite_norm_data[jj].bTautomeric         += (j == jj) &amp;&amp; all_inp_norm_data[i][k].bTautomeric;</a>
+<a name="ln1955">                composite_norm_data[jj].nNumRemovedProtons  += all_inp_norm_data[i][k].nNumRemovedProtons;</a>
+<a name="ln1956">                for ( n = 0; n &lt; NUM_H_ISOTOPES; n ++ ) {</a>
+<a name="ln1957">                    composite_norm_data[jj].nNumRemovedProtonsIsotopic[n] += all_inp_norm_data[i][k].nNumRemovedProtonsIsotopic[n];</a>
+<a name="ln1958">                    composite_norm_data[jj].num_iso_H[n]                  += all_inp_norm_data[i][k].num_iso_H[n];</a>
+<a name="ln1959">                }</a>
+<a name="ln1960">                /*</a>
+<a name="ln1961">                composite_norm_data[j].num_at            += cur_num_at + cur_num_H;</a>
+<a name="ln1962">                composite_norm_data[j].num_removed_H     += cur_num_H;</a>
+<a name="ln1963">                */</a>
+<a name="ln1964">                /* total count */</a>
+<a name="ln1965">                tot_num_at += cur_num_at;</a>
+<a name="ln1966">                tot_num_H += cur_num_H;</a>
+<a name="ln1967">                /* offset for the next component */</a>
+<a name="ln1968">                if (  composite_norm_data[jj].nOffsetAtAndH ) {</a>
+<a name="ln1969">                    composite_norm_data[jj].nOffsetAtAndH[2*i]   = tot_num_at;</a>
+<a name="ln1970">                    composite_norm_data[jj].nOffsetAtAndH[2*i+1] = num_at[jj]+tot_num_H;</a>
+<a name="ln1971">                }</a>
+<a name="ln1972">            }</a>
+<a name="ln1973">            if ( tot_num_at != num_at[jj] ||</a>
+<a name="ln1974">                 num_at[jj] + tot_num_H  != num_inp_at[jj] ) {</a>
+<a name="ln1975">                goto exit_error; /* miscount */</a>
+<a name="ln1976">            }</a>
+<a name="ln1977">            composite_norm_data[jj].bExists       = (tot_num_at&gt;0);</a>
+<a name="ln1978">            ret |= indicator;</a>
+<a name="ln1979">        }</a>
+<a name="ln1980">    }</a>
+<a name="ln1981">    return ret;</a>
+<a name="ln1982"> </a>
+<a name="ln1983"> </a>
+<a name="ln1984"> </a>
+<a name="ln1985"> </a>
+<a name="ln1986"> </a>
+<a name="ln1987">exit_error:</a>
+<a name="ln1988">    return ret;</a>
+<a name="ln1989">}</a>
+<a name="ln1990"> </a>
+<a name="ln1991">int CreateCompAtomData( COMP_ATOM_DATA *inp_at_data, int num_atoms, int num_components, int bIntermediateTaut )</a>
+<a name="ln1992">{</a>
+<a name="ln1993">    FreeCompAtomData( inp_at_data );</a>
+<a name="ln1994">    if ( (inp_at_data-&gt;at = CreateInpAtom( num_atoms )) &amp;&amp;</a>
+<a name="ln1995">         (num_components &lt;= 1 || bIntermediateTaut ||</a>
+<a name="ln1996">            (inp_at_data-&gt;nOffsetAtAndH = (AT_NUMB*)inchi_calloc(sizeof(inp_at_data-&gt;nOffsetAtAndH[0]), 2*(num_components+1))))) {</a>
+<a name="ln1997"> </a>
+<a name="ln1998">        inp_at_data-&gt;num_at = num_atoms;</a>
+<a name="ln1999">        inp_at_data-&gt;num_components = (num_components&gt;1)? num_components : 0;</a>
+<a name="ln2000">        return 1;</a>
+<a name="ln2001">    }</a>
+<a name="ln2002">    FreeCompAtomData( inp_at_data );</a>
+<a name="ln2003">    return 0;</a>
+<a name="ln2004">}</a>
+<a name="ln2005"> </a>
+<a name="ln2006"> </a>
+<a name="ln2007">/**********************************************************************************************/</a>
+<a name="ln2008">int FillOutINChIReducedWarn( INChI *pINChI, INChI_Aux *pINChI_Aux,</a>
+<a name="ln2009">                 int num_atoms, int num_at_tg, int num_removed_H,</a>
+<a name="ln2010">                 sp_ATOM *at, inp_ATOM *norm_at, CANON_STAT *pCS, int bTautomeric,</a>
+<a name="ln2011">                 INCHI_MODE nUserMode, char *pStrErrStruct )</a>
+<a name="ln2012">{</a>
+<a name="ln2013">    int i, j, m, n, g, len, ii, ret=0;</a>
+<a name="ln2014"> </a>
+<a name="ln2015">    AT_NUMB   *pSymmRank, *pOrigNosInCanonOrd, *pConstitEquNumb, *pCanonOrd=NULL, *pCanonOrdInv=NULL, *pCanonOrdTaut;</a>
+<a name="ln2016">    T_GROUP_INFO     *t_group_info = pCS-&gt;t_group_info;</a>
+<a name="ln2017">    T_GROUP *t_group;</a>
+<a name="ln2018">    int nErrorCode = 0;</a>
+<a name="ln2019">    AT_NUMB *pCanonRank, *pCanonRankInv; /* canonical ranks of the atoms or tautomeric groups */</a>
+<a name="ln2020">    AT_NUMB *pCanonRankAtoms=NULL, *pSortOrd = NULL;</a>
+<a name="ln2021">    AT_RANK nMinOrd;</a>
+<a name="ln2022">    INChI_Stereo *Stereo;</a>
+<a name="ln2023">    int          bUseNumberingInv = 0, bUseIsotopicNumberingInv = 0;</a>
+<a name="ln2024">    INCHI_MODE    nStereoUnmarkMode;</a>
+<a name="ln2025"> </a>
+<a name="ln2026">    /*AT_NUMB  *pCanonOrdNonIso = NULL, *pCanonOrdIso = NULL;*/</a>
+<a name="ln2027">    /*AT_NUMB  *nOrigAtNosInCanonOrdNonIso = NULL, *nOrigAtNosInCanonOrdIso = NULL;*/</a>
+<a name="ln2028"> </a>
+<a name="ln2029">    /*  Check for warnings */</a>
+<a name="ln2030">    if ( pCS-&gt;nLenLinearCTStereoCarb &lt; 0 || pCS-&gt;nLenLinearCTStereoDble  &lt; 0 ||</a>
+<a name="ln2031">         pCS-&gt;nLenCanonOrdStereo    &lt; 0 || pCS-&gt;nLenCanonOrdStereoTaut &lt; 0) {</a>
+<a name="ln2032">        nErrorCode     |= WARN_FAILED_STEREO;</a>
+<a name="ln2033">    }</a>
+<a name="ln2034">    if ( pCS-&gt;nLenLinearCTIsotopic &lt; 0  || pCS-&gt;nLenLinearCTIsotopicTautomer &lt; 0 ||</a>
+<a name="ln2035">         pCS-&gt;nLenCanonOrdIsotopic &lt; 0 || pCS-&gt;nLenCanonOrdIsotopicTaut    &lt; 0  ) {</a>
+<a name="ln2036">        nErrorCode     |= WARN_FAILED_ISOTOPIC;</a>
+<a name="ln2037">    }</a>
+<a name="ln2038">    if ( pCS-&gt;nLenLinearCTIsotopicStereoCarb &lt; 0 || pCS-&gt;nLenLinearCTIsotopicStereoDble  &lt; 0 ||</a>
+<a name="ln2039">         pCS-&gt;nLenCanonOrdIsotopicStereo    &lt; 0 || pCS-&gt;nLenCanonOrdIsotopicStereoTaut &lt; 0) {</a>
+<a name="ln2040">        nErrorCode     |= WARN_FAILED_ISOTOPIC_STEREO;</a>
+<a name="ln2041">    }</a>
+<a name="ln2042">    pCanonRankAtoms = (AT_NUMB *)inchi_calloc( num_at_tg+1, sizeof(pCanonRankAtoms[0]) );</a>
+<a name="ln2043">    pSortOrd        = (AT_NUMB *)inchi_calloc( num_at_tg+1, sizeof(pSortOrd[0]) ); /*  must have more than num_atoms */</a>
+<a name="ln2044"> </a>
+<a name="ln2045">    if ( !pCanonRankAtoms || !pSortOrd ) {</a>
+<a name="ln2046">        nErrorCode = 0;</a>
+<a name="ln2047">        ret = CT_OUT_OF_RAM;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln2048">        pINChI-&gt;nErrorCode = pINChI_Aux-&gt;nErrorCode = CT_OUT_OF_RAM;</a>
+<a name="ln2049">        goto exit_function;</a>
+<a name="ln2050">    }</a>
+<a name="ln2051"> </a>
+<a name="ln2052">    /*  total charge */</a>
+<a name="ln2053">    for ( i = 0, n = 0; i &lt; num_atoms+num_removed_H; i ++ ) {</a>
+<a name="ln2054">        n += at[i].charge;</a>
+<a name="ln2055">    }</a>
+<a name="ln2056">    pINChI-&gt;nTotalCharge = n;</a>
+<a name="ln2057"> </a>
+<a name="ln2058">    /*  number of atoms */</a>
+<a name="ln2059">    pINChI-&gt;nNumberOfAtoms     = num_atoms;</a>
+<a name="ln2060">    pINChI_Aux-&gt;nNumberOfAtoms = num_atoms;</a>
+<a name="ln2061"> </a>
+<a name="ln2062">    /* removed protons and detachable isotopic H */</a>
+<a name="ln2063">    if ( bTautomeric &amp;&amp; t_group_info ) {</a>
+<a name="ln2064">        pINChI_Aux-&gt;nNumRemovedProtons = t_group_info-&gt;tni.nNumRemovedProtons;</a>
+<a name="ln2065">        for ( i = 0; i &lt; NUM_H_ISOTOPES; i ++ ) {</a>
+<a name="ln2066">            pINChI_Aux-&gt;nNumRemovedIsotopicH[i] = t_group_info-&gt;num_iso_H[i] </a>
+<a name="ln2067">                                               + t_group_info-&gt;tni.nNumRemovedProtonsIsotopic[i];</a>
+<a name="ln2068">        }</a>
+<a name="ln2069">        if ( pINChI_Aux-&gt;bNormalizationFlags &amp; FLAG_FORCE_SALT_TAUT ) {</a>
+<a name="ln2070">            pINChI-&gt;nFlags |= INCHI_FLAG_HARD_ADD_REM_PROTON;</a>
+<a name="ln2071">        }</a>
+<a name="ln2072">/*^^^</a>
+<a name="ln2073">        if ( pINChI_Aux-&gt;bNormalizationFlags &amp; (FLAG_NORM_CONSIDER_TAUT &amp;~FLAG_PROTON_CHARGE_CANCEL) ) {</a>
+<a name="ln2074">            AddMOLfileError(pStrErrStruct, &quot;Proton(s) added/removed&quot;);</a>
+<a name="ln2075">        }</a>
+<a name="ln2076"> </a>
+<a name="ln2077">        if ( pINChI_Aux-&gt;bNormalizationFlags &amp; FLAG_PROTON_CHARGE_CANCEL ) {</a>
+<a name="ln2078">            AddMOLfileError(pStrErrStruct, &quot;Charges neutralized&quot;);</a>
+<a name="ln2079">        }</a>
+<a name="ln2080">^^^*/</a>
+<a name="ln2081">    }</a>
+<a name="ln2082"> </a>
+<a name="ln2083">    /* abs or rel stereo may establish one of two canonical numberings */</a>
+<a name="ln2084">    if ( (pCS-&gt;nLenLinearCTStereoCarb &gt; 0 || pCS-&gt;nLenLinearCTStereoDble &gt; 0) &amp;&amp;</a>
+<a name="ln2085">          pCS-&gt;nLenCanonOrdStereo &gt; 0 &amp;&amp;</a>
+<a name="ln2086">         ((pCS-&gt;LinearCTStereoCarb &amp;&amp; pCS-&gt;LinearCTStereoCarbInv) ||</a>
+<a name="ln2087">          (pCS-&gt;LinearCTStereoDble &amp;&amp; pCS-&gt;LinearCTStereoDbleInv)) &amp;&amp;</a>
+<a name="ln2088">          pCS-&gt;nCanonOrdStereo    &amp;&amp; pCS-&gt;nCanonOrdStereoInv</a>
+<a name="ln2089">       ) {</a>
+<a name="ln2090"> </a>
+<a name="ln2091">        pCanonRank    = pCanonRankAtoms;</a>
+<a name="ln2092">        pCanonOrd     = pCS-&gt;nCanonOrdStereo;</a>
+<a name="ln2093">        pCanonRankInv = pSortOrd;</a>
+<a name="ln2094">        pCanonOrdInv  = pCS-&gt;nCanonOrdStereoInv;</a>
+<a name="ln2095">        Stereo        = pINChI-&gt;Stereo;</a>
+<a name="ln2096">        for ( i = 0; i &lt; num_at_tg; i ++ ) {</a>
+<a name="ln2097">            pCanonRankInv[pCanonOrdInv[i]] = </a>
+<a name="ln2098">            pCanonRank[pCanonOrd[i]]       = (AT_NUMB)(i+1);</a>
+<a name="ln2099">        }</a>
+<a name="ln2100">        /********************************************************************/</a>
+<a name="ln2101">        /* copy stereo bonds and stereo centers; compare Inv and Abs stereo */</a>
+<a name="ln2102">        /********************************************************************/</a>
+<a name="ln2103">        nErrorCode = CopyLinearCTStereoToINChIStereo( Stereo,</a>
+<a name="ln2104">                           pCS-&gt;LinearCTStereoCarb, pCS-&gt;nLenLinearCTStereoCarb,</a>
+<a name="ln2105">                           pCS-&gt;LinearCTStereoDble, pCS-&gt;nLenLinearCTStereoDble</a>
+<a name="ln2106">                           , pCanonOrd, pCanonRank, at, 0 /* non-isotopic */</a>
+<a name="ln2107">                           , pCS-&gt;LinearCTStereoCarbInv</a>
+<a name="ln2108">                           , pCS-&gt;LinearCTStereoDbleInv</a>
+<a name="ln2109">                           , pCanonOrdInv, pCanonRankInv ); </a>
+<a name="ln2110"> </a>
+<a name="ln2111">        if ( Stereo-&gt;t_parityInv &amp;&amp; Stereo-&gt;nNumberInv ) {</a>
+<a name="ln2112">            if ( nUserMode &amp; REQ_MODE_RELATIVE_STEREO ) {</a>
+<a name="ln2113">                pINChI-&gt;nFlags |= INCHI_FLAG_REL_STEREO;</a>
+<a name="ln2114">            }</a>
+<a name="ln2115">            if ( nUserMode &amp; REQ_MODE_RACEMIC_STEREO ) {</a>
+<a name="ln2116">                pINChI-&gt;nFlags |= INCHI_FLAG_RAC_STEREO;</a>
+<a name="ln2117">            }</a>
+<a name="ln2118">            if ( Stereo-&gt;nCompInv2Abs ) {</a>
+<a name="ln2119">                if ( Stereo-&gt;nCompInv2Abs == -1 ) {</a>
+<a name="ln2120">                    /* switch pointers in Stereo so that the stereo becomes the smallest (relative)  */</a>
+<a name="ln2121">                    /* flag Stereo-&gt;nCompInv2Abs == -1 will keep track of this exchange */</a>
+<a name="ln2122">                    AT_NUMB    *nNumberInv  = Stereo-&gt;nNumberInv;</a>
+<a name="ln2123">                    S_CHAR     *t_parityInv = Stereo-&gt;t_parityInv;</a>
+<a name="ln2124">                    Stereo-&gt;nNumberInv  = Stereo-&gt;nNumber;</a>
+<a name="ln2125">                    Stereo-&gt;t_parityInv = Stereo-&gt;t_parity;</a>
+<a name="ln2126">                    Stereo-&gt;nNumber     = nNumberInv;</a>
+<a name="ln2127">                    Stereo-&gt;t_parity    = t_parityInv;</a>
+<a name="ln2128">                    /* switch pointers to set rel. stereo to pINChI_Aux-&gt;nOrigAtNosInCanonOrd</a>
+<a name="ln2129">                                       and inv. stereo to pINChI_Aux-&gt;nOrigAtNosInCanonOrdInv */</a>
+<a name="ln2130">                    switch_ptrs( &amp;pCanonRank, &amp;pCanonRankInv );</a>
+<a name="ln2131">                    switch_ptrs( &amp;pCanonOrd,  &amp;pCanonOrdInv  );</a>
+<a name="ln2132">                    bUseNumberingInv    = 1; /* use inverted stereo numbering instead of normal */</a>
+<a name="ln2133">                }</a>
+<a name="ln2134">            }</a>
+<a name="ln2135">        }</a>
+<a name="ln2136"> </a>
+<a name="ln2137">        for ( i = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln2138">            pINChI_Aux-&gt;nOrigAtNosInCanonOrdInv[i] = at[pCanonOrdInv[i]].orig_at_number;</a>
+<a name="ln2139">            pINChI_Aux-&gt;nOrigAtNosInCanonOrd[i]    = at[pCanonOrd[i]].orig_at_number;</a>
+<a name="ln2140">        }</a>
+<a name="ln2141">        if ( bUseNumberingInv ) {</a>
+<a name="ln2142">            /* switch ptrs back to avoid confusion */</a>
+<a name="ln2143">            switch_ptrs( &amp;pCanonRank, &amp;pCanonRankInv );</a>
+<a name="ln2144">            switch_ptrs( &amp;pCanonOrd,  &amp;pCanonOrdInv  );</a>
+<a name="ln2145">            /* save inverted stereo ranks &amp; order because it represents the smallest (relative) */</a>
+<a name="ln2146">            memcpy( pCanonRank, pCanonRankInv, num_at_tg * sizeof(pCanonRank[0]) );</a>
+<a name="ln2147">            /* change pCS-&gt;nCanonOrdStereo[] to inverted: */</a>
+<a name="ln2148">            memcpy( pCanonOrd,  pCanonOrdInv, num_at_tg * sizeof(pCanonOrd[0]) );</a>
+<a name="ln2149">        }</a>
+<a name="ln2150">        pCanonRankInv = NULL;</a>
+<a name="ln2151">        pCanonOrdInv  = NULL;</a>
+<a name="ln2152">        pOrigNosInCanonOrd = NULL;</a>
+<a name="ln2153"> </a>
+<a name="ln2154">    } else { /*------------------------------ no stereo */</a>
+<a name="ln2155"> </a>
+<a name="ln2156">        pCanonOrd            = pCS-&gt;nLenCanonOrdStereo &gt; 0? pCS-&gt;nCanonOrdStereo :</a>
+<a name="ln2157">                               pCS-&gt;nLenCanonOrd       &gt; 0? pCS-&gt;nCanonOrd : NULL;</a>
+<a name="ln2158">        pCanonRank           = pCanonRankAtoms;</a>
+<a name="ln2159">        pOrigNosInCanonOrd   = pINChI_Aux-&gt;nOrigAtNosInCanonOrd;</a>
+<a name="ln2160">        if ( pCanonOrd &amp;&amp; pCanonRank ) {</a>
+<a name="ln2161">            for ( i = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln2162">                pCanonRank[pCanonOrd[i]]       = (AT_NUMB)(i+1);</a>
+<a name="ln2163">                pOrigNosInCanonOrd[i]          = at[pCanonOrd[i]].orig_at_number;</a>
+<a name="ln2164">            }</a>
+<a name="ln2165">            for ( ; i &lt; num_at_tg; i ++ ) {</a>
+<a name="ln2166">                pCanonRank[pCanonOrd[i]]       = (AT_NUMB)(i+1);</a>
+<a name="ln2167">            }</a>
+<a name="ln2168">        }</a>
+<a name="ln2169">    }</a>
+<a name="ln2170">    /*pCanonOrdNonIso = pCanonOrd;*/  /* save for aux info */</a>
+<a name="ln2171"> </a>
+<a name="ln2172"> </a>
+<a name="ln2173">    if ( pINChI_Aux-&gt;OrigInfo ) {</a>
+<a name="ln2174">        /* charges, radicals, valences */</a>
+<a name="ln2175">        for ( i = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln2176">            ii = pCanonOrd[i];</a>
+<a name="ln2177">            if ( norm_at[ii].valence || norm_at[ii].num_H ) {</a>
+<a name="ln2178">                pINChI_Aux-&gt;OrigInfo[i].cCharge  = norm_at[ii].charge;</a>
+<a name="ln2179">                pINChI_Aux-&gt;OrigInfo[i].cRadical = (norm_at[ii].radical==RADICAL_SINGLET)? 0 :</a>
+<a name="ln2180">                                                  (norm_at[ii].radical==RADICAL_DOUBLET)? 1 :</a>
+<a name="ln2181">                                                  (norm_at[ii].radical==RADICAL_TRIPLET)? 2 :</a>
+<a name="ln2182">                                                  norm_at[ii].radical? 3 : 0 ;</a>
+<a name="ln2183">                pINChI_Aux-&gt;OrigInfo[i].cUnusualValence = </a>
+<a name="ln2184">                    get_unusual_el_valence( norm_at[ii].el_number, norm_at[ii].charge, norm_at[ii].radical,</a>
+<a name="ln2185">                                            norm_at[ii].chem_bonds_valence, norm_at[ii].num_H, norm_at[ii].valence );</a>
+<a name="ln2186">            } else {</a>
+<a name="ln2187">                /* charge of a single atom component is in the INChI; valence = 0 is standard */</a>
+<a name="ln2188">                pINChI_Aux-&gt;OrigInfo[i].cRadical = (norm_at[ii].radical==RADICAL_SINGLET)? 0 :</a>
+<a name="ln2189">                                                  (norm_at[ii].radical==RADICAL_DOUBLET)? 1 :</a>
+<a name="ln2190">                                                  (norm_at[ii].radical==RADICAL_TRIPLET)? 2 :</a>
+<a name="ln2191">                                                  norm_at[ii].radical? 3 : 0 ;</a>
+<a name="ln2192">            }</a>
+<a name="ln2193"> </a>
+<a name="ln2194">        }</a>
+<a name="ln2195">    }</a>
+<a name="ln2196"> </a>
+<a name="ln2197">    /* non-isotopic canonical numbers and equivalence of atoms (Aux) */</a>
+<a name="ln2198">    pConstitEquNumb      = pINChI_Aux-&gt;nConstitEquNumbers;  /*  contitutional equivalence */</a>
+<a name="ln2199">    pSymmRank            = pCS-&gt;nSymmRank;</a>
+<a name="ln2200">    if ( pCanonOrd &amp;&amp; pCanonRank &amp;&amp; pSymmRank &amp;&amp; pConstitEquNumb ) {</a>
+<a name="ln2201">        for ( i = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln2202">            pConstitEquNumb[i]       = pSymmRank[pCanonOrd[i]]; /*  constit. equ. ranks in order of canonical numbers */</a>
+<a name="ln2203">            pSortOrd[i]              = i;</a>
+<a name="ln2204">        }</a>
+<a name="ln2205">        for ( ; i &lt; num_at_tg; i ++ ) {</a>
+<a name="ln2206">            pSortOrd[i]              = MAX_ATOMS; /* for debugging only */</a>
+<a name="ln2207">        }</a>
+<a name="ln2208">        pn_RankForSort  = pConstitEquNumb;</a>
+<a name="ln2209">        qsort( pSortOrd, num_atoms, sizeof(pSortOrd[0]), CompRanksOrd );</a>
+<a name="ln2210">        for ( i = 0, nMinOrd = pSortOrd[0], j = 1; j &lt;= num_atoms; j ++ ) {</a>
+<a name="ln2211">            if ( j == num_atoms || pConstitEquNumb[pSortOrd[i]] != pConstitEquNumb[pSortOrd[j]] ) {</a>
+<a name="ln2212">                nMinOrd ++;</a>
+<a name="ln2213">                if ( j - i &gt; 1 ) {</a>
+<a name="ln2214">                    /*  found a sequence of equivalent atoms: i..j-1 */</a>
+<a name="ln2215">                    while ( i &lt; j ) {</a>
+<a name="ln2216">                        pConstitEquNumb[pSortOrd[i++]] = nMinOrd; /*  = min. canon. rank in the group of equ. atoms */</a>
+<a name="ln2217">                    }</a>
+<a name="ln2218">                    /*  at this point j == i */</a>
+<a name="ln2219">                } else {</a>
+<a name="ln2220">                    pConstitEquNumb[pSortOrd[i++]] = 0; /*  means the atom is not equivalent to any other */</a>
+<a name="ln2221">                }</a>
+<a name="ln2222">                nMinOrd = pSortOrd[j]; /*  at the end j = num_atoms */</a>
+<a name="ln2223">            }</a>
+<a name="ln2224">        }</a>
+<a name="ln2225">    } else {</a>
+<a name="ln2226">        nErrorCode  |= ERR_NO_CANON_RESULTS;</a>
+<a name="ln2227">        ret = -1;  /*  program error; no breakpoint here */</a>
+<a name="ln2228">        goto exit_function;</a>
+<a name="ln2229">    }</a>
+<a name="ln2230">    /*  atomic numbers from the Periodic Table */</a>
+<a name="ln2231">    for ( i = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln2232">        pINChI-&gt;nAtom[i] = (int)at[pCanonOrd[i]].el_number;</a>
+<a name="ln2233">    }</a>
+<a name="ln2234">    /*  connection table: atoms only (before 7-29-2003 pCS-&gt;LinearCT2 contained non-isotopic CT) */</a>
+<a name="ln2235">    if ( pCS-&gt;nLenLinearCTAtOnly &lt;= 0 || !pCS-&gt;LinearCT || !pINChI-&gt;nConnTable ) {</a>
+<a name="ln2236">        nErrorCode  |= ERR_NO_CANON_RESULTS;</a>
+<a name="ln2237">        ret = -2;</a>
+<a name="ln2238">        goto exit_function;</a>
+<a name="ln2239">    }</a>
+<a name="ln2240">    memcpy( pINChI-&gt;nConnTable, pCS-&gt;LinearCT, sizeof(pINChI-&gt;nConnTable[0])*pCS-&gt;nLenLinearCTAtOnly);</a>
+<a name="ln2241">    pINChI-&gt;lenConnTable = pCS-&gt;nLenLinearCTAtOnly;</a>
+<a name="ln2242">    </a>
+<a name="ln2243">    /*  tautomeric group(s) canonical representation */</a>
+<a name="ln2244">    len = 0;</a>
+<a name="ln2245">    if ( bTautomeric &amp;&amp; 0 &lt; (n = SortTautomerGroupsAndEndpoints( t_group_info, num_atoms, num_at_tg, pCanonRank )) ) {</a>
+<a name="ln2246">        /* SortTautomerGroupsAndEndpoints() produces canonically ordered t-groups */</a>
+<a name="ln2247">        pINChI-&gt;nFlags |= (t_group_info-&gt;bTautFlagsDone &amp; TG_FLAG_ALL_SALT_DONE)? INCHI_FLAG_ACID_TAUT : 0;</a>
+<a name="ln2248">        /*  number of tautomeric groups */</a>
+<a name="ln2249">        pINChI-&gt;nTautomer[len ++] = (AT_NUMB)n;</a>
+<a name="ln2250">        /* store each tautomeric group, one by one */</a>
+<a name="ln2251">        for ( i = 0; i &lt; n; i ++ ) {</a>
+<a name="ln2252">            g = (int)t_group_info-&gt;tGroupNumber[i]; /* original group numbers in sorted order */</a>
+<a name="ln2253">            t_group = t_group_info-&gt;t_group + g;    /* pointer to the tautomeric group */</a>
+<a name="ln2254">            /*  NumAt+INCHI_T_NUM_MOVABLE (group length excluding this number) */</a>
+<a name="ln2255">            pINChI-&gt;nTautomer[len ++]     = t_group-&gt;nNumEndpoints+INCHI_T_NUM_MOVABLE;</a>
+<a name="ln2256">            /*  Num(H), Num(-) */</a>
+<a name="ln2257">            for ( j = 0; j &lt; INCHI_T_NUM_MOVABLE &amp;&amp; j &lt; T_NUM_NO_ISOTOPIC; j ++ )</a>
+<a name="ln2258">                pINChI-&gt;nTautomer[len ++]     = t_group-&gt;num[j];</a>
+<a name="ln2259">            for ( j = T_NUM_NO_ISOTOPIC; j &lt; INCHI_T_NUM_MOVABLE; j ++ )</a>
+<a name="ln2260">                pINChI-&gt;nTautomer[len ++]     = 0; /* should not happen */</a>
+<a name="ln2261">            /* tautomeric group endpoint canonical numbers, pre-sorted in ascending order */</a>
+<a name="ln2262">            for ( j  = (int)t_group-&gt;nFirstEndpointAtNoPos,</a>
+<a name="ln2263">                  m  = j + (int)t_group-&gt;nNumEndpoints; j &lt; m; j ++ ) {</a>
+<a name="ln2264">                pINChI-&gt;nTautomer[len ++] = pCanonRank[(int)t_group_info-&gt;nEndpointAtomNumber[j]]; /*  At[j] */</a>
+<a name="ln2265">            }</a>
+<a name="ln2266">        }</a>
+<a name="ln2267">        pINChI-&gt;lenTautomer = len;</a>
+<a name="ln2268">        pINChI_Aux-&gt;nNumberOfTGroups = n;</a>
+<a name="ln2269">    } else {</a>
+<a name="ln2270">        pINChI-&gt;lenTautomer = 0;</a>
+<a name="ln2271">        pINChI_Aux-&gt;nNumberOfTGroups = 0;</a>
+<a name="ln2272">        if ( t_group_info &amp;&amp; ((t_group_info-&gt;tni.bNormalizationFlags &amp; FLAG_NORM_CONSIDER_TAUT) ||</a>
+<a name="ln2273">                              (t_group_info-&gt;nNumIsotopicEndpoints&gt;1 &amp;&amp;</a>
+<a name="ln2274">                              (t_group_info-&gt;bTautFlagsDone &amp; (TG_FLAG_FOUND_ISOTOPIC_H_DONE | TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE))))</a>
+<a name="ln2275">           ) {</a>
+<a name="ln2276">            /* only protons (re)moved or added */</a>
+<a name="ln2277">            pINChI-&gt;lenTautomer  = 1;</a>
+<a name="ln2278">            pINChI-&gt;nTautomer[0] = 0;</a>
+<a name="ln2279">        }</a>
+<a name="ln2280">    }</a>
+<a name="ln2281"> </a>
+<a name="ln2282">    /*  number of H (excluding tautomeric) */</a>
+<a name="ln2283">    if ( pCS-&gt;nNum_H ) {</a>
+<a name="ln2284">        for ( i = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln2285">            pINChI-&gt;nNum_H[i] = pCS-&gt;nNum_H[i];</a>
+<a name="ln2286">        } </a>
+<a name="ln2287">    }</a>
+<a name="ln2288">    /*  number of fixed H (tautomeric H in non-tautomeric representation) */</a>
+<a name="ln2289">    if ( pCS-&gt;nNum_H_fixed &amp;&amp; !pINChI-&gt;lenTautomer ) {</a>
+<a name="ln2290">        for ( i = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln2291">            pINChI-&gt;nNum_H_fixed[i]  = pCS-&gt;nNum_H_fixed[i];</a>
+<a name="ln2292">            pINChI-&gt;nNum_H[i]       += pCS-&gt;nNum_H_fixed[i];</a>
+<a name="ln2293">        } </a>
+<a name="ln2294">    }</a>
+<a name="ln2295"> </a>
+<a name="ln2296">    /***********************************************************</a>
+<a name="ln2297">     *  tautomeric group(s) numbering and symmetry;</a>
+<a name="ln2298">     *  should not depend on switching to rel. stereo numbering</a>
+<a name="ln2299">     */</a>
+<a name="ln2300">    if ( pINChI-&gt;lenTautomer &amp;&amp; (n=pINChI_Aux-&gt;nNumberOfTGroups) ) {</a>
+<a name="ln2301">        pCanonOrdTaut   = pCS-&gt;nLenCanonOrdStereoTaut &gt; 0? pCS-&gt;nCanonOrdStereoTaut :</a>
+<a name="ln2302">                          pCS-&gt;nLenCanonOrdTaut       &gt; 0? pCS-&gt;nCanonOrdTaut : NULL;</a>
+<a name="ln2303">        pConstitEquNumb = pINChI_Aux-&gt;nConstitEquTGroupNumbers;</a>
+<a name="ln2304">        pSymmRank       = pCS-&gt;nSymmRankTaut;</a>
+<a name="ln2305">        if ( pCanonOrdTaut &amp;&amp; pSymmRank &amp;&amp; pConstitEquNumb ) {</a>
+<a name="ln2306">            for ( i = 0; i &lt; n; i ++ ) {</a>
+<a name="ln2307">                pConstitEquNumb[i]       = pSymmRank[pCanonOrdTaut[i]];</a>
+<a name="ln2308">                pSortOrd[i]              = i;</a>
+<a name="ln2309">            }</a>
+<a name="ln2310">            pn_RankForSort  = pConstitEquNumb;</a>
+<a name="ln2311">            qsort( pSortOrd, n, sizeof(pSortOrd[0]), CompRanksOrd );</a>
+<a name="ln2312">            for ( i = 0, nMinOrd = pSortOrd[0], j = 1; j &lt;= n; j ++ ) {</a>
+<a name="ln2313">                if ( j == n || pConstitEquNumb[pSortOrd[i]] != pConstitEquNumb[pSortOrd[j]] ) {</a>
+<a name="ln2314">                    nMinOrd ++; /* make is start from 1, not from zero */</a>
+<a name="ln2315">                    if ( j - i &gt; 1 ) {</a>
+<a name="ln2316">                        /*  found a sequence of more than one equivalent t-groups: i..j-1 */</a>
+<a name="ln2317">                        while ( i &lt; j ) {</a>
+<a name="ln2318">                            pConstitEquNumb[pSortOrd[i++]] = nMinOrd;</a>
+<a name="ln2319">                        }</a>
+<a name="ln2320">                    } else {</a>
+<a name="ln2321">                        pConstitEquNumb[pSortOrd[i++]] = 0;</a>
+<a name="ln2322">                    }</a>
+<a name="ln2323">                    nMinOrd = pSortOrd[j]; /*  at the end j == n */</a>
+<a name="ln2324">                }</a>
+<a name="ln2325">            }</a>
+<a name="ln2326">        }</a>
+<a name="ln2327">    }</a>
+<a name="ln2328"> </a>
+<a name="ln2329">    /*  Allocate and fill Hill formula */</a>
+<a name="ln2330">    if ( !(pINChI-&gt;szHillFormula = AllocateAndFillHillFormula( pINChI ) ) ) {</a>
+<a name="ln2331">        nErrorCode = 0;</a>
+<a name="ln2332">        ret = CT_WRONG_FORMULA; /* CT_OUT_OF_RAM;*/  /*   &lt;BRKPT&gt; */</a>
+<a name="ln2333">        pINChI-&gt;nErrorCode = pINChI_Aux-&gt;nErrorCode = ret;</a>
+<a name="ln2334">        goto exit_function;</a>
+<a name="ln2335">    }</a>
+<a name="ln2336"> </a>
+<a name="ln2337">    if ( (nStereoUnmarkMode = UnmarkAllUndefinedUnknownStereo( pINChI-&gt;Stereo, nUserMode )) ) {</a>
+<a name="ln2338">        pINChI-&gt;nFlags |= (nStereoUnmarkMode &amp; REQ_MODE_SC_IGN_ALL_UU)? INCHI_FLAG_SC_IGN_ALL_UU : 0;    </a>
+<a name="ln2339">        pINChI-&gt;nFlags |= (nStereoUnmarkMode &amp; REQ_MODE_SB_IGN_ALL_UU)? INCHI_FLAG_SB_IGN_ALL_UU : 0;</a>
+<a name="ln2340">        if ( (nStereoUnmarkMode &amp; REQ_MODE_SC_IGN_ALL_UU) ||</a>
+<a name="ln2341">             (nStereoUnmarkMode &amp; REQ_MODE_SB_IGN_ALL_UU) ) {</a>
+<a name="ln2342">             AddMOLfileError(pStrErrStruct, &quot;Omitted undefined stereo&quot;); </a>
+<a name="ln2343">        }</a>
+<a name="ln2344">    }</a>
+<a name="ln2345"> </a>
+<a name="ln2346">    /*************************/</a>
+<a name="ln2347">    /* mark ambiguous stereo */</a>
+<a name="ln2348">    /*************************/</a>
+<a name="ln2349">    MarkAmbiguousStereo( at, norm_at, 0 /* non-isotopic */, pCanonOrd,</a>
+<a name="ln2350">           pCS-&gt;LinearCTStereoCarb, pCS-&gt;nLenLinearCTStereoCarb,</a>
+<a name="ln2351">           pCS-&gt;LinearCTStereoDble, pCS-&gt;nLenLinearCTStereoDble );</a>
+<a name="ln2352"> </a>
+<a name="ln2353"> </a>
+<a name="ln2354">    /************************************************************************</a>
+<a name="ln2355">     *</a>
+<a name="ln2356">     *  isotopic part</a>
+<a name="ln2357">     */</a>
+<a name="ln2358">    /* abs or rel stereo may establish one of two canonical numberings */</a>
+<a name="ln2359">    if ( (pCS-&gt;nLenLinearCTIsotopicStereoCarb &gt; 0 || pCS-&gt;nLenLinearCTIsotopicStereoDble &gt; 0) &amp;&amp;</a>
+<a name="ln2360">          pCS-&gt;nLenCanonOrdIsotopicStereo &gt; 0 &amp;&amp;</a>
+<a name="ln2361">         ((pCS-&gt;LinearCTIsotopicStereoCarb &amp;&amp; pCS-&gt;LinearCTIsotopicStereoCarbInv) ||</a>
+<a name="ln2362">          (pCS-&gt;LinearCTIsotopicStereoDble &amp;&amp; pCS-&gt;LinearCTIsotopicStereoDbleInv)) &amp;&amp;</a>
+<a name="ln2363">          pCS-&gt;nCanonOrdIsotopicStereo    &amp;&amp; pCS-&gt;nCanonOrdIsotopicStereoInv</a>
+<a name="ln2364">          ) {</a>
+<a name="ln2365">        /* found isotopic stereo */</a>
+<a name="ln2366">        pCanonRank    = pCanonRankAtoms;</a>
+<a name="ln2367">        pCanonOrd     = pCS-&gt;nCanonOrdIsotopicStereo;</a>
+<a name="ln2368">        pCanonRankInv = pSortOrd;</a>
+<a name="ln2369">        pCanonOrdInv  = pCS-&gt;nCanonOrdIsotopicStereoInv;</a>
+<a name="ln2370">        Stereo        = pINChI-&gt;StereoIsotopic;</a>
+<a name="ln2371">        for ( i = 0; i &lt; num_at_tg; i ++ ) {</a>
+<a name="ln2372">            pCanonRankInv[pCanonOrdInv[i]] =</a>
+<a name="ln2373">            pCanonRank[pCanonOrd[i]]       = (AT_NUMB)(i+1);</a>
+<a name="ln2374">        }</a>
+<a name="ln2375">        /********************************************************************/</a>
+<a name="ln2376">        /* copy stereo bonds and stereo centers; compare Inv and Abs stereo */</a>
+<a name="ln2377">        /********************************************************************/</a>
+<a name="ln2378">        nErrorCode = CopyLinearCTStereoToINChIStereo( Stereo,</a>
+<a name="ln2379">                           pCS-&gt;LinearCTIsotopicStereoCarb, pCS-&gt;nLenLinearCTIsotopicStereoCarb,</a>
+<a name="ln2380">                           pCS-&gt;LinearCTIsotopicStereoDble, pCS-&gt;nLenLinearCTIsotopicStereoDble</a>
+<a name="ln2381">                           , pCanonOrd, pCanonRank, at, 1 /* isotopic */</a>
+<a name="ln2382">                           , pCS-&gt;LinearCTIsotopicStereoCarbInv</a>
+<a name="ln2383">                           , pCS-&gt;LinearCTIsotopicStereoDbleInv</a>
+<a name="ln2384">                           , pCanonOrdInv, pCanonRankInv ); </a>
+<a name="ln2385"> </a>
+<a name="ln2386">        if ( Stereo-&gt;t_parityInv &amp;&amp; Stereo-&gt;nNumberInv ) {</a>
+<a name="ln2387">            if ( nUserMode &amp; REQ_MODE_RELATIVE_STEREO ) {</a>
+<a name="ln2388">                pINChI-&gt;nFlags |= INCHI_FLAG_REL_STEREO;</a>
+<a name="ln2389">            }</a>
+<a name="ln2390">            if ( nUserMode &amp; REQ_MODE_RACEMIC_STEREO ) {</a>
+<a name="ln2391">                pINChI-&gt;nFlags |= INCHI_FLAG_RAC_STEREO;</a>
+<a name="ln2392">            }</a>
+<a name="ln2393">            if ( Stereo-&gt;nCompInv2Abs ) {</a>
+<a name="ln2394">                if ( Stereo-&gt;nCompInv2Abs == -1 ) {</a>
+<a name="ln2395">                    /* switch pointers so that the stereo becomes the smallest (relative)  */</a>
+<a name="ln2396">                    /* flag Stereo-&gt;nCompInv2Abs == -1 will keep track of this exchange */</a>
+<a name="ln2397">                    AT_NUMB    *nNumberInv  = Stereo-&gt;nNumberInv;</a>
+<a name="ln2398">                    S_CHAR     *t_parityInv = Stereo-&gt;t_parityInv;</a>
+<a name="ln2399">                    Stereo-&gt;nNumberInv  = Stereo-&gt;nNumber;</a>
+<a name="ln2400">                    Stereo-&gt;t_parityInv = Stereo-&gt;t_parity;</a>
+<a name="ln2401">                    Stereo-&gt;nNumber     = nNumberInv;</a>
+<a name="ln2402">                    Stereo-&gt;t_parity    = t_parityInv;</a>
+<a name="ln2403">                    switch_ptrs( &amp;pCanonRank, &amp;pCanonRankInv );</a>
+<a name="ln2404">                    switch_ptrs( &amp;pCanonOrd,  &amp;pCanonOrdInv  );</a>
+<a name="ln2405">                    bUseIsotopicNumberingInv    = 1;</a>
+<a name="ln2406">                }</a>
+<a name="ln2407">            }</a>
+<a name="ln2408">        }</a>
+<a name="ln2409"> </a>
+<a name="ln2410">        for ( i = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln2411">            pINChI_Aux-&gt;nIsotopicOrigAtNosInCanonOrdInv[i] = at[pCanonOrdInv[i]].orig_at_number;</a>
+<a name="ln2412">            pINChI_Aux-&gt;nIsotopicOrigAtNosInCanonOrd[i]    = at[pCanonOrd[i]].orig_at_number;</a>
+<a name="ln2413">        }</a>
+<a name="ln2414">        if ( bUseIsotopicNumberingInv ) {</a>
+<a name="ln2415">            switch_ptrs( &amp;pCanonRank, &amp;pCanonRankInv );</a>
+<a name="ln2416">            switch_ptrs( &amp;pCanonOrd,  &amp;pCanonOrdInv  );</a>
+<a name="ln2417">            memcpy( pCanonRank, pCanonRankInv, num_at_tg * sizeof(pCanonRank[0]) );</a>
+<a name="ln2418">            memcpy( pCanonOrd,  pCanonOrdInv, num_at_tg * sizeof(pCanonOrd[0]) );</a>
+<a name="ln2419">        }</a>
+<a name="ln2420">        pCanonRankInv = NULL;</a>
+<a name="ln2421">        pCanonOrdInv  = NULL;</a>
+<a name="ln2422">        pOrigNosInCanonOrd = NULL;</a>
+<a name="ln2423"> </a>
+<a name="ln2424">    } else {</a>
+<a name="ln2425">        /* no isotopic stereo */</a>
+<a name="ln2426">        pCanonOrd = pCS-&gt;nLenCanonOrdIsotopicStereo &gt; 0? pCS-&gt;nCanonOrdIsotopicStereo :</a>
+<a name="ln2427">                    pCS-&gt;nLenCanonOrdIsotopic       &gt; 0? pCS-&gt;nCanonOrdIsotopic : NULL;</a>
+<a name="ln2428">        pCanonRank           = pCanonRankAtoms;</a>
+<a name="ln2429">        pOrigNosInCanonOrd   = pINChI_Aux-&gt;nIsotopicOrigAtNosInCanonOrd;</a>
+<a name="ln2430">        if ( pCanonOrd &amp;&amp; pCanonRank ) {</a>
+<a name="ln2431">            for ( i = 0; i &lt; num_atoms; i ++ ) { /* Fix13 -- out of bounds */</a>
+<a name="ln2432">                pCanonRank[pCanonOrd[i]]       = (AT_NUMB)(i+1);</a>
+<a name="ln2433">                pOrigNosInCanonOrd[i]          = at[pCanonOrd[i]].orig_at_number;</a>
+<a name="ln2434">            }</a>
+<a name="ln2435">            for ( ; i &lt; num_at_tg; i ++ ) { /* Fix13 -- out of bounds */</a>
+<a name="ln2436">                pCanonRank[pCanonOrd[i]]       = (AT_NUMB)(i+1);</a>
+<a name="ln2437">            }</a>
+<a name="ln2438">        }</a>
+<a name="ln2439">    }</a>
+<a name="ln2440">    /*pCanonOrdIso = pCanonOrd;*/</a>
+<a name="ln2441"> </a>
+<a name="ln2442">    pConstitEquNumb      = pINChI_Aux-&gt;nConstitEquIsotopicNumbers;</a>
+<a name="ln2443">    pSymmRank            = pCS-&gt;nSymmRankIsotopic;</a>
+<a name="ln2444">    if ( pCanonOrd &amp;&amp; pCanonRank &amp;&amp; pConstitEquNumb &amp;&amp; pSymmRank ) {</a>
+<a name="ln2445">        for ( i = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln2446">            pConstitEquNumb[i]       = pSymmRank[pCanonOrd[i]];</a>
+<a name="ln2447">            pSortOrd[i]              = i;</a>
+<a name="ln2448">        }</a>
+<a name="ln2449">        for ( ; i &lt; num_at_tg; i ++ ) {</a>
+<a name="ln2450">            pSortOrd[i]              = i;</a>
+<a name="ln2451">        }</a>
+<a name="ln2452">        pn_RankForSort  = pConstitEquNumb;</a>
+<a name="ln2453">        qsort( pSortOrd, num_atoms, sizeof(pSortOrd[0]), CompRanksOrd );</a>
+<a name="ln2454">        for ( i = 0, nMinOrd = pSortOrd[0], j = 1; j &lt;= num_atoms; j ++ ) {</a>
+<a name="ln2455">            if ( j == num_atoms || pConstitEquNumb[pSortOrd[i]] != pConstitEquNumb[pSortOrd[j]] ) {</a>
+<a name="ln2456">                nMinOrd ++;</a>
+<a name="ln2457">                if ( j - i &gt; 1 ) {</a>
+<a name="ln2458">                    /*  found a sequence of equivalent atoms: i..j-1 */</a>
+<a name="ln2459">                    while ( i &lt; j ) {</a>
+<a name="ln2460">                        pConstitEquNumb[pSortOrd[i++]] = nMinOrd;</a>
+<a name="ln2461">                    }</a>
+<a name="ln2462">                } else {</a>
+<a name="ln2463">                    pConstitEquNumb[pSortOrd[i++]] = 0; /* nMinOrd; */</a>
+<a name="ln2464">                }</a>
+<a name="ln2465">                nMinOrd = pSortOrd[j];</a>
+<a name="ln2466">            }</a>
+<a name="ln2467">        }</a>
+<a name="ln2468">    } else {</a>
+<a name="ln2469">        goto exit_function; /*  no isotopic info available */</a>
+<a name="ln2470">    }</a>
+<a name="ln2471">    /*  isotopic atoms */</a>
+<a name="ln2472">    n = pINChI-&gt;nNumberOfIsotopicAtoms = pCS-&gt;nLenLinearCTIsotopic;</a>
+<a name="ln2473">    for ( i = 0; i &lt; n; i ++ ) {</a>
+<a name="ln2474">        pINChI-&gt;IsotopicAtom[i].nAtomNumber    = pCS-&gt;LinearCTIsotopic[i].at_num;</a>
+<a name="ln2475">        pINChI-&gt;IsotopicAtom[i].nIsoDifference = pCS-&gt;LinearCTIsotopic[i].iso_atw_diff;</a>
+<a name="ln2476">        pINChI-&gt;IsotopicAtom[i].nNum_H         = pCS-&gt;LinearCTIsotopic[i].num_1H;</a>
+<a name="ln2477">        pINChI-&gt;IsotopicAtom[i].nNum_D         = pCS-&gt;LinearCTIsotopic[i].num_D;</a>
+<a name="ln2478">        pINChI-&gt;IsotopicAtom[i].nNum_T         = pCS-&gt;LinearCTIsotopic[i].num_T;</a>
+<a name="ln2479">    }</a>
+<a name="ln2480">    /*  isotopic tautomeric groups */</a>
+<a name="ln2481">    n = pINChI-&gt;nNumberOfIsotopicTGroups = pCS-&gt;nLenLinearCTIsotopicTautomer;</a>
+<a name="ln2482">    for ( i = 0; i &lt; n; i ++ ) {</a>
+<a name="ln2483">        pINChI-&gt;IsotopicTGroup[i].nTGroupNumber = pCS-&gt;LinearCTIsotopicTautomer[i].tgroup_num;</a>
+<a name="ln2484">        pINChI-&gt;IsotopicTGroup[i].nNum_H        = pCS-&gt;LinearCTIsotopicTautomer[i].num[2];</a>
+<a name="ln2485">        pINChI-&gt;IsotopicTGroup[i].nNum_D        = pCS-&gt;LinearCTIsotopicTautomer[i].num[1];</a>
+<a name="ln2486">        pINChI-&gt;IsotopicTGroup[i].nNum_T        = pCS-&gt;LinearCTIsotopicTautomer[i].num[0];</a>
+<a name="ln2487">    }</a>
+<a name="ln2488">    /* atoms that may exchange isotopic H-atoms */</a>
+<a name="ln2489">    if ( pCS-&gt;nExchgIsoH &amp;&amp; pINChI-&gt;nPossibleLocationsOfIsotopicH ) {</a>
+<a name="ln2490">        for ( i = 0, j = 1; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln2491">            if ( pCS-&gt;nExchgIsoH[i] ) {</a>
+<a name="ln2492">                pINChI-&gt;nPossibleLocationsOfIsotopicH[j++] = (AT_NUMB)(i+1); /* canonical number */</a>
+<a name="ln2493">            }</a>
+<a name="ln2494">        }</a>
+<a name="ln2495">        pINChI-&gt;nPossibleLocationsOfIsotopicH[0] = (AT_NUMB)j; /* length including the 0th element */</a>
+<a name="ln2496">    }</a>
+<a name="ln2497"> </a>
+<a name="ln2498">    if ( (nStereoUnmarkMode = UnmarkAllUndefinedUnknownStereo( pINChI-&gt;StereoIsotopic, nUserMode )) ) {</a>
+<a name="ln2499">        pINChI-&gt;nFlags |= (nStereoUnmarkMode &amp; REQ_MODE_SC_IGN_ALL_UU)? INCHI_FLAG_SC_IGN_ALL_ISO_UU : 0;    </a>
+<a name="ln2500">        pINChI-&gt;nFlags |= (nStereoUnmarkMode &amp; REQ_MODE_SB_IGN_ALL_UU)? INCHI_FLAG_SC_IGN_ALL_ISO_UU : 0;    </a>
+<a name="ln2501">        if ( (nStereoUnmarkMode &amp; REQ_MODE_SC_IGN_ALL_UU) ||</a>
+<a name="ln2502">             (nStereoUnmarkMode &amp; REQ_MODE_SB_IGN_ALL_UU) ) {</a>
+<a name="ln2503">             AddMOLfileError(pStrErrStruct, &quot;Omitted undefined stereo&quot;); </a>
+<a name="ln2504">        }</a>
+<a name="ln2505">    }</a>
+<a name="ln2506">    /* mark ambiguous stereo */</a>
+<a name="ln2507">    MarkAmbiguousStereo( at, norm_at, 1 /* isotopic */, pCanonOrd,</a>
+<a name="ln2508">           pCS-&gt;LinearCTIsotopicStereoCarb, pCS-&gt;nLenLinearCTIsotopicStereoCarb,</a>
+<a name="ln2509">           pCS-&gt;LinearCTIsotopicStereoDble, pCS-&gt;nLenLinearCTIsotopicStereoDble );</a>
+<a name="ln2510"> </a>
+<a name="ln2511">    /***********************************************************</a>
+<a name="ln2512">     *  isotopic tautomeric group(s) numbering and symmetry;</a>
+<a name="ln2513">     *  should not depend on switching to rel. stereo numbering</a>
+<a name="ln2514">     */</a>
+<a name="ln2515">    if ( pINChI-&gt;lenTautomer &amp;&amp; pINChI_Aux-&gt;nConstitEquIsotopicTGroupNumbers &amp;&amp; pCS-&gt;nSymmRankIsotopicTaut &amp;&amp;</a>
+<a name="ln2516">         (pCS-&gt;nLenLinearCTIsotopic || pCS-&gt;nLenLinearCTIsotopicTautomer) &amp;&amp;</a>
+<a name="ln2517">          t_group_info &amp;&amp; t_group_info-&gt;num_t_groups &gt; 0 ) {</a>
+<a name="ln2518">        n = t_group_info-&gt;num_t_groups;</a>
+<a name="ln2519">        pCanonOrdTaut   = pCS-&gt;nLenCanonOrdIsotopicStereoTaut &gt; 0? </a>
+<a name="ln2520">                              (n=pCS-&gt;nLenCanonOrdIsotopicStereoTaut, pCS-&gt;nCanonOrdIsotopicStereoTaut) :</a>
+<a name="ln2521">                          pCS-&gt;nLenCanonOrdIsotopicTaut       &gt; 0?</a>
+<a name="ln2522">                              (n=pCS-&gt;nLenCanonOrdIsotopicTaut,pCS-&gt;nCanonOrdIsotopicTaut) : (n=0,(AT_RANK*)NULL);</a>
+<a name="ln2523">        pConstitEquNumb = pINChI_Aux-&gt;nConstitEquIsotopicTGroupNumbers;</a>
+<a name="ln2524">        pSymmRank       = pCS-&gt;nSymmRankIsotopicTaut;</a>
+<a name="ln2525">        if ( pCanonOrdTaut &amp;&amp; pSymmRank &amp;&amp; pConstitEquNumb &amp;&amp; n &gt; 0 ) {</a>
+<a name="ln2526">            for ( i = 0; i &lt; n; i ++ ) {</a>
+<a name="ln2527">                pConstitEquNumb[i]       = pSymmRank[pCanonOrdTaut[i]];</a>
+<a name="ln2528">                pSortOrd[i]              = i;</a>
+<a name="ln2529">            }</a>
+<a name="ln2530">            pn_RankForSort  = pConstitEquNumb;</a>
+<a name="ln2531">            qsort( pSortOrd, n, sizeof(pSortOrd[0]), CompRanksOrd );</a>
+<a name="ln2532">            for ( i = 0, nMinOrd = pSortOrd[0], j = 1; j &lt;= n; j ++ ) {</a>
+<a name="ln2533">                if ( j == n || pConstitEquNumb[pSortOrd[i]] != pConstitEquNumb[pSortOrd[j]] ) {</a>
+<a name="ln2534">                    nMinOrd ++;</a>
+<a name="ln2535">                    if ( j - i &gt; 1 ) {</a>
+<a name="ln2536">                        /*  found a sequence of equivalent t-groups: i..j-1 */</a>
+<a name="ln2537">                        while ( i &lt; j ) {</a>
+<a name="ln2538">                            pConstitEquNumb[pSortOrd[i++]] = nMinOrd;</a>
+<a name="ln2539">                        }</a>
+<a name="ln2540">                    } else {</a>
+<a name="ln2541">                        pConstitEquNumb[pSortOrd[i++]] = 0; /*  nMinOrd; */</a>
+<a name="ln2542">                    }</a>
+<a name="ln2543">                    nMinOrd = pSortOrd[j]; /*  at the end j = n */</a>
+<a name="ln2544">                }</a>
+<a name="ln2545">            }</a>
+<a name="ln2546">        }</a>
+<a name="ln2547">    }</a>
+<a name="ln2548"> </a>
+<a name="ln2549"> </a>
+<a name="ln2550">exit_function:</a>
+<a name="ln2551">    if ( pCanonRankAtoms )</a>
+<a name="ln2552">        inchi_free( pCanonRankAtoms );</a>
+<a name="ln2553">    if ( pSortOrd )</a>
+<a name="ln2554">        inchi_free( pSortOrd );</a>
+<a name="ln2555"> </a>
+<a name="ln2556">    pINChI-&gt;nErrorCode     |= nErrorCode;</a>
+<a name="ln2557">    pINChI_Aux-&gt;nErrorCode |= nErrorCode;</a>
+<a name="ln2558"> </a>
+<a name="ln2559">    return ret;</a>
+<a name="ln2560">}</a>
+<a name="ln2561"> </a>
+<a name="ln2562">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/</a>
+<a name="ln2563">void make_norm_atoms_from_inp_atoms(INCHIGEN_DATA *gendata, INCHIGEN_CONTROL *genctl)</a>
+<a name="ln2564">{</a>
+<a name="ln2565">/*^^^ TODO: make a full copy (with allocs) of atom arrays */</a>
+<a name="ln2566">size_t t1;</a>
+<a name="ln2567">int k;</a>
+<a name="ln2568"> </a>
+<a name="ln2569">    for ( k = 0;  k &lt; INCHI_NUM; k++) </a>
+<a name="ln2570">    {</a>
+<a name="ln2571">        if (NULL!=genctl-&gt;InpNormAtData[k])</a>
+<a name="ln2572">        {</a>
+<a name="ln2573">            t1 = genctl-&gt;StructData.num_components[k] * sizeof(NORM_ATOMS);</a>
+<a name="ln2574">            memcpy(gendata-&gt;NormAtomsNontaut[k], genctl-&gt;InpNormAtData[k], t1);</a>
+<a name="ln2575">        }</a>
+<a name="ln2576">    </a>
+<a name="ln2577">        if (NULL!=genctl-&gt;InpNormTautData[k])</a>
+<a name="ln2578">        {</a>
+<a name="ln2579">            t1 = genctl-&gt;StructData.num_components[k] * sizeof(NORM_ATOMS);</a>
+<a name="ln2580">            memcpy(gendata-&gt;NormAtomsTaut[k], genctl-&gt;InpNormTautData[k], t1);</a>
+<a name="ln2581">        }</a>
+<a name="ln2582">    }</a>
+<a name="ln2583"> </a>
+<a name="ln2584">}</a>
+
+</code></pre>
+<div class="balloon" rel="325"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v575/" target="_blank">V575</a> The potential null pointer is passed into 'memset' function. Inspect the first argument. Check lines: 325, 324.</p></div>
+<div class="balloon" rel="338"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v522/" target="_blank">V522</a> There might be dereferencing of a potential null pointer 'genctl->InpCurAtData[iINChI]'. Check lines: 338, 323.</p></div>
+<div class="balloon" rel="357"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v522/" target="_blank">V522</a> There might be dereferencing of a potential null pointer 'genctl->InpNormAtData[iINChI]'. Check lines: 357, 321.</p></div>
+<div class="balloon" rel="358"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v575/" target="_blank">V575</a> The potential null pointer is passed into 'memset' function. Inspect the first argument.</p></div>
+<div class="balloon" rel="359"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v522/" target="_blank">V522</a> There might be dereferencing of a potential null pointer 'genctl->InpNormTautData[iINChI]'. Check lines: 359, 322.</p></div>
+<div class="balloon" rel="360"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v575/" target="_blank">V575</a> The potential null pointer is passed into 'memset' function. Inspect the first argument.</p></div>
+<div class="balloon" rel="775"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v793/" target="_blank">V793</a> It is odd that the result of the 'cur_is_non_taut + cur_is_taut' statement is a part of the condition. Perhaps, this statement should have been compared with something else.</p></div>
+<div class="balloon" rel="961"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v793/" target="_blank">V793</a> It is odd that the result of the 'cur_is_non_taut + cur_is_taut' statement is a part of the condition. Perhaps, this statement should have been compared with something else.</p></div>
+<div class="balloon" rel="894"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v519/" target="_blank">V519</a> The 'num_at' variable is assigned values twice successively. Perhaps this is a mistake. Check lines: 891, 894.</p></div>
+<div class="balloon" rel="1050"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'pBCN' is always true.</p></div>
+<div class="balloon" rel="1182"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: t_group_info.</p></div>
+<div class="balloon" rel="1368"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: t_group_info.</p></div>
+<div class="balloon" rel="1369"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: 0 < 3.</p></div>
+<div class="balloon" rel="1370"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: 1 < 3.</p></div>
+<div class="balloon" rel="1371"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: 2 < 3.</p></div>
+<div class="balloon" rel="1374"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: t_group_info.</p></div>
+<div class="balloon" rel="1505"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 't_group_info' is always true.</p></div>
+<div class="balloon" rel="1714"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v595/" target="_blank">V595</a> The 'pINChI_Aux' pointer was utilized before it was verified against nullptr. Check lines: 1714, 1738.</p></div>
+<div class="balloon" rel="1678"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'pBCN' is always true.</p></div>
+<div class="balloon" rel="2160"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: pCanonRank.</p></div>
+<div class="balloon" rel="2257"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: j < 2.</p></div>
+<div class="balloon" rel="2259"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v654/" target="_blank">V654</a> The condition 'j < 2' of loop is always false.</p></div>
+<div class="balloon" rel="2259"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v621/" target="_blank">V621</a> Consider inspecting the 'for' operator. It's possible that the loop will be executed incorrectly or won't be executed at all.</p></div>
+<div class="balloon" rel="2430"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: pCanonRank.</p></div>
+<div class="balloon" rel="2525"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: pSymmRank.</p></div>
+<div class="balloon" rel="2525"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: pConstitEquNumb.</p></div>
+<div class="balloon" rel="2176"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v595/" target="_blank">V595</a> The 'pCanonOrd' pointer was utilized before it was verified against nullptr. Check lines: 2176, 2200.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

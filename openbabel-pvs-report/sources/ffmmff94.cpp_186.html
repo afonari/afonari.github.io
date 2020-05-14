@@ -1,0 +1,274 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>ffmmff94.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">ffmmff94.cpp - Test energy and gradients for MMFF94 force field</a>
+<a name="ln3"> </a>
+<a name="ln4">This file is part of the Open Babel project.</a>
+<a name="ln5">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln6"> </a>
+<a name="ln7">Some portions Copyright (C) 2008 Geoffrey R. Hutchison</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln10">it under the terms of the GNU General Public License as published by</a>
+<a name="ln11">the Free Software Foundation version 2 of the License.</a>
+<a name="ln12"> </a>
+<a name="ln13">This program is distributed in the hope that it will be useful,</a>
+<a name="ln14">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln15">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln16">GNU General Public License for more details.</a>
+<a name="ln17">***********************************************************************/</a>
+<a name="ln18"> </a>
+<a name="ln19">// used to set import/export for Cygwin DLLs</a>
+<a name="ln20">#ifdef WIN32</a>
+<a name="ln21">#define USING_OBDLL</a>
+<a name="ln22">#endif</a>
+<a name="ln23"> </a>
+<a name="ln24">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln25"> </a>
+<a name="ln26">#include &lt;fstream&gt;</a>
+<a name="ln27"> </a>
+<a name="ln28">#include &quot;obtest.h&quot;</a>
+<a name="ln29">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln30">#include &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln31">#include &lt;openbabel/forcefield.h&gt;</a>
+<a name="ln32">#include &lt;openbabel/obutil.h&gt;</a>
+<a name="ln33"> </a>
+<a name="ln34">using namespace std;</a>
+<a name="ln35">using namespace OpenBabel;</a>
+<a name="ln36"> </a>
+<a name="ln37">#ifndef TESTDATADIR</a>
+<a name="ln38">#define TESTDATADIR=&quot;files/&quot;;</a>
+<a name="ln39">#endif</a>
+<a name="ln40"> </a>
+<a name="ln41">  int currentTest = 0;</a>
+<a name="ln42"> </a>
+<a name="ln43">void GenerateEnergies(string molecules_file, string results_file, string method, double epsilon = 1.0)</a>
+<a name="ln44">{</a>
+<a name="ln45">  std::ifstream ifs;</a>
+<a name="ln46">  if (!SafeOpen(ifs, molecules_file.c_str()))</a>
+<a name="ln47">    return;</a>
+<a name="ln48"> </a>
+<a name="ln49">  std::ofstream ofs;</a>
+<a name="ln50">  if (!SafeOpen(ofs, results_file.c_str()))</a>
+<a name="ln51">    return;</a>
+<a name="ln52"> </a>
+<a name="ln53">  OBMol mol;</a>
+<a name="ln54">  OBConversion conv(&amp;ifs, &amp;cout);</a>
+<a name="ln55">  char buffer[BUFF_SIZE];</a>
+<a name="ln56"> </a>
+<a name="ln57">  if(! conv.SetInAndOutFormats(&quot;SDF&quot;,&quot;SDF&quot;))</a>
+<a name="ln58">    {</a>
+<a name="ln59">      cerr &lt;&lt; &quot;SDF format is not loaded&quot; &lt;&lt; endl;</a>
+<a name="ln60">      return;</a>
+<a name="ln61">    }</a>
+<a name="ln62"> </a>
+<a name="ln63">  OBForceField* pFF = OBForceField::FindForceField(method);</a>
+<a name="ln64">  OB_REQUIRE(pFF != nullptr);</a>
+<a name="ln65"> </a>
+<a name="ln66">  pFF-&gt;SetLogFile(&amp;cout);</a>
+<a name="ln67">  pFF-&gt;SetLogLevel(OBFF_LOGLVL_NONE);</a>
+<a name="ln68">  pFF-&gt;SetDielectricConstant(epsilon);</a>
+<a name="ln69"> </a>
+<a name="ln70">  for (;ifs;)</a>
+<a name="ln71">    {</a>
+<a name="ln72">      mol.Clear();</a>
+<a name="ln73">      conv.Read(&amp;mol);</a>
+<a name="ln74">      if (mol.Empty())</a>
+<a name="ln75">        continue;</a>
+<a name="ln76"> </a>
+<a name="ln77">      if (!pFF-&gt;Setup(mol)) {</a>
+<a name="ln78">        cerr &lt;&lt; &quot;Could not setup force field on molecule: &quot; &lt;&lt; mol.GetTitle() &lt;&lt; endl;</a>
+<a name="ln79">        return;</a>
+<a name="ln80">      }</a>
+<a name="ln81"> </a>
+<a name="ln82">      // Don't compute gradients</a>
+<a name="ln83">      sprintf(buffer, &quot;%15.5f\n&quot;, pFF-&gt;Energy(false));</a>
+<a name="ln84">      ofs &lt;&lt; buffer;</a>
+<a name="ln85">    }</a>
+<a name="ln86"> </a>
+<a name="ln87">	cerr &lt;&lt; &quot; MMFF94 force field energies written successfully&quot; &lt;&lt; endl;</a>
+<a name="ln88">  return;</a>
+<a name="ln89">}</a>
+<a name="ln90"> </a>
+<a name="ln91">void TestFile(string filename, string results_file, string method, double epsilon = 1.0)</a>
+<a name="ln92">{</a>
+<a name="ln93">  std::ifstream mifs;</a>
+<a name="ln94">  if (!SafeOpen(mifs, filename.c_str()))</a>
+<a name="ln95">    {</a>
+<a name="ln96">      cout &lt;&lt; &quot;Bail out! Cannot read file &quot; &lt;&lt; filename &lt;&lt; endl;</a>
+<a name="ln97">      return;</a>
+<a name="ln98">    }</a>
+<a name="ln99"> </a>
+<a name="ln100">  std::ifstream rifs;</a>
+<a name="ln101">  if (!SafeOpen(rifs, results_file.c_str()))</a>
+<a name="ln102">    {</a>
+<a name="ln103">      cout &lt;&lt; &quot;Bail out! Cannot read file &quot; &lt;&lt; results_file &lt;&lt; endl;</a>
+<a name="ln104">      return;</a>
+<a name="ln105">    }</a>
+<a name="ln106"> </a>
+<a name="ln107">  char buffer[BUFF_SIZE];</a>
+<a name="ln108">  vector&lt;string&gt; vs;</a>
+<a name="ln109">  OBMol mol;</a>
+<a name="ln110">  OBConversion conv(&amp;mifs, &amp;cout);</a>
+<a name="ln111"> </a>
+<a name="ln112">  if(! conv.SetInAndOutFormats(&quot;SDF&quot;,&quot;SDF&quot;))</a>
+<a name="ln113">    {</a>
+<a name="ln114">      cout &lt;&lt; &quot;Bail out! SDF format is not loaded&quot; &lt;&lt; endl;</a>
+<a name="ln115">      return;</a>
+<a name="ln116">    }</a>
+<a name="ln117"> </a>
+<a name="ln118">  OBForceField* pFF = OBForceField::FindForceField(method);</a>
+<a name="ln119">  OB_REQUIRE(pFF != nullptr);</a>
+<a name="ln120"> </a>
+<a name="ln121">  pFF-&gt;SetLogFile(&amp;cout);</a>
+<a name="ln122">  pFF-&gt;SetLogLevel(OBFF_LOGLVL_NONE);</a>
+<a name="ln123">  pFF-&gt;SetDielectricConstant(epsilon);</a>
+<a name="ln124"> </a>
+<a name="ln125">  double energy;</a>
+<a name="ln126">  while(mifs)</a>
+<a name="ln127">    {</a>
+<a name="ln128">      mol.Clear();</a>
+<a name="ln129">      conv.Read(&amp;mol);</a>
+<a name="ln130">      if (mol.Empty())</a>
+<a name="ln131">        continue;</a>
+<a name="ln132">      if (!rifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln133">        {</a>
+<a name="ln134">          cout &lt;&lt; &quot;Bail out! error reading reference data&quot; &lt;&lt; endl;</a>
+<a name="ln135">          return;</a>
+<a name="ln136">        }</a>
+<a name="ln137"> </a>
+<a name="ln138">      if (!pFF-&gt;Setup(mol)) {</a>
+<a name="ln139">        cout &lt;&lt; &quot;Bail out! could not setup force field on &quot; &lt;&lt; mol.GetTitle() &lt;&lt; endl;</a>
+<a name="ln140">        return;</a>
+<a name="ln141">      }</a>
+<a name="ln142"> </a>
+<a name="ln143">      // compare the calculated energy to our reference data</a>
+<a name="ln144">      energy = pFF-&gt;Energy(false);</a>
+<a name="ln145">      if ( fabs(atof(buffer) - energy ) &gt; 1.0e-3)</a>
+<a name="ln146">        {</a>
+<a name="ln147">          cout &lt;&lt; &quot;not ok &quot; &lt;&lt; ++currentTest &lt;&lt; &quot; # calculated energy incorrect &quot;</a>
+<a name="ln148">               &lt;&lt; &quot; for molecule &quot; &lt;&lt; mol.GetTitle() &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln149">          cout &lt;&lt; &quot;# Expected &quot; &lt;&lt; buffer &lt;&lt; &quot; found &quot; &lt;&lt;</a>
+<a name="ln150">            energy &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln151">        }</a>
+<a name="ln152">      else</a>
+<a name="ln153">        cout &lt;&lt; &quot;ok &quot; &lt;&lt; ++currentTest &lt;&lt; &quot; # energy \n&quot;;</a>
+<a name="ln154"> </a>
+<a name="ln155">      // check that gradients validate too</a>
+<a name="ln156">      if (!pFF-&gt;ValidateGradients())</a>
+<a name="ln157">        {</a>
+<a name="ln158">          cout &lt;&lt; &quot;not ok &quot; &lt;&lt; ++currentTest &lt;&lt; &quot; # gradients do not validate &quot;</a>
+<a name="ln159">               &lt;&lt; &quot; for molecule &quot; &lt;&lt; mol.GetTitle() &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln160">        }</a>
+<a name="ln161">      else</a>
+<a name="ln162">        cout &lt;&lt; &quot;ok &quot; &lt;&lt; ++currentTest &lt;&lt; &quot; # gradients \n&quot;;</a>
+<a name="ln163">    }</a>
+<a name="ln164">} // end TestFile</a>
+<a name="ln165"> </a>
+<a name="ln166">int ffmmff94(int argc, char* argv[])</a>
+<a name="ln167">{</a>
+<a name="ln168">  int defaultchoice = 1;</a>
+<a name="ln169"> </a>
+<a name="ln170">  int choice = defaultchoice;</a>
+<a name="ln171"> </a>
+<a name="ln172">  if (argc &gt; 1) {</a>
+<a name="ln173">    if(sscanf(argv[1], &quot;%d&quot;, &amp;choice) != 1) {</a>
+<a name="ln174">      printf(&quot;Couldn't parse that input as a number\n&quot;);</a>
+<a name="ln175">      return -1;</a>
+<a name="ln176">    }</a>
+<a name="ln177">  }</a>
+<a name="ln178"> </a>
+<a name="ln179">  string testdatadir = TESTDATADIR;</a>
+<a name="ln180"> </a>
+<a name="ln181">  if (choice == 99)</a>
+<a name="ln182">    {</a>
+<a name="ln183">      GenerateEnergies(testdatadir + &quot;forcefield.sdf&quot;, testdatadir + &quot;mmff94results.txt&quot;, &quot;MMFF94&quot;);</a>
+<a name="ln184">      GenerateEnergies(testdatadir + &quot;more-mmff94.sdf&quot;, testdatadir + &quot;more-mmff94results.txt&quot;, &quot;MMFF94&quot;); // provided by Paolo Tosco</a>
+<a name="ln185">      GenerateEnergies(testdatadir + &quot;forcefield.sdf&quot;, testdatadir + &quot;mmff94sresults.txt&quot;, &quot;MMFF94s&quot;);</a>
+<a name="ln186">      GenerateEnergies(testdatadir + &quot;more-mmff94.sdf&quot;, testdatadir + &quot;more-mmff94sresults.txt&quot;, &quot;MMFF94s&quot;); // ditto</a>
+<a name="ln187">      GenerateEnergies(testdatadir + &quot;forcefield.sdf&quot;, testdatadir + &quot;mmff94e4results.txt&quot;, &quot;MMFF94&quot;, 4.0);</a>
+<a name="ln188">      GenerateEnergies(testdatadir + &quot;more-mmff94.sdf&quot;, testdatadir + &quot;more-mmff94e4results.txt&quot;, &quot;MMFF94&quot;, 4.0); // provided by Paolo Tosco</a>
+<a name="ln189"> </a>
+<a name="ln190">      return 0;</a>
+<a name="ln191">    }</a>
+<a name="ln192"> </a>
+<a name="ln193">  // Define location of file formats for testing</a>
+<a name="ln194">  #ifdef FORMATDIR</a>
+<a name="ln195">    char env[BUFF_SIZE];</a>
+<a name="ln196">    snprintf(env, BUFF_SIZE, &quot;BABEL_LIBDIR=%s&quot;, FORMATDIR);</a>
+<a name="ln197">    putenv(env);</a>
+<a name="ln198">  #endif</a>
+<a name="ln199"> </a>
+<a name="ln200">  cout &lt;&lt; &quot;# Testing MMFF94 Force Field...&quot; &lt;&lt; endl;</a>
+<a name="ln201">  switch(choice) {</a>
+<a name="ln202">  case 1:</a>
+<a name="ln203">    TestFile(testdatadir + &quot;forcefield.sdf&quot;, testdatadir + &quot;mmff94results.txt&quot;, &quot;MMFF94&quot;);</a>
+<a name="ln204">    break;</a>
+<a name="ln205">  case 2:</a>
+<a name="ln206">    TestFile(testdatadir + &quot;more-mmff94.sdf&quot;, testdatadir + &quot;more-mmff94results.txt&quot;, &quot;MMFF94&quot;); // provided by Paolo Tosco</a>
+<a name="ln207">    break;</a>
+<a name="ln208">  case 3:</a>
+<a name="ln209">    TestFile(testdatadir + &quot;forcefield.sdf&quot;, testdatadir + &quot;mmff94sresults.txt&quot;, &quot;MMFF94s&quot;);</a>
+<a name="ln210">    break;</a>
+<a name="ln211">  case 4:</a>
+<a name="ln212">    TestFile(testdatadir + &quot;more-mmff94.sdf&quot;, testdatadir + &quot;more-mmff94sresults.txt&quot;, &quot;MMFF94s&quot;); // ditto</a>
+<a name="ln213">    break;</a>
+<a name="ln214">  case 5:</a>
+<a name="ln215">    TestFile(testdatadir + &quot;forcefield.sdf&quot;, testdatadir + &quot;mmff94e4results.txt&quot;, &quot;MMFF94&quot;, 4.0);</a>
+<a name="ln216">    break;</a>
+<a name="ln217">  case 6:</a>
+<a name="ln218">    TestFile(testdatadir + &quot;more-mmff94.sdf&quot;, testdatadir + &quot;more-mmff94e4sresults.txt&quot;, &quot;MMFF94&quot;, 4.0);</a>
+<a name="ln219">    break;</a>
+<a name="ln220">  default:</a>
+<a name="ln221">    cout &lt;&lt; &quot;Test number &quot; &lt;&lt; choice &lt;&lt; &quot; does not exist!\n&quot;;</a>
+<a name="ln222">    return -1;</a>
+<a name="ln223">  }</a>
+<a name="ln224"> </a>
+<a name="ln225">  // Passed tests</a>
+<a name="ln226">  return 0;</a>
+<a name="ln227">}</a>
+
+</code></pre>
+<div class="balloon" rel="66"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1004/" target="_blank">V1004</a> The 'pFF' pointer was used unsafely after it was verified against nullptr. Check lines: 64, 66.</p></div>
+<div class="balloon" rel="121"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1004/" target="_blank">V1004</a> The 'pFF' pointer was used unsafely after it was verified against nullptr. Check lines: 119, 121.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

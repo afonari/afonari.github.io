@@ -1,0 +1,779 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>orcaformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Copyright (C) 2001-2006 by Geoffrey R. Hutchison</a>
+<a name="ln3">Some portions Copyright (C) 2004 by Chris Morley</a>
+<a name="ln4">Some portions Copyright (C) 2009 by Michael Banck</a>
+<a name="ln5">Some portions Copyright (C) 2014 by Dagmar Lenk</a>
+<a name="ln6"> </a>
+<a name="ln7">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln8">it under the terms of the GNU General Public License as published by</a>
+<a name="ln9">the Free Software Foundation version 2 of the License.</a>
+<a name="ln10"> </a>
+<a name="ln11">This program is distributed in the hope that it will be useful,</a>
+<a name="ln12">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln13">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln14">GNU General Public License for more details.</a>
+<a name="ln15">***********************************************************************/</a>
+<a name="ln16">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln17"> </a>
+<a name="ln18">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln24">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln25">#include &lt;cstdlib&gt;</a>
+<a name="ln26"> </a>
+<a name="ln27">#ifdef _MSC_VER</a>
+<a name="ln28">#include &lt;regex&gt;</a>
+<a name="ln29">#else</a>
+<a name="ln30">#include &lt;regex.h&gt;</a>
+<a name="ln31">#endif</a>
+<a name="ln32"> </a>
+<a name="ln33">#include &lt;iomanip&gt;</a>
+<a name="ln34"> </a>
+<a name="ln35">#define notFound string::npos</a>
+<a name="ln36">using namespace std;</a>
+<a name="ln37">namespace OpenBabel</a>
+<a name="ln38">{</a>
+<a name="ln39"> </a>
+<a name="ln40">  class OrcaOutputFormat : public OBMoleculeFormat</a>
+<a name="ln41">  {</a>
+<a name="ln42">  public:</a>
+<a name="ln43">    //Register this format type ID</a>
+<a name="ln44">    OrcaOutputFormat()</a>
+<a name="ln45">    {</a>
+<a name="ln46">      OBConversion::RegisterFormat(&quot;orca&quot;,this);</a>
+<a name="ln47">    }</a>
+<a name="ln48"> </a>
+<a name="ln49">    virtual const char* Description() //required</a>
+<a name="ln50">    {</a>
+<a name="ln51">      return</a>
+<a name="ln52">        &quot;ORCA output format\n&quot;</a>
+<a name="ln53">        &quot;Read Options e.g. -as\n&quot;</a>
+<a name="ln54">        &quot; s  Output single bonds only\n&quot;</a>
+<a name="ln55">        &quot; b  Disable bonding entirely\n\n&quot;;</a>
+<a name="ln56">    }</a>
+<a name="ln57"> </a>
+<a name="ln58">    virtual const char* SpecificationURL()</a>
+<a name="ln59">    {return &quot;http://www.cec.mpg.de/forum/portal.php&quot;;} //optional</a>
+<a name="ln60"> </a>
+<a name="ln61">    //Flags() can return be any the following combined by | or be omitted if none apply</a>
+<a name="ln62">    // NOTREADABLE  READONEONLY  NOTWRITABLE  WRITEONEONLY</a>
+<a name="ln63">    virtual unsigned int Flags()</a>
+<a name="ln64">    {</a>
+<a name="ln65">      return READONEONLY | NOTWRITABLE;</a>
+<a name="ln66">    }</a>
+<a name="ln67"> </a>
+<a name="ln68">    ////////////////////////////////////////////////////</a>
+<a name="ln69">    /// The &quot;API&quot; interface functions</a>
+<a name="ln70">    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln71"> </a>
+<a name="ln72">    string checkColumns(string tmp);</a>
+<a name="ln73">  };</a>
+<a name="ln74"> </a>
+<a name="ln75">  //Make an instance of the format class</a>
+<a name="ln76">  OrcaOutputFormat theOrcaOutputFormat;</a>
+<a name="ln77"> </a>
+<a name="ln78">  class OrcaInputFormat : public OBMoleculeFormat</a>
+<a name="ln79">  {</a>
+<a name="ln80">  public:</a>
+<a name="ln81">    //Register this format type ID</a>
+<a name="ln82">    OrcaInputFormat()</a>
+<a name="ln83">    {</a>
+<a name="ln84">      OBConversion::RegisterFormat(&quot;orcainp&quot;,this);</a>
+<a name="ln85">    }</a>
+<a name="ln86"> </a>
+<a name="ln87">    virtual const char* Description() //required</a>
+<a name="ln88">    {</a>
+<a name="ln89">      return</a>
+<a name="ln90">        &quot;ORCA input format\n&quot;</a>
+<a name="ln91">        &quot;Write Options e.g. -xk\n&quot;</a>
+<a name="ln92">        &quot;  k  \&quot;keywords\&quot; Use the specified keywords for input\n&quot;</a>
+<a name="ln93">        &quot;  f    &lt;file&gt;     Read the file specified for input keywords\n\n&quot;;</a>
+<a name="ln94">    }</a>
+<a name="ln95"> </a>
+<a name="ln96">    virtual const char* SpecificationURL()</a>
+<a name="ln97">    {return&quot;http://www.cec.mpg.de/forum/portal.php&quot;;} //optional</a>
+<a name="ln98"> </a>
+<a name="ln99">    //Flags() can return be any the following combined by | or be omitted if none apply</a>
+<a name="ln100">    // NOTREADABLE  READONEONLY  NOTWRITABLE  WRITEONEONLY</a>
+<a name="ln101">    virtual unsigned int Flags()</a>
+<a name="ln102">    {</a>
+<a name="ln103">      return NOTREADABLE | WRITEONEONLY;</a>
+<a name="ln104">    }</a>
+<a name="ln105"> </a>
+<a name="ln106">    ////////////////////////////////////////////////////</a>
+<a name="ln107">    /// The &quot;API&quot; interface functions</a>
+<a name="ln108">    virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln109"> </a>
+<a name="ln110">  };</a>
+<a name="ln111"> </a>
+<a name="ln112">  //Make an instance of the format class</a>
+<a name="ln113">  OrcaInputFormat theOrcaInputFormat;</a>
+<a name="ln114"> </a>
+<a name="ln115"> </a>
+<a name="ln116">  /////////////////////////////////////////////////////////////////</a>
+<a name="ln117">  bool OrcaOutputFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln118">  {</a>
+<a name="ln119"> </a>
+<a name="ln120">    OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln121">    if (pmol == nullptr)</a>
+<a name="ln122">      return false;</a>
+<a name="ln123"> </a>
+<a name="ln124">    //Define some references so we can use the old parameter names</a>
+<a name="ln125">    istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln126">    OBMol &amp;mol = *pmol;</a>
+<a name="ln127">    const char* title = pConv-&gt;GetTitle();</a>
+<a name="ln128"> </a>
+<a name="ln129"> </a>
+<a name="ln130">    // molecule energy</a>
+<a name="ln131">    double energy=0;</a>
+<a name="ln132">    //Vibrational data</a>
+<a name="ln133">    std::vector&lt; std::vector&lt; vector3 &gt; &gt; Lx;</a>
+<a name="ln134">    std::vector&lt;double&gt; Frequencies, Intensities, RamanActivities, UVWavelength, UVForces, UVEDipole;</a>
+<a name="ln135">    std::vector&lt;double&gt; CDWavelength, CDVelosity, CDStrengthsLength;</a>
+<a name="ln136">    // frequencies and normal modes</a>
+<a name="ln137">    std::vector&lt;double&gt; FrequenciesAll;</a>
+<a name="ln138">    int nModeAll = 0;</a>
+<a name="ln139"> </a>
+<a name="ln140">    //MO data</a>
+<a name="ln141">    bool m_openShell = false;</a>
+<a name="ln142">    std::vector&lt;double&gt;  energyEh, energyeV;</a>
+<a name="ln143">    std::vector&lt;double&gt;  occ;</a>
+<a name="ln144">    std::vector&lt;double&gt;  energyBEh, energyBeV;</a>
+<a name="ln145">    std::vector&lt;double&gt;  occB;</a>
+<a name="ln146"> </a>
+<a name="ln147">    // Conformer data</a>
+<a name="ln148">    bool newMol = false;</a>
+<a name="ln149">    double* confCoords;</a>
+<a name="ln150"> </a>
+<a name="ln151">    // Unit cell</a>
+<a name="ln152">    bool unitCell = false;</a>
+<a name="ln153">    std::vector&lt;vector3&gt; unitCellVectors;</a>
+<a name="ln154"> </a>
+<a name="ln155">    bool hasPartialCharges = false;</a>
+<a name="ln156">    bool geoOptRun = false;</a>
+<a name="ln157"> </a>
+<a name="ln158"> </a>
+<a name="ln159">    char buffer[BUFF_SIZE];</a>
+<a name="ln160">    string str;</a>
+<a name="ln161">    double x,y,z;</a>
+<a name="ln162">    OBAtom *atom;</a>
+<a name="ln163"> </a>
+<a name="ln164">    int nAtoms = 0;</a>
+<a name="ln165"> </a>
+<a name="ln166">    vector&lt;string&gt; vs;</a>
+<a name="ln167"> </a>
+<a name="ln168">    mol.BeginModify();</a>
+<a name="ln169">    while	(ifs.getline(buffer,BUFF_SIZE)) {</a>
+<a name="ln170"> </a>
+<a name="ln171">        string checkKeywords(buffer);</a>
+<a name="ln172"> </a>
+<a name="ln173">        if (checkKeywords.find(&quot;* O   R   C   A *&quot;) != notFound) {</a>
+<a name="ln174">            mol.Clear();</a>
+<a name="ln175">        } // if &quot;new orca output section&quot;</a>
+<a name="ln176"> </a>
+<a name="ln177">        if (checkKeywords.find(&quot;Geometry Optimization Run&quot;) != notFound) {</a>
+<a name="ln178">            geoOptRun = true;</a>
+<a name="ln179">            while	(ifs.getline(buffer,BUFF_SIZE)) {</a>
+<a name="ln180">                string checkNAtoms(buffer);</a>
+<a name="ln181"> </a>
+<a name="ln182">                if (checkNAtoms.find(&quot;Number of atoms&quot;) != notFound) {</a>
+<a name="ln183">                    tokenize(vs,buffer);</a>
+<a name="ln184">                    nAtoms = atoi((char*)vs[4].c_str());</a>
+<a name="ln185">                    break;</a>
+<a name="ln186">                }</a>
+<a name="ln187">            }</a>
+<a name="ln188">        } // if &quot;geometry optimization run&quot;</a>
+<a name="ln189"> </a>
+<a name="ln190">        if (checkKeywords.find(&quot;CARTESIAN COORDINATES (ANGSTROEM)&quot;) != notFound) {</a>
+<a name="ln191">            //        if(strstr(buffer,&quot;CARTESIAN COORDINATES (ANGSTROEM)&quot;) != NULL) {</a>
+<a name="ln192">            if (unitCell) break; // dont't overwrite unit cell coordinate informations</a>
+<a name="ln193">            if (mol.NumAtoms() == 0) {</a>
+<a name="ln194">                newMol = true;</a>
+<a name="ln195">            }</a>
+<a name="ln196">            if (geoOptRun) {</a>
+<a name="ln197">                confCoords = new double[nAtoms*3];</a>
+<a name="ln198">            }</a>
+<a name="ln199">            ifs.getline(buffer,BUFF_SIZE);	// ---- ----- ----</a>
+<a name="ln200">            ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln201">            tokenize(vs,buffer);</a>
+<a name="ln202">            int i=0;</a>
+<a name="ln203">            while (vs.size() == 4) {</a>
+<a name="ln204"> </a>
+<a name="ln205">                x = atof((char*)vs[1].c_str());</a>
+<a name="ln206">                y = atof((char*)vs[2].c_str());</a>
+<a name="ln207">                z = atof((char*)vs[3].c_str());</a>
+<a name="ln208"> </a>
+<a name="ln209">                if (newMol){</a>
+<a name="ln210">                    atom = mol.NewAtom();</a>
+<a name="ln211">                    atom-&gt;SetAtomicNum(OBElements::GetAtomicNum(vs[0].c_str()));                //set atomic number</a>
+<a name="ln212">                    atom-&gt;SetVector(x,y,z); //set atom coordinates</a>
+<a name="ln213">                }</a>
+<a name="ln214">                if (geoOptRun){</a>
+<a name="ln215">                    confCoords[i*3] = x;</a>
+<a name="ln216">                    confCoords[i*3+1] = y;</a>
+<a name="ln217">                    confCoords[i*3+2] = z;</a>
+<a name="ln218">                    i++;</a>
+<a name="ln219">                } else {</a>
+<a name="ln220">                    atom-&gt;SetVector(x,y,z); //set atom coordinates</a>
+<a name="ln221">                }</a>
+<a name="ln222"> </a>
+<a name="ln223">                if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln224">                    break;</a>
+<a name="ln225">                tokenize(vs,buffer);</a>
+<a name="ln226">            }</a>
+<a name="ln227">            newMol = false;</a>
+<a name="ln228">            if (geoOptRun){</a>
+<a name="ln229">//                cout &lt;&lt; confCoords &lt;&lt; endl;</a>
+<a name="ln230">//                for (int j=0;j&lt;3;j++){</a>
+<a name="ln231">//                    cout &lt;&lt; confCoords[j*3] &lt;&lt; &quot; &quot; &lt;&lt; confCoords[j*3+1] &lt;&lt; &quot; &quot; &lt;&lt; confCoords[j*3+2] &lt;&lt; endl;</a>
+<a name="ln232">//                }</a>
+<a name="ln233"> </a>
+<a name="ln234">                mol.AddConformer(confCoords);</a>
+<a name="ln235">                mol.SetConformer(mol.NumConformers());</a>
+<a name="ln236">            }</a>
+<a name="ln237">        } // if &quot;output coordinates&quot;</a>
+<a name="ln238"> </a>
+<a name="ln239">        if (checkKeywords.find(&quot;ORBITAL ENERGIES&quot;) != notFound) {</a>
+<a name="ln240">//        if(strstr(buffer,&quot;ORBITAL ENERGIES&quot;) != NULL) {</a>
+<a name="ln241">            energyEh.resize(0);</a>
+<a name="ln242">            energyeV.resize(0);</a>
+<a name="ln243">            occ.resize(0);</a>
+<a name="ln244">            ifs.getline(buffer,BUFF_SIZE); // skip ---------------------</a>
+<a name="ln245">            ifs.getline(buffer,BUFF_SIZE); // skip empty line or look for spin informations</a>
+<a name="ln246">            if (strstr(buffer, &quot;SPIN UP ORBITALS&quot;) != nullptr) m_openShell = true;</a>
+<a name="ln247">            ifs.getline(buffer,BUFF_SIZE); // skip headline</a>
+<a name="ln248">            ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln249">            tokenize(vs,buffer);</a>
+<a name="ln250">            while (strstr(buffer, &quot;---------&quot;) == nullptr &amp;&amp; vs.size() !=0) {</a>
+<a name="ln251">                if (vs.size() != 4) break;</a>
+<a name="ln252">                occ.push_back(atof(vs[1].c_str()));</a>
+<a name="ln253">                energyEh.push_back(atof(vs[2].c_str()));</a>
+<a name="ln254">                energyeV.push_back(atof(vs[3].c_str()));</a>
+<a name="ln255">                ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln256">                tokenize(vs,buffer);</a>
+<a name="ln257">            }</a>
+<a name="ln258">            if (m_openShell) {</a>
+<a name="ln259">                energyBEh.resize(0);</a>
+<a name="ln260">                energyBeV.resize(0);</a>
+<a name="ln261">                occB.resize(0);</a>
+<a name="ln262"> </a>
+<a name="ln263">                ifs.getline(buffer,BUFF_SIZE); // skip spin informations</a>
+<a name="ln264">                ifs.getline(buffer,BUFF_SIZE); // skip headline</a>
+<a name="ln265">                ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln266">                tokenize(vs,buffer);</a>
+<a name="ln267">                while (strstr(buffer, &quot;---------&quot;) == nullptr &amp;&amp; vs.size() &gt;0) {</a>
+<a name="ln268">                    if (vs.size() != 4) break;</a>
+<a name="ln269">                    occB.push_back(atof(vs[1].c_str()));</a>
+<a name="ln270">                    energyBEh.push_back(atof(vs[2].c_str()));</a>
+<a name="ln271">                    energyBeV.push_back(atof(vs[3].c_str()));</a>
+<a name="ln272">                    ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln273">                    tokenize(vs,buffer);</a>
+<a name="ln274">                }</a>
+<a name="ln275">            }</a>
+<a name="ln276">        } // if &quot;ORBITAL ENERGIES&quot;</a>
+<a name="ln277">        if (checkKeywords.find(&quot;Total Charge&quot;) != notFound) {</a>
+<a name="ln278"> </a>
+<a name="ln279">            //get total charge</a>
+<a name="ln280"> </a>
+<a name="ln281">            tokenize(vs,buffer);</a>
+<a name="ln282">            if (vs.size() == 5) {</a>
+<a name="ln283">                mol.SetTotalCharge (atoi(vs[4].c_str()));</a>
+<a name="ln284">            }</a>
+<a name="ln285"> </a>
+<a name="ln286">            // get Multiplicity</a>
+<a name="ln287"> </a>
+<a name="ln288">            ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln289">            tokenize(vs,buffer);</a>
+<a name="ln290">            if (vs.size() == 4) {</a>
+<a name="ln291">                mol.SetTotalSpinMultiplicity(atoi(vs[3].c_str()));</a>
+<a name="ln292">            }</a>
+<a name="ln293">        }</a>
+<a name="ln294">        if (checkKeywords.find(&quot;MULLIKEN ATOMIC CHARGES&quot;) != notFound) {</a>
+<a name="ln295">            hasPartialCharges = true;</a>
+<a name="ln296">            ifs.getline(buffer,BUFF_SIZE);	// skip --------------</a>
+<a name="ln297">            ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln298">            tokenize(vs,buffer);</a>
+<a name="ln299">            //  std::cout &lt;&lt; &quot;charges &quot;  &lt;&lt; buffer &lt;&lt; endl;</a>
+<a name="ln300"> </a>
+<a name="ln301">            while (vs.size() == 4)</a>
+<a name="ln302">            { // atom number, atomic symbol,:,  charge</a>
+<a name="ln303"> </a>
+<a name="ln304">                atom = mol.GetAtom(atoi(vs[0].c_str())+1);  // Numbering starts from 0 in Orca</a>
+<a name="ln305">                atom-&gt;SetPartialCharge(atof(vs[3].c_str()));</a>
+<a name="ln306"> </a>
+<a name="ln307">                if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln308">                    break;</a>
+<a name="ln309">                tokenize(vs,buffer);</a>
+<a name="ln310">            }</a>
+<a name="ln311">        }</a>
+<a name="ln312">        if (checkKeywords.find(&quot;FINAL SINGLE POINT ENERGY&quot;) != notFound) {</a>
+<a name="ln313">            tokenize(vs,buffer);</a>
+<a name="ln314">            if (vs.size() == 5) mol.SetEnergy(atof(vs[4].c_str()));</a>
+<a name="ln315">        }</a>
+<a name="ln316"> </a>
+<a name="ln317">        if (checkKeywords.find(&quot;VIBRATIONAL FREQUENCIES&quot;) != notFound) {</a>
+<a name="ln318">            FrequenciesAll.resize(0);</a>
+<a name="ln319">            ifs.getline(buffer,BUFF_SIZE);      // skip ----------</a>
+<a name="ln320">            ifs.getline(buffer,BUFF_SIZE);      // skip empty line</a>
+<a name="ln321">            ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln322">            tokenize(vs,buffer);</a>
+<a name="ln323">            while (vs.size() &gt;1) {</a>
+<a name="ln324">                FrequenciesAll.push_back(atof(vs[1].c_str()));</a>
+<a name="ln325">                ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln326">                tokenize(vs,buffer);</a>
+<a name="ln327">            }</a>
+<a name="ln328">            nModeAll = FrequenciesAll.size();</a>
+<a name="ln329"> </a>
+<a name="ln330">        } // if &quot;VIBRATIONAL FREQUENCIES&quot;</a>
+<a name="ln331"> </a>
+<a name="ln332">        if (checkKeywords.find(&quot;NORMAL MODES&quot;) != notFound) {</a>
+<a name="ln333"> </a>
+<a name="ln334">            Lx.resize(0);</a>
+<a name="ln335">            for (unsigned int i=0;i&lt;6;i++) {</a>
+<a name="ln336">                ifs.getline(buffer,BUFF_SIZE);     // skip ----------, comments and blank lines</a>
+<a name="ln337">            }</a>
+<a name="ln338"> </a>
+<a name="ln339">            ifs.getline(buffer,BUFF_SIZE);     // header line</a>
+<a name="ln340">            tokenize(vs,buffer);</a>
+<a name="ln341">            int iMode = 0;</a>
+<a name="ln342">            while (vs.size() != 0) {</a>
+<a name="ln343">                int nColumn = vs.size();</a>
+<a name="ln344">                vector&lt;vector&lt;vector3&gt; &gt; vib;</a>
+<a name="ln345">                ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln346">                str = checkColumns (string(buffer));</a>
+<a name="ln347">                tokenize(vs,str);</a>
+<a name="ln348">                while(vs.size() == nColumn+1) {</a>
+<a name="ln349">                    vector&lt;double&gt; x, y, z;</a>
+<a name="ln350">                    for (unsigned int i = 1; i &lt; vs.size(); i++)</a>
+<a name="ln351">                        x.push_back(atof(vs[i].c_str()));</a>
+<a name="ln352">                    ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln353">                    str = checkColumns (string(buffer));</a>
+<a name="ln354">                    tokenize(vs,str);</a>
+<a name="ln355">                    for (unsigned int i = 1; i &lt; vs.size(); i++)</a>
+<a name="ln356">                        y.push_back(atof(vs[i].c_str()));</a>
+<a name="ln357">                    ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln358">                    str = checkColumns (string(buffer));</a>
+<a name="ln359">                    tokenize(vs,str);</a>
+<a name="ln360">                    for (unsigned int i = 1; i &lt; vs.size(); i++)</a>
+<a name="ln361">                        z.push_back(atof(vs[i].c_str()));</a>
+<a name="ln362"> </a>
+<a name="ln363">                    for (unsigned int i = 0; i &lt; nColumn; i++) {</a>
+<a name="ln364">                        vib.push_back(vector&lt;vector3&gt;());</a>
+<a name="ln365">                        vib[i].push_back(vector3(x[i], y[i], z[i]));</a>
+<a name="ln366">                    }</a>
+<a name="ln367"> </a>
+<a name="ln368">//                    std::cout &lt;&lt;&quot; vib.size = &quot;&lt;&lt; vib.size() &lt;&lt; endl;</a>
+<a name="ln369">                    ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln370">                    str = checkColumns (string(buffer));</a>
+<a name="ln371">                    tokenize(vs,str);</a>
+<a name="ln372">                } // while</a>
+<a name="ln373">//                std::cout &lt;&lt;&quot; end while vib.size = &quot;&lt;&lt; vib.size() &lt;&lt; endl;</a>
+<a name="ln374">//                for (unsigned int i = iMode; i &lt; iMode+nColumn; i++) {</a>
+<a name="ln375">                for (unsigned int i = 0; i &lt; nColumn; i++) {</a>
+<a name="ln376">//                    std::cout &lt;&lt; &quot;orca i = &quot;  &lt;&lt; i &lt;&lt; endl;</a>
+<a name="ln377">                    if (FrequenciesAll[iMode] &gt; 10.0) { // something higher than 0</a>
+<a name="ln378">//                        std::cout &lt;&lt;&quot; vib[i].size = &quot; &lt;&lt;i &lt;&lt; &quot; &quot; &lt;&lt; vib[i].size() &lt;&lt; endl;</a>
+<a name="ln379">                        Lx.push_back(vib[i]);</a>
+<a name="ln380">//                        std::cout &lt;&lt; i&lt;&lt; &quot;  &quot; &lt;&lt; Lx[i].size() &lt;&lt; endl;</a>
+<a name="ln381">//                        std::cout &lt;&lt; Lx.size() &lt;&lt; endl;</a>
+<a name="ln382">                    }</a>
+<a name="ln383">                    iMode++;</a>
+<a name="ln384">                }</a>
+<a name="ln385">            } // while</a>
+<a name="ln386">        } // if &quot;NORMAL MODES&quot;}</a>
+<a name="ln387"> </a>
+<a name="ln388">        if (checkKeywords.find(&quot;IR SPECTRUM&quot;) != notFound) {</a>
+<a name="ln389">            Frequencies.resize(0);</a>
+<a name="ln390">            Intensities.resize(0);</a>
+<a name="ln391"> </a>
+<a name="ln392">            ifs.getline(buffer, BUFF_SIZE); // skip ---------------------</a>
+<a name="ln393">            ifs.getline(buffer, BUFF_SIZE); // skip empty line</a>
+<a name="ln394">            ifs.getline(buffer, BUFF_SIZE); // skip header</a>
+<a name="ln395">            ifs.getline(buffer, BUFF_SIZE); // skip ---------------------</a>
+<a name="ln396">            ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln397">            tokenize(vs,buffer);</a>
+<a name="ln398"> </a>
+<a name="ln399">            while (vs.size() &gt;= 6) {</a>
+<a name="ln400">                //                std::cout &lt;&lt; (atof(vs[1].c_str())) &lt;&lt; endl;</a>
+<a name="ln401">                //                std::cout &lt;&lt; (atof(vs[2].c_str())) &lt;&lt; endl;</a>
+<a name="ln402">                Frequencies.push_back(atof(vs[1].c_str()));</a>
+<a name="ln403">                Intensities.push_back(atof(vs[2].c_str()));</a>
+<a name="ln404">                ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln405">                tokenize(vs,buffer);</a>
+<a name="ln406">            }</a>
+<a name="ln407">        } // if &quot;IR SPECTRUM&quot;</a>
+<a name="ln408">        if (checkKeywords.find(&quot;RAMAN SPECTRUM&quot;) != notFound) {</a>
+<a name="ln409">//        if(strstr(buffer,&quot;RAMAN SPECTRUM&quot;) != NULL)</a>
+<a name="ln410">//        {</a>
+<a name="ln411">            RamanActivities.resize(0);</a>
+<a name="ln412">            ifs.getline(buffer, BUFF_SIZE); // skip ---------------------</a>
+<a name="ln413">            ifs.getline(buffer, BUFF_SIZE); // skip empty line</a>
+<a name="ln414">            ifs.getline(buffer, BUFF_SIZE); // skip header</a>
+<a name="ln415">            ifs.getline(buffer, BUFF_SIZE); // skip ---------------------</a>
+<a name="ln416">            ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln417">            tokenize(vs,buffer);</a>
+<a name="ln418"> </a>
+<a name="ln419">            while (vs.size() == 4 ) {</a>
+<a name="ln420">                RamanActivities.push_back(atof(vs[2].c_str()));</a>
+<a name="ln421">                ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln422">                tokenize(vs,buffer);</a>
+<a name="ln423">            }</a>
+<a name="ln424">        } // if &quot;RAMAN SPECTRUM&quot;</a>
+<a name="ln425"> </a>
+<a name="ln426">        if (checkKeywords.find(&quot;ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS&quot;) != notFound) {</a>
+<a name="ln427">//        if(strstr(buffer,&quot;ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS&quot;) != NULL)</a>
+<a name="ln428">//        {</a>
+<a name="ln429">            UVWavelength.resize(0);</a>
+<a name="ln430">            UVForces.resize(0);</a>
+<a name="ln431">            UVEDipole.resize(0);</a>
+<a name="ln432">            ifs.getline(buffer, BUFF_SIZE); // skip ---------------------</a>
+<a name="ln433">            ifs.getline(buffer, BUFF_SIZE); // skip header</a>
+<a name="ln434">            ifs.getline(buffer, BUFF_SIZE); // skip header</a>
+<a name="ln435">            ifs.getline(buffer, BUFF_SIZE); // skip ---------------------</a>
+<a name="ln436">            ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln437">            tokenize(vs,buffer);</a>
+<a name="ln438"> </a>
+<a name="ln439">            while (vs.size() == 8) {</a>
+<a name="ln440">                UVForces.push_back(0.0);        // ORCA doesn't have these values</a>
+<a name="ln441">                UVWavelength.push_back(atof(vs[2].c_str()));</a>
+<a name="ln442">                UVEDipole.push_back(atof(vs[3].c_str()));</a>
+<a name="ln443">                ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln444">                tokenize(vs,buffer);</a>
+<a name="ln445">            }</a>
+<a name="ln446">        } // if &quot;ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS&quot;</a>
+<a name="ln447"> </a>
+<a name="ln448">        // uv spectrum from  sTDA</a>
+<a name="ln449">        if (checkKeywords.find(&quot;excitation energies, transition moments and amplitudes&quot;) != notFound) {</a>
+<a name="ln450"> </a>
+<a name="ln451">            UVWavelength.resize(0);</a>
+<a name="ln452">            UVForces.resize(0);</a>
+<a name="ln453">            UVEDipole.resize(0);</a>
+<a name="ln454">            ifs.getline(buffer, BUFF_SIZE); // skip blank line</a>
+<a name="ln455">            ifs.getline(buffer, BUFF_SIZE); // skip molecuar weight</a>
+<a name="ln456">            ifs.getline(buffer, BUFF_SIZE); // skip headline</a>
+<a name="ln457">            ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln458">            tokenize(vs,buffer);</a>
+<a name="ln459"> </a>
+<a name="ln460">            while (vs.size() &gt;= 7) {</a>
+<a name="ln461">                UVForces.push_back(0.0);        // ORCA doesn't have these values</a>
+<a name="ln462">                UVWavelength.push_back(atof(vs[2].c_str()));</a>
+<a name="ln463">                UVEDipole.push_back(atof(vs[3].c_str()));</a>
+<a name="ln464">                ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln465">                tokenize(vs,buffer);</a>
+<a name="ln466">            }</a>
+<a name="ln467">        } // if &quot;excitation energies, transition moments and amplitudes&quot;</a>
+<a name="ln468"> </a>
+<a name="ln469">        if (checkKeywords.find(&quot;CD SPECTRUM&quot;) != notFound) {</a>
+<a name="ln470">//        if(strstr(buffer,&quot;CD SPECTRUM&quot;) != NULL)</a>
+<a name="ln471">//        {</a>
+<a name="ln472">            CDWavelength.resize(0);</a>
+<a name="ln473">            CDVelosity.resize(0);</a>
+<a name="ln474">            CDStrengthsLength.resize(0);</a>
+<a name="ln475">            ifs.getline(buffer, BUFF_SIZE); // skip ---------------------</a>
+<a name="ln476">            ifs.getline(buffer, BUFF_SIZE); // skip header</a>
+<a name="ln477">            ifs.getline(buffer, BUFF_SIZE); // skip header</a>
+<a name="ln478">            ifs.getline(buffer, BUFF_SIZE); // skip ---------------------</a>
+<a name="ln479">            ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln480">            tokenize(vs,buffer);</a>
+<a name="ln481"> </a>
+<a name="ln482">            while (vs.size() == 7) {</a>
+<a name="ln483">                CDVelosity.push_back(0.0);        // ORCA doesn't calculate these values</a>
+<a name="ln484">                CDWavelength.push_back(atof(vs[2].c_str()));</a>
+<a name="ln485">                CDStrengthsLength.push_back(atof(vs[3].c_str()));</a>
+<a name="ln486">                ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln487">                tokenize(vs,buffer);</a>
+<a name="ln488">            }</a>
+<a name="ln489">//            std::cout &lt;&lt; CDWavelength.size() &lt;&lt; endl;</a>
+<a name="ln490">//            std::cout &lt;&lt; CDStrengthsLength.size() &lt;&lt; endl;</a>
+<a name="ln491">        } // if &quot;CD SPECTRUM&quot;</a>
+<a name="ln492"> </a>
+<a name="ln493">        if (checkKeywords.find(&quot;UNIT CELL (ANGSTROM)&quot;) != notFound) { // file contains unit cell information</a>
+<a name="ln494">            unitCellVectors.resize(0);</a>
+<a name="ln495"> </a>
+<a name="ln496">            ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln497">            tokenize(vs,buffer);</a>
+<a name="ln498">            while (vs.size() == 4) {</a>
+<a name="ln499">                x = atof((char*)vs[1].c_str());</a>
+<a name="ln500">                y = atof((char*)vs[2].c_str());</a>
+<a name="ln501">                z = atof((char*)vs[3].c_str());</a>
+<a name="ln502">                unitCellVectors.push_back(vector3 (x,y,z)); //set coordinates</a>
+<a name="ln503"> </a>
+<a name="ln504">                if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln505">                    break;</a>
+<a name="ln506">                tokenize(vs,buffer);</a>
+<a name="ln507">            }</a>
+<a name="ln508">            if (unitCellVectors.size()!=4 )</a>
+<a name="ln509">                break;      // structure incorrect</a>
+<a name="ln510"> </a>
+<a name="ln511">            if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln512">                break;</a>
+<a name="ln513"> </a>
+<a name="ln514">            // look for coordinate information relating to the unit cell calculations</a>
+<a name="ln515"> </a>
+<a name="ln516">            string checkNextKeyword(buffer);</a>
+<a name="ln517">            if (checkNextKeyword.find(&quot;CARTESIAN COORDINATES (ANGSTROM)&quot;) != notFound){</a>
+<a name="ln518">                mol.Clear();</a>
+<a name="ln519"> </a>
+<a name="ln520">                ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln521">                tokenize(vs,buffer);</a>
+<a name="ln522">                while (vs.size() &gt;= 4) { // sometime there are additional infos in the line</a>
+<a name="ln523">                    atom = mol.NewAtom();</a>
+<a name="ln524">                    x = atof((char*)vs[1].c_str());</a>
+<a name="ln525">                    y = atof((char*)vs[2].c_str());</a>
+<a name="ln526">                    z = atof((char*)vs[3].c_str());</a>
+<a name="ln527">                    atom-&gt;SetVector(x,y,z); //set coordinates</a>
+<a name="ln528"> </a>
+<a name="ln529">                    //set atomic number</a>
+<a name="ln530">                    atom-&gt;SetAtomicNum(OBElements::GetAtomicNum(vs[0].c_str()));</a>
+<a name="ln531"> </a>
+<a name="ln532">                    if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln533">                        break;</a>
+<a name="ln534">                    tokenize(vs,buffer);</a>
+<a name="ln535">                }</a>
+<a name="ln536">            } // if &quot;unit cell related coordinates&quot;</a>
+<a name="ln537">            if (mol.NumAtoms() != 0)</a>
+<a name="ln538">                unitCell = true;</a>
+<a name="ln539">        } // if &quot;unit cell information&quot;</a>
+<a name="ln540"> </a>
+<a name="ln541">    } // while</a>
+<a name="ln542"> </a>
+<a name="ln543">    if (mol.NumAtoms() == 0) {</a>
+<a name="ln544">      mol.EndModify();</a>
+<a name="ln545">      return false;</a>
+<a name="ln546">    }</a>
+<a name="ln547"> </a>
+<a name="ln548">    // Attach unit cell if any</a>
+<a name="ln549"> </a>
+<a name="ln550">    if (unitCell) {</a>
+<a name="ln551">        OBUnitCell *uC = new OBUnitCell;</a>
+<a name="ln552"> </a>
+<a name="ln553">        uC-&gt;SetData(unitCellVectors.at(0), unitCellVectors.at(1), unitCellVectors.at(2));</a>
+<a name="ln554">        uC-&gt;SetOffset(unitCellVectors.at(3));</a>
+<a name="ln555">        mol.SetData(uC);</a>
+<a name="ln556">    }</a>
+<a name="ln557"> </a>
+<a name="ln558">    // Attach orbital data if any</a>
+<a name="ln559"> </a>
+<a name="ln560">    if (energyEh.size() &gt; 0){</a>
+<a name="ln561">        OBOrbitalData *od = new OBOrbitalData();</a>
+<a name="ln562"> </a>
+<a name="ln563">        std::vector&lt;OBOrbital&gt; alphaOrbitals;</a>
+<a name="ln564">        int alphaHomo = 0, betaHomo = 0;</a>
+<a name="ln565">        for (unsigned int i = 0; i &lt; energyEh.size(); i++) {</a>
+<a name="ln566">            if (occ[i]&gt;0) alphaHomo++;</a>
+<a name="ln567">            OBOrbital orb;</a>
+<a name="ln568">            orb.SetData(energyEh[i], occ[i], &quot; &quot;);</a>
+<a name="ln569">            alphaOrbitals.push_back(orb);</a>
+<a name="ln570">        }</a>
+<a name="ln571">        od-&gt;SetAlphaOrbitals (alphaOrbitals);</a>
+<a name="ln572"> </a>
+<a name="ln573">        if (m_openShell) {</a>
+<a name="ln574">            std::vector&lt;OBOrbital&gt; betaOrbitals;</a>
+<a name="ln575"> </a>
+<a name="ln576">            for (unsigned int i = 0; i &lt; energyBEh.size(); i++) {</a>
+<a name="ln577">                if (occ[i]&gt;0) betaHomo++;</a>
+<a name="ln578">                OBOrbital orb;</a>
+<a name="ln579">                orb.SetData(energyBEh[i], occB[i], &quot; &quot;);</a>
+<a name="ln580">                betaOrbitals.push_back(orb);</a>
+<a name="ln581">            }</a>
+<a name="ln582">            od-&gt;SetBetaOrbitals (betaOrbitals);</a>
+<a name="ln583">        }</a>
+<a name="ln584">        od-&gt;SetHOMO(alphaHomo,betaHomo);</a>
+<a name="ln585">        od-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln586">        mol.SetData(od);</a>
+<a name="ln587">    }</a>
+<a name="ln588"> </a>
+<a name="ln589">    //Attach vibrational data, if there are any, to molecule</a>
+<a name="ln590">    if(Frequencies.size()&gt;0)</a>
+<a name="ln591">    {</a>
+<a name="ln592">        OBVibrationData* vd = new OBVibrationData;</a>
+<a name="ln593">        if (RamanActivities.size() != 0) {</a>
+<a name="ln594">            vd-&gt;SetData(Lx, Frequencies, Intensities, RamanActivities);</a>
+<a name="ln595">        } else {</a>
+<a name="ln596">            vd-&gt;SetData(Lx, Frequencies, Intensities);</a>
+<a name="ln597">        }</a>
+<a name="ln598">        mol.SetData(vd);</a>
+<a name="ln599">    }</a>
+<a name="ln600"> </a>
+<a name="ln601">    // Attach UV / CD spectra data if there are any</a>
+<a name="ln602"> </a>
+<a name="ln603">    if(UVWavelength.size() &gt; 0 || CDWavelength.size() &gt; 0)</a>
+<a name="ln604">    {</a>
+<a name="ln605">        OBElectronicTransitionData* etd = new OBElectronicTransitionData;</a>
+<a name="ln606"> </a>
+<a name="ln607">        if (UVWavelength.size() &gt; 0) {</a>
+<a name="ln608">            // UV spectrum has been found</a>
+<a name="ln609">            etd-&gt;SetData(UVWavelength, UVForces);</a>
+<a name="ln610">            if (UVEDipole.size() == UVWavelength.size())</a>
+<a name="ln611">                etd-&gt;SetEDipole(UVEDipole);</a>
+<a name="ln612">            // additional CD spectrum has also been found</a>
+<a name="ln613">            if (CDWavelength.size() == UVWavelength.size()) {</a>
+<a name="ln614">                etd-&gt;SetRotatoryStrengthsLength(CDStrengthsLength);</a>
+<a name="ln615">                etd-&gt;SetRotatoryStrengthsVelocity(CDVelosity); // just vector with 0.0 because ORCA doesn't calculate these values</a>
+<a name="ln616">            }</a>
+<a name="ln617">        } else {</a>
+<a name="ln618">            // only CD spectrum has been found</a>
+<a name="ln619">            etd-&gt;SetData(CDWavelength, CDVelosity); // ony wavelengths information are known , 2nd vector just contains 0.0</a>
+<a name="ln620">            etd-&gt;SetRotatoryStrengthsLength(CDStrengthsLength);</a>
+<a name="ln621">            etd-&gt;SetRotatoryStrengthsVelocity(CDVelosity); // just vector with 0.0 because ORCA doesn't calculate these values</a>
+<a name="ln622">        }</a>
+<a name="ln623">        etd-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln624">        mol.SetData(etd);</a>
+<a name="ln625">    }</a>
+<a name="ln626"> </a>
+<a name="ln627"> </a>
+<a name="ln628">    if (!pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln629">      mol.ConnectTheDots();</a>
+<a name="ln630">    if (!pConv-&gt;IsOption(&quot;s&quot;,OBConversion::INOPTIONS) &amp;&amp; !pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln631">      mol.PerceiveBondOrders();</a>
+<a name="ln632"> </a>
+<a name="ln633">    mol.EndModify();</a>
+<a name="ln634"> </a>
+<a name="ln635"> </a>
+<a name="ln636">//    cout &lt;&lt; &quot;num conformers = &quot; &lt;&lt; mol.NumConformers() &lt;&lt; endl;</a>
+<a name="ln637">    //cout &lt;&lt; &quot;Atom index 0 = &quot; &lt;&lt; mol.GetAtom(0)-&gt;GetX() &lt;&lt; &quot; &quot; &lt;&lt; mol.GetAtom(0)-&gt;GetY() &lt;&lt; &quot; &quot; &lt;&lt; mol.GetAtom(0)-&gt;GetZ() &lt;&lt; endl;</a>
+<a name="ln638">    if (hasPartialCharges)</a>
+<a name="ln639">      mol.SetPartialChargesPerceived();</a>
+<a name="ln640">    mol.SetTitle(title);</a>
+<a name="ln641">    return(true);</a>
+<a name="ln642">  }</a>
+<a name="ln643"> </a>
+<a name="ln644">  ////////////////////////////////////////////////////////////////</a>
+<a name="ln645"> </a>
+<a name="ln646">  bool OrcaInputFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln647">  {</a>
+<a name="ln648">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln649">    if (pmol == nullptr)</a>
+<a name="ln650">      return false;</a>
+<a name="ln651"> </a>
+<a name="ln652">    //Define some references so we can use the old parameter names</a>
+<a name="ln653">    ostream &amp;ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln654">    OBMol &amp;mol = *pmol;</a>
+<a name="ln655"> </a>
+<a name="ln656">    ofs &lt;&lt; &quot;# ORCA input file&quot; &lt;&lt; endl;</a>
+<a name="ln657">    ofs &lt;&lt; &quot;# &quot; &lt;&lt; mol.GetTitle() &lt;&lt; endl;</a>
+<a name="ln658"> </a>
+<a name="ln659">    const char *keywords = pConv-&gt;IsOption(&quot;k&quot;,OBConversion::OUTOPTIONS);</a>
+<a name="ln660">    const char *keywordFile = pConv-&gt;IsOption(&quot;f&quot;,OBConversion::OUTOPTIONS);</a>
+<a name="ln661">    string defaultKeywords = &quot;! insert inline commands here &quot;;</a>
+<a name="ln662"> </a>
+<a name="ln663">    if(keywords)</a>
+<a name="ln664">      {</a>
+<a name="ln665">        defaultKeywords = keywords;</a>
+<a name="ln666">      }</a>
+<a name="ln667">    if (keywordFile)</a>
+<a name="ln668">      {</a>
+<a name="ln669">        ifstream kfstream(keywordFile);</a>
+<a name="ln670">        string keyBuffer;</a>
+<a name="ln671">        if (kfstream)</a>
+<a name="ln672">          {</a>
+<a name="ln673">            while (getline(kfstream, keyBuffer))</a>
+<a name="ln674">              ofs &lt;&lt; keyBuffer &lt;&lt; endl;</a>
+<a name="ln675">          }</a>
+<a name="ln676">      }</a>
+<a name="ln677">    else</a>
+<a name="ln678">      ofs &lt;&lt; defaultKeywords &lt;&lt; endl;</a>
+<a name="ln679"> </a>
+<a name="ln680">    ofs &lt;&lt; &quot;* xyz &quot; &lt;&lt; mol.GetTotalCharge() &lt;&lt; &quot; &quot; &lt;&lt; mol.GetTotalSpinMultiplicity() &lt;&lt; endl;</a>
+<a name="ln681"> </a>
+<a name="ln682"> </a>
+<a name="ln683">    FOR_ATOMS_OF_MOL(atom, mol)</a>
+<a name="ln684">    {</a>
+<a name="ln685">        ofs &lt;&lt; setw(4) &lt;&lt; right</a>
+<a name="ln686">            &lt;&lt; OpenBabel::OBElements::GetSymbol(atom-&gt;GetAtomicNum())</a>
+<a name="ln687">            &lt;&lt; setw(15) &lt;&lt; setprecision(5) &lt;&lt; fixed &lt;&lt; showpoint</a>
+<a name="ln688">            &lt;&lt; right &lt;&lt; atom-&gt;GetX() &lt;&lt; &quot; &quot; &lt;&lt; setw(15) &lt;&lt; atom-&gt;GetY() &lt;&lt; &quot; &quot;</a>
+<a name="ln689">            &lt;&lt; setw(15) &lt;&lt; atom-&gt;GetZ() &lt;&lt; endl;</a>
+<a name="ln690">    }</a>
+<a name="ln691"> </a>
+<a name="ln692">    ofs &lt;&lt; &quot;*&quot; &lt;&lt; endl;</a>
+<a name="ln693"> </a>
+<a name="ln694">    return(true);</a>
+<a name="ln695">  }</a>
+<a name="ln696"> </a>
+<a name="ln697">// small function to avoid wrong parsing</a>
+<a name="ln698">// if there is no whitespace between the numbers in the column structure</a>
+<a name="ln699">#ifdef _MSC_VER</a>
+<a name="ln700">  string OrcaOutputFormat::checkColumns(string checkBuffer)</a>
+<a name="ln701">  {</a>
+<a name="ln702">    string pattern (&quot;[0-9]-&quot;);</a>
+<a name="ln703">    std::tr1::regex myregex;</a>
+<a name="ln704">    std::tr1::smatch pm;</a>
+<a name="ln705">    try {</a>
+<a name="ln706">      myregex.assign(pattern,</a>
+<a name="ln707">                     std::tr1::regex_constants::extended);</a>
+<a name="ln708">      //iok = true;</a>
+<a name="ln709">    } catch (std::tr1::regex_error ex) {</a>
+<a name="ln710">        return (checkBuffer); // do nothing</a>
+<a name="ln711">      //iok = false;</a>
+<a name="ln712">    }</a>
+<a name="ln713">    while (std::tr1::regex_search (checkBuffer,pm,myregex)) {</a>
+<a name="ln714">        checkBuffer.insert(pm.position(0)+1, &quot; &quot;);</a>
+<a name="ln715">    }</a>
+<a name="ln716">    return (checkBuffer);</a>
+<a name="ln717">  }</a>
+<a name="ln718">#else</a>
+<a name="ln719">  string OrcaOutputFormat::checkColumns(string checkBuffer)</a>
+<a name="ln720">  {</a>
+<a name="ln721">      string pattern (&quot;[0-9]-&quot;);</a>
+<a name="ln722">      regmatch_t pm;</a>
+<a name="ln723">      regex_t myregex;</a>
+<a name="ln724">      int pos = regcomp(&amp;myregex, pattern.c_str(), REG_EXTENDED);</a>
+<a name="ln725">      if (pos !=0) return (checkBuffer); // do nothing</a>
+<a name="ln726"> </a>
+<a name="ln727">      while (regexec(&amp;myregex, checkBuffer.c_str(), 1, &amp;pm, REG_EXTENDED) == 0) {</a>
+<a name="ln728">          checkBuffer.insert(pm.rm_eo-1, &quot; &quot;);  // insert whitespace to separate the columns</a>
+<a name="ln729">      }</a>
+<a name="ln730">      return (checkBuffer);</a>
+<a name="ln731">  }</a>
+<a name="ln732">#endif</a>
+<a name="ln733">} //namespace OpenBabel</a>
+
+</code></pre>
+<div class="balloon" rel="220"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v614/" target="_blank">V614</a> Potentially uninitialized pointer 'atom' used.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

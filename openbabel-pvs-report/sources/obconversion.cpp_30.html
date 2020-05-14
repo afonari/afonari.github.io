@@ -1,0 +1,1900 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>obconversion.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">obconversion.cpp -  Declaration of OBFormat and OBConversion</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 2004 by Chris Morley</a>
+<a name="ln5">Some portions Copyright (C) 2005-2006 by Geoffrey Hutchison</a>
+<a name="ln6"> </a>
+<a name="ln7">This file is part of the Open Babel project.</a>
+<a name="ln8">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln11">it under the terms of the GNU General Public License as published by</a>
+<a name="ln12">the Free Software Foundation version 2 of the License.</a>
+<a name="ln13"> </a>
+<a name="ln14">This program is distributed in the hope that it will be useful,</a>
+<a name="ln15">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln16">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln17">GNU General Public License for more details.</a>
+<a name="ln18">***********************************************************************/</a>
+<a name="ln19">// Definition of OBConversion routines</a>
+<a name="ln20">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln21"> </a>
+<a name="ln22">#ifdef _WIN32</a>
+<a name="ln23">	#pragma warning (disable : 4786)</a>
+<a name="ln24"> </a>
+<a name="ln25">	//using 'this' in base class initializer</a>
+<a name="ln26">	#pragma warning (disable : 4355)</a>
+<a name="ln27"> </a>
+<a name="ln28">	#ifdef GUI</a>
+<a name="ln29">		#undef DATADIR</a>
+<a name="ln30">		#include &quot;stdafx.h&quot; //(includes&lt;windows.h&gt;</a>
+<a name="ln31">	#endif</a>
+<a name="ln32">#endif</a>
+<a name="ln33"> </a>
+<a name="ln34">// #define DONT_CATCH_EXCEPTIONS     // This is useful when debugging an exception</a>
+<a name="ln35"> </a>
+<a name="ln36">#include &lt;iosfwd&gt;</a>
+<a name="ln37">#include &lt;fstream&gt;</a>
+<a name="ln38">#include &lt;sstream&gt;</a>
+<a name="ln39">#include &lt;string&gt;</a>
+<a name="ln40">#include &lt;map&gt;</a>
+<a name="ln41">#include &lt;locale&gt;</a>
+<a name="ln42">#include &lt;limits&gt;</a>
+<a name="ln43">#include &lt;typeinfo&gt;</a>
+<a name="ln44">#include &lt;iterator&gt;</a>
+<a name="ln45"> </a>
+<a name="ln46">#include &lt;stdlib.h&gt;</a>
+<a name="ln47"> </a>
+<a name="ln48">#include &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln49">//#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln50">#include &lt;openbabel/locale.h&gt;</a>
+<a name="ln51"> </a>
+<a name="ln52">#ifdef HAVE_LIBZ</a>
+<a name="ln53">#include &quot;zipstream.h&quot;</a>
+<a name="ln54">#endif</a>
+<a name="ln55"> </a>
+<a name="ln56">#if !HAVE_STRNCASECMP</a>
+<a name="ln57">extern &quot;C&quot; int strncasecmp(const char *s1, const char *s2, size_t n);</a>
+<a name="ln58">#endif</a>
+<a name="ln59"> </a>
+<a name="ln60">#ifndef BUFF_SIZE</a>
+<a name="ln61">#define BUFF_SIZE 32768</a>
+<a name="ln62">#endif</a>
+<a name="ln63"> </a>
+<a name="ln64">using namespace std;</a>
+<a name="ln65">//using namespace boost::iostreams;</a>
+<a name="ln66"> </a>
+<a name="ln67">namespace OpenBabel {</a>
+<a name="ln68"> </a>
+<a name="ln69">  /** @class OBFormat obconversion.h &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln70">      Two sets of Read and Write functions are specified for each format</a>
+<a name="ln71">      to handle two different requirements.</a>
+<a name="ln72">      The &quot;Convert&quot; interface is for use in file format conversion applications. The</a>
+<a name="ln73">      user interface, a console, a GUI, or another program is kept unaware of the</a>
+<a name="ln74">      details of the chemistry and does not need to \#include mol.h. It is then</a>
+<a name="ln75">      necessary to manipulate only pointers to OBBase in OBConversion and the user</a>
+<a name="ln76">      interface, with all the construction and deletion of OBMol etc objects being</a>
+<a name="ln77">      done in the Format classes or the OB core. The convention  with &quot;Covert&quot;</a>
+<a name="ln78">      interface functions is that chemical objects are made on the heap with new</a>
+<a name="ln79">      in the ReadChemicalObject() functions and and deleted in WriteChemicalObject()</a>
+<a name="ln80">      functions</a>
+<a name="ln81"> </a>
+<a name="ln82">      The &quot;API&quot; interface is for programatic use of the OB routines in application</a>
+<a name="ln83">      programs where mol.h is \#included. There is generally no creation or</a>
+<a name="ln84">      destruction of objects in ReadMolecule() and WriteMolecule() and no restriction</a>
+<a name="ln85">      on whether the pointers are to the heap or the stack.</a>
+<a name="ln86">  **/</a>
+<a name="ln87">  //***************************************************</a>
+<a name="ln88"> </a>
+<a name="ln89">  /** @class OBConversion obconversion.h &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln90">      OBConversion maintains a list of the available formats,</a>
+<a name="ln91">      provides information on them, and controls the conversion process.</a>
+<a name="ln92"> </a>
+<a name="ln93">      A conversion is carried out by the calling routine, usually in a</a>
+<a name="ln94">      user interface or an application program, making an instance of</a>
+<a name="ln95">      OBConversion. It is loaded with the in and out formats, any options</a>
+<a name="ln96">      and (usually) the default streams for input and output. Then either</a>
+<a name="ln97">      the Convert() function is called, which allows a single input file</a>
+<a name="ln98">      to be converted, or the extended functionality of FullConvert()</a>
+<a name="ln99">      is used. This allows multiple input and output files, allowing:</a>
+<a name="ln100">      - aggregation      - the contents of many input files converted</a>
+<a name="ln101">      and sent to one output file;</a>
+<a name="ln102">      - splitting        - the molecules from one input file sent to</a>
+<a name="ln103">      separate output files;</a>
+<a name="ln104">      - batch conversion - each input file converted to an output file.</a>
+<a name="ln105"> </a>
+<a name="ln106">      These procedures constitute the &quot;Convert&quot; interface. OBConversion</a>
+<a name="ln107">      and the user interface or application program do not need to be</a>
+<a name="ln108">      aware of any other part of OpenBabel - mol.h is not \#included. This</a>
+<a name="ln109">      allows any chemical object derived from OBBase to be converted;</a>
+<a name="ln110">      the type of object is decided by the input format class.</a>
+<a name="ln111">      However,currently, almost all the conversions are for molecules of</a>
+<a name="ln112">      class OBMol.</a>
+<a name="ln113">      ///</a>
+<a name="ln114">      OBConversion can also be used with an &quot;API&quot; interface</a>
+<a name="ln115">      called from programs which manipulate chemical objects. Input/output is</a>
+<a name="ln116">      done with the Read() and Write() functions which work with any</a>
+<a name="ln117">      chemical object, but need to have its type specified. (The</a>
+<a name="ln118">      ReadMolecule() and WriteMolecule() functions of the format classes</a>
+<a name="ln119">      can also be used directly.)</a>
+<a name="ln120"> </a>
+<a name="ln121"> </a>
+<a name="ln122">      Example code using OBConversion</a>
+<a name="ln123"> </a>
+<a name="ln124">      &lt;b&gt;To read in a molecule, manipulate it and write it out.&lt;/b&gt;</a>
+<a name="ln125"> </a>
+<a name="ln126">      Set up an istream and an ostream, to and from files or elsewhere.</a>
+<a name="ln127">      (cin and cout are used in the example). Specify the file formats.</a>
+<a name="ln128"> </a>
+<a name="ln129">      @code</a>
+<a name="ln130">      OBConversion conv(&amp;cin,&amp;cout);</a>
+<a name="ln131">      if(conv.SetInAndOutFormats(&quot;SMI&quot;,&quot;MOL&quot;))</a>
+<a name="ln132">      {</a>
+<a name="ln133">         OBMol mol;</a>
+<a name="ln134">         if(conv.Read(&amp;mol))</a>
+<a name="ln135">            // ...manipulate molecule</a>
+<a name="ln136"> </a>
+<a name="ln137">         conv-&gt;Write(&amp;mol);</a>
+<a name="ln138">      }</a>
+<a name="ln139">      @endcode</a>
+<a name="ln140"> </a>
+<a name="ln141">      A two stage construction is used to allow error handling</a>
+<a name="ln142">      if the format ID is not recognized. This is necessary now that the</a>
+<a name="ln143">      formats are dynamic and errors are not caught at compile time.</a>
+<a name="ln144">      OBConversion::Read() uses a pointer to OBBase, so that, in addition</a>
+<a name="ln145">      to OBMol, other kinds of objects, such as reactions, can also be handled</a>
+<a name="ln146">      if the format routines are written appropriately.</a>
+<a name="ln147"> </a>
+<a name="ln148">      &lt;b&gt;To make a molecule from a SMILES string.&lt;/b&gt;</a>
+<a name="ln149">      @code</a>
+<a name="ln150">      std::string SmilesString;</a>
+<a name="ln151">      OBMol mol;</a>
+<a name="ln152">      stringstream ss(SmilesString)</a>
+<a name="ln153">      OBConversion conv(&amp;ss);</a>
+<a name="ln154">      if(conv.SetInFormat(&quot;smi&quot;) &amp;&amp; conv.Read(&amp;mol))</a>
+<a name="ln155">         // ...</a>
+<a name="ln156">      @endcode</a>
+<a name="ln157"> </a>
+<a name="ln158">      An alternative way is more convenient if using bindings from another language:</a>
+<a name="ln159">      @code</a>
+<a name="ln160">      std::string SmilesString;</a>
+<a name="ln161">      OBMol mol;</a>
+<a name="ln162">      OBConversion conv;</a>
+<a name="ln163">      if(conv.SetInFormat(&quot;smi&quot;) &amp;&amp; conv.ReadString(&amp;mol, SmilesString))</a>
+<a name="ln164">         // ...</a>
+<a name="ln165">      @endcode</a>
+<a name="ln166"> </a>
+<a name="ln167">      &lt;b&gt;To do a file conversion without manipulating the molecule.&lt;/b&gt;</a>
+<a name="ln168"> </a>
+<a name="ln169">      @code</a>
+<a name="ln170">      #include &lt;openbabel/obconversion.h&gt; //mol.h is not needed</a>
+<a name="ln171">      ...set up an istream is and an ostream os</a>
+<a name="ln172">      OBConversion conv(&amp;is,&amp;os);</a>
+<a name="ln173">      if(conv.SetInAndOutFormats(&quot;SMI&quot;,&quot;MOL&quot;))</a>
+<a name="ln174">      {</a>
+<a name="ln175">         conv.AddOption(&quot;h&quot;,OBConversion::GENOPTIONS); //Optional; (h adds expicit hydrogens)</a>
+<a name="ln176">         conv.Convert();</a>
+<a name="ln177">      }</a>
+<a name="ln178">      @endcode</a>
+<a name="ln179"> </a>
+<a name="ln180">      &lt;b&gt;To read a multi-molecule file if using bindings from another language&lt;/b&gt;</a>
+<a name="ln181"> </a>
+<a name="ln182">      The first molecule should be read using ReadFile, and subsequent molecules using Read,</a>
+<a name="ln183">      as follows:</a>
+<a name="ln184">      @code</a>
+<a name="ln185">      #include &lt;openbabel/obconversion.h&gt; //mol.h is not needed</a>
+<a name="ln186">      OBConversion conv;</a>
+<a name="ln187">      OBMol mol;</a>
+<a name="ln188">      bool success = conv.SetInFormat(&quot;sdf&quot;);</a>
+<a name="ln189">      if(success)</a>
+<a name="ln190">      {</a>
+<a name="ln191">         bool notatend = conv.ReadFile(&amp;mol, &quot;myfile.sdf&quot;);</a>
+<a name="ln192">         // Do something with mol</a>
+<a name="ln193">	 while(notatend)</a>
+<a name="ln194">	 {</a>
+<a name="ln195">             notatend = conv.Read(&amp;mol);</a>
+<a name="ln196">	     // Do something with mol</a>
+<a name="ln197">	 }</a>
+<a name="ln198">      }</a>
+<a name="ln199">      @endcode</a>
+<a name="ln200"> </a>
+<a name="ln201">      &lt;b&gt;To add automatic format conversion to an existing program.&lt;/b&gt;</a>
+<a name="ln202"> </a>
+<a name="ln203">      The existing program inputs from the file identified by the</a>
+<a name="ln204">      const char* filename into the istream is. The file is assumed to have</a>
+<a name="ln205">      a format ORIG, but other formats, identified by their file extensions,</a>
+<a name="ln206">      can now be used.</a>
+<a name="ln207"> </a>
+<a name="ln208">      @code</a>
+<a name="ln209">      ifstream ifs(filename); //Original code</a>
+<a name="ln210"> </a>
+<a name="ln211">      OBConversion conv;</a>
+<a name="ln212">      OBFormat* inFormat = conv.FormatFromExt(filename);</a>
+<a name="ln213">      OBFormat* outFormat = conv.GetFormat(&quot;ORIG&quot;);</a>
+<a name="ln214">      istream* pIn = &amp;ifs;</a>
+<a name="ln215">      stringstream newstream;</a>
+<a name="ln216">      if(inFormat &amp;&amp; outFormat)</a>
+<a name="ln217">      {</a>
+<a name="ln218">         conv.SetInAndOutFormats(inFormat,outFormat);</a>
+<a name="ln219">         conv.Convert(pIn,&amp;newstream);</a>
+<a name="ln220">         pIn=&amp;newstream;</a>
+<a name="ln221">      }</a>
+<a name="ln222">      //else error; new features not available; fallback to original functionality</a>
+<a name="ln223"> </a>
+<a name="ln224">      ...Carry on with original code using pIn</a>
+<a name="ln225">      @endcode</a>
+<a name="ln226">  */</a>
+<a name="ln227"> </a>
+<a name="ln228">//  OBFormat* OBConversion::pDefaultFormat=NULL;</a>
+<a name="ln229"> </a>
+<a name="ln230">  OBConversion::OBConversion(istream* is, ostream* os) :</a>
+<a name="ln231">    pInput(nullptr), pOutput(nullptr),</a>
+<a name="ln232">    pInFormat(nullptr),pOutFormat(nullptr), Index(0), StartNumber(1),</a>
+<a name="ln233">    EndNumber(0), Count(-1), m_IsFirstInput(true), m_IsLast(true),</a>
+<a name="ln234">    MoreFilesToCome(false), OneObjectOnly(false), SkippedMolecules(false),</a>
+<a name="ln235">    inFormatGzip(false), outFormatGzip(false),</a>
+<a name="ln236">    pOb1(nullptr), wInpos(0), wInlen(0), pAuxConv(nullptr)</a>
+<a name="ln237">  {</a>
+<a name="ln238">   	SetInStream(is);</a>
+<a name="ln239">   	SetOutStream(os);</a>
+<a name="ln240"> </a>
+<a name="ln241">    //These options take a parameter</a>
+<a name="ln242">    RegisterOptionParam(&quot;f&quot;, nullptr, 1,GENOPTIONS);</a>
+<a name="ln243">    RegisterOptionParam(&quot;l&quot;, nullptr, 1,GENOPTIONS);</a>
+<a name="ln244">  }</a>
+<a name="ln245"> </a>
+<a name="ln246">  /// Convenience constructor.  Sets up streams from specified files.</a>
+<a name="ln247">  /// If format can not be determined from filename, a stream is not opened.</a>
+<a name="ln248">  OBConversion::OBConversion(string infile, string outfile):</a>
+<a name="ln249">        pInput(nullptr), pOutput(nullptr),</a>
+<a name="ln250">        pInFormat(nullptr), pOutFormat(nullptr), Index(0), StartNumber(1),</a>
+<a name="ln251">        EndNumber(0), Count(-1), m_IsFirstInput(true), m_IsLast(true),</a>
+<a name="ln252">        MoreFilesToCome(false), OneObjectOnly(false), SkippedMolecules(false),</a>
+<a name="ln253">        inFormatGzip(false), outFormatGzip(false),</a>
+<a name="ln254">        pOb1(nullptr), wInpos(0), wInlen(0), pAuxConv(nullptr)</a>
+<a name="ln255">  {</a>
+<a name="ln256">    //These options take a parameter</a>
+<a name="ln257">    RegisterOptionParam(&quot;f&quot;, nullptr, 1,GENOPTIONS);</a>
+<a name="ln258">    RegisterOptionParam(&quot;l&quot;, nullptr, 1,GENOPTIONS);</a>
+<a name="ln259"> </a>
+<a name="ln260">    OpenInAndOutFiles(infile, outfile);</a>
+<a name="ln261">  }</a>
+<a name="ln262"> </a>
+<a name="ln263">  /////////////////////////////////////////////////</a>
+<a name="ln264">  OBConversion::OBConversion(const OBConversion&amp; o)</a>
+<a name="ln265">  {</a>
+<a name="ln266">    *this = o;</a>
+<a name="ln267">  }</a>
+<a name="ln268"> </a>
+<a name="ln269"> </a>
+<a name="ln270">  OBConversion&amp; OBConversion::operator=(const OBConversion&amp; o)</a>
+<a name="ln271">  {</a>
+<a name="ln272">    //the original obconversion retains ownership of any allocated streams</a>
+<a name="ln273">    //this means if the original gets destroyed, bad things may happen</a>
+<a name="ln274">    //by doing this first, format isn't initialized, so we add no additional filters</a>
+<a name="ln275">    pInFormat = nullptr;</a>
+<a name="ln276">    inFormatGzip = false;</a>
+<a name="ln277">    pOutFormat = nullptr;</a>
+<a name="ln278">    outFormatGzip = false;</a>
+<a name="ln279">    SetInStream(o.pInput, false);</a>
+<a name="ln280">    SetOutStream(o.pOutput, false);</a>
+<a name="ln281"> </a>
+<a name="ln282">    Index          = o.Index;</a>
+<a name="ln283">    Count          = o.Count;</a>
+<a name="ln284">    StartNumber    = o.StartNumber;</a>
+<a name="ln285">    EndNumber      = o.EndNumber;</a>
+<a name="ln286">    pInFormat      = o.pInFormat;</a>
+<a name="ln287">    inFormatGzip   = o.inFormatGzip;</a>
+<a name="ln288">    pOutFormat     = o.pOutFormat;</a>
+<a name="ln289">    outFormatGzip  = o.outFormatGzip;</a>
+<a name="ln290">    OptionsArray[0]= o.OptionsArray[0];</a>
+<a name="ln291">    OptionsArray[1]= o.OptionsArray[1];</a>
+<a name="ln292">    OptionsArray[2]= o.OptionsArray[2];</a>
+<a name="ln293">    InFilename     = o.InFilename;</a>
+<a name="ln294">    rInpos         = o.rInpos;</a>
+<a name="ln295">    wInpos         = o.wInpos;</a>
+<a name="ln296">    rInlen         = o.rInlen;</a>
+<a name="ln297">    wInlen         = o.wInlen;</a>
+<a name="ln298">    m_IsLast       = o.m_IsLast;</a>
+<a name="ln299">    MoreFilesToCome= o.MoreFilesToCome;</a>
+<a name="ln300">    OneObjectOnly  = o.OneObjectOnly;</a>
+<a name="ln301">    pOb1           = o.pOb1;</a>
+<a name="ln302">    ReadyToInput   = o.ReadyToInput;</a>
+<a name="ln303">    m_IsFirstInput = o.m_IsFirstInput;</a>
+<a name="ln304">    SkippedMolecules = o.SkippedMolecules;</a>
+<a name="ln305">    pAuxConv       = o.pAuxConv;</a>
+<a name="ln306"> </a>
+<a name="ln307">     return *this;</a>
+<a name="ln308">  }</a>
+<a name="ln309">  ///////////////////////////////////////////////</a>
+<a name="ln310"> </a>
+<a name="ln311">  OBConversion::~OBConversion()</a>
+<a name="ln312">  {</a>
+<a name="ln313">    if(pAuxConv!=this)</a>
+<a name="ln314">      if(pAuxConv)</a>
+<a name="ln315">      {</a>
+<a name="ln316">        delete pAuxConv;</a>
+<a name="ln317">      }</a>
+<a name="ln318">    // Free any remaining streams from convenience functions</a>
+<a name="ln319">    SetInStream(nullptr);</a>
+<a name="ln320">    SetOutStream(nullptr);</a>
+<a name="ln321"> </a>
+<a name="ln322">  }</a>
+<a name="ln323">  //////////////////////////////////////////////////////</a>
+<a name="ln324"> </a>
+<a name="ln325">  /// Class information on formats is collected by making an instance of the class</a>
+<a name="ln326">  /// derived from OBFormat(only one is usually required). RegisterFormat() is called</a>
+<a name="ln327">  /// from its constructor.</a>
+<a name="ln328">  ///</a>
+<a name="ln329">  /// If the compiled format is stored separately, like in a DLL or shared library,</a>
+<a name="ln330">  /// the initialization code makes an instance of the imported OBFormat class.</a>
+<a name="ln331">  int OBConversion::RegisterFormat(const char* ID, OBFormat* pFormat, const char* MIME)</a>
+<a name="ln332">  {</a>
+<a name="ln333">    return pFormat-&gt;RegisterFormat(ID, MIME);</a>
+<a name="ln334">  }</a>
+<a name="ln335"> </a>
+<a name="ln336">  /// Set input stream, removing/deallocating previous stream if necessary.</a>
+<a name="ln337">  /// If takeOwnership is true, takes responsibility for freeing pIn</a>
+<a name="ln338">  void OBConversion::SetInStream(std::istream* pIn, bool takeOwnership)</a>
+<a name="ln339">  {</a>
+<a name="ln340">      //clear and deallocate any existing streams</a>
+<a name="ln341">      for(unsigned i = 0, n = ownedInStreams.size(); i &lt; n; i++)</a>
+<a name="ln342">      {</a>
+<a name="ln343">        delete ownedInStreams[i];</a>
+<a name="ln344">      }</a>
+<a name="ln345">      ownedInStreams.clear();</a>
+<a name="ln346">      pInput = nullptr;</a>
+<a name="ln347"> </a>
+<a name="ln348">      if (pIn)</a>
+<a name="ln349">      {</a>
+<a name="ln350">          if(takeOwnership)</a>
+<a name="ln351">              ownedInStreams.push_back(pIn);</a>
+<a name="ln352">          pInput = pIn; //simplest case</a>
+<a name="ln353"> </a>
+<a name="ln354">  #ifdef HAVE_LIBZ</a>
+<a name="ln355">          if(IsOption(&quot;zin&quot;, GENOPTIONS) || inFormatGzip)</a>
+<a name="ln356">          {</a>
+<a name="ln357">            zlib_stream::zip_istream *zIn = new zlib_stream::zip_istream(*pInput);</a>
+<a name="ln358">            ownedInStreams.push_back(zIn);</a>
+<a name="ln359">            pInput = zIn;</a>
+<a name="ln360">          }</a>
+<a name="ln361">  #endif</a>
+<a name="ln362">          //always transform newlines if input isn't binary/xml</a>
+<a name="ln363">          if(pInFormat &amp;&amp; !(pInFormat-&gt;Flags() &amp; (READBINARY | READXML)) &amp;&amp;</a>
+<a name="ln364">              pIn != &amp;std::cin) //avoid filtering stdin as well</a>
+<a name="ln365">          {</a>
+<a name="ln366">            LEInStream *leIn = new LEInStream(*pInput);</a>
+<a name="ln367">            ownedInStreams.push_back(leIn);</a>
+<a name="ln368">            pInput = leIn;</a>
+<a name="ln369">          }</a>
+<a name="ln370">      }</a>
+<a name="ln371">  }</a>
+<a name="ln372"> </a>
+<a name="ln373">  /// Set output stream, removing/deallocating previous stream if necessary.</a>
+<a name="ln374">  /// If takeOwnership is true, takes responsibility for freeing pOut</a>
+<a name="ln375">  /// Be aware that if the output stream is gzipped format, then this outstream</a>
+<a name="ln376">  /// either needs to be replaced (e.g., SetOutStream(NULL)) or the OBConversion</a>
+<a name="ln377">  /// destroyed before the underlying outputstream is deallocated.</a>
+<a name="ln378">  void OBConversion::SetOutStream(std::ostream* pOut, bool takeOwnership)</a>
+<a name="ln379">  {</a>
+<a name="ln380">    //clear and deallocate any existing streams</a>
+<a name="ln381">    for (unsigned i = 0, n = ownedOutStreams.size(); i &lt; n; i++)</a>
+<a name="ln382">    {</a>
+<a name="ln383">      delete ownedOutStreams[i];</a>
+<a name="ln384">    }</a>
+<a name="ln385">    ownedOutStreams.clear();</a>
+<a name="ln386">    pOutput = nullptr;</a>
+<a name="ln387"> </a>
+<a name="ln388">    if (pOut)</a>
+<a name="ln389">    {</a>
+<a name="ln390">      if (takeOwnership)</a>
+<a name="ln391">        ownedOutStreams.push_back(pOut);</a>
+<a name="ln392">      pOutput = pOut;</a>
+<a name="ln393"> </a>
+<a name="ln394">#ifdef HAVE_LIBZ</a>
+<a name="ln395"> </a>
+<a name="ln396">      if (IsOption(&quot;z&quot;, GENOPTIONS) || outFormatGzip)</a>
+<a name="ln397">      {</a>
+<a name="ln398">        zlib_stream::zip_ostream *zOut = new zlib_stream::zip_ostream(*pOutput, true);</a>
+<a name="ln399">        //we need to delete the zstream _before_ the underlying stream so it can add the footer</a>
+<a name="ln400">        ownedOutStreams.insert(ownedOutStreams.begin(),zOut);</a>
+<a name="ln401">        pOutput = zOut;</a>
+<a name="ln402">      }</a>
+<a name="ln403">#endif</a>
+<a name="ln404">    }</a>
+<a name="ln405">  }</a>
+<a name="ln406"> </a>
+<a name="ln407"> </a>
+<a name="ln408"> </a>
+<a name="ln409">//////////////////////////////////////////////////////</a>
+<a name="ln410">  /// Sets the formats from their ids, e g CML.</a>
+<a name="ln411">  /// If inID is NULL, the input format is left unchanged. Similarly for outID</a>
+<a name="ln412">  /// Returns true if both formats have been successfully set at sometime</a>
+<a name="ln413">  bool OBConversion::SetInAndOutFormats(const char* inID, const char* outID, bool inzip, bool outzip)</a>
+<a name="ln414">  {</a>
+<a name="ln415">    return SetInFormat(inID, inzip) &amp;&amp; SetOutFormat(outID, outzip);</a>
+<a name="ln416">  }</a>
+<a name="ln417">  //////////////////////////////////////////////////////</a>
+<a name="ln418"> </a>
+<a name="ln419">  bool OBConversion::SetInAndOutFormats(OBFormat* pIn, OBFormat* pOut, bool inzip, bool outzip)</a>
+<a name="ln420">  {</a>
+<a name="ln421">    return SetInFormat(pIn, inzip) &amp;&amp; SetOutFormat(pOut, outzip);</a>
+<a name="ln422">  }</a>
+<a name="ln423">  //////////////////////////////////////////////////////</a>
+<a name="ln424">  bool OBConversion::SetInFormat(OBFormat* pIn, bool gzip)</a>
+<a name="ln425">  {</a>
+<a name="ln426">    inFormatGzip = gzip;</a>
+<a name="ln427">    if (pIn == nullptr)</a>
+<a name="ln428">      return true;</a>
+<a name="ln429">    pInFormat=pIn;</a>
+<a name="ln430">    return !(pInFormat-&gt;Flags() &amp; NOTREADABLE);</a>
+<a name="ln431">  }</a>
+<a name="ln432">  //////////////////////////////////////////////////////</a>
+<a name="ln433">  bool OBConversion::SetOutFormat(OBFormat* pOut, bool gzip)</a>
+<a name="ln434">  {</a>
+<a name="ln435">    outFormatGzip = gzip;</a>
+<a name="ln436">    pOutFormat=pOut;</a>
+<a name="ln437">    return pOut &amp;&amp; !(pOutFormat-&gt;Flags() &amp; NOTWRITABLE);</a>
+<a name="ln438">  }</a>
+<a name="ln439">  //////////////////////////////////////////////////////</a>
+<a name="ln440">  bool OBConversion::SetInFormat(const char* inID, bool gzip)</a>
+<a name="ln441">  {</a>
+<a name="ln442">    inFormatGzip = gzip;</a>
+<a name="ln443">    if(inID)</a>
+<a name="ln444">      pInFormat = FindFormat(inID);</a>
+<a name="ln445">    return pInFormat &amp;&amp; !(pInFormat-&gt;Flags() &amp; NOTREADABLE);</a>
+<a name="ln446">  }</a>
+<a name="ln447">  //////////////////////////////////////////////////////</a>
+<a name="ln448"> </a>
+<a name="ln449">  bool OBConversion::SetOutFormat(const char* outID, bool gzip)</a>
+<a name="ln450">  {</a>
+<a name="ln451">    outFormatGzip = gzip;</a>
+<a name="ln452">    if(outID)</a>
+<a name="ln453">      pOutFormat= FindFormat(outID);</a>
+<a name="ln454">    return pOutFormat &amp;&amp; !(pOutFormat-&gt;Flags() &amp; NOTWRITABLE);</a>
+<a name="ln455">  }</a>
+<a name="ln456"> </a>
+<a name="ln457">  //////////////////////////////////////////////////////</a>
+<a name="ln458">  /// Convert molecules from is into os.  If either is null, uses existing streams.</a>
+<a name="ln459">  /// If streams are specified, they do _not_ replace any existing streams.</a>
+<a name="ln460">  int OBConversion::Convert(istream* is, ostream* os)</a>
+<a name="ln461">  {</a>
+<a name="ln462">    StreamState savedIn, savedOut;</a>
+<a name="ln463">    if (is)</a>
+<a name="ln464">    {</a>
+<a name="ln465">#ifdef HAVE_LIBZ</a>
+<a name="ln466">      if(!inFormatGzip &amp;&amp; pInFormat &amp;&amp; zlib_stream::isGZip(*is))</a>
+<a name="ln467">      {</a>
+<a name="ln468">        inFormatGzip = true;</a>
+<a name="ln469">      }</a>
+<a name="ln470">#endif</a>
+<a name="ln471">      savedIn.pushInput(*this);</a>
+<a name="ln472">      SetInStream(is, false);</a>
+<a name="ln473">    }</a>
+<a name="ln474"> </a>
+<a name="ln475">    if (os)</a>
+<a name="ln476">    {</a>
+<a name="ln477">      savedOut.pushOutput(*this);</a>
+<a name="ln478">      SetOutStream(os, false);</a>
+<a name="ln479">    }</a>
+<a name="ln480"> </a>
+<a name="ln481">    int count = Convert();</a>
+<a name="ln482"> </a>
+<a name="ln483">    if(savedIn.isSet()) savedIn.popInput(*this);</a>
+<a name="ln484">    if(savedOut.isSet()) savedOut.popOutput(*this);</a>
+<a name="ln485"> </a>
+<a name="ln486">    return count;</a>
+<a name="ln487">  }</a>
+<a name="ln488"> </a>
+<a name="ln489"> </a>
+<a name="ln490">  ////////////////////////////////////////////////////</a>
+<a name="ln491">  /// Actions the &quot;convert&quot; interface.</a>
+<a name="ln492">  ///	Calls the OBFormat class's ReadMolecule() which</a>
+<a name="ln493">  ///	 - makes a new chemical object of its chosen type (e.g. OBMol)</a>
+<a name="ln494">  ///	 - reads an object from the input file</a>
+<a name="ln495">  ///	 - subjects the chemical object to 'transformations' as specified by the Options</a>
+<a name="ln496">  ///	 - calls AddChemObject to add it to a buffer. The previous object is first output</a>
+<a name="ln497">  ///	   via the output Format's WriteMolecule(). During the output process calling</a>
+<a name="ln498">  /// IsFirst() and GetIndex() (the number of objects including the current one already output.</a>
+<a name="ln499">  /// allows more control, for instance writing \&lt;cml\&gt; and \&lt;/cml\&gt; tags for multiple molecule outputs only.</a>
+<a name="ln500">  ///</a>
+<a name="ln501">  ///	AddChemObject does not save the object passed to it if it is NULL (as a result of a DoTransformation())</a>
+<a name="ln502">  ///	or if the number of the object is outside the range defined by</a>
+<a name="ln503">  ///	StartNumber and EndNumber.This means the start and end counts apply to all chemical objects</a>
+<a name="ln504">  ///	found whether or not they	are output.</a>
+<a name="ln505">  ///</a>
+<a name="ln506">  ///	If ReadMolecule returns false the input conversion loop is exited.</a>
+<a name="ln507">  ///</a>
+<a name="ln508">  int OBConversion::Convert()</a>
+<a name="ln509">  {</a>
+<a name="ln510">    if (pInput == nullptr)</a>
+<a name="ln511">      {</a>
+<a name="ln512">        obErrorLog.ThrowError(__FUNCTION__, &quot;input or output stream not set&quot;, obError);</a>
+<a name="ln513">        return 0;</a>
+<a name="ln514">      }</a>
+<a name="ln515"> </a>
+<a name="ln516">    if(!pInFormat) return 0;</a>
+<a name="ln517">    Count=0;//number objects processed</a>
+<a name="ln518"> </a>
+<a name="ln519">    if(!SetStartAndEnd())</a>
+<a name="ln520">      return 0;</a>
+<a name="ln521"> </a>
+<a name="ln522">    ReadyToInput=true;</a>
+<a name="ln523">    m_IsLast=false;</a>
+<a name="ln524">    pOb1=nullptr;</a>
+<a name="ln525">    wInlen=0;</a>
+<a name="ln526"> </a>
+<a name="ln527">    if(pInFormat-&gt;Flags() &amp; READONEONLY)</a>
+<a name="ln528">      OneObjectOnly=true;</a>
+<a name="ln529"> </a>
+<a name="ln530">    //Input loop</a>
+<a name="ln531">    while(ReadyToInput &amp;&amp; pInput-&gt;good()) //Possible to omit? &amp;&amp; pInStream-&gt;peek() != EOF</a>
+<a name="ln532">      {</a>
+<a name="ln533">        if(pInput==&amp;cin)</a>
+<a name="ln534">          {</a>
+<a name="ln535">            if(pInput-&gt;peek()==-1) //Cntl Z Was \n but interfered with piping</a>
+<a name="ln536">              break;</a>
+<a name="ln537">          }</a>
+<a name="ln538">        else</a>
+<a name="ln539">          rInpos = pInput-&gt;tellg();</a>
+<a name="ln540">        bool ret=false;</a>
+<a name="ln541">#ifndef DONT_CATCH_EXCEPTIONS</a>
+<a name="ln542">       try</a>
+<a name="ln543">#endif</a>
+<a name="ln544">          {</a>
+<a name="ln545">            ret = pInFormat-&gt;ReadChemObject(this);</a>
+<a name="ln546">/*            if (ret &amp;&amp; IsOption(&quot;readconformers&quot;, GENOPTIONS)) {</a>
+<a name="ln547">              std::streampos pos = pInStream-&gt;tellg();</a>
+<a name="ln548">              OBMol nextMol;</a>
+<a name="ln549">              OBConversion conv;</a>
+<a name="ln550">              conv.SetOutFormat(&quot;smi&quot;);</a>
+<a name="ln551">              std::string ref_smiles = conv.WriteString(pOb1);</a>
+<a name="ln552">              while (pInStream-&gt;good()) {</a>
+<a name="ln553">                if (!pInFormat-&gt;ReadMolecule(&amp;nextMol, this))</a>
+<a name="ln554">                  break;</a>
+<a name="ln555">                std::string smiles = conv.WriteString(&amp;nextMol);</a>
+<a name="ln556">                if (smiles == ref_smiles) {</a>
+<a name="ln557">                  OBMol *pmol = dynamic_cast&lt;OBMol*&gt;(pOb1);</a>
+<a name="ln558">                  if (!pmol)</a>
+<a name="ln559">                    break;</a>
+<a name="ln560">                  unsigned int numCoords = nextMol.NumAtoms() * 3;</a>
+<a name="ln561">                  double *coords = nextMol.GetCoordinates();</a>
+<a name="ln562">                  double *conformer = new double [numCoords];</a>
+<a name="ln563">                  for (unsigned int i = 0; i &lt; numCoords; ++i)</a>
+<a name="ln564">                    conformer[i] = coords[i];</a>
+<a name="ln565">                  pmol-&gt;AddConformer(conformer);</a>
+<a name="ln566">                  pos = pInStream-&gt;tellg();</a>
+<a name="ln567">                } else {</a>
+<a name="ln568">                  break;</a>
+<a name="ln569">                }</a>
+<a name="ln570">              }</a>
+<a name="ln571">              pInStream-&gt;seekg(pos, std::ios::beg);</a>
+<a name="ln572">            }</a>
+<a name="ln573">*/</a>
+<a name="ln574">            SetFirstInput(false);</a>
+<a name="ln575">          }</a>
+<a name="ln576">#ifndef DONT_CATCH_EXCEPTIONS</a>
+<a name="ln577">        catch(...)</a>
+<a name="ln578">          {</a>
+<a name="ln579">            if(!IsOption(&quot;e&quot;, GENOPTIONS) &amp;&amp; !OneObjectOnly)</a>
+<a name="ln580">            {</a>
+<a name="ln581">              obErrorLog.ThrowError(__FUNCTION__, &quot;Convert failed with an exception&quot; , obError);</a>
+<a name="ln582">              return Index; // the number we've actually output so far</a>
+<a name="ln583">            }</a>
+<a name="ln584">          }</a>
+<a name="ln585">#endif</a>
+<a name="ln586"> </a>
+<a name="ln587">        if(!ret)</a>
+<a name="ln588">          {</a>
+<a name="ln589">            //error or termination request: terminate unless</a>
+<a name="ln590">            // -e option requested and successfully can skip past current object</a>
+<a name="ln591">            if(!IsOption(&quot;e&quot;, GENOPTIONS) || pInFormat-&gt;SkipObjects(0,this)!=1)</a>
+<a name="ln592">              break;</a>
+<a name="ln593">          }</a>
+<a name="ln594">        if(OneObjectOnly)</a>
+<a name="ln595">          break;</a>
+<a name="ln596">        // Objects supplied to AddChemObject() which may output them after a delay</a>
+<a name="ln597">        //ReadyToInput may be made false in AddChemObject()</a>
+<a name="ln598">        // by WriteMolecule() returning false  or by Count==EndNumber</a>
+<a name="ln599">      }</a>
+<a name="ln600"> </a>
+<a name="ln601">    //Output last object</a>
+<a name="ln602">    m_IsLast= !MoreFilesToCome;</a>
+<a name="ln603"> </a>
+<a name="ln604">    //Output is always occurs at the end with the --OutputAtEnd option</a>
+<a name="ln605">    bool oae = IsOption(&quot;OutputAtEnd&quot;, GENOPTIONS) != nullptr;</a>
+<a name="ln606">    if(pOutFormat &amp;&amp; (!oae || m_IsLast))</a>
+<a name="ln607">      if((oae || pOb1) &amp;&amp; !pOutFormat-&gt;WriteChemObject(this))</a>
+<a name="ln608">        Index--;</a>
+<a name="ln609"> </a>
+<a name="ln610">    //Put AddChemObject() into non-queue mode</a>
+<a name="ln611">    Count= -1;</a>
+<a name="ln612">    EndNumber=StartNumber=0; pOb1=nullptr; //leave tidy</a>
+<a name="ln613">    MoreFilesToCome=false;</a>
+<a name="ln614">    OneObjectOnly=false;</a>
+<a name="ln615"> </a>
+<a name="ln616">    return Index; //The number actually output</a>
+<a name="ln617">  }</a>
+<a name="ln618">  //////////////////////////////////////////////////////</a>
+<a name="ln619">  bool OBConversion::SetStartAndEnd()</a>
+<a name="ln620">  {</a>
+<a name="ln621">    unsigned int TempStartNumber=0;</a>
+<a name="ln622">    const char* p = IsOption(&quot;f&quot;,GENOPTIONS);</a>
+<a name="ln623">    if(p)</a>
+<a name="ln624">      {</a>
+<a name="ln625">        StartNumber=atoi(p);</a>
+<a name="ln626">        if(StartNumber&gt;1)</a>
+<a name="ln627">          {</a>
+<a name="ln628">            TempStartNumber=StartNumber;</a>
+<a name="ln629">            //Try to skip objects now</a>
+<a name="ln630">            int ret = pInFormat-&gt;SkipObjects(StartNumber-1,this);</a>
+<a name="ln631">            if(ret==-1) //error</a>
+<a name="ln632">              return false;</a>
+<a name="ln633">            if(ret==1) //success:objects skipped</a>
+<a name="ln634">              {</a>
+<a name="ln635">                Count = StartNumber-1;</a>
+<a name="ln636">                StartNumber=0;</a>
+<a name="ln637">              }</a>
+<a name="ln638">          }</a>
+<a name="ln639">      }</a>
+<a name="ln640"> </a>
+<a name="ln641">    p = IsOption(&quot;l&quot;,GENOPTIONS);</a>
+<a name="ln642">    if(p)</a>
+<a name="ln643">      {</a>
+<a name="ln644">        EndNumber=atoi(p);</a>
+<a name="ln645">        if(TempStartNumber &amp;&amp; EndNumber&lt;TempStartNumber)</a>
+<a name="ln646">          EndNumber=TempStartNumber;</a>
+<a name="ln647">      }</a>
+<a name="ln648"> </a>
+<a name="ln649">    return true;</a>
+<a name="ln650">  }</a>
+<a name="ln651"> </a>
+<a name="ln652">  //////////////////////////////////////////////////////</a>
+<a name="ln653">  /// Retrieves an object stored by AddChemObject() during output</a>
+<a name="ln654">  OBBase* OBConversion::GetChemObject()</a>
+<a name="ln655">  {</a>
+<a name="ln656">    Index++;</a>
+<a name="ln657">    return pOb1;</a>
+<a name="ln658">  }</a>
+<a name="ln659"> </a>
+<a name="ln660">  //////////////////////////////////////////////////////</a>
+<a name="ln661">  ///	Called by ReadMolecule() to deliver an object it has read from an input stream.</a>
+<a name="ln662">  /// Used in two modes:</a>
+<a name="ln663">  ///  - When Count is negative it is left negative and the routine is just a store</a>
+<a name="ln664">  ///    for an OBBase object.  The negative value returned tells the calling</a>
+<a name="ln665">  ///    routine that no more objects are required.</a>
+<a name="ln666">  ///  - When count is &gt;=0, probably set by Convert(), it acts as a queue of 2:</a>
+<a name="ln667">  ///    writing the currently stored value before accepting the supplied one. This delay</a>
+<a name="ln668">  ///    allows output routines to respond differently when the written object is the last.</a>
+<a name="ln669">  ///    Count is incremented with each call, even if pOb=NULL.</a>
+<a name="ln670">  ///    Objects are not added to the queue if the count is outside the range</a>
+<a name="ln671">  ///    StartNumber to EndNumber. There is no upper limit if EndNumber is zero.</a>
+<a name="ln672">  ///    The return value is Count ((&gt;0) or 0 if WriteChemObject returned false.</a>
+<a name="ln673">  int OBConversion::AddChemObject(OBBase* pOb)</a>
+<a name="ln674">  {</a>
+<a name="ln675">    if(Count&lt;0)</a>
+<a name="ln676">      {</a>
+<a name="ln677">        pOb1=pOb;</a>
+<a name="ln678">        return Count; // &lt;0</a>
+<a name="ln679">      }</a>
+<a name="ln680">    Count++;</a>
+<a name="ln681">    if(Count&gt;=(int)StartNumber)//keeps reading objects but does nothing with them</a>
+<a name="ln682">      {</a>
+<a name="ln683">        if(Count==(int)EndNumber)</a>
+<a name="ln684">          ReadyToInput=false; //stops any more objects being read</a>
+<a name="ln685"> </a>
+<a name="ln686">        rInlen = pInput ? pInput-&gt;tellg() - rInpos : 0;</a>
+<a name="ln687">         // - (pLineEndBuf ? pLineEndBuf-&gt;getCorrection() : 0); //correction for CRLF</a>
+<a name="ln688"> </a>
+<a name="ln689">        if(pOb)</a>
+<a name="ln690">          {</a>
+<a name="ln691">            if(pOb1 &amp;&amp; pOutFormat) //see if there is an object ready to be output</a>
+<a name="ln692">              {</a>
+<a name="ln693">                //Output object</a>
+<a name="ln694">                if (!pOutFormat-&gt;WriteChemObject(this))</a>
+<a name="ln695">                  {</a>
+<a name="ln696">                    //faultly write, so finish</a>
+<a name="ln697">                    --Index;</a>
+<a name="ln698">                    //ReadyToInput=false;</a>
+<a name="ln699">                    pOb1 = nullptr;</a>
+<a name="ln700">                    return 0;</a>
+<a name="ln701">                  }</a>
+<a name="ln702">                //Stop after writing with single object output files</a>
+<a name="ln703">                if(pOutFormat-&gt;Flags() &amp; WRITEONEONLY)</a>
+<a name="ln704">                  {</a>
+<a name="ln705">                    // if there are more molecules to output, send a warning</a>
+<a name="ln706">                    stringstream errorMsg;</a>
+<a name="ln707">                    errorMsg &lt;&lt; &quot;WARNING: You are attempting to convert a file&quot;</a>
+<a name="ln708">                             &lt;&lt; &quot; with multiple molecule entries into a format&quot;</a>
+<a name="ln709">                             &lt;&lt; &quot; which can only store one molecule. The current&quot;</a>
+<a name="ln710">                             &lt;&lt; &quot; output will only contain the first molecule.\n\n&quot;;</a>
+<a name="ln711"> </a>
+<a name="ln712">                    errorMsg &lt;&lt; &quot;To convert this input into multiple separate&quot;</a>
+<a name="ln713">                             &lt;&lt; &quot; output files, with one molecule per file, try:\n&quot;</a>
+<a name="ln714">                             &lt;&lt; &quot;obabel [input] [output] -m\n\n&quot;;</a>
+<a name="ln715"> </a>
+<a name="ln716">                    errorMsg &lt;&lt; &quot;To pick one particular molecule&quot;</a>
+<a name="ln717">                             &lt;&lt; &quot; (e.g., molecule 4), try:\n&quot;</a>
+<a name="ln718">                             &lt;&lt; &quot;obabel -f 4 -l 4 [input] [output]&quot; &lt;&lt; endl;</a>
+<a name="ln719"> </a>
+<a name="ln720">                    obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obWarning);</a>
+<a name="ln721"> </a>
+<a name="ln722">                    ReadyToInput = false;</a>
+<a name="ln723">                    pOb1 = nullptr;</a>
+<a name="ln724">                    return Count; // &gt;0</a>
+<a name="ln725">                  }</a>
+<a name="ln726">              }</a>
+<a name="ln727">            pOb1=pOb;</a>
+<a name="ln728">            wInpos = rInpos; //Save the position in the input file to be accessed when writing it</a>
+<a name="ln729">            wInlen = rInlen;</a>
+<a name="ln730">          }</a>
+<a name="ln731">      }</a>
+<a name="ln732">    return Count; // &gt;0</a>
+<a name="ln733">  }</a>
+<a name="ln734">  //////////////////////////////////////////////////////</a>
+<a name="ln735">  ///Returns the number of objects which have been output or are currently being output.</a>
+<a name="ln736">  ///The outputindex is incremented when an object for output is fetched by GetChemObject().</a>
+<a name="ln737">  ///So the function will return 1 if called from WriteMolecule() during output of the first object.</a>
+<a name="ln738">  int OBConversion::GetOutputIndex() const</a>
+<a name="ln739">  {</a>
+<a name="ln740">    //The number of objects actually written already from this instance of OBConversion</a>
+<a name="ln741">    return Index;</a>
+<a name="ln742">  }</a>
+<a name="ln743">  void OBConversion::SetOutputIndex(int indx)</a>
+<a name="ln744">  {</a>
+<a name="ln745">    Index=indx;</a>
+<a name="ln746">  }</a>
+<a name="ln747">  //////////////////////////////////////////////////////</a>
+<a name="ln748">  OBFormat* OBConversion::FindFormat(const char* ID)</a>
+<a name="ln749">  {</a>
+<a name="ln750">    return OBFormat::FindType(ID);</a>
+<a name="ln751">  }</a>
+<a name="ln752"> </a>
+<a name="ln753">  OBFormat* OBConversion::FindFormat(const std::string ID)</a>
+<a name="ln754">  {</a>
+<a name="ln755">    return OBFormat::FindType(ID.c_str());</a>
+<a name="ln756">  }</a>
+<a name="ln757"> </a>
+<a name="ln758">  //////////////////////////////////////////////////</a>
+<a name="ln759">  const char* OBConversion::GetTitle() const</a>
+<a name="ln760">  {</a>
+<a name="ln761">    return(InFilename.c_str());</a>
+<a name="ln762">  }</a>
+<a name="ln763"> </a>
+<a name="ln764">  void OBConversion::SetMoreFilesToCome()</a>
+<a name="ln765">  {</a>
+<a name="ln766">    MoreFilesToCome=true;</a>
+<a name="ln767">  }</a>
+<a name="ln768"> </a>
+<a name="ln769">  void OBConversion::SetOneObjectOnly(bool b)</a>
+<a name="ln770">  {</a>
+<a name="ln771">    OneObjectOnly=b;</a>
+<a name="ln772">    m_IsLast=b;</a>
+<a name="ln773">  }</a>
+<a name="ln774"> </a>
+<a name="ln775">  /////////////////////////////////////////////////////////</a>
+<a name="ln776">  OBFormat* OBConversion::FormatFromExt(const char* filename, bool&amp; isgzip)</a>
+<a name="ln777">  {</a>
+<a name="ln778">    string file = filename;</a>
+<a name="ln779">    string::size_type extPos = file.rfind('.');</a>
+<a name="ln780">    isgzip = false;</a>
+<a name="ln781">    if(extPos!=string::npos // period found</a>
+<a name="ln782">       &amp;&amp; (file.substr(extPos + 1, file.size())).find(&quot;/&quot;)==string::npos) // and period is after the last &quot;/&quot;</a>
+<a name="ln783">      {</a>
+<a name="ln784">        // only do this if we actually can read .gz files</a>
+<a name="ln785">        if (file.substr(extPos) == &quot;.gz&quot;)</a>
+<a name="ln786">           {</a>
+<a name="ln787">            isgzip = true;</a>
+<a name="ln788">            file.erase(extPos);</a>
+<a name="ln789">            extPos = file.rfind('.');</a>
+<a name="ln790">            if (extPos!=string::npos)</a>
+<a name="ln791">            {</a>
+<a name="ln792">              return FindFormat( (file.substr(extPos + 1, file.size())).c_str() );</a>
+<a name="ln793">            }</a>
+<a name="ln794">          }</a>
+<a name="ln795">        else</a>
+<a name="ln796">          return FindFormat( (file.substr(extPos + 1, file.size())).c_str() );</a>
+<a name="ln797">      }</a>
+<a name="ln798"> </a>
+<a name="ln799">    // Check the filename if no extension (e.g. VASP does not use extensions):</a>
+<a name="ln800">    extPos = file.rfind('/');</a>
+<a name="ln801">    if(extPos!=string::npos) {</a>
+<a name="ln802">      return FindFormat( (file.substr(extPos + 1, file.size())).c_str() );</a>
+<a name="ln803">    }</a>
+<a name="ln804">    // If we are just passed the filename with no path, this should catch it:</a>
+<a name="ln805">    return FindFormat( file.c_str() ); //if no format found</a>
+<a name="ln806">  }</a>
+<a name="ln807"> </a>
+<a name="ln808">  OBFormat* OBConversion::FormatFromExt(const char* filename)</a>
+<a name="ln809">  {</a>
+<a name="ln810">    bool isgzip;</a>
+<a name="ln811">    return FormatFromExt(filename, isgzip);</a>
+<a name="ln812">  }</a>
+<a name="ln813"> </a>
+<a name="ln814">  OBFormat* OBConversion::FormatFromExt(const std::string filename)</a>
+<a name="ln815">  {</a>
+<a name="ln816">    bool gzip;</a>
+<a name="ln817">    return FormatFromExt(filename.c_str(), gzip);</a>
+<a name="ln818">  }</a>
+<a name="ln819"> </a>
+<a name="ln820">  OBFormat* OBConversion::FormatFromExt(const std::string filename, bool&amp; isgzip)</a>
+<a name="ln821">  {</a>
+<a name="ln822">    return FormatFromExt(filename.c_str(), isgzip);</a>
+<a name="ln823">  }</a>
+<a name="ln824"> </a>
+<a name="ln825">  OBFormat* OBConversion::FormatFromMIME(const char* MIME)</a>
+<a name="ln826">  {</a>
+<a name="ln827">    return OBFormat::FormatFromMIME(MIME);</a>
+<a name="ln828">  }</a>
+<a name="ln829"> </a>
+<a name="ln830">  bool	OBConversion::Read(OBBase* pOb, std::istream* pin)</a>
+<a name="ln831">  {</a>
+<a name="ln832">    if(pin) {</a>
+<a name="ln833">      //for backwards compatibility, attempt to detect a gzip file</a>
+<a name="ln834">#ifdef HAVE_LIBZ</a>
+<a name="ln835">		if(!inFormatGzip &amp;&amp; pInFormat &amp;&amp; zlib_stream::isGZip(*pin))</a>
+<a name="ln836">      {</a>
+<a name="ln837">        inFormatGzip = true;</a>
+<a name="ln838">      }</a>
+<a name="ln839">#endif</a>
+<a name="ln840">      SetInStream(pin, false);</a>
+<a name="ln841">    }</a>
+<a name="ln842"> </a>
+<a name="ln843"> </a>
+<a name="ln844">    if(!pInFormat || !pInput) return false;</a>
+<a name="ln845"> </a>
+<a name="ln846">    //mysterious line to ensure backwards compatibility</a>
+<a name="ln847">    //previously, even an open istream would have the gzip check applied</a>
+<a name="ln848">    //this meant that a stream at the eof position would end up in an error state</a>
+<a name="ln849">    //code has come to depend on this behavior</a>
+<a name="ln850">    if(pInput-&gt;eof()) pInput-&gt;get();</a>
+<a name="ln851"> </a>
+<a name="ln852">    // Set the locale for number parsing to avoid locale issues: PR#1785463</a>
+<a name="ln853">    obLocale.SetLocale();</a>
+<a name="ln854"> </a>
+<a name="ln855">    // Also set the C++ stream locale</a>
+<a name="ln856">    locale originalLocale = pInput-&gt;getloc(); // save the original</a>
+<a name="ln857">    locale cNumericLocale(originalLocale, &quot;C&quot;, locale::numeric);</a>
+<a name="ln858">    pInput-&gt;imbue(cNumericLocale);</a>
+<a name="ln859"> </a>
+<a name="ln860">    // skip molecules if -f or -l option is set</a>
+<a name="ln861">    if (!SkippedMolecules) {</a>
+<a name="ln862">        Count = 0; // make sure it's 0</a>
+<a name="ln863">        if(!SetStartAndEnd()) {</a>
+<a name="ln864">           return false;</a>
+<a name="ln865">        }</a>
+<a name="ln866">        SkippedMolecules = true;</a>
+<a name="ln867">    }</a>
+<a name="ln868"> </a>
+<a name="ln869">    // catch last molecule acording to -l</a>
+<a name="ln870">    Count++;</a>
+<a name="ln871">    bool success = false;</a>
+<a name="ln872">    if (EndNumber==0 || (unsigned)Count&lt;=EndNumber) {</a>
+<a name="ln873">        success = pInFormat-&gt;ReadMolecule(pOb, this);</a>
+<a name="ln874">    }</a>
+<a name="ln875"> </a>
+<a name="ln876">    // return the C locale to the original one</a>
+<a name="ln877">    obLocale.RestoreLocale();</a>
+<a name="ln878">    // Restore the original C++ locale as well</a>
+<a name="ln879">    pInput-&gt;imbue(originalLocale);</a>
+<a name="ln880"> </a>
+<a name="ln881">    // If we failed to read, plus the stream is over, then check if this is a stream from ReadFile</a>
+<a name="ln882">    if (!success &amp;&amp; !pInput-&gt;good() &amp;&amp; ownedInStreams.size() &gt; 0) {</a>
+<a name="ln883">      ifstream *inFstream = dynamic_cast&lt;ifstream*&gt;(ownedInStreams[0]);</a>
+<a name="ln884">      if (inFstream != nullptr)</a>
+<a name="ln885">        inFstream-&gt;close(); // We will free the stream later, but close the file now</a>
+<a name="ln886">    }</a>
+<a name="ln887"> </a>
+<a name="ln888">    return success;</a>
+<a name="ln889">  }</a>
+<a name="ln890"> </a>
+<a name="ln891"> </a>
+<a name="ln892">  //////////////////////////////////////////////////</a>
+<a name="ln893">  /// Writes the object pOb but does not delete it afterwards.</a>
+<a name="ln894">  /// The output stream is lastingly changed if pos is not NULL</a>
+<a name="ln895">  /// Returns true if successful.</a>
+<a name="ln896">  bool OBConversion::Write(OBBase* pOb, ostream* pos)</a>
+<a name="ln897">  {</a>
+<a name="ln898">    if(pos) SetOutStream(pos, false);</a>
+<a name="ln899"> </a>
+<a name="ln900">    if(!pOutFormat || !pOutput) return false;</a>
+<a name="ln901"> </a>
+<a name="ln902">    // Set the locale for number parsing to avoid locale issues: PR#1785463</a>
+<a name="ln903">    obLocale.SetLocale();</a>
+<a name="ln904">    // Also set the C++ stream locale</a>
+<a name="ln905">    locale originalLocale = pOutput-&gt;getloc(); // save the original</a>
+<a name="ln906">    locale cNumericLocale(originalLocale, &quot;C&quot;, locale::numeric);</a>
+<a name="ln907">    pOutput-&gt;imbue(cNumericLocale);</a>
+<a name="ln908"> </a>
+<a name="ln909">    // Increment the output counter.</a>
+<a name="ln910">    // This is done *before* the WriteMolecule because some of</a>
+<a name="ln911">    // the format plugins initialized when GetOutputIndex() == 1.</a>
+<a name="ln912">    // This matches the original Convert(), which increments</a>
+<a name="ln913">    // the count for GetChemObject() before the write.</a>
+<a name="ln914">    Index++;</a>
+<a name="ln915"> </a>
+<a name="ln916">    // The actual work is done here</a>
+<a name="ln917">    bool success = pOutFormat-&gt;WriteMolecule(pOb,this);</a>
+<a name="ln918"> </a>
+<a name="ln919">    // return the C locale to the original one</a>
+<a name="ln920">    obLocale.RestoreLocale();</a>
+<a name="ln921">    // Restore the C++ stream locale too</a>
+<a name="ln922">    pOutput-&gt;imbue(originalLocale);</a>
+<a name="ln923"> </a>
+<a name="ln924">    return success;</a>
+<a name="ln925">  }</a>
+<a name="ln926"> </a>
+<a name="ln927">  //save the current input state to this streamstate and clear conv</a>
+<a name="ln928">  void OBConversion::StreamState::pushInput(OBConversion&amp; conv)</a>
+<a name="ln929">  {</a>
+<a name="ln930">    assert(ownedStreams.size() == 0); //should be empty</a>
+<a name="ln931"> </a>
+<a name="ln932">    pStream = conv.pInput;</a>
+<a name="ln933">    std::copy(conv.ownedInStreams.begin(), conv.ownedInStreams.end(), std::back_inserter(ownedStreams));</a>
+<a name="ln934"> </a>
+<a name="ln935">    conv.pInput = nullptr;</a>
+<a name="ln936">    conv.ownedInStreams.clear();</a>
+<a name="ln937">  }</a>
+<a name="ln938"> </a>
+<a name="ln939">  //restore state, blowing away whatever is in conv</a>
+<a name="ln940">  void OBConversion::StreamState::popInput(OBConversion&amp; conv)</a>
+<a name="ln941">  {</a>
+<a name="ln942">    conv.SetInStream(nullptr);</a>
+<a name="ln943">    conv.pInput =  dynamic_cast&lt;std::istream*&gt;(pStream);</a>
+<a name="ln944"> </a>
+<a name="ln945">    assert(conv.ownedInStreams.size() == 0); //should be empty</a>
+<a name="ln946"> </a>
+<a name="ln947">    for(unsigned i = 0, n = conv.ownedInStreams.size(); i &lt; n; i++)</a>
+<a name="ln948">    {</a>
+<a name="ln949">      std::istream *s = dynamic_cast&lt;std::istream*&gt;(conv.ownedInStreams[i]);</a>
+<a name="ln950">      assert(s);</a>
+<a name="ln951">      conv.ownedInStreams.push_back(s);</a>
+<a name="ln952">    }</a>
+<a name="ln953"> </a>
+<a name="ln954">    pStream = nullptr;</a>
+<a name="ln955">    ownedStreams.clear();</a>
+<a name="ln956">  }</a>
+<a name="ln957"> </a>
+<a name="ln958">  //save the current output state to this streamstate and clear conv</a>
+<a name="ln959">  void OBConversion::StreamState::pushOutput(OBConversion&amp; conv)</a>
+<a name="ln960">  {</a>
+<a name="ln961">    assert(ownedStreams.size() == 0); //should be empty</a>
+<a name="ln962"> </a>
+<a name="ln963">    pStream = conv.pOutput;</a>
+<a name="ln964">    std::copy(conv.ownedOutStreams.begin(), conv.ownedOutStreams.end(), std::back_inserter(ownedStreams));</a>
+<a name="ln965"> </a>
+<a name="ln966">    conv.pOutput = nullptr;</a>
+<a name="ln967">    conv.ownedOutStreams.clear();</a>
+<a name="ln968">  }</a>
+<a name="ln969"> </a>
+<a name="ln970">  //restore state, blowing away whatever is in conv</a>
+<a name="ln971">  void OBConversion::StreamState::popOutput(OBConversion&amp; conv)</a>
+<a name="ln972">  {</a>
+<a name="ln973">    conv.SetOutStream(nullptr);</a>
+<a name="ln974">    conv.pOutput =  dynamic_cast&lt;std::ostream*&gt;(pStream);</a>
+<a name="ln975"> </a>
+<a name="ln976">    assert(conv.ownedOutStreams.size() == 0); //should be empty</a>
+<a name="ln977"> </a>
+<a name="ln978">    for(unsigned i = 0, n = conv.ownedOutStreams.size(); i &lt; n; i++)</a>
+<a name="ln979">    {</a>
+<a name="ln980">      std::ostream *s = dynamic_cast&lt;std::ostream*&gt;(conv.ownedOutStreams[i]);</a>
+<a name="ln981">      assert(s);</a>
+<a name="ln982">      conv.ownedOutStreams.push_back(s);</a>
+<a name="ln983">    }</a>
+<a name="ln984"> </a>
+<a name="ln985">    pStream = nullptr;</a>
+<a name="ln986">    ownedStreams.clear();</a>
+<a name="ln987">  }</a>
+<a name="ln988"> </a>
+<a name="ln989">  //////////////////////////////////////////////////</a>
+<a name="ln990">  /// Writes the object pOb but does not delete it afterwards.</a>
+<a name="ln991">  /// The output stream not changed (since we cannot write to this string later)</a>
+<a name="ln992">  /// Returns true if successful.</a>
+<a name="ln993">  std::string OBConversion::WriteString(OBBase* pOb, bool trimWhitespace)</a>
+<a name="ln994">  {</a>
+<a name="ln995">    stringstream newStream;</a>
+<a name="ln996">    string temp;</a>
+<a name="ln997"> </a>
+<a name="ln998">    if(pOutFormat)</a>
+<a name="ln999">    {</a>
+<a name="ln1000">      StreamState savedOut;</a>
+<a name="ln1001">      savedOut.pushOutput(*this);</a>
+<a name="ln1002">      // The StreamState doesn't save all of the properties so</a>
+<a name="ln1003">      // do it manually here.</a>
+<a name="ln1004">      </a>
+<a name="ln1005">      // Set/reset the Index to 0 so that any initialization</a>
+<a name="ln1006">      // code in the formatters will be executed.</a>
+<a name="ln1007">      int oldIndex = Index;</a>
+<a name="ln1008">      Index = 0;</a>
+<a name="ln1009">      </a>
+<a name="ln1010">      // We'll only send one object, so save those properties too.</a>
+<a name="ln1011">      bool oldOneObjectOnly = OneObjectOnly;</a>
+<a name="ln1012">      bool oldm_IsLast = m_IsLast;</a>
+<a name="ln1013">      </a>
+<a name="ln1014">      SetOneObjectOnly(true);</a>
+<a name="ln1015"> </a>
+<a name="ln1016">      SetOutStream(&amp;newStream, false);</a>
+<a name="ln1017">      Write(pOb);</a>
+<a name="ln1018">      savedOut.popOutput(*this);</a>
+<a name="ln1019"> </a>
+<a name="ln1020">      // Restore the other stream properties</a>
+<a name="ln1021">      m_IsLast = oldm_IsLast;</a>
+<a name="ln1022">      OneObjectOnly = oldOneObjectOnly;</a>
+<a name="ln1023">      Index = oldIndex;</a>
+<a name="ln1024">    }</a>
+<a name="ln1025"> </a>
+<a name="ln1026">    temp = newStream.str();</a>
+<a name="ln1027">    if (trimWhitespace) // trim the trailing whitespace</a>
+<a name="ln1028">      {</a>
+<a name="ln1029">        string::size_type notwhite = temp.find_last_not_of(&quot; \t\n\r&quot;);</a>
+<a name="ln1030">        temp.erase(notwhite+1);</a>
+<a name="ln1031">      }</a>
+<a name="ln1032">    return temp;</a>
+<a name="ln1033">  }</a>
+<a name="ln1034"> </a>
+<a name="ln1035">  //////////////////////////////////////////////////</a>
+<a name="ln1036">  /// Writes the object pOb but does not delete it afterwards.</a>
+<a name="ln1037">  /// The output stream is lastingly changed to point to the file</a>
+<a name="ln1038">  /// Returns true if successful.</a>
+<a name="ln1039">  bool OBConversion::WriteFile(OBBase* pOb, string filePath)</a>
+<a name="ln1040">  {</a>
+<a name="ln1041">    if(!pOutFormat)</a>
+<a name="ln1042">    {</a>
+<a name="ln1043">      //attempt to autodetect format</a>
+<a name="ln1044">      pOutFormat = FormatFromExt(filePath.c_str(), outFormatGzip);</a>
+<a name="ln1045">      if(!pOutFormat)</a>
+<a name="ln1046">        return false;</a>
+<a name="ln1047">    }</a>
+<a name="ln1048"> </a>
+<a name="ln1049">    ios_base::openmode omode = ios_base::out|ios_base::binary;</a>
+<a name="ln1050">    ofstream *ofs = new ofstream(filePath.c_str(),omode);</a>
+<a name="ln1051">    if(!ofs || !ofs-&gt;good())</a>
+<a name="ln1052">      {</a>
+<a name="ln1053">        if(ofs) delete ofs;</a>
+<a name="ln1054">        obErrorLog.ThrowError(__FUNCTION__,&quot;Cannot write to &quot; + filePath, obError);</a>
+<a name="ln1055">        return false;</a>
+<a name="ln1056">      }</a>
+<a name="ln1057"> </a>
+<a name="ln1058">    SetOutStream(ofs, true);</a>
+<a name="ln1059">    // Set/reset the Index so that any initialization code</a>
+<a name="ln1060">    // in the formatters will be executed.</a>
+<a name="ln1061">    Index = 0;</a>
+<a name="ln1062">    // We can't touch the Last property because only the caller</a>
+<a name="ln1063">    // knows if the first molecule is also the last molecule.</a>
+<a name="ln1064">    </a>
+<a name="ln1065">    return Write(pOb);</a>
+<a name="ln1066">  }</a>
+<a name="ln1067"> </a>
+<a name="ln1068">  void OBConversion::CloseOutFile()</a>
+<a name="ln1069">  {</a>
+<a name="ln1070">    SetOutStream(nullptr);</a>
+<a name="ln1071">  }</a>
+<a name="ln1072"> </a>
+<a name="ln1073">  ////////////////////////////////////////////</a>
+<a name="ln1074">  bool	OBConversion::ReadString(OBBase* pOb, std::string input)</a>
+<a name="ln1075">  {</a>
+<a name="ln1076">    SetInStream(new stringstream(input), true);</a>
+<a name="ln1077">    return Read(pOb);</a>
+<a name="ln1078">  }</a>
+<a name="ln1079"> </a>
+<a name="ln1080"> </a>
+<a name="ln1081">  ////////////////////////////////////////////</a>
+<a name="ln1082">  bool	OBConversion::ReadFile(OBBase* pOb, std::string filePath)</a>
+<a name="ln1083">  {</a>
+<a name="ln1084">    if(!pInFormat)</a>
+<a name="ln1085">    {</a>
+<a name="ln1086">      //attempt to auto-detect file format from extension</a>
+<a name="ln1087">      pInFormat = FormatFromExt(filePath.c_str(), inFormatGzip);</a>
+<a name="ln1088">      if(!pInFormat)</a>
+<a name="ln1089">        return false;</a>
+<a name="ln1090">    }</a>
+<a name="ln1091"> </a>
+<a name="ln1092">    // save the filename</a>
+<a name="ln1093">    InFilename = filePath;</a>
+<a name="ln1094">    ios_base::openmode imode = ios_base::in|ios_base::binary; //now always binary because may be gzipped</a>
+<a name="ln1095">    ifstream *ifs = new ifstream(filePath.c_str(),imode);</a>
+<a name="ln1096">    if(!ifs || !ifs-&gt;good())</a>
+<a name="ln1097">    {</a>
+<a name="ln1098">        if(ifs) delete ifs;</a>
+<a name="ln1099">        obErrorLog.ThrowError(__FUNCTION__,&quot;Cannot read from &quot; + filePath, obError);</a>
+<a name="ln1100">        return false;</a>
+<a name="ln1101">    }</a>
+<a name="ln1102">#ifdef HAVE_LIBZ</a>
+<a name="ln1103">    if(!inFormatGzip &amp;&amp; pInFormat &amp;&amp; zlib_stream::isGZip(*ifs))</a>
+<a name="ln1104">    {</a>
+<a name="ln1105">      //for backwards compat, attempt to autodetect gzip</a>
+<a name="ln1106">      inFormatGzip = true;</a>
+<a name="ln1107">    }</a>
+<a name="ln1108">#endif</a>
+<a name="ln1109"> </a>
+<a name="ln1110">    SetInStream(ifs, true);</a>
+<a name="ln1111">    return Read(pOb);</a>
+<a name="ln1112">  }</a>
+<a name="ln1113"> </a>
+<a name="ln1114">  ////////////////////////////////////////////</a>
+<a name="ln1115">  bool OBConversion::OpenInAndOutFiles(std::string infilepath, std::string outfilepath)</a>
+<a name="ln1116">  {</a>
+<a name="ln1117"> </a>
+<a name="ln1118">    if(!pInFormat)</a>
+<a name="ln1119">    {</a>
+<a name="ln1120">      //attempt to auto-detect file format from extension</a>
+<a name="ln1121">      pInFormat = FormatFromExt(infilepath.c_str(), inFormatGzip);</a>
+<a name="ln1122">    }</a>
+<a name="ln1123">    ifstream *ifs = new ifstream(infilepath.c_str(),ios_base::in|ios_base::binary);  //always open in binary mode</a>
+<a name="ln1124">    if(!ifs || !ifs-&gt;good())</a>
+<a name="ln1125">    {</a>
+<a name="ln1126">      if(ifs) delete ifs;</a>
+<a name="ln1127">      obErrorLog.ThrowError(__FUNCTION__,&quot;Cannot read from &quot; + infilepath, obError);</a>
+<a name="ln1128">      return false;</a>
+<a name="ln1129">    }</a>
+<a name="ln1130">    SetInStream(ifs, true);</a>
+<a name="ln1131">    InFilename = infilepath;</a>
+<a name="ln1132"> </a>
+<a name="ln1133">    if(outfilepath.empty())//Don't open an outfile with an empty name.</a>
+<a name="ln1134">      return true;</a>
+<a name="ln1135"> </a>
+<a name="ln1136">    if(!pOutFormat)</a>
+<a name="ln1137">    {</a>
+<a name="ln1138">      //attempt to autodetect format</a>
+<a name="ln1139">      pOutFormat = FormatFromExt(outfilepath.c_str(), outFormatGzip);</a>
+<a name="ln1140">    }</a>
+<a name="ln1141">    ofstream *ofs = new ofstream(outfilepath.c_str(),ios_base::out|ios_base::binary);//always open in binary mode</a>
+<a name="ln1142">    if(!ofs || !ofs-&gt;good())</a>
+<a name="ln1143">    {</a>
+<a name="ln1144">      if(ofs) delete ofs;</a>
+<a name="ln1145">      obErrorLog.ThrowError(__FUNCTION__,&quot;Cannot write to &quot; + outfilepath, obError);</a>
+<a name="ln1146">      return false;</a>
+<a name="ln1147">    }</a>
+<a name="ln1148">    SetOutStream(ofs, true);</a>
+<a name="ln1149">    OutFilename = outfilepath;</a>
+<a name="ln1150"> </a>
+<a name="ln1151">    return true;</a>
+<a name="ln1152">  }</a>
+<a name="ln1153"> </a>
+<a name="ln1154">  ////////////////////////////////////////////</a>
+<a name="ln1155">  const char* OBConversion::Description()</a>
+<a name="ln1156">  {</a>
+<a name="ln1157">    return</a>
+<a name="ln1158">      &quot;Conversion options\n&quot;</a>
+<a name="ln1159">      &quot;-f &lt;#&gt; Start import at molecule # specified\n&quot;</a>
+<a name="ln1160">      &quot;-l &lt;#&gt; End import at molecule # specified\n&quot;</a>
+<a name="ln1161">      &quot;-e Continue with next object after error, if possible\n&quot;</a>
+<a name="ln1162">      #ifdef HAVE_LIBZ</a>
+<a name="ln1163">      &quot;-z Compress the output with gzip\n&quot;</a>
+<a name="ln1164">      &quot;-zin Decompress the input with gzip\n&quot;</a>
+<a name="ln1165">      #endif</a>
+<a name="ln1166">      &quot;-k Attempt to translate keywords\n&quot;;</a>
+<a name="ln1167">      // -t All input files describe a single molecule</a>
+<a name="ln1168">  }</a>
+<a name="ln1169"> </a>
+<a name="ln1170">  ////////////////////////////////////////////</a>
+<a name="ln1171">  bool OBConversion::IsLast()</a>
+<a name="ln1172">  {</a>
+<a name="ln1173">    return m_IsLast;</a>
+<a name="ln1174">  }</a>
+<a name="ln1175">  ////////////////////////////////////////////</a>
+<a name="ln1176">  bool OBConversion::IsFirstInput()</a>
+<a name="ln1177">  {</a>
+<a name="ln1178">    return m_IsFirstInput;</a>
+<a name="ln1179">  }</a>
+<a name="ln1180">  void OBConversion::SetFirstInput(bool b)</a>
+<a name="ln1181">  {</a>
+<a name="ln1182">    m_IsFirstInput = b;</a>
+<a name="ln1183">/*    //Also set or clear a general option</a>
+<a name="ln1184">    if(b)</a>
+<a name="ln1185">      AddOption(&quot;firstinput&quot;,GENOPTIONS);</a>
+<a name="ln1186">    else</a>
+<a name="ln1187">      RemoveOption(&quot;firstinput&quot;,GENOPTIONS);</a>
+<a name="ln1188">  */</a>
+<a name="ln1189">  }</a>
+<a name="ln1190"> </a>
+<a name="ln1191">  /////////////////////////////////////////////////</a>
+<a name="ln1192">  string OBConversion::BatchFileName(string&amp; BaseName, string&amp; InFile)</a>
+<a name="ln1193">  {</a>
+<a name="ln1194">    //Replaces * in BaseName by InFile without extension and path</a>
+<a name="ln1195">    string ofname(BaseName);</a>
+<a name="ln1196">    string::size_type pos = ofname.find('*');</a>
+<a name="ln1197">    if(pos != string::npos)</a>
+<a name="ln1198">      {</a>
+<a name="ln1199">        //Replace * by input filename</a>
+<a name="ln1200">        string::size_type posdot= InFile.rfind('.');</a>
+<a name="ln1201">        if(posdot == string::npos)</a>
+<a name="ln1202">          posdot = InFile.size();</a>
+<a name="ln1203">        else {</a>
+<a name="ln1204">#ifdef HAVE_LIBZ</a>
+<a name="ln1205">          if (InFile.substr(posdot) == &quot;.gz&quot;)</a>
+<a name="ln1206">            {</a>
+<a name="ln1207">              InFile.erase(posdot);</a>
+<a name="ln1208">              posdot = InFile.rfind('.');</a>
+<a name="ln1209">              if (posdot == string::npos)</a>
+<a name="ln1210">                posdot = InFile.size();</a>
+<a name="ln1211">            }</a>
+<a name="ln1212">#endif</a>
+<a name="ln1213">        }</a>
+<a name="ln1214"> </a>
+<a name="ln1215">        string::size_type posname= InFile.find_last_of(&quot;\\/&quot;);</a>
+<a name="ln1216">        ofname.replace(pos,1, InFile, posname+1, posdot-posname-1);</a>
+<a name="ln1217">      }</a>
+<a name="ln1218">    return ofname;</a>
+<a name="ln1219">  }</a>
+<a name="ln1220"> </a>
+<a name="ln1221">  ////////////////////////////////////////////////</a>
+<a name="ln1222">  string OBConversion::IncrementedFileName(string&amp; BaseName, const int Count)</a>
+<a name="ln1223">  {</a>
+<a name="ln1224">    //Replaces * in BaseName by Count</a>
+<a name="ln1225">    string ofname(BaseName);</a>
+<a name="ln1226">    string::size_type pos = ofname.find('*');</a>
+<a name="ln1227">    if(pos!=string::npos)</a>
+<a name="ln1228">      {</a>
+<a name="ln1229">        char num[33];</a>
+<a name="ln1230">        snprintf(num, 33, &quot;%d&quot;, Count);</a>
+<a name="ln1231">        ofname.replace(pos,1, num);</a>
+<a name="ln1232">      }</a>
+<a name="ln1233">    return ofname;</a>
+<a name="ln1234">  }</a>
+<a name="ln1235">  ////////////////////////////////////////////////////</a>
+<a name="ln1236">  bool OBConversion::CheckForUnintendedBatch(const string&amp; infile, const string&amp; outfile)</a>
+<a name="ln1237">  {</a>
+<a name="ln1238">    //If infile == outfile issue error message and return false</a>
+<a name="ln1239">    //If name without the extensions are the same issue warning and return true;</a>
+<a name="ln1240">    //Otherwise return true</a>
+<a name="ln1241">    string inname1, inname2;</a>
+<a name="ln1242">    string::size_type pos;</a>
+<a name="ln1243">    pos = infile.rfind('.');</a>
+<a name="ln1244">    if(pos != string::npos)</a>
+<a name="ln1245">      inname1 = infile.substr(0,pos);</a>
+<a name="ln1246">    pos = outfile.rfind('.');</a>
+<a name="ln1247">    if(pos != string::npos)</a>
+<a name="ln1248">      inname2 = infile.substr(0,pos);</a>
+<a name="ln1249">    if(inname1==inname2)</a>
+<a name="ln1250">      obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln1251">&quot;This was a batch operation. For splitting, use non-empty base name for the output files&quot;, obWarning);</a>
+<a name="ln1252"> </a>
+<a name="ln1253">    if(infile==outfile)</a>
+<a name="ln1254">      return false;</a>
+<a name="ln1255">    return true;</a>
+<a name="ln1256">  }</a>
+<a name="ln1257">  /**</a>
+<a name="ln1258">     Makes input and output streams, and carries out normal,</a>
+<a name="ln1259">     batch, aggregation, and splitting conversion.</a>
+<a name="ln1260"> </a>
+<a name="ln1261">     Normal</a>
+<a name="ln1262">     Done if FileList contains a single file name and OutputFileName</a>
+<a name="ln1263">     does not contain a *.</a>
+<a name="ln1264"> </a>
+<a name="ln1265">     Aggregation</a>
+<a name="ln1266">     Done if FileList has more than one file name and OutputFileName does</a>
+<a name="ln1267">     not contain * . All the chemical objects are converted and sent</a>
+<a name="ln1268">     to the single output file.</a>
+<a name="ln1269"> </a>
+<a name="ln1270">     Splitting</a>
+<a name="ln1271">     Done if FileList contains a single file name and OutputFileName</a>
+<a name="ln1272">     contains a * . Each chemical object in the input file is converted</a>
+<a name="ln1273">     and sent to a separate file whose name is OutputFileName with the</a>
+<a name="ln1274">     * replaced by 1, 2, 3, etc.  OutputFileName must have at least one</a>
+<a name="ln1275">     character other than the * before the extension.</a>
+<a name="ln1276">     For example, if OutputFileName is NEW*.smi then the output files are</a>
+<a name="ln1277">     NEW1.smi, NEW2.smi, etc.</a>
+<a name="ln1278"> </a>
+<a name="ln1279">     Batch Conversion</a>
+<a name="ln1280">     Done if FileList has more than one file name and contains a * .</a>
+<a name="ln1281">     Each input file is converted to an output file whose name is</a>
+<a name="ln1282">     OutputFileName with the * replaced by the inputfile name without its</a>
+<a name="ln1283">     path and extension.</a>
+<a name="ln1284">     So if the input files were inpath/First.cml, inpath/Second.cml</a>
+<a name="ln1285">     and OutputFileName was NEW*.mol, the output files would be</a>
+<a name="ln1286">     NEWFirst.mol, NEWSecond.mol.</a>
+<a name="ln1287"> </a>
+<a name="ln1288">     If FileList is empty, the input stream that has already been set</a>
+<a name="ln1289">     (usually in the constructor) is used. If OutputFileName is empty,</a>
+<a name="ln1290">     the output stream already set is used.</a>
+<a name="ln1291"> </a>
+<a name="ln1292">     On exit, OutputFileList contains the names of the output files.</a>
+<a name="ln1293"> </a>
+<a name="ln1294">     Returns the number of Chemical objects converted.</a>
+<a name="ln1295">  */</a>
+<a name="ln1296">  int OBConversion::FullConvert(std::vector&lt;std::string&gt;&amp; FileList, std::string&amp; OutputFileName,</a>
+<a name="ln1297">                                std::vector&lt;std::string&gt;&amp; OutputFileList)</a>
+<a name="ln1298">  {</a>
+<a name="ln1299">    OBConversion::OutFilename = OutputFileName; //ready for 2.4.0</a>
+<a name="ln1300"> </a>
+<a name="ln1301">    istream* pIs = nullptr;</a>
+<a name="ln1302">    ostream* pOs = nullptr;</a>
+<a name="ln1303">    ifstream is;</a>
+<a name="ln1304">    ofstream os;</a>
+<a name="ln1305">    stringstream ssOut, ssIn;</a>
+<a name="ln1306">    bool HasMultipleOutputFiles=false;</a>
+<a name="ln1307">    int Count=0;</a>
+<a name="ln1308">    SetFirstInput();</a>
+<a name="ln1309">    bool CommonInFormat = pInFormat ? true:false; //whether set in calling routine</a>
+<a name="ln1310">    ios_base::openmode omode = ios_base::out|ios_base::binary;</a>
+<a name="ln1311">    obErrorLog.ClearLog();</a>
+<a name="ln1312">#ifndef DONT_CATCH_EXCEPTIONS</a>
+<a name="ln1313">    try</a>
+<a name="ln1314">#endif</a>
+<a name="ln1315">      {</a>
+<a name="ln1316">        ofstream ofs;</a>
+<a name="ln1317"> </a>
+<a name="ln1318">        //OUTPUT</a>
+<a name="ln1319">        if(OutputFileName.empty())</a>
+<a name="ln1320">          pOs = nullptr; //use existing stream</a>
+<a name="ln1321">        else</a>
+<a name="ln1322">          {</a>
+<a name="ln1323">            if(OutputFileName.find_first_of('*')!=string::npos) HasMultipleOutputFiles = true;</a>
+<a name="ln1324">            if(!HasMultipleOutputFiles)</a>
+<a name="ln1325">              {</a>
+<a name="ln1326">                //If the output file is the same as any of the input</a>
+<a name="ln1327">                //files, send the output to a temporary stringstream</a>
+<a name="ln1328">                vector&lt;string&gt;::iterator itr;</a>
+<a name="ln1329">                for(itr=FileList.begin();itr!=FileList.end();++itr)</a>
+<a name="ln1330">                  {</a>
+<a name="ln1331">                    if(*itr==OutputFileName)</a>
+<a name="ln1332">                      {</a>
+<a name="ln1333"> </a>
+<a name="ln1334">                        pOs = &amp;ssOut;</a>
+<a name="ln1335">                        break;</a>
+<a name="ln1336">                      }</a>
+<a name="ln1337">                  }</a>
+<a name="ln1338">                if(itr==FileList.end())</a>
+<a name="ln1339">                  {</a>
+<a name="ln1340">                    os.open(OutputFileName.c_str(),omode);</a>
+<a name="ln1341">                    if(!os)</a>
+<a name="ln1342">                      {</a>
+<a name="ln1343">                        obErrorLog.ThrowError(__FUNCTION__,&quot;Cannot write to &quot; + OutputFileName, obError);</a>
+<a name="ln1344">                        return 0;</a>
+<a name="ln1345">                      }</a>
+<a name="ln1346">                    pOs=&amp;os;</a>
+<a name="ln1347">                  }</a>
+<a name="ln1348">                OutputFileList.push_back(OutputFileName);</a>
+<a name="ln1349">              }</a>
+<a name="ln1350">          }</a>
+<a name="ln1351"> </a>
+<a name="ln1352">        if(IsOption(&quot;t&quot;,GENOPTIONS))</a>
+<a name="ln1353">          {</a>
+<a name="ln1354">            //Concatenate input file option (multiple files, single molecule)</a>
+<a name="ln1355">            if(HasMultipleOutputFiles)</a>
+<a name="ln1356">              {</a>
+<a name="ln1357">                obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln1358">                                      &quot;Cannot have multiple output files and also concatenate input files (-t option)&quot;,obError);</a>
+<a name="ln1359">                return 0;</a>
+<a name="ln1360">              }</a>
+<a name="ln1361"> </a>
+<a name="ln1362">            stringstream allinput;</a>
+<a name="ln1363">            vector&lt;string&gt;::iterator itr;</a>
+<a name="ln1364">            for(itr=FileList.begin();itr!=FileList.end();++itr)</a>
+<a name="ln1365">              {</a>
+<a name="ln1366">                ifstream ifs((*itr).c_str());</a>
+<a name="ln1367">                if(!ifs)</a>
+<a name="ln1368">                  {</a>
+<a name="ln1369">                    obErrorLog.ThrowError(__FUNCTION__,&quot;Cannot open &quot; + *itr, obError);</a>
+<a name="ln1370">                    continue;</a>
+<a name="ln1371">                  }</a>
+<a name="ln1372">                allinput &lt;&lt; ifs.rdbuf(); //Copy all file contents</a>
+<a name="ln1373">                ifs.close();</a>
+<a name="ln1374">              }</a>
+<a name="ln1375">            Count = Convert(&amp;allinput,pOs);</a>
+<a name="ln1376">            return Count;</a>
+<a name="ln1377">          }</a>
+<a name="ln1378"> </a>
+<a name="ln1379">        //INPUT</a>
+<a name="ln1380">        if(FileList.empty())</a>
+<a name="ln1381">          {</a>
+<a name="ln1382">            pIs = nullptr;</a>
+<a name="ln1383">            if(HasMultipleOutputFiles)</a>
+<a name="ln1384">              {</a>
+<a name="ln1385">                obErrorLog.ThrowError(__FUNCTION__,&quot;Cannot use multiple output files without an input file&quot;, obError);</a>
+<a name="ln1386">                return 0;</a>
+<a name="ln1387">              }</a>
+<a name="ln1388">          }</a>
+<a name="ln1389">        else</a>
+<a name="ln1390">          {</a>
+<a name="ln1391">            if(FileList.size()&gt;1 || OutputFileName.substr(0,2)==&quot;*.&quot;)</a>
+<a name="ln1392">              {</a>
+<a name="ln1393">                //multiple input files</a>
+<a name="ln1394">                vector&lt;string&gt;::iterator itr, tempitr;</a>
+<a name="ln1395">                tempitr = FileList.end();</a>
+<a name="ln1396">                --tempitr;</a>
+<a name="ln1397">                for(itr=FileList.begin();itr!=FileList.end();++itr)</a>
+<a name="ln1398">                  {</a>
+<a name="ln1399">                    InFilename = *itr;</a>
+<a name="ln1400">                    ifstream ifs;</a>
+<a name="ln1401">                    if(!OpenAndSetFormat(CommonInFormat, &amp;ifs, &amp;ssIn))</a>
+<a name="ln1402">                      continue;</a>
+<a name="ln1403">                    if(ifs)</a>
+<a name="ln1404">                      pIs = &amp;ifs;</a>
+<a name="ln1405">                    else</a>
+<a name="ln1406">                      pIs = &amp;ssIn;</a>
+<a name="ln1407"> </a>
+<a name="ln1408">                    //pIs = ifs ? &amp;ifs : &amp;ssIn;</a>
+<a name="ln1409"> </a>
+<a name="ln1410"> </a>
+<a name="ln1411">                    if(HasMultipleOutputFiles)</a>
+<a name="ln1412">                      {</a>
+<a name="ln1413">                        //Batch conversion</a>
+<a name="ln1414">                        string batchfile = BatchFileName(OutputFileName,*itr);</a>
+<a name="ln1415"> </a>
+<a name="ln1416">                        //With inputs like babel test.xxx -oyyy -m</a>
+<a name="ln1417">                        //the user may have wanted to do a splitting operation</a>
+<a name="ln1418">                        //Issue a message and abort if xxx==yyy which would overwrite input file</a>
+<a name="ln1419">                        if(FileList.size()==1 &amp;&amp; !CheckForUnintendedBatch(batchfile, InFilename))</a>
+<a name="ln1420">                          return Count;</a>
+<a name="ln1421"> </a>
+<a name="ln1422">                        if(ofs.is_open()) ofs.close();</a>
+<a name="ln1423">                        ofs.open(batchfile.c_str(), omode);</a>
+<a name="ln1424">                        if(!ofs)</a>
+<a name="ln1425">                          {</a>
+<a name="ln1426">                            obErrorLog.ThrowError(__FUNCTION__,&quot;Cannot open &quot; + batchfile, obError);</a>
+<a name="ln1427">                            return Count;</a>
+<a name="ln1428">                          }</a>
+<a name="ln1429">                        OutputFileList.push_back(batchfile);</a>
+<a name="ln1430">                        SetOutputIndex(0); //reset for new file</a>
+<a name="ln1431">                        Count += Convert(pIs,&amp;ofs);</a>
+<a name="ln1432">                      }</a>
+<a name="ln1433">                    else</a>
+<a name="ln1434">                      {</a>
+<a name="ln1435">                        //Aggregation</a>
+<a name="ln1436">                        if(itr!=tempitr) SetMoreFilesToCome();</a>
+<a name="ln1437">                        Count = Convert(pIs,pOs);</a>
+<a name="ln1438">                      }</a>
+<a name="ln1439">                  }</a>
+<a name="ln1440"> </a>
+<a name="ln1441">                if(!os.is_open() &amp;&amp; !OutputFileName.empty() &amp;&amp; !HasMultipleOutputFiles)</a>
+<a name="ln1442">                  {</a>
+<a name="ln1443">                    //Output was written to temporary string stream. Output it to the file</a>
+<a name="ln1444">                    os.open(OutputFileName.c_str(),omode);</a>
+<a name="ln1445">                    if(!os)</a>
+<a name="ln1446">                      {</a>
+<a name="ln1447">                        obErrorLog.ThrowError(__FUNCTION__,&quot;Cannot write to &quot; + OutputFileName, obError);</a>
+<a name="ln1448">                        return Count;</a>
+<a name="ln1449">                      }</a>
+<a name="ln1450">                    os &lt;&lt; ssOut.rdbuf();</a>
+<a name="ln1451">                  }</a>
+<a name="ln1452">                return Count;</a>
+<a name="ln1453">              }</a>
+<a name="ln1454">            else</a>
+<a name="ln1455">              {</a>
+<a name="ln1456">                //Single input file</a>
+<a name="ln1457">                InFilename = FileList[0];</a>
+<a name="ln1458">                if(!OpenAndSetFormat(CommonInFormat, &amp;is, &amp;ssIn))</a>
+<a name="ln1459">                  return 0;</a>
+<a name="ln1460">                if(is)</a>
+<a name="ln1461">                  pIs =&amp;is;</a>
+<a name="ln1462">                else</a>
+<a name="ln1463">                  pIs = &amp;ssIn;</a>
+<a name="ln1464"> </a>
+<a name="ln1465">                if(HasMultipleOutputFiles)</a>
+<a name="ln1466">                  {</a>
+<a name="ln1467">                    //Splitting</a>
+<a name="ln1468">                    //Output is put in a temporary stream and written to a file</a>
+<a name="ln1469">                    //with an augmenting name only when it contains a valid object.</a>
+<a name="ln1470">                    int Indx=1;</a>
+<a name="ln1471">#ifdef HAVE_LIBZ</a>
+<a name="ln1472">                    if(pInFormat &amp;&amp; zlib_stream::isGZip(*pIs))</a>
+<a name="ln1473">                    {</a>
+<a name="ln1474">                      //for backwards compat, attempt to autodetect gzip</a>
+<a name="ln1475">                      inFormatGzip = true;</a>
+<a name="ln1476">                    }</a>
+<a name="ln1477">#endif</a>
+<a name="ln1478">                    SetInStream(pIs, false);</a>
+<a name="ln1479"> </a>
+<a name="ln1480"> </a>
+<a name="ln1481">                    for(;;)</a>
+<a name="ln1482">                      {</a>
+<a name="ln1483">                        stringstream ss;</a>
+<a name="ln1484">                        SetOutStream(&amp;ss);</a>
+<a name="ln1485">                        SetOutputIndex(0); //reset for new file</a>
+<a name="ln1486">                        SetOneObjectOnly();</a>
+<a name="ln1487"> </a>
+<a name="ln1488">                        int ThisFileCount = Convert();</a>
+<a name="ln1489">                        if(ThisFileCount==0) break;</a>
+<a name="ln1490">                        Count+=ThisFileCount;</a>
+<a name="ln1491"> </a>
+<a name="ln1492">                        if(ofs.is_open()) ofs.close();</a>
+<a name="ln1493">                        string incrfile = IncrementedFileName(OutputFileName,Indx++);</a>
+<a name="ln1494">                        ofs.open(incrfile.c_str(), omode);</a>
+<a name="ln1495">                        if(!ofs)</a>
+<a name="ln1496">                          {</a>
+<a name="ln1497">                            obErrorLog.ThrowError(__FUNCTION__,&quot;Cannot write to &quot; + incrfile, obError);</a>
+<a name="ln1498">                            return Count;</a>
+<a name="ln1499">                          }</a>
+<a name="ln1500"> </a>
+<a name="ln1501">                        OutputFileList.push_back(incrfile);</a>
+<a name="ln1502">                        SetOutStream(&amp;ofs, false); //pickup possible gzip</a>
+<a name="ln1503">                        *pOutput &lt;&lt; ss.rdbuf();</a>
+<a name="ln1504">                        SetOutStream(nullptr);</a>
+<a name="ln1505">                        ofs.close();</a>
+<a name="ln1506">                        ss.clear();</a>
+<a name="ln1507">                      }</a>
+<a name="ln1508">                    return Count;</a>
+<a name="ln1509">                  }</a>
+<a name="ln1510">              }</a>
+<a name="ln1511">          }</a>
+<a name="ln1512"> </a>
+<a name="ln1513">        //Single input and output files</a>
+<a name="ln1514">        Count = Convert(pIs,pOs);</a>
+<a name="ln1515"> </a>
+<a name="ln1516">        if(os &amp;&amp; !os.is_open() &amp;&amp; !OutputFileName.empty())</a>
+<a name="ln1517">          {</a>
+<a name="ln1518">            //Output was written to temporary string stream. Output it to the file</a>
+<a name="ln1519">            os.open(OutputFileName.c_str(),omode);</a>
+<a name="ln1520">            if(!os)</a>
+<a name="ln1521">              {</a>
+<a name="ln1522">                obErrorLog.ThrowError(__FUNCTION__,&quot;Cannot write to &quot; + OutputFileName, obError);</a>
+<a name="ln1523">                return Count;</a>
+<a name="ln1524">              }</a>
+<a name="ln1525">            SetOutStream(&amp;os, false);</a>
+<a name="ln1526">            *pOutput &lt;&lt; ssOut.rdbuf();</a>
+<a name="ln1527">            SetOutStream(nullptr);</a>
+<a name="ln1528">          }</a>
+<a name="ln1529">        return Count;</a>
+<a name="ln1530">      }</a>
+<a name="ln1531">#ifndef DONT_CATCH_EXCEPTIONS</a>
+<a name="ln1532">    catch(...)</a>
+<a name="ln1533">      {</a>
+<a name="ln1534">        obErrorLog.ThrowError(__FUNCTION__, &quot;Conversion failed with an exception.&quot;,obError);</a>
+<a name="ln1535">        return Count;</a>
+<a name="ln1536">      }</a>
+<a name="ln1537">#endif</a>
+<a name="ln1538">    return Count;</a>
+<a name="ln1539">  }</a>
+<a name="ln1540"> </a>
+<a name="ln1541">  bool OBConversion::OpenAndSetFormat(bool SetFormat, ifstream* is, stringstream* ss)</a>
+<a name="ln1542">  {</a>
+<a name="ln1543">    //Opens file using InFilename and sets pInFormat if requested</a>
+<a name="ln1544">    if(ss &amp;&amp; InFilename[0]=='-')</a>
+<a name="ln1545">      {</a>
+<a name="ln1546">        //InFilename is actually  -:SMILES</a>
+<a name="ln1547">        is-&gt;setstate(ios::failbit); // do not use the input filestream...</a>
+<a name="ln1548">        InFilename.erase(0, 2);</a>
+<a name="ln1549">        if(SetFormat || SetInFormat(&quot;smi&quot;))</a>
+<a name="ln1550">          {</a>
+<a name="ln1551">            ss-&gt;clear();</a>
+<a name="ln1552">            ss-&gt;str(InFilename);</a>
+<a name="ln1553">            return true;</a>
+<a name="ln1554">          }</a>
+<a name="ln1555">      }</a>
+<a name="ln1556">    else if(!SetFormat)</a>
+<a name="ln1557">      {</a>
+<a name="ln1558">        pInFormat = FormatFromExt(InFilename.c_str(), inFormatGzip);</a>
+<a name="ln1559">        if (pInFormat == nullptr)</a>
+<a name="ln1560">          {</a>
+<a name="ln1561">            string::size_type pos = InFilename.rfind('.');</a>
+<a name="ln1562">            string ext;</a>
+<a name="ln1563">            if(pos!=string::npos)</a>
+<a name="ln1564">              ext = InFilename.substr(pos);</a>
+<a name="ln1565">            obErrorLog.ThrowError(__FUNCTION__, &quot;Cannot read input format \&quot;&quot;</a>
+<a name="ln1566">                                  + ext + '\&quot;' + &quot; for file \&quot;&quot; + InFilename + &quot;\&quot;&quot;,obError);</a>
+<a name="ln1567">            return false;</a>
+<a name="ln1568">          }</a>
+<a name="ln1569">      }</a>
+<a name="ln1570"> </a>
+<a name="ln1571">    ios_base::openmode imode = ios_base::in|ios_base::binary;</a>
+<a name="ln1572">    is-&gt;open(InFilename.c_str(), imode);</a>
+<a name="ln1573">    if(!is-&gt;good())</a>
+<a name="ln1574">      {</a>
+<a name="ln1575">        obErrorLog.ThrowError(__FUNCTION__, &quot;Cannot open &quot; + InFilename, obError);</a>
+<a name="ln1576">        return false;</a>
+<a name="ln1577">      }</a>
+<a name="ln1578"> </a>
+<a name="ln1579">    return true;</a>
+<a name="ln1580">  }</a>
+<a name="ln1581"> </a>
+<a name="ln1582">  ///////////////////////////////////////////////</a>
+<a name="ln1583">#ifndef DOXYGEN_SHOULD_SKIP_THIS</a>
+<a name="ln1584">/**&lt;pre&gt;</a>
+<a name="ln1585">Built-in options for conversion of molecules</a>
+<a name="ln1586">Additional options :</a>
+<a name="ln1587">-d Delete hydrogens (make implicit)</a>
+<a name="ln1588">-h Add hydrogens (make explicit)</a>
+<a name="ln1589">-p &lt;pH&gt; Add hydrogens appropriate for this pH</a>
+<a name="ln1590">-b Convert dative bonds e.g.[N+]([O-])=O to N(=O)=O</a>
+<a name="ln1591">-r Remove all but the largest contiguous fragment</a>
+<a name="ln1592">-c Center Coordinates</a>
+<a name="ln1593">-C Combine mols in first file with others by name</a>
+<a name="ln1594">--filter &lt;filterstring&gt; Filter: convert only when tests are true:\n</a>
+<a name="ln1595">--add &lt;list&gt; Add properties from descriptors\n</a>
+<a name="ln1596">--delete &lt;list&gt; Delete properties in list\n</a>
+<a name="ln1597">--append &lt;list&gt; Append properties or descriptors in list to title:\n</a>
+<a name="ln1598">-s\smarts\ Convert only molecules matching SMARTS:\n</a>
+<a name="ln1599">-v\smarts\ Convert only molecules NOT matching SMARTS: (not displayed in GUI)\n</a>
+<a name="ln1600">--join Join all input molecules into a single output molecule</a>
+<a name="ln1601">--separate Output disconnected fragments separately</a>
+<a name="ln1602">--property &lt;attrib&gt; &lt;value&gt; add or replace a property (SDF)</a>
+<a name="ln1603">--title &lt;title&gt; Add or replace molecule title</a>
+<a name="ln1604">--addtotitle &lt;text&gt; Append to title</a>
+<a name="ln1605">--writeconformers Output multiple conformers separately</a>
+<a name="ln1606">--addindex Append output index to title</a>
+<a name="ln1607">&lt;/pre&gt;</a>
+<a name="ln1608">**/</a>
+<a name="ln1609">#endif</a>
+<a name="ln1610">  void OBConversion::AddOption(const char* opt, Option_type opttyp, const char* txt)</a>
+<a name="ln1611">  {</a>
+<a name="ln1612">    //Also updates an option</a>
+<a name="ln1613">    if (txt == nullptr)</a>
+<a name="ln1614">      OptionsArray[opttyp][opt]=string();</a>
+<a name="ln1615">    else</a>
+<a name="ln1616">      OptionsArray[opttyp][opt]=txt;</a>
+<a name="ln1617">  }</a>
+<a name="ln1618"> </a>
+<a name="ln1619">  const char* OBConversion::IsOption(const char* opt, Option_type opttyp)</a>
+<a name="ln1620">  {</a>
+<a name="ln1621">    //Returns NULL if option not found or a pointer to the text if it is</a>
+<a name="ln1622">    map&lt;string,string&gt;::iterator pos;</a>
+<a name="ln1623">    pos = OptionsArray[opttyp].find(opt);</a>
+<a name="ln1624">    if(pos==OptionsArray[opttyp].end())</a>
+<a name="ln1625">      return nullptr;</a>
+<a name="ln1626">    return pos-&gt;second.c_str();</a>
+<a name="ln1627">  }</a>
+<a name="ln1628"> </a>
+<a name="ln1629">  bool OBConversion::RemoveOption(const char* opt, Option_type opttyp)</a>
+<a name="ln1630">  {</a>
+<a name="ln1631">    return OptionsArray[opttyp].erase(opt)!=0;//true if was there</a>
+<a name="ln1632">  }</a>
+<a name="ln1633"> </a>
+<a name="ln1634">  void OBConversion::SetOptions(const char* options, Option_type opttyp)</a>
+<a name="ln1635">  {</a>
+<a name="ln1636">    if(!*options) // &quot;&quot; clears all</a>
+<a name="ln1637">    {</a>
+<a name="ln1638">      OptionsArray[opttyp].clear();</a>
+<a name="ln1639">      return;</a>
+<a name="ln1640">    }</a>
+<a name="ln1641">    while(*options)</a>
+<a name="ln1642">      {</a>
+<a name="ln1643">        string ch(1, *options++);</a>
+<a name="ln1644">        if(*options=='\&quot;')</a>
+<a name="ln1645">          {</a>
+<a name="ln1646">            string txt = options+1;</a>
+<a name="ln1647">            string::size_type pos = txt.find('\&quot;');</a>
+<a name="ln1648">            if(pos==string::npos)</a>
+<a name="ln1649">              return; //options is illformed</a>
+<a name="ln1650">            txt.erase(pos);</a>
+<a name="ln1651">            OptionsArray[opttyp][ch]= txt;</a>
+<a name="ln1652">            options += pos+2;</a>
+<a name="ln1653">          }</a>
+<a name="ln1654">        else</a>
+<a name="ln1655">          OptionsArray[opttyp][ch] = string();</a>
+<a name="ln1656">      }</a>
+<a name="ln1657">  }</a>
+<a name="ln1658"> </a>
+<a name="ln1659">  OBConversion::OPAMapType&amp; OBConversion::OptionParamArray(Option_type typ)</a>
+<a name="ln1660">  {</a>
+<a name="ln1661">    static OPAMapType opa[3];</a>
+<a name="ln1662">    return opa[typ];</a>
+<a name="ln1663">  }</a>
+<a name="ln1664"> </a>
+<a name="ln1665">  void OBConversion::RegisterOptionParam(string name, OBFormat* pFormat,</a>
+<a name="ln1666">                                         int numberParams, Option_type typ)</a>
+<a name="ln1667">  {</a>
+<a name="ln1668">    //Gives error message if the number of parameters conflicts with an existing registration</a>
+<a name="ln1669">    map&lt;string,int&gt;::iterator pos;</a>
+<a name="ln1670">    pos =	OptionParamArray(typ).find(name);</a>
+<a name="ln1671">    if(pos!=OptionParamArray(typ).end())</a>
+<a name="ln1672">      {</a>
+<a name="ln1673">        if(pos-&gt;second!=numberParams)</a>
+<a name="ln1674">          {</a>
+<a name="ln1675">            string description(&quot;API&quot;);</a>
+<a name="ln1676">            if(pFormat)</a>
+<a name="ln1677">              description=pFormat-&gt;Description();</a>
+<a name="ln1678">            obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln1679">                                  &quot;The number of parameters needed by option \&quot;&quot; + name + &quot;\&quot; in &quot;</a>
+<a name="ln1680">                                  + description.substr(0,description.find('\n'))</a>
+<a name="ln1681">                                  + &quot; differs from an earlier registration.&quot;, obError);</a>
+<a name="ln1682">            return;</a>
+<a name="ln1683">          }</a>
+<a name="ln1684">      }</a>
+<a name="ln1685">    OptionParamArray(typ)[name] = numberParams;</a>
+<a name="ln1686">  }</a>
+<a name="ln1687"> </a>
+<a name="ln1688">  int OBConversion::GetOptionParams(string name, Option_type typ)</a>
+<a name="ln1689">  {</a>
+<a name="ln1690">    //returns the number of parameters registered for the option, or 0 if not found</a>
+<a name="ln1691">    map&lt;string,int&gt;::iterator pos;</a>
+<a name="ln1692">    pos =	OptionParamArray(typ).find(name);</a>
+<a name="ln1693">    if(pos==OptionParamArray(typ).end())</a>
+<a name="ln1694">      return 0;</a>
+<a name="ln1695">    return pos-&gt;second;</a>
+<a name="ln1696">  }</a>
+<a name="ln1697"> </a>
+<a name="ln1698">  /**</a>
+<a name="ln1699">   * Returns the list of supported input format</a>
+<a name="ln1700">   */</a>
+<a name="ln1701">  std::vector&lt;std::string&gt; OBConversion::GetSupportedInputFormat()</a>
+<a name="ln1702">  {</a>
+<a name="ln1703">    vector&lt;string&gt; vlist;</a>
+<a name="ln1704">    OBPlugin::ListAsVector(&quot;formats&quot;, &quot;in&quot;, vlist);</a>
+<a name="ln1705">    return vlist;</a>
+<a name="ln1706">  }</a>
+<a name="ln1707">  /**</a>
+<a name="ln1708">   * Returns the list of supported output format</a>
+<a name="ln1709">   */</a>
+<a name="ln1710">  std::vector&lt;std::string&gt; OBConversion::GetSupportedOutputFormat()</a>
+<a name="ln1711">  {</a>
+<a name="ln1712">    vector&lt;string&gt; vlist;</a>
+<a name="ln1713">    OBPlugin::ListAsVector(&quot;formats&quot;, &quot;out&quot;, vlist);</a>
+<a name="ln1714">    return vlist;</a>
+<a name="ln1715">  }</a>
+<a name="ln1716"> </a>
+<a name="ln1717">  void OBConversion::ReportNumberConverted(int count, OBFormat* pFormat)</a>
+<a name="ln1718">  {</a>
+<a name="ln1719">    //Send info message to clog. This constructed from the TargetClassDescription</a>
+<a name="ln1720">    //of the specified class (or the output format if not specified).</a>
+<a name="ln1721">    //Get the last word on the first line of the description which should</a>
+<a name="ln1722">    //be &quot;molecules&quot;, &quot;reactions&quot;, etc and remove the s if only one object converted</a>
+<a name="ln1723">    if(!pFormat)</a>
+<a name="ln1724">      pFormat = pOutFormat;</a>
+<a name="ln1725">    string objectname(pFormat-&gt;TargetClassDescription());</a>
+<a name="ln1726">    string::size_type pos = objectname.find('\n');</a>
+<a name="ln1727">    if(pos==std::string::npos)</a>
+<a name="ln1728">      pos=objectname.size();</a>
+<a name="ln1729">    if(count==1) --pos;</a>
+<a name="ln1730">    objectname.erase(pos);</a>
+<a name="ln1731">    pos = objectname.rfind(' ');</a>
+<a name="ln1732">    if(pos==std::string::npos)</a>
+<a name="ln1733">      pos=0;</a>
+<a name="ln1734">    std::clog &lt;&lt; count &lt;&lt; objectname.substr(pos) &lt;&lt; &quot; converted&quot; &lt;&lt; endl;</a>
+<a name="ln1735">  }</a>
+<a name="ln1736"> </a>
+<a name="ln1737">  void OBConversion::CopyOptions(OBConversion* pSourceConv, Option_type typ)</a>
+<a name="ln1738">  {</a>
+<a name="ln1739">    if(typ==ALL)</a>
+<a name="ln1740">    for(int i=0;i&lt;3;++i)</a>
+<a name="ln1741">     OptionsArray[i]=pSourceConv-&gt;OptionsArray[i];</a>
+<a name="ln1742">    else</a>
+<a name="ln1743">     OptionsArray[typ]=pSourceConv-&gt;OptionsArray[typ];</a>
+<a name="ln1744">  }</a>
+<a name="ln1745"> </a>
+<a name="ln1746">  int OBConversion::NumInputObjects()</a>
+<a name="ln1747">  {</a>
+<a name="ln1748">    istream&amp; ifs = *GetInStream();</a>
+<a name="ln1749">    ifs.clear(); //it may have been at eof</a>
+<a name="ln1750">    //Save position of the input stream</a>
+<a name="ln1751">    streampos pos = ifs.tellg();</a>
+<a name="ln1752">    if(!ifs)</a>
+<a name="ln1753">      return -1;</a>
+<a name="ln1754"> </a>
+<a name="ln1755">    //check that the input format supports SkipObjects()</a>
+<a name="ln1756">    if(GetInFormat()-&gt;SkipObjects(0, this)==0)</a>
+<a name="ln1757">    {</a>
+<a name="ln1758">      obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln1759">        &quot;Input format does not have a SkipObjects function.&quot;, obError);</a>
+<a name="ln1760">      return -1;</a>
+<a name="ln1761">    }</a>
+<a name="ln1762"> </a>
+<a name="ln1763">    //counts objects only between the values of -f and -l options</a>
+<a name="ln1764">    int nfirst=1, nlast=numeric_limits&lt;int&gt;::max();</a>
+<a name="ln1765">    const char* p;</a>
+<a name="ln1766">    if( (p=IsOption(&quot;f&quot;, GENOPTIONS)) ) // extra parens to indicate truth value</a>
+<a name="ln1767">      nfirst=atoi(p);</a>
+<a name="ln1768">    if( (p=IsOption(&quot;l&quot;, GENOPTIONS)) ) // extra parens to indicate truth value</a>
+<a name="ln1769">      nlast=atoi(p);</a>
+<a name="ln1770"> </a>
+<a name="ln1771">    ifs.seekg(0); //rewind</a>
+<a name="ln1772">    //Compressed files currently show an error here.***TAKE CHANCE: RESET ifs****</a>
+<a name="ln1773">    ifs.clear();</a>
+<a name="ln1774"> </a>
+<a name="ln1775">    OBFormat* pFormat = GetInFormat();</a>
+<a name="ln1776">    int count=0;</a>
+<a name="ln1777">    //skip each object but stop after nlast objects</a>
+<a name="ln1778">    while(ifs &amp;&amp; pFormat-&gt;SkipObjects(1, this)&gt;0  &amp;&amp; count&lt;nlast)</a>
+<a name="ln1779">      ++count;</a>
+<a name="ln1780"> </a>
+<a name="ln1781">    ifs.clear(); //clear eof</a>
+<a name="ln1782">    ifs.seekg(pos); //restore old position</a>
+<a name="ln1783"> </a>
+<a name="ln1784">    count -= nfirst-1;</a>
+<a name="ln1785">    return count;</a>
+<a name="ln1786">  }</a>
+<a name="ln1787"> </a>
+<a name="ln1788"> </a>
+<a name="ln1789"> </a>
+<a name="ln1790">  //The following function and typedef are deprecated, and are present only</a>
+<a name="ln1791">  //for backward compatibility.</a>
+<a name="ln1792">  //Use OBConversion::GetSupportedInputFormat(), OBConversion::GetSupportedOutputFormat(),</a>
+<a name="ln1793">  //OBPlugin::List(), OBPlugin::OBPlugin::ListAsVector(),OBPlugin::OBPlugin::ListAsString(),</a>
+<a name="ln1794">  //or (in extremis) OBPlugin::PluginIterator instead.</a>
+<a name="ln1795"> </a>
+<a name="ln1796">  typedef OBPlugin::PluginIterator Formatpos;</a>
+<a name="ln1797"> </a>
+<a name="ln1798">  bool OBConversion::GetNextFormat(Formatpos&amp; itr, const char*&amp; str,OBFormat*&amp; pFormat)</a>
+<a name="ln1799">  {</a>
+<a name="ln1800"> </a>
+<a name="ln1801">    pFormat = nullptr;</a>
+<a name="ln1802">    if (str == nullptr)</a>
+<a name="ln1803">      itr = OBPlugin::Begin(&quot;formats&quot;);</a>
+<a name="ln1804">    else</a>
+<a name="ln1805">      itr++;</a>
+<a name="ln1806">    if(itr == OBPlugin::End(&quot;formats&quot;))</a>
+<a name="ln1807">      {</a>
+<a name="ln1808">        str = nullptr; pFormat = nullptr;</a>
+<a name="ln1809">        return false;</a>
+<a name="ln1810">      }</a>
+<a name="ln1811">    static string s;</a>
+<a name="ln1812">    s =itr-&gt;first;</a>
+<a name="ln1813">    pFormat = static_cast&lt;OBFormat*&gt;(itr-&gt;second);</a>
+<a name="ln1814">    if(pFormat)</a>
+<a name="ln1815">      {</a>
+<a name="ln1816">        string description(pFormat-&gt;Description());</a>
+<a name="ln1817">        s += &quot; -- &quot;;</a>
+<a name="ln1818">        s += description.substr(0,description.find('\n'));</a>
+<a name="ln1819">      }</a>
+<a name="ln1820"> </a>
+<a name="ln1821">    if(pFormat-&gt;Flags() &amp; NOTWRITABLE) s+=&quot; [Read-only]&quot;;</a>
+<a name="ln1822">    if(pFormat-&gt;Flags() &amp; NOTREADABLE) s+=&quot; [Write-only]&quot;;</a>
+<a name="ln1823"> </a>
+<a name="ln1824">    str = s.c_str();</a>
+<a name="ln1825">    return true;</a>
+<a name="ln1826">  }</a>
+<a name="ln1827"> </a>
+<a name="ln1828">  /**</a>
+<a name="ln1829">   * @example obconversion_readstring.cpp</a>
+<a name="ln1830">   * Reading a smiles string.</a>
+<a name="ln1831">   */</a>
+<a name="ln1832"> </a>
+<a name="ln1833">  /**</a>
+<a name="ln1834">   * @example obconversion_readstring.py</a>
+<a name="ln1835">   * Reading a smiles string in python.</a>
+<a name="ln1836">   */</a>
+<a name="ln1837"> </a>
+<a name="ln1838"> </a>
+<a name="ln1839"> </a>
+<a name="ln1840">}//namespace OpenBabel</a>
+<a name="ln1841"> </a>
+<a name="ln1842">//! \file obconversion.cpp</a>
+<a name="ln1843">//! \brief Implementation of OBFormat and OBConversion classes.</a>
+
+</code></pre>
+<div class="balloon" rel="1051"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v668/" target="_blank">V668</a> There is no sense in testing the 'ofs' pointer against null, as the memory was allocated using the 'new' operator. The exception will be generated in the case of memory allocation error.</p></div>
+<div class="balloon" rel="1053"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v668/" target="_blank">V668</a> There is no sense in testing the 'ofs' pointer against null, as the memory was allocated using the 'new' operator. The exception will be generated in the case of memory allocation error.</p></div>
+<div class="balloon" rel="1096"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v668/" target="_blank">V668</a> There is no sense in testing the 'ifs' pointer against null, as the memory was allocated using the 'new' operator. The exception will be generated in the case of memory allocation error.</p></div>
+<div class="balloon" rel="1098"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v668/" target="_blank">V668</a> There is no sense in testing the 'ifs' pointer against null, as the memory was allocated using the 'new' operator. The exception will be generated in the case of memory allocation error.</p></div>
+<div class="balloon" rel="1124"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v668/" target="_blank">V668</a> There is no sense in testing the 'ifs' pointer against null, as the memory was allocated using the 'new' operator. The exception will be generated in the case of memory allocation error.</p></div>
+<div class="balloon" rel="1126"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v668/" target="_blank">V668</a> There is no sense in testing the 'ifs' pointer against null, as the memory was allocated using the 'new' operator. The exception will be generated in the case of memory allocation error.</p></div>
+<div class="balloon" rel="1142"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v668/" target="_blank">V668</a> There is no sense in testing the 'ofs' pointer against null, as the memory was allocated using the 'new' operator. The exception will be generated in the case of memory allocation error.</p></div>
+<div class="balloon" rel="1144"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v668/" target="_blank">V668</a> There is no sense in testing the 'ofs' pointer against null, as the memory was allocated using the 'new' operator. The exception will be generated in the case of memory allocation error.</p></div>
+<div class="balloon" rel="1307"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v688/" target="_blank">V688</a> The 'Count' local variable possesses the same name as one of the class members, which can result in a confusion.</p></div>
+<div class="balloon" rel="1404"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v506/" target="_blank">V506</a> Pointer to local variable 'ifs' is stored outside the scope of this variable. Such a pointer will become invalid.</p></div>
+<div class="balloon" rel="355"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v666/" target="_blank">V666</a> Consider inspecting second argument of the function 'IsOption'. It is possible that the value does not correspond with the length of a string which was passed with the first argument.</p></div>
+<div class="balloon" rel="605"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v666/" target="_blank">V666</a> Consider inspecting second argument of the function 'IsOption'. It is possible that the value does not correspond with the length of a string which was passed with the first argument.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

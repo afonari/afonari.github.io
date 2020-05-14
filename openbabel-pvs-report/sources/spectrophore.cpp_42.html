@@ -1,0 +1,1993 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>spectrophore.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Spectrophore.cpp - Spectrophore(TM) calculator</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 2005-2010 by Silicos NV</a>
+<a name="ln5"> </a>
+<a name="ln6">This file is part of the Open Babel project.</a>
+<a name="ln7">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln10">it under the terms of the GNU General Public License as published by</a>
+<a name="ln11">the Free Software Foundation version 2 of the License.</a>
+<a name="ln12"> </a>
+<a name="ln13">The algorithm in this software has been covered by patent WO2009146735.</a>
+<a name="ln14">However, Silicos NV and the inventors of the above mentioned patent assure</a>
+<a name="ln15">that no patent infringment claims will be issued against individuals or</a>
+<a name="ln16">institutions that use this software, as is stipulated by the GNU General</a>
+<a name="ln17">Public License.</a>
+<a name="ln18"> </a>
+<a name="ln19">This program is distributed in the hope that it will be useful,</a>
+<a name="ln20">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln21">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln22">GNU General Public License for more details.</a>
+<a name="ln23">***********************************************************************/</a>
+<a name="ln24"> </a>
+<a name="ln25">#include &lt;openbabel/spectrophore.h&gt;</a>
+<a name="ln26">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln27">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln28">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln29"> </a>
+<a name="ln30">namespace OpenBabel</a>
+<a name="ln31">{</a>
+<a name="ln32"> </a>
+<a name="ln33"> </a>
+<a name="ln34">OBSpectrophore::OBSpectrophore(void)</a>
+<a name="ln35">:  _resolution(3.0)</a>
+<a name="ln36">,  _property(nullptr)</a>
+<a name="ln37">,  _radii(nullptr)</a>
+<a name="ln38">,  _oricoor(nullptr)</a>
+<a name="ln39">,  _coor(nullptr)</a>
+<a name="ln40">,  _beginProbe(0)</a>
+<a name="ln41">,  _endProbe(0)</a>
+<a name="ln42">,  _numberOfProbes(0)</a>
+<a name="ln43">{</a>
+<a name="ln44">   SetAccuracy(OBSpectrophore::AngStepSize20);</a>
+<a name="ln45">   SetStereo(OBSpectrophore::NoStereoSpecificProbes);</a>
+<a name="ln46">   SetNormalization(OBSpectrophore::NoNormalization);</a>
+<a name="ln47">}</a>
+<a name="ln48"> </a>
+<a name="ln49"> </a>
+<a name="ln50"> </a>
+<a name="ln51">OBSpectrophore::OBSpectrophore(const OBSpectrophore&amp; s)</a>
+<a name="ln52">:  _resolution(s._resolution)</a>
+<a name="ln53">,  _property(nullptr)</a>
+<a name="ln54">,  _radii(nullptr)</a>
+<a name="ln55">,  _oricoor(nullptr)</a>
+<a name="ln56">,  _coor(nullptr)</a>
+<a name="ln57">,  _beginProbe(s._beginProbe)</a>
+<a name="ln58">,  _endProbe(s._endProbe)</a>
+<a name="ln59">,  _numberOfProbes(s._numberOfProbes)</a>
+<a name="ln60">,  _spectro(s._spectro)</a>
+<a name="ln61">{</a>
+<a name="ln62">   SetAccuracy(s.GetAccuracy());</a>
+<a name="ln63">   SetStereo(s.GetStereo());</a>
+<a name="ln64">   SetNormalization(s.GetNormalization());</a>
+<a name="ln65">}</a>
+<a name="ln66"> </a>
+<a name="ln67"> </a>
+<a name="ln68"> </a>
+<a name="ln69">OBSpectrophore&amp;</a>
+<a name="ln70">OBSpectrophore::operator=(const OBSpectrophore&amp; s)</a>
+<a name="ln71">{</a>
+<a name="ln72">   if (this != &amp;s)</a>
+<a name="ln73">   {</a>
+<a name="ln74">      _resolution = s._resolution;</a>
+<a name="ln75">      _accuracy = s._accuracy;</a>
+<a name="ln76">      _beginProbe = s._beginProbe;</a>
+<a name="ln77">      _endProbe = s._endProbe;</a>
+<a name="ln78">      _numberOfProbes = s._numberOfProbes;</a>
+<a name="ln79">      _spectro = s._spectro;</a>
+<a name="ln80">      SetAccuracy(s.GetAccuracy());</a>
+<a name="ln81">      SetStereo(s.GetStereo());</a>
+<a name="ln82">      SetNormalization(s.GetNormalization());</a>
+<a name="ln83">   }</a>
+<a name="ln84">   return *this;</a>
+<a name="ln85">}</a>
+<a name="ln86"> </a>
+<a name="ln87"> </a>
+<a name="ln88"> </a>
+<a name="ln89">OBSpectrophore::~OBSpectrophore(void)</a>
+<a name="ln90">{</a>
+<a name="ln91">   _property = nullptr;</a>
+<a name="ln92">   _radii = nullptr;</a>
+<a name="ln93">   _oricoor = nullptr;</a>
+<a name="ln94">   _coor = nullptr;</a>
+<a name="ln95">}</a>
+<a name="ln96"> </a>
+<a name="ln97"> </a>
+<a name="ln98"> </a>
+<a name="ln99">void</a>
+<a name="ln100">OBSpectrophore::SetNormalization(const OBSpectrophore::NormalizationOption n)</a>
+<a name="ln101">{</a>
+<a name="ln102">   _normalization = n;</a>
+<a name="ln103">}</a>
+<a name="ln104"> </a>
+<a name="ln105"> </a>
+<a name="ln106"> </a>
+<a name="ln107">OBSpectrophore::NormalizationOption</a>
+<a name="ln108">OBSpectrophore::GetNormalization(void) const</a>
+<a name="ln109">{</a>
+<a name="ln110">    return _normalization;</a>
+<a name="ln111">}</a>
+<a name="ln112"> </a>
+<a name="ln113"> </a>
+<a name="ln114"> </a>
+<a name="ln115">void</a>
+<a name="ln116">OBSpectrophore::SetResolution(const double r)</a>
+<a name="ln117">{</a>
+<a name="ln118">    if (r &gt; 0.0)</a>
+<a name="ln119">    {</a>
+<a name="ln120">        _resolution = r;</a>
+<a name="ln121">    }</a>
+<a name="ln122">    else</a>
+<a name="ln123">    {</a>
+<a name="ln124">        _resolution = 3.0;</a>
+<a name="ln125">    }</a>
+<a name="ln126">}</a>
+<a name="ln127"> </a>
+<a name="ln128"> </a>
+<a name="ln129"> </a>
+<a name="ln130">double</a>
+<a name="ln131">OBSpectrophore::GetResolution(void) const</a>
+<a name="ln132">{</a>
+<a name="ln133">    return _resolution;</a>
+<a name="ln134">}</a>
+<a name="ln135"> </a>
+<a name="ln136"> </a>
+<a name="ln137"> </a>
+<a name="ln138">void</a>
+<a name="ln139">OBSpectrophore::SetAccuracy(const OBSpectrophore::AccuracyOption a)</a>
+<a name="ln140">{</a>
+<a name="ln141">   _accuracy = a;</a>
+<a name="ln142"> </a>
+<a name="ln143">    // Update the rotation list</a>
+<a name="ln144">    _rotationStepList.clear();</a>
+<a name="ln145">    switch (_accuracy)</a>
+<a name="ln146">    {</a>
+<a name="ln147">      case OBSpectrophore::AngStepSize1:</a>
+<a name="ln148">         _rotationStepList.push_back(1);</a>
+<a name="ln149">         break;</a>
+<a name="ln150">      case OBSpectrophore::AngStepSize2:</a>
+<a name="ln151">         _rotationStepList.push_back(2);</a>
+<a name="ln152">         _rotationStepList.push_back(5);</a>
+<a name="ln153">         _rotationStepList.push_back(36);</a>
+<a name="ln154">         break;</a>
+<a name="ln155">      case OBSpectrophore::AngStepSize5:</a>
+<a name="ln156">         _rotationStepList.push_back(5);</a>
+<a name="ln157">         _rotationStepList.push_back(36);</a>
+<a name="ln158">         break;</a>
+<a name="ln159">      case OBSpectrophore::AngStepSize10:</a>
+<a name="ln160">         _rotationStepList.push_back(10);</a>
+<a name="ln161">         _rotationStepList.push_back(15);</a>
+<a name="ln162">         _rotationStepList.push_back(36);</a>
+<a name="ln163">         break;</a>
+<a name="ln164">      case OBSpectrophore::AngStepSize15:</a>
+<a name="ln165">         _rotationStepList.push_back(15);</a>
+<a name="ln166">         _rotationStepList.push_back(20);</a>
+<a name="ln167">         _rotationStepList.push_back(36);</a>
+<a name="ln168">         break;</a>
+<a name="ln169">      case OBSpectrophore::AngStepSize20:</a>
+<a name="ln170">         _rotationStepList.push_back(20);</a>
+<a name="ln171">         _rotationStepList.push_back(30);</a>
+<a name="ln172">         _rotationStepList.push_back(36);</a>
+<a name="ln173">         _rotationStepList.push_back(45);</a>
+<a name="ln174">         break;</a>
+<a name="ln175">      case OBSpectrophore::AngStepSize30:</a>
+<a name="ln176">         _rotationStepList.push_back(30);</a>
+<a name="ln177">         _rotationStepList.push_back(36);</a>
+<a name="ln178">         _rotationStepList.push_back(45);</a>
+<a name="ln179">         break;</a>
+<a name="ln180">      case OBSpectrophore::AngStepSize36:</a>
+<a name="ln181">         _rotationStepList.push_back(36);</a>
+<a name="ln182">         _rotationStepList.push_back(45);</a>
+<a name="ln183">         _rotationStepList.push_back(60);</a>
+<a name="ln184">         break;</a>
+<a name="ln185">      case OBSpectrophore::AngStepSize45:</a>
+<a name="ln186">         _rotationStepList.push_back(45);</a>
+<a name="ln187">         _rotationStepList.push_back(60);</a>
+<a name="ln188">         break;</a>
+<a name="ln189">      case OBSpectrophore::AngStepSize60:</a>
+<a name="ln190">         _rotationStepList.push_back(60);</a>
+<a name="ln191">         break;</a>
+<a name="ln192">    }</a>
+<a name="ln193">}</a>
+<a name="ln194"> </a>
+<a name="ln195"> </a>
+<a name="ln196"> </a>
+<a name="ln197">OBSpectrophore::AccuracyOption</a>
+<a name="ln198">OBSpectrophore::GetAccuracy(void) const</a>
+<a name="ln199">{</a>
+<a name="ln200">    return _accuracy;</a>
+<a name="ln201">}</a>
+<a name="ln202"> </a>
+<a name="ln203"> </a>
+<a name="ln204"> </a>
+<a name="ln205">void</a>
+<a name="ln206">OBSpectrophore::SetStereo(const OBSpectrophore::StereoOption stereo)</a>
+<a name="ln207">{</a>
+<a name="ln208">   _stereoFlag = stereo;</a>
+<a name="ln209">   _setBox();</a>
+<a name="ln210">}</a>
+<a name="ln211"> </a>
+<a name="ln212"> </a>
+<a name="ln213"> </a>
+<a name="ln214">OBSpectrophore::StereoOption</a>
+<a name="ln215">OBSpectrophore::GetStereo(void) const</a>
+<a name="ln216">{</a>
+<a name="ln217">   return _stereoFlag;</a>
+<a name="ln218">}</a>
+<a name="ln219"> </a>
+<a name="ln220"> </a>
+<a name="ln221"> </a>
+<a name="ln222">std::vector&lt;double&gt;</a>
+<a name="ln223">OBSpectrophore::GetSpectrophore(OpenBabel::OBMol* mol)</a>
+<a name="ln224">{</a>
+<a name="ln225">   // Clear the return variable</a>
+<a name="ln226">   _spectro.clear();</a>
+<a name="ln227"> </a>
+<a name="ln228">   // Atoms</a>
+<a name="ln229">   _nAtoms = mol-&gt;NumAtoms();</a>
+<a name="ln230">   if (_nAtoms &lt; 3)</a>
+<a name="ln231">   {</a>
+<a name="ln232">      std::cerr &lt;&lt; &quot;OBSpectrophore::GetSpectrophore() error: not enough atoms in molecule&quot; &lt;&lt; std::endl;;</a>
+<a name="ln233">      return _spectro;</a>
+<a name="ln234">   }</a>
+<a name="ln235"> </a>
+<a name="ln236">   // Coordinate and property arrays</a>
+<a name="ln237">   _oricoor = new double*[_nAtoms];</a>
+<a name="ln238">   _coor = new double*[_nAtoms];</a>
+<a name="ln239">   double** REF1 = new double*[_nAtoms];</a>
+<a name="ln240">   double** REF2 = new double*[_nAtoms];</a>
+<a name="ln241">   _property = new double*[_nAtoms];</a>
+<a name="ln242">   for (unsigned int i = 0; i &lt; _nAtoms; ++i)</a>
+<a name="ln243">   {</a>
+<a name="ln244">      _oricoor[i] = new double[3];</a>
+<a name="ln245">      _coor[i] = new double[3];</a>
+<a name="ln246">      REF1[i] = new double[3];</a>
+<a name="ln247">      REF2[i] = new double[3];</a>
+<a name="ln248">      _property[i] = new double[N_PROPERTIES];</a>
+<a name="ln249">   }</a>
+<a name="ln250"> </a>
+<a name="ln251">    // Atom radii and coordinates</a>
+<a name="ln252">   _radii = new double[_nAtoms];</a>
+<a name="ln253">   _getMoleculeData(mol);</a>
+<a name="ln254"> </a>
+<a name="ln255">   // Atom properties</a>
+<a name="ln256">   _calculateProperties(mol);</a>
+<a name="ln257"> </a>
+<a name="ln258">   // Shift molecule to its center of gravity and orient it in a standard way</a>
+<a name="ln259">   _orient();</a>
+<a name="ln260"> </a>
+<a name="ln261">   // Calculate the first spectrum to initiate values</a>
+<a name="ln262">   unsigned int sphoreSize(N_PROPERTIES * _numberOfProbes);</a>
+<a name="ln263">   std::vector&lt;double&gt; ENERGY(sphoreSize);</a>
+<a name="ln264">   std::vector&lt;double&gt; SPHORE(sphoreSize);</a>
+<a name="ln265"> </a>
+<a name="ln266">   // Properties</a>
+<a name="ln267">   _getBox(_oricoor);</a>
+<a name="ln268">   _getEnergies(_oricoor, &amp;(ENERGY[0]));</a>
+<a name="ln269">   _initiateSpectrophore(&amp;(ENERGY[0]), &amp;(SPHORE[0]));</a>
+<a name="ln270"> </a>
+<a name="ln271">   // Rotate</a>
+<a name="ln272">   double psi;</a>
+<a name="ln273">   double cos_psi;</a>
+<a name="ln274">   double sin_psi;</a>
+<a name="ln275">   double theta;</a>
+<a name="ln276">   double cos_theta;</a>
+<a name="ln277">   double sin_theta;</a>
+<a name="ln278">   double phi;</a>
+<a name="ln279">   double cos_phi;</a>
+<a name="ln280">   double sin_phi;</a>
+<a name="ln281"> </a>
+<a name="ln282">   for (unsigned int i = 0; i &lt; _rotationStepList.size(); ++i)</a>
+<a name="ln283">   {</a>
+<a name="ln284">      int rotationStep(_rotationStepList[i]);</a>
+<a name="ln285"> </a>
+<a name="ln286">      for (int iTheta = 0; iTheta &lt; 180; iTheta += rotationStep)</a>
+<a name="ln287">      {</a>
+<a name="ln288">         theta = 0.017453292519943 * iTheta;</a>
+<a name="ln289">         cos_theta = cos(theta);</a>
+<a name="ln290">         sin_theta = sin(theta);</a>
+<a name="ln291">         _rotateY(_oricoor, REF1, cos_theta, sin_theta);</a>
+<a name="ln292"> </a>
+<a name="ln293">         for (int iPsi = 0; iPsi &lt; 360; iPsi += rotationStep)</a>
+<a name="ln294">         {</a>
+<a name="ln295">            psi = 0.017453292519943 * iPsi;</a>
+<a name="ln296">            cos_psi = cos(psi);</a>
+<a name="ln297">            sin_psi = sin(psi);</a>
+<a name="ln298">            _rotateZ(REF1, REF2, cos_psi, sin_psi);</a>
+<a name="ln299"> </a>
+<a name="ln300">            for (int iPhi = 0; iPhi &lt; 360; iPhi += rotationStep)</a>
+<a name="ln301">            {</a>
+<a name="ln302">               phi = 0.017453292519943 * iPhi;</a>
+<a name="ln303">               cos_phi = cos(phi);</a>
+<a name="ln304">               sin_phi = sin(phi);</a>
+<a name="ln305">               _rotateX(REF2, _coor, cos_phi, sin_phi);</a>
+<a name="ln306"> </a>
+<a name="ln307">               // Calculate energies</a>
+<a name="ln308">               _getBox(_coor);</a>
+<a name="ln309">               _getEnergies(_coor, &amp;(ENERGY[0]));</a>
+<a name="ln310">               _updateSpectrophore(&amp;(ENERGY[0]), &amp;(SPHORE[0]));</a>
+<a name="ln311">            }</a>
+<a name="ln312">         }</a>
+<a name="ln313">      }</a>
+<a name="ln314">   }</a>
+<a name="ln315"> </a>
+<a name="ln316"> </a>
+<a name="ln317">   // Cleanup</a>
+<a name="ln318">   for (unsigned int i = 0; i &lt; _nAtoms; ++i)</a>
+<a name="ln319">   {</a>
+<a name="ln320">      delete[] _property[i];</a>
+<a name="ln321">      delete[] _oricoor[i];</a>
+<a name="ln322">      delete[] REF1[i];</a>
+<a name="ln323">      delete[] REF2[i];</a>
+<a name="ln324">      delete[] _coor[i];</a>
+<a name="ln325">      _property[i] = nullptr;</a>
+<a name="ln326">      _oricoor[i] = nullptr;</a>
+<a name="ln327">      REF1[i] = nullptr;</a>
+<a name="ln328">      REF2[i] = nullptr;</a>
+<a name="ln329">      _coor[i] = nullptr;</a>
+<a name="ln330">   }</a>
+<a name="ln331">   delete[] REF1;</a>
+<a name="ln332">   delete[] REF2;</a>
+<a name="ln333">   delete[] _radii;</a>
+<a name="ln334">   _radii = nullptr;</a>
+<a name="ln335"> </a>
+<a name="ln336"> </a>
+<a name="ln337">   // Modify the actual sphore data</a>
+<a name="ln338">   _spectro.resize(sphoreSize);</a>
+<a name="ln339">   for (unsigned int i = 0; i &lt; sphoreSize; ++i)</a>
+<a name="ln340">   {</a>
+<a name="ln341">      _spectro[i] = -100 * SPHORE[i];</a>
+<a name="ln342">   }</a>
+<a name="ln343"> </a>
+<a name="ln344">   // Normalisation</a>
+<a name="ln345">   double mean[N_PROPERTIES];</a>
+<a name="ln346">   double std[N_PROPERTIES];</a>
+<a name="ln347">   unsigned int m;</a>
+<a name="ln348">   for (unsigned int i(0); i &lt; N_PROPERTIES; ++i)</a>
+<a name="ln349">   {</a>
+<a name="ln350">      mean[i] = 0.0;</a>
+<a name="ln351">      for (unsigned int n(0); n &lt; 12; ++n)</a>
+<a name="ln352">      {</a>
+<a name="ln353">         m = (i * 12) + n;</a>
+<a name="ln354">         mean[i] += _spectro[m];</a>
+<a name="ln355">      }</a>
+<a name="ln356">      mean[i] /= 12.0;</a>
+<a name="ln357">      std[i] = 0.0;</a>
+<a name="ln358">      for (unsigned int n(0); n &lt; 12; ++n)</a>
+<a name="ln359">      {</a>
+<a name="ln360">         m = (i * 12) + n;</a>
+<a name="ln361">         std[i] += (_spectro[m] - mean[i]) * (_spectro[m] - mean[i]);</a>
+<a name="ln362">      }</a>
+<a name="ln363">      std[i] /= 11.0;</a>
+<a name="ln364">      std[i] = sqrt(std[i]);</a>
+<a name="ln365">   }</a>
+<a name="ln366">   if ((_normalization == OBSpectrophore::NormalizationTowardsZeroMean) ||</a>
+<a name="ln367">       (_normalization == OBSpectrophore::NormalizationTowardsZeroMeanAndUnitStd))</a>
+<a name="ln368">   {</a>
+<a name="ln369">      for (unsigned int i(0); i &lt; N_PROPERTIES; ++i)</a>
+<a name="ln370">      {</a>
+<a name="ln371">         for (unsigned int n(0); n &lt; 12; ++n)</a>
+<a name="ln372">         {</a>
+<a name="ln373">            m = (i * 12) + n;</a>
+<a name="ln374">            _spectro[m] -= mean[i];</a>
+<a name="ln375">         }</a>
+<a name="ln376">      }</a>
+<a name="ln377">   }</a>
+<a name="ln378">   if ((_normalization == OBSpectrophore::NormalizationTowardsUnitStd) ||</a>
+<a name="ln379">       (_normalization == OBSpectrophore::NormalizationTowardsZeroMeanAndUnitStd))</a>
+<a name="ln380">   {</a>
+<a name="ln381">      for (unsigned int i(0); i &lt; N_PROPERTIES; ++i)</a>
+<a name="ln382">      {</a>
+<a name="ln383">         for (unsigned int n(0); n &lt; 12; ++n)</a>
+<a name="ln384">         {</a>
+<a name="ln385">            m = (i * 12) + n;</a>
+<a name="ln386">            _spectro[m] /= std[i];</a>
+<a name="ln387">         }</a>
+<a name="ln388">      }</a>
+<a name="ln389">   }</a>
+<a name="ln390"> </a>
+<a name="ln391">   // Return</a>
+<a name="ln392">   return _spectro;</a>
+<a name="ln393">}</a>
+<a name="ln394"> </a>
+<a name="ln395"> </a>
+<a name="ln396"> </a>
+<a name="ln397">void</a>
+<a name="ln398">OBSpectrophore::_getEnergies(double** c, double* e)</a>
+<a name="ln399">{</a>
+<a name="ln400">   double d;</a>
+<a name="ln401">   double x2;</a>
+<a name="ln402">   double y2;</a>
+<a name="ln403">   double z2;</a>
+<a name="ln404"> </a>
+<a name="ln405">   // Distance between atom and each boxpoint</a>
+<a name="ln406">   for (unsigned int boxPoint = 0; boxPoint &lt; 12; ++boxPoint)</a>
+<a name="ln407">   {</a>
+<a name="ln408">      // Reset value at box point</a>
+<a name="ln409">      for (unsigned int prop = 0; prop &lt; N_PROPERTIES; ++prop)</a>
+<a name="ln410">      {</a>
+<a name="ln411">         _boxPoint[boxPoint].v[prop] = 0.0;</a>
+<a name="ln412">      }</a>
+<a name="ln413"> </a>
+<a name="ln414">      // Calculate squared distances between atoms and boxpoints</a>
+<a name="ln415">      for (unsigned int atom = 0; atom &lt; _nAtoms; ++atom)</a>
+<a name="ln416">      {</a>
+<a name="ln417">         x2 = _boxPoint[boxPoint].x - c[atom][0];</a>
+<a name="ln418">         y2 = _boxPoint[boxPoint].y - c[atom][1];</a>
+<a name="ln419">         z2 = _boxPoint[boxPoint].z - c[atom][2];</a>
+<a name="ln420">         d = sqrt((x2 * x2) + (y2 * y2) + (z2 * z2));</a>
+<a name="ln421"> </a>
+<a name="ln422">         // Calculate the potential at each box point</a>
+<a name="ln423">         for (unsigned int prop = 0; prop &lt; N_PROPERTIES; ++prop)</a>
+<a name="ln424">         {</a>
+<a name="ln425">            _boxPoint[boxPoint].v[prop] += _property[atom][prop] / d;</a>
+<a name="ln426">         }</a>
+<a name="ln427">      }</a>
+<a name="ln428">   }</a>
+<a name="ln429"> </a>
+<a name="ln430">   // Reset to zero</a>
+<a name="ln431">   for (unsigned int i = 0; i &lt; N_PROPERTIES * _numberOfProbes; ++i)</a>
+<a name="ln432">   {</a>
+<a name="ln433">      e[i] = 0.0;</a>
+<a name="ln434">   }</a>
+<a name="ln435"> </a>
+<a name="ln436">   unsigned int index;</a>
+<a name="ln437">   for (unsigned int prop = 0; prop &lt; N_PROPERTIES; ++prop)</a>
+<a name="ln438">   {</a>
+<a name="ln439">      for (unsigned int boxPoint = 0; boxPoint &lt; 12; ++boxPoint)</a>
+<a name="ln440">      {</a>
+<a name="ln441">         // Calculate for each probe the total interaction energy</a>
+<a name="ln442">         for (unsigned int probe = _beginProbe; probe &lt; _endProbe; ++probe)</a>
+<a name="ln443">         {</a>
+<a name="ln444">            index = prop * _numberOfProbes + (probe - _beginProbe);</a>
+<a name="ln445">            e[index] += _boxPoint[boxPoint].v[prop] *_probe[probe].value[boxPoint];</a>
+<a name="ln446">         }</a>
+<a name="ln447">      }</a>
+<a name="ln448">   }</a>
+<a name="ln449">}</a>
+<a name="ln450"> </a>
+<a name="ln451"> </a>
+<a name="ln452"> </a>
+<a name="ln453">void</a>
+<a name="ln454">OBSpectrophore::_initiateSpectrophore(double* e, double* s)</a>
+<a name="ln455">{</a>
+<a name="ln456">    for (unsigned int i = 0; i &lt; N_PROPERTIES * _numberOfProbes; ++i)</a>
+<a name="ln457">    {</a>
+<a name="ln458">        s[i] = e[i];</a>
+<a name="ln459">    }</a>
+<a name="ln460">}</a>
+<a name="ln461"> </a>
+<a name="ln462"> </a>
+<a name="ln463"> </a>
+<a name="ln464">void</a>
+<a name="ln465">OBSpectrophore::_updateSpectrophore(double* ENERGY, double* SPHORE)</a>
+<a name="ln466">{</a>
+<a name="ln467">    for (unsigned int i = 0; i &lt; N_PROPERTIES * _numberOfProbes; ++i)</a>
+<a name="ln468">    {</a>
+<a name="ln469">        SPHORE[i] = MIN(ENERGY[i], SPHORE[i]);</a>
+<a name="ln470">    }</a>
+<a name="ln471">}</a>
+<a name="ln472"> </a>
+<a name="ln473"> </a>
+<a name="ln474"> </a>
+<a name="ln475">void</a>
+<a name="ln476">OBSpectrophore::_getMoleculeData(OpenBabel::OBMol* mol)</a>
+<a name="ln477">{</a>
+<a name="ln478">   unsigned int a(0);</a>
+<a name="ln479">   unsigned int n;</a>
+<a name="ln480">   for (OpenBabel::OBMolAtomIter atom(mol); atom; ++atom)</a>
+<a name="ln481">   {</a>
+<a name="ln482">      // Coordinates</a>
+<a name="ln483">      _oricoor[a][0] = atom-&gt;GetX();</a>
+<a name="ln484">      _oricoor[a][1] = atom-&gt;GetY();</a>
+<a name="ln485">      _oricoor[a][2] = atom-&gt;GetZ();</a>
+<a name="ln486"> </a>
+<a name="ln487">      // Radii</a>
+<a name="ln488">      n = (unsigned int) atom-&gt;GetAtomicNum();</a>
+<a name="ln489">      switch (n)</a>
+<a name="ln490">      {</a>
+<a name="ln491">         case 1:  // H</a>
+<a name="ln492">            _radii[a] = 1.20;</a>
+<a name="ln493">            break;</a>
+<a name="ln494">         case 3:  // Li</a>
+<a name="ln495">            _radii[a] = 1.82;</a>
+<a name="ln496">            break;</a>
+<a name="ln497">         case 5:  // B</a>
+<a name="ln498">            _radii[a] = 2.00;</a>
+<a name="ln499">            break;</a>
+<a name="ln500">         case 6:  // C</a>
+<a name="ln501">            _radii[a] = 1.70;</a>
+<a name="ln502">            break;</a>
+<a name="ln503">         case 7:  // N</a>
+<a name="ln504">            _radii[a] = 1.55;</a>
+<a name="ln505">            break;</a>
+<a name="ln506">         case 8:  // O</a>
+<a name="ln507">            _radii[a] = 1.52;</a>
+<a name="ln508">            break;</a>
+<a name="ln509">         case 9:  // F</a>
+<a name="ln510">            _radii[a] = 1.47;</a>
+<a name="ln511">            break;</a>
+<a name="ln512">         case 11: // Na</a>
+<a name="ln513">            _radii[a] = 2.27;</a>
+<a name="ln514">            break;</a>
+<a name="ln515">         case 12: // Mg</a>
+<a name="ln516">            _radii[a] = 1.73;</a>
+<a name="ln517">            break;</a>
+<a name="ln518">         case 14: // Si</a>
+<a name="ln519">            _radii[a] = 2.10;</a>
+<a name="ln520">            break;</a>
+<a name="ln521">         case 15: // P</a>
+<a name="ln522">            _radii[a] = 1.80;</a>
+<a name="ln523">            break;</a>
+<a name="ln524">         case 16: // S</a>
+<a name="ln525">            _radii[a] = 1.80;</a>
+<a name="ln526">            break;</a>
+<a name="ln527">        case 17: // Cl</a>
+<a name="ln528">            _radii[a] = 1.75;</a>
+<a name="ln529">            break;</a>
+<a name="ln530">         case 19: // K</a>
+<a name="ln531">            _radii[a] = 2.75;</a>
+<a name="ln532">            break;</a>
+<a name="ln533">         case 20: // Ca</a>
+<a name="ln534">            _radii[a] = 2.00;</a>
+<a name="ln535">            break;</a>
+<a name="ln536">         case 26: // Fe</a>
+<a name="ln537">            _radii[a] = 1.10;</a>
+<a name="ln538">            break;</a>
+<a name="ln539">         case 29: // Cu</a>
+<a name="ln540">            _radii[a] = 1.40;</a>
+<a name="ln541">            break;</a>
+<a name="ln542">         case 30: // Zn</a>
+<a name="ln543">            _radii[a] = 1.39;</a>
+<a name="ln544">            break;</a>
+<a name="ln545">         case 35: // Br</a>
+<a name="ln546">            _radii[a] = 1.85;</a>
+<a name="ln547">            break;</a>
+<a name="ln548">         case 53: // I</a>
+<a name="ln549">            _radii[a] = 1.98;</a>
+<a name="ln550">            break;</a>
+<a name="ln551">         default:</a>
+<a name="ln552">            _radii[a] = 1.50;</a>
+<a name="ln553">      }</a>
+<a name="ln554"> </a>
+<a name="ln555">      // Counter</a>
+<a name="ln556">      ++a;</a>
+<a name="ln557">   }</a>
+<a name="ln558">}</a>
+<a name="ln559"> </a>
+<a name="ln560"> </a>
+<a name="ln561">void</a>
+<a name="ln562">OBSpectrophore::_getBox(double** c)</a>
+<a name="ln563">{</a>
+<a name="ln564">   // Calculate molecular extends</a>
+<a name="ln565">   double xm(c[0][0] - _radii[0]);</a>
+<a name="ln566">   double xp(c[0][0] + _radii[0]);</a>
+<a name="ln567">   double ym(c[0][1] - _radii[0]);</a>
+<a name="ln568">   double yp(c[0][1] + _radii[0]);</a>
+<a name="ln569">   double zm(c[0][2] - _radii[0]);</a>
+<a name="ln570">   double zp(c[0][2] + _radii[0]);</a>
+<a name="ln571">   for (unsigned int i = 1; i &lt; _nAtoms; ++i)</a>
+<a name="ln572">   {</a>
+<a name="ln573">      xm = MIN(c[i][0] - _radii[i], xm);</a>
+<a name="ln574">      xp = MAX(c[i][0] + _radii[i], xp);</a>
+<a name="ln575">      ym = MIN(c[i][1] - _radii[i], ym);</a>
+<a name="ln576">      yp = MAX(c[i][1] + _radii[i], yp);</a>
+<a name="ln577">      zm = MIN(c[i][2] - _radii[i], zm);</a>
+<a name="ln578">      zp = MAX(c[i][2] + _radii[i], zp);</a>
+<a name="ln579">   }</a>
+<a name="ln580">   xm -= _resolution;</a>
+<a name="ln581">   xp += _resolution;</a>
+<a name="ln582">   ym -= _resolution;</a>
+<a name="ln583">   yp += _resolution;</a>
+<a name="ln584">   zm -= _resolution;</a>
+<a name="ln585">   zp += _resolution;</a>
+<a name="ln586">   double xh((xp + xm) / 2.0);</a>
+<a name="ln587">   double yh((yp + ym) / 2.0);</a>
+<a name="ln588">   double zh((zp + zm) / 2.0);</a>
+<a name="ln589"> </a>
+<a name="ln590">   // Box points</a>
+<a name="ln591">   _boxPoint[0].x =  xh;</a>
+<a name="ln592">   _boxPoint[1].x =  xp;</a>
+<a name="ln593">   _boxPoint[2].x =  xh;</a>
+<a name="ln594">   _boxPoint[3].x =  xm;</a>
+<a name="ln595">   _boxPoint[4].x =  xm;</a>
+<a name="ln596">   _boxPoint[5].x =  xp;</a>
+<a name="ln597">   _boxPoint[6].x =  xm;</a>
+<a name="ln598">   _boxPoint[7].x =  xp;</a>
+<a name="ln599">   _boxPoint[8].x =  xp;</a>
+<a name="ln600">   _boxPoint[9].x =  xh;</a>
+<a name="ln601">   _boxPoint[10].x = xm;</a>
+<a name="ln602">   _boxPoint[11].x = xh;</a>
+<a name="ln603"> </a>
+<a name="ln604">   _boxPoint[0].y =  ym;</a>
+<a name="ln605">   _boxPoint[1].y =  yh;</a>
+<a name="ln606">   _boxPoint[2].y =  yp;</a>
+<a name="ln607">   _boxPoint[3].y =  yh;</a>
+<a name="ln608">   _boxPoint[4].y =  ym;</a>
+<a name="ln609">   _boxPoint[5].y =  ym;</a>
+<a name="ln610">   _boxPoint[6].y =  yp;</a>
+<a name="ln611">   _boxPoint[7].y =  yp;</a>
+<a name="ln612">   _boxPoint[8].y =  yh;</a>
+<a name="ln613">   _boxPoint[9].y =  ym;</a>
+<a name="ln614">   _boxPoint[10].y = yh;</a>
+<a name="ln615">   _boxPoint[11].y = yp;</a>
+<a name="ln616"> </a>
+<a name="ln617">   _boxPoint[0].z =  zp;</a>
+<a name="ln618">   _boxPoint[1].z =  zp;</a>
+<a name="ln619">   _boxPoint[2].z =  zp;</a>
+<a name="ln620">   _boxPoint[3].z =  zp;</a>
+<a name="ln621">   _boxPoint[4].z =  zh;</a>
+<a name="ln622">   _boxPoint[5].z =  zh;</a>
+<a name="ln623">   _boxPoint[6].z =  zh;</a>
+<a name="ln624">   _boxPoint[7].z =  zh;</a>
+<a name="ln625">   _boxPoint[8].z =  zm;</a>
+<a name="ln626">   _boxPoint[9].z =  zm;</a>
+<a name="ln627">   _boxPoint[10].z = zm;</a>
+<a name="ln628">   _boxPoint[11].z = zm;</a>
+<a name="ln629">}</a>
+<a name="ln630"> </a>
+<a name="ln631"> </a>
+<a name="ln632"> </a>
+<a name="ln633">void</a>
+<a name="ln634">OBSpectrophore::_rotateX(double** oc, double** nc, const double c, const double s)</a>
+<a name="ln635">{</a>
+<a name="ln636">    for (unsigned int i = 0; i &lt; _nAtoms; ++i)</a>
+<a name="ln637">    {</a>
+<a name="ln638">        nc[i][0] =  oc[i][0];</a>
+<a name="ln639">        nc[i][1] =  oc[i][1] * c + oc[i][2] * s;</a>
+<a name="ln640">        nc[i][2] = -oc[i][1] * s + oc[i][2] * c;</a>
+<a name="ln641">    }</a>
+<a name="ln642">}</a>
+<a name="ln643"> </a>
+<a name="ln644"> </a>
+<a name="ln645"> </a>
+<a name="ln646">void</a>
+<a name="ln647">OBSpectrophore::_rotateY(double** oc, double** nc, const double c, const double s)</a>
+<a name="ln648">{</a>
+<a name="ln649">    for (unsigned int i = 0; i &lt; _nAtoms; ++i)</a>
+<a name="ln650">    {</a>
+<a name="ln651">        nc[i][0] =  oc[i][0] * c + oc[i][2] * s;</a>
+<a name="ln652">        nc[i][1] =  oc[i][1];</a>
+<a name="ln653">        nc[i][2] = -oc[i][0] * s + oc[i][2] * c;</a>
+<a name="ln654">    }</a>
+<a name="ln655">}</a>
+<a name="ln656"> </a>
+<a name="ln657"> </a>
+<a name="ln658"> </a>
+<a name="ln659">void</a>
+<a name="ln660">OBSpectrophore::_rotateZ(double** oc, double** nc, const double c, const double s)</a>
+<a name="ln661">{</a>
+<a name="ln662">    for (unsigned int i = 0; i &lt; _nAtoms; ++i)</a>
+<a name="ln663">    {</a>
+<a name="ln664">        nc[i][0] =  oc[i][0] * c + oc[i][1] * s;</a>
+<a name="ln665">        nc[i][1] = -oc[i][0] * s + oc[i][1] * c;</a>
+<a name="ln666">        nc[i][2] =  oc[i][2];</a>
+<a name="ln667">    }</a>
+<a name="ln668">}</a>
+<a name="ln669"> </a>
+<a name="ln670"> </a>
+<a name="ln671"> </a>
+<a name="ln672">void</a>
+<a name="ln673">OBSpectrophore::_orient(void)</a>
+<a name="ln674">{</a>
+<a name="ln675">    // Center molecule around its COG</a>
+<a name="ln676">    double COG[3] = {0.0, 0.0, 0.0};</a>
+<a name="ln677">    for (unsigned int i = 0; i &lt; _nAtoms; ++i)</a>
+<a name="ln678">    {</a>
+<a name="ln679">        for (unsigned int j = 0; j &lt; 3; ++j)</a>
+<a name="ln680">        {</a>
+<a name="ln681">            COG[j] += _oricoor[i][j];</a>
+<a name="ln682">        }</a>
+<a name="ln683">    }</a>
+<a name="ln684">    for (unsigned int j = 0; j &lt; 3; ++j)</a>
+<a name="ln685">    {</a>
+<a name="ln686">        COG[j] /= _nAtoms;</a>
+<a name="ln687">    }</a>
+<a name="ln688">    for (unsigned int i = 0; i &lt; _nAtoms; ++i)</a>
+<a name="ln689">    {</a>
+<a name="ln690">        for (unsigned int j = 0; j &lt; 3; ++j)</a>
+<a name="ln691">        {</a>
+<a name="ln692">            _oricoor[i][j] -= COG[j];</a>
+<a name="ln693">        }</a>
+<a name="ln694">    }</a>
+<a name="ln695"> </a>
+<a name="ln696">    // Determine atom that is furthest away from origin</a>
+<a name="ln697">    double maxDistance(0.0);</a>
+<a name="ln698">    int maxAtom(0);</a>
+<a name="ln699">    double d;</a>
+<a name="ln700">    for (unsigned int i = 0; i &lt; _nAtoms; ++i)</a>
+<a name="ln701">    {</a>
+<a name="ln702">        d = _oricoor[i][0]*_oricoor[i][0] +  _oricoor[i][1]*_oricoor[i][1] + _oricoor[i][2]*_oricoor[i][2];</a>
+<a name="ln703">        if (d &gt; maxDistance)</a>
+<a name="ln704">        {</a>
+<a name="ln705">            maxDistance = d;</a>
+<a name="ln706">            maxAtom = i;</a>
+<a name="ln707">        }</a>
+<a name="ln708">    }</a>
+<a name="ln709"> </a>
+<a name="ln710">    // Rotate all atoms along z-axis</a>
+<a name="ln711">    double angle(-atan2(_oricoor[maxAtom][1], _oricoor[maxAtom][0]));</a>
+<a name="ln712">    double x;</a>
+<a name="ln713">    double y;</a>
+<a name="ln714">    for (unsigned int i = 0; i &lt; _nAtoms; ++i)</a>
+<a name="ln715">    {</a>
+<a name="ln716">        x = cos(angle) * _oricoor[i][0] - sin(angle) * _oricoor[i][1];</a>
+<a name="ln717">        y = sin(angle) * _oricoor[i][0] + cos(angle) * _oricoor[i][1];</a>
+<a name="ln718">        _oricoor[i][0] = x;</a>
+<a name="ln719">        _oricoor[i][1] = y;</a>
+<a name="ln720">    }</a>
+<a name="ln721"> </a>
+<a name="ln722">    // Rotate all atoms along y-axis to place the maxAtom on z</a>
+<a name="ln723">    angle = -atan2(_oricoor[maxAtom][0], _oricoor[maxAtom][2]);</a>
+<a name="ln724">    double z;</a>
+<a name="ln725">    for (unsigned int i = 0; i &lt; _nAtoms; ++i)</a>
+<a name="ln726">    {</a>
+<a name="ln727">        x = cos(angle) * _oricoor[i][0] + sin(angle) * _oricoor[i][2];</a>
+<a name="ln728">        z = cos(angle) * _oricoor[i][2] - sin(angle) * _oricoor[i][0];</a>
+<a name="ln729">        _oricoor[i][0] = x;</a>
+<a name="ln730">        _oricoor[i][2] = z;</a>
+<a name="ln731">    }</a>
+<a name="ln732"> </a>
+<a name="ln733">    // Center molecule again around its COG</a>
+<a name="ln734">    COG[0] = 0.0;</a>
+<a name="ln735">    COG[1] = 0.0;</a>
+<a name="ln736">    COG[2] = 0.0;</a>
+<a name="ln737">    for (unsigned int i = 0; i &lt; _nAtoms; ++i)</a>
+<a name="ln738">    {</a>
+<a name="ln739">        for (unsigned int j = 0; j &lt; 3; ++j)</a>
+<a name="ln740">        {</a>
+<a name="ln741">            COG[j] += _oricoor[i][j];</a>
+<a name="ln742">        }</a>
+<a name="ln743">    }</a>
+<a name="ln744">    for (unsigned int j = 0; j &lt; 3; ++j)</a>
+<a name="ln745">    {</a>
+<a name="ln746">        COG[j] /= _nAtoms;</a>
+<a name="ln747">    }</a>
+<a name="ln748">    for (unsigned int i = 0; i &lt; _nAtoms; ++i)</a>
+<a name="ln749">    {</a>
+<a name="ln750">        for (unsigned int j = 0; j &lt; 3; ++j)</a>
+<a name="ln751">        {</a>
+<a name="ln752">            _oricoor[i][j] -= COG[j];</a>
+<a name="ln753">        }</a>
+<a name="ln754">    }</a>
+<a name="ln755">}</a>
+<a name="ln756"> </a>
+<a name="ln757"> </a>
+<a name="ln758"> </a>
+<a name="ln759">void</a>
+<a name="ln760">OBSpectrophore::_setBox(void)</a>
+<a name="ln761">{</a>
+<a name="ln762">   // Define boundaries</a>
+<a name="ln763">   switch (_stereoFlag)</a>
+<a name="ln764">   {</a>
+<a name="ln765">      case OBSpectrophore::NoStereoSpecificProbes:  // No stereo</a>
+<a name="ln766">         _beginProbe = 0;</a>
+<a name="ln767">         _endProbe = 12;</a>
+<a name="ln768">         _numberOfProbes = 12;</a>
+<a name="ln769">         break;</a>
+<a name="ln770">      case OBSpectrophore::UniqueStereoSpecificProbes:  // Mirror stereo</a>
+<a name="ln771">         _beginProbe = 12;</a>
+<a name="ln772">         _endProbe = 30;</a>
+<a name="ln773">         _numberOfProbes = 18;</a>
+<a name="ln774">         break;</a>
+<a name="ln775">      case OBSpectrophore::MirrorStereoSpecificProbes:  // Unique stereo</a>
+<a name="ln776">         _beginProbe = 30;</a>
+<a name="ln777">         _endProbe = 48;</a>
+<a name="ln778">         _numberOfProbes = 18;</a>
+<a name="ln779">         break;</a>
+<a name="ln780">      case OBSpectrophore::AllStereoSpecificProbes:  // All stereo</a>
+<a name="ln781">         _beginProbe = 12;</a>
+<a name="ln782">         _endProbe = 48;</a>
+<a name="ln783">         _numberOfProbes = 36;</a>
+<a name="ln784">         break;</a>
+<a name="ln785">   }</a>
+<a name="ln786"> </a>
+<a name="ln787">   // Dodecapole - non-stereo - probe 1</a>
+<a name="ln788">   _probe[0].value[0] = +1;</a>
+<a name="ln789">   _probe[0].value[1] = +1;</a>
+<a name="ln790">   _probe[0].value[2] = -1;</a>
+<a name="ln791">   _probe[0].value[3] = -1;</a>
+<a name="ln792">   _probe[0].value[4] = -1;</a>
+<a name="ln793">   _probe[0].value[5] = +1;</a>
+<a name="ln794">   _probe[0].value[6] = +1;</a>
+<a name="ln795">   _probe[0].value[7] = -1;</a>
+<a name="ln796">   _probe[0].value[8] = -1;</a>
+<a name="ln797">   _probe[0].value[9] = -1;</a>
+<a name="ln798">   _probe[0].value[10] = +1;</a>
+<a name="ln799">   _probe[0].value[11] = +1;</a>
+<a name="ln800"> </a>
+<a name="ln801">   // Dodecapole - non-stereo - probe 2</a>
+<a name="ln802">   _probe[1].value[0] = +1;</a>
+<a name="ln803">   _probe[1].value[1] = +1;</a>
+<a name="ln804">   _probe[1].value[2] = -1;</a>
+<a name="ln805">   _probe[1].value[3] = -1;</a>
+<a name="ln806">   _probe[1].value[4] = +1;</a>
+<a name="ln807">   _probe[1].value[5] = -1;</a>
+<a name="ln808">   _probe[1].value[6] = -1;</a>
+<a name="ln809">   _probe[1].value[7] = +1;</a>
+<a name="ln810">   _probe[1].value[8] = -1;</a>
+<a name="ln811">   _probe[1].value[9] = -1;</a>
+<a name="ln812">   _probe[1].value[10] = +1;</a>
+<a name="ln813">   _probe[1].value[11] = +1;</a>
+<a name="ln814"> </a>
+<a name="ln815">   // Dodecapole - non-stereo - probe 3</a>
+<a name="ln816">   _probe[2].value[0] = +1;</a>
+<a name="ln817">   _probe[2].value[1] = +1;</a>
+<a name="ln818">   _probe[2].value[2] = +1;</a>
+<a name="ln819">   _probe[2].value[3] = -1;</a>
+<a name="ln820">   _probe[2].value[4] = -1;</a>
+<a name="ln821">   _probe[2].value[5] = -1;</a>
+<a name="ln822">   _probe[2].value[6] = -1;</a>
+<a name="ln823">   _probe[2].value[7] = -1;</a>
+<a name="ln824">   _probe[2].value[8] = -1;</a>
+<a name="ln825">   _probe[2].value[9] = +1;</a>
+<a name="ln826">   _probe[2].value[10] = +1;</a>
+<a name="ln827">   _probe[2].value[11] = +1;</a>
+<a name="ln828"> </a>
+<a name="ln829">   // Dodecapole - non-stereo - probe 4</a>
+<a name="ln830">   _probe[3].value[0] = +1;</a>
+<a name="ln831">   _probe[3].value[1] = +1;</a>
+<a name="ln832">   _probe[3].value[2] = +1;</a>
+<a name="ln833">   _probe[3].value[3] = -1;</a>
+<a name="ln834">   _probe[3].value[4] = -1;</a>
+<a name="ln835">   _probe[3].value[5] = -1;</a>
+<a name="ln836">   _probe[3].value[6] = -1;</a>
+<a name="ln837">   _probe[3].value[7] = -1;</a>
+<a name="ln838">   _probe[3].value[8] = +1;</a>
+<a name="ln839">   _probe[3].value[9] = +1;</a>
+<a name="ln840">   _probe[3].value[10] = -1;</a>
+<a name="ln841">   _probe[3].value[11] = +1;</a>
+<a name="ln842"> </a>
+<a name="ln843">   // Dodecapole - non-stereo - probe 5</a>
+<a name="ln844">   _probe[4].value[0] = +1;</a>
+<a name="ln845">   _probe[4].value[1] = +1;</a>
+<a name="ln846">   _probe[4].value[2] = +1;</a>
+<a name="ln847">   _probe[4].value[3] = -1;</a>
+<a name="ln848">   _probe[4].value[4] = -1;</a>
+<a name="ln849">   _probe[4].value[5] = +1;</a>
+<a name="ln850">   _probe[4].value[6] = -1;</a>
+<a name="ln851">   _probe[4].value[7] = +1;</a>
+<a name="ln852">   _probe[4].value[8] = -1;</a>
+<a name="ln853">   _probe[4].value[9] = -1;</a>
+<a name="ln854">   _probe[4].value[10] = +1;</a>
+<a name="ln855">   _probe[4].value[11] = -1;</a>
+<a name="ln856"> </a>
+<a name="ln857">   // Dodecapole - non-stereo - probe 6</a>
+<a name="ln858">   _probe[5].value[0] = +1;</a>
+<a name="ln859">   _probe[5].value[1] = +1;</a>
+<a name="ln860">   _probe[5].value[2] = +1;</a>
+<a name="ln861">   _probe[5].value[3] = -1;</a>
+<a name="ln862">   _probe[5].value[4] = +1;</a>
+<a name="ln863">   _probe[5].value[5] = -1;</a>
+<a name="ln864">   _probe[5].value[6] = +1;</a>
+<a name="ln865">   _probe[5].value[7] = -1;</a>
+<a name="ln866">   _probe[5].value[8] = -1;</a>
+<a name="ln867">   _probe[5].value[9] = -1;</a>
+<a name="ln868">   _probe[5].value[10] = +1;</a>
+<a name="ln869">   _probe[5].value[11] = -1;</a>
+<a name="ln870"> </a>
+<a name="ln871">   // Dodecapole - non-stereo - probe 7</a>
+<a name="ln872">   _probe[6].value[0] = +1;</a>
+<a name="ln873">   _probe[6].value[1] = +1;</a>
+<a name="ln874">   _probe[6].value[2] = +1;</a>
+<a name="ln875">   _probe[6].value[3] = -1;</a>
+<a name="ln876">   _probe[6].value[4] = +1;</a>
+<a name="ln877">   _probe[6].value[5] = -1;</a>
+<a name="ln878">   _probe[6].value[6] = +1;</a>
+<a name="ln879">   _probe[6].value[7] = -1;</a>
+<a name="ln880">   _probe[6].value[8] = +1;</a>
+<a name="ln881">   _probe[6].value[9] = -1;</a>
+<a name="ln882">   _probe[6].value[10] = -1;</a>
+<a name="ln883">   _probe[6].value[11] = -1;</a>
+<a name="ln884"> </a>
+<a name="ln885">   // Dodecapole - non-stereo - probe 8</a>
+<a name="ln886">   _probe[7].value[0] = +1;</a>
+<a name="ln887">   _probe[7].value[1] = +1;</a>
+<a name="ln888">   _probe[7].value[2] = +1;</a>
+<a name="ln889">   _probe[7].value[3] = +1;</a>
+<a name="ln890">   _probe[7].value[4] = -1;</a>
+<a name="ln891">   _probe[7].value[5] = -1;</a>
+<a name="ln892">   _probe[7].value[6] = -1;</a>
+<a name="ln893">   _probe[7].value[7] = -1;</a>
+<a name="ln894">   _probe[7].value[8] = +1;</a>
+<a name="ln895">   _probe[7].value[9] = -1;</a>
+<a name="ln896">   _probe[7].value[10] = +1;</a>
+<a name="ln897">   _probe[7].value[11] = -1;</a>
+<a name="ln898"> </a>
+<a name="ln899">   // Dodecapole - non-stereo - probe 9</a>
+<a name="ln900">   _probe[8].value[0] = +1;</a>
+<a name="ln901">   _probe[8].value[1] = +1;</a>
+<a name="ln902">   _probe[8].value[2] = +1;</a>
+<a name="ln903">   _probe[8].value[3] = +1;</a>
+<a name="ln904">   _probe[8].value[4] = -1;</a>
+<a name="ln905">   _probe[8].value[5] = -1;</a>
+<a name="ln906">   _probe[8].value[6] = -1;</a>
+<a name="ln907">   _probe[8].value[7] = -1;</a>
+<a name="ln908">   _probe[8].value[8] = +1;</a>
+<a name="ln909">   _probe[8].value[9] = +1;</a>
+<a name="ln910">   _probe[8].value[10] = -1;</a>
+<a name="ln911">   _probe[8].value[11] = -1;</a>
+<a name="ln912"> </a>
+<a name="ln913">   // Dodecapole - non-stereo - probe 10</a>
+<a name="ln914">   _probe[9].value[0] = +1;</a>
+<a name="ln915">   _probe[9].value[1] = +1;</a>
+<a name="ln916">   _probe[9].value[2] = +1;</a>
+<a name="ln917">   _probe[9].value[3] = +1;</a>
+<a name="ln918">   _probe[9].value[4] = +1;</a>
+<a name="ln919">   _probe[9].value[5] = -1;</a>
+<a name="ln920">   _probe[9].value[6] = -1;</a>
+<a name="ln921">   _probe[9].value[7] = +1;</a>
+<a name="ln922">   _probe[9].value[8] = -1;</a>
+<a name="ln923">   _probe[9].value[9] = -1;</a>
+<a name="ln924">   _probe[9].value[10] = -1;</a>
+<a name="ln925">   _probe[9].value[11] = -1;</a>
+<a name="ln926"> </a>
+<a name="ln927">   // Dodecapole - non-stereo - probe 11</a>
+<a name="ln928">   _probe[10].value[0] = +1;</a>
+<a name="ln929">   _probe[10].value[1] = +1;</a>
+<a name="ln930">   _probe[10].value[2] = +1;</a>
+<a name="ln931">   _probe[10].value[3] = +1;</a>
+<a name="ln932">   _probe[10].value[4] = +1;</a>
+<a name="ln933">   _probe[10].value[5] = +1;</a>
+<a name="ln934">   _probe[10].value[6] = -1;</a>
+<a name="ln935">   _probe[10].value[7] = -1;</a>
+<a name="ln936">   _probe[10].value[8] = -1;</a>
+<a name="ln937">   _probe[10].value[9] = -1;</a>
+<a name="ln938">   _probe[10].value[10] = -1;</a>
+<a name="ln939">   _probe[10].value[11] = -1;</a>
+<a name="ln940"> </a>
+<a name="ln941">   // Dodecapole - non-stereo - probe 12</a>
+<a name="ln942">   _probe[11].value[0] = +1;</a>
+<a name="ln943">   _probe[11].value[1] = +1;</a>
+<a name="ln944">   _probe[11].value[2] = +1;</a>
+<a name="ln945">   _probe[11].value[3] = -1;</a>
+<a name="ln946">   _probe[11].value[4] = -1;</a>
+<a name="ln947">   _probe[11].value[5] = +1;</a>
+<a name="ln948">   _probe[11].value[6] = -1;</a>
+<a name="ln949">   _probe[11].value[7] = -1;</a>
+<a name="ln950">   _probe[11].value[8] = -1;</a>
+<a name="ln951">   _probe[11].value[9] = +1;</a>
+<a name="ln952">   _probe[11].value[10] = -1;</a>
+<a name="ln953">   _probe[11].value[11] = +1;</a>
+<a name="ln954"> </a>
+<a name="ln955">   // Dodecapole - mirror-stereo - probe 1</a>
+<a name="ln956">   _probe[12].value[0] = +1;</a>
+<a name="ln957">   _probe[12].value[1] = +1;</a>
+<a name="ln958">   _probe[12].value[2] = -1;</a>
+<a name="ln959">   _probe[12].value[3] = -1;</a>
+<a name="ln960">   _probe[12].value[4] = -1;</a>
+<a name="ln961">   _probe[12].value[5] = -1;</a>
+<a name="ln962">   _probe[12].value[6] = +1;</a>
+<a name="ln963">   _probe[12].value[7] = +1;</a>
+<a name="ln964">   _probe[12].value[8] = -1;</a>
+<a name="ln965">   _probe[12].value[9] = +1;</a>
+<a name="ln966">   _probe[12].value[10] = +1;</a>
+<a name="ln967">   _probe[12].value[11] = -1;</a>
+<a name="ln968"> </a>
+<a name="ln969">   // Dodecapole - mirror-stereo - probe 2</a>
+<a name="ln970">   _probe[13].value[0] = +1;</a>
+<a name="ln971">   _probe[13].value[1] = +1;</a>
+<a name="ln972">   _probe[13].value[2] = +1;</a>
+<a name="ln973">   _probe[13].value[3] = -1;</a>
+<a name="ln974">   _probe[13].value[4] = -1;</a>
+<a name="ln975">   _probe[13].value[5] = -1;</a>
+<a name="ln976">   _probe[13].value[6] = -1;</a>
+<a name="ln977">   _probe[13].value[7] = -1;</a>
+<a name="ln978">   _probe[13].value[8] = +1;</a>
+<a name="ln979">   _probe[13].value[9] = -1;</a>
+<a name="ln980">   _probe[13].value[10] = +1;</a>
+<a name="ln981">   _probe[13].value[11] = +1;</a>
+<a name="ln982"> </a>
+<a name="ln983">   // Dodecapole - mirror-stereo - probe 3</a>
+<a name="ln984">   _probe[14].value[0] = +1;</a>
+<a name="ln985">   _probe[14].value[1] = +1;</a>
+<a name="ln986">   _probe[14].value[2] = +1;</a>
+<a name="ln987">   _probe[14].value[3] = -1;</a>
+<a name="ln988">   _probe[14].value[4] = -1;</a>
+<a name="ln989">   _probe[14].value[5] = -1;</a>
+<a name="ln990">   _probe[14].value[6] = -1;</a>
+<a name="ln991">   _probe[14].value[7] = +1;</a>
+<a name="ln992">   _probe[14].value[8] = -1;</a>
+<a name="ln993">   _probe[14].value[9] = +1;</a>
+<a name="ln994">   _probe[14].value[10] = +1;</a>
+<a name="ln995">   _probe[14].value[11] = -1;</a>
+<a name="ln996"> </a>
+<a name="ln997">   // Dodecapole - mirror-stereo - probe 4</a>
+<a name="ln998">   _probe[15].value[0] = +1;</a>
+<a name="ln999">   _probe[15].value[1] = +1;</a>
+<a name="ln1000">   _probe[15].value[2] = +1;</a>
+<a name="ln1001">   _probe[15].value[3] = -1;</a>
+<a name="ln1002">   _probe[15].value[4] = -1;</a>
+<a name="ln1003">   _probe[15].value[5] = -1;</a>
+<a name="ln1004">   _probe[15].value[6] = +1;</a>
+<a name="ln1005">   _probe[15].value[7] = -1;</a>
+<a name="ln1006">   _probe[15].value[8] = -1;</a>
+<a name="ln1007">   _probe[15].value[9] = +1;</a>
+<a name="ln1008">   _probe[15].value[10] = -1;</a>
+<a name="ln1009">   _probe[15].value[11] = +1;</a>
+<a name="ln1010"> </a>
+<a name="ln1011">   // Dodecapole - mirror-stereo - probe 5</a>
+<a name="ln1012">   _probe[16].value[0] = +1;</a>
+<a name="ln1013">   _probe[16].value[1] = +1;</a>
+<a name="ln1014">   _probe[16].value[2] = +1;</a>
+<a name="ln1015">   _probe[16].value[3] = -1;</a>
+<a name="ln1016">   _probe[16].value[4] = -1;</a>
+<a name="ln1017">   _probe[16].value[5] = -1;</a>
+<a name="ln1018">   _probe[16].value[6] = +1;</a>
+<a name="ln1019">   _probe[16].value[7] = -1;</a>
+<a name="ln1020">   _probe[16].value[8] = -1;</a>
+<a name="ln1021">   _probe[16].value[9] = +1;</a>
+<a name="ln1022">   _probe[16].value[10] = +1;</a>
+<a name="ln1023">   _probe[16].value[11] = -1;</a>
+<a name="ln1024"> </a>
+<a name="ln1025">   // Dodecapole - mirror-stereo - probe 6</a>
+<a name="ln1026">   _probe[17].value[0] = +1;</a>
+<a name="ln1027">   _probe[17].value[1] = +1;</a>
+<a name="ln1028">   _probe[17].value[2] = +1;</a>
+<a name="ln1029">   _probe[17].value[3] = -1;</a>
+<a name="ln1030">   _probe[17].value[4] = -1;</a>
+<a name="ln1031">   _probe[17].value[5] = -1;</a>
+<a name="ln1032">   _probe[17].value[6] = +1;</a>
+<a name="ln1033">   _probe[17].value[7] = -1;</a>
+<a name="ln1034">   _probe[17].value[8] = +1;</a>
+<a name="ln1035">   _probe[17].value[9] = -1;</a>
+<a name="ln1036">   _probe[17].value[10] = +1;</a>
+<a name="ln1037">   _probe[17].value[11] = -1;</a>
+<a name="ln1038"> </a>
+<a name="ln1039">   // Dodecapole - mirror-stereo - probe 7</a>
+<a name="ln1040">   _probe[18].value[0] = +1;</a>
+<a name="ln1041">   _probe[18].value[1] = +1;</a>
+<a name="ln1042">   _probe[18].value[2] = +1;</a>
+<a name="ln1043">   _probe[18].value[3] = -1;</a>
+<a name="ln1044">   _probe[18].value[4] = -1;</a>
+<a name="ln1045">   _probe[18].value[5] = -1;</a>
+<a name="ln1046">   _probe[18].value[6] = +1;</a>
+<a name="ln1047">   _probe[18].value[7] = -1;</a>
+<a name="ln1048">   _probe[18].value[8] = +1;</a>
+<a name="ln1049">   _probe[18].value[9] = +1;</a>
+<a name="ln1050">   _probe[18].value[10] = -1;</a>
+<a name="ln1051">   _probe[18].value[11] = -1;</a>
+<a name="ln1052"> </a>
+<a name="ln1053">   // Dodecapole - mirror-stereo - probe 8</a>
+<a name="ln1054">   _probe[19].value[0] = +1;</a>
+<a name="ln1055">   _probe[19].value[1] = +1;</a>
+<a name="ln1056">   _probe[19].value[2] = +1;</a>
+<a name="ln1057">   _probe[19].value[3] = -1;</a>
+<a name="ln1058">   _probe[19].value[4] = -1;</a>
+<a name="ln1059">   _probe[19].value[5] = -1;</a>
+<a name="ln1060">   _probe[19].value[6] = +1;</a>
+<a name="ln1061">   _probe[19].value[7] = +1;</a>
+<a name="ln1062">   _probe[19].value[8] = -1;</a>
+<a name="ln1063">   _probe[19].value[9] = +1;</a>
+<a name="ln1064">   _probe[19].value[10] = -1;</a>
+<a name="ln1065">   _probe[19].value[11] = -1;</a>
+<a name="ln1066"> </a>
+<a name="ln1067">   // Dodecapole - mirror-stereo - probe 9</a>
+<a name="ln1068">   _probe[20].value[0] = +1;</a>
+<a name="ln1069">   _probe[20].value[1] = +1;</a>
+<a name="ln1070">   _probe[20].value[2] = +1;</a>
+<a name="ln1071">   _probe[20].value[3] = -1;</a>
+<a name="ln1072">   _probe[20].value[4] = -1;</a>
+<a name="ln1073">   _probe[20].value[5] = -1;</a>
+<a name="ln1074">   _probe[20].value[6] = +1;</a>
+<a name="ln1075">   _probe[20].value[7] = +1;</a>
+<a name="ln1076">   _probe[20].value[8] = +1;</a>
+<a name="ln1077">   _probe[20].value[9] = -1;</a>
+<a name="ln1078">   _probe[20].value[10] = -1;</a>
+<a name="ln1079">   _probe[20].value[11] = -1;</a>
+<a name="ln1080"> </a>
+<a name="ln1081">   // Dodecapole - mirror-stereo - probe 10</a>
+<a name="ln1082">   _probe[21].value[0] = +1;</a>
+<a name="ln1083">   _probe[21].value[1] = +1;</a>
+<a name="ln1084">   _probe[21].value[2] = +1;</a>
+<a name="ln1085">   _probe[21].value[3] = -1;</a>
+<a name="ln1086">   _probe[21].value[4] = -1;</a>
+<a name="ln1087">   _probe[21].value[5] = +1;</a>
+<a name="ln1088">   _probe[21].value[6] = +1;</a>
+<a name="ln1089">   _probe[21].value[7] = -1;</a>
+<a name="ln1090">   _probe[21].value[8] = -1;</a>
+<a name="ln1091">   _probe[21].value[9] = -1;</a>
+<a name="ln1092">   _probe[21].value[10] = -1;</a>
+<a name="ln1093">   _probe[21].value[11] = +1;</a>
+<a name="ln1094"> </a>
+<a name="ln1095">   // Dodecapole - mirror-stereo - probe 11</a>
+<a name="ln1096">   _probe[22].value[0] = +1;</a>
+<a name="ln1097">   _probe[22].value[1] = +1;</a>
+<a name="ln1098">   _probe[22].value[2] = +1;</a>
+<a name="ln1099">   _probe[22].value[3] = -1;</a>
+<a name="ln1100">   _probe[22].value[4] = -1;</a>
+<a name="ln1101">   _probe[22].value[5] = +1;</a>
+<a name="ln1102">   _probe[22].value[6] = +1;</a>
+<a name="ln1103">   _probe[22].value[7] = -1;</a>
+<a name="ln1104">   _probe[22].value[8] = -1;</a>
+<a name="ln1105">   _probe[22].value[9] = -1;</a>
+<a name="ln1106">   _probe[22].value[10] = +1;</a>
+<a name="ln1107">   _probe[22].value[11] = -1;</a>
+<a name="ln1108"> </a>
+<a name="ln1109">   // Dodecapole - mirror-stereo - probe 12</a>
+<a name="ln1110">   _probe[23].value[0] = +1;</a>
+<a name="ln1111">   _probe[23].value[1] = +1;</a>
+<a name="ln1112">   _probe[23].value[2] = +1;</a>
+<a name="ln1113">   _probe[23].value[3] = -1;</a>
+<a name="ln1114">   _probe[23].value[4] = -1;</a>
+<a name="ln1115">   _probe[23].value[5] = +1;</a>
+<a name="ln1116">   _probe[23].value[6] = +1;</a>
+<a name="ln1117">   _probe[23].value[7] = -1;</a>
+<a name="ln1118">   _probe[23].value[8] = -1;</a>
+<a name="ln1119">   _probe[23].value[9] = +1;</a>
+<a name="ln1120">   _probe[23].value[10] = -1;</a>
+<a name="ln1121">   _probe[23].value[11] = -1;</a>
+<a name="ln1122"> </a>
+<a name="ln1123">   // Dodecapole - mirror-stereo - probe 13</a>
+<a name="ln1124">   _probe[24].value[0] = +1;</a>
+<a name="ln1125">   _probe[24].value[1] = +1;</a>
+<a name="ln1126">   _probe[24].value[2] = +1;</a>
+<a name="ln1127">   _probe[24].value[3] = -1;</a>
+<a name="ln1128">   _probe[24].value[4] = -1;</a>
+<a name="ln1129">   _probe[24].value[5] = +1;</a>
+<a name="ln1130">   _probe[24].value[6] = +1;</a>
+<a name="ln1131">   _probe[24].value[7] = +1;</a>
+<a name="ln1132">   _probe[24].value[8] = -1;</a>
+<a name="ln1133">   _probe[24].value[9] = -1;</a>
+<a name="ln1134">   _probe[24].value[10] = -1;</a>
+<a name="ln1135">   _probe[24].value[11] = -1;</a>
+<a name="ln1136"> </a>
+<a name="ln1137">   // Dodecapole - mirror-stereo - probe 14</a>
+<a name="ln1138">   _probe[25].value[0] = +1;</a>
+<a name="ln1139">   _probe[25].value[1] = +1;</a>
+<a name="ln1140">   _probe[25].value[2] = +1;</a>
+<a name="ln1141">   _probe[25].value[3] = -1;</a>
+<a name="ln1142">   _probe[25].value[4] = +1;</a>
+<a name="ln1143">   _probe[25].value[5] = -1;</a>
+<a name="ln1144">   _probe[25].value[6] = -1;</a>
+<a name="ln1145">   _probe[25].value[7] = +1;</a>
+<a name="ln1146">   _probe[25].value[8] = +1;</a>
+<a name="ln1147">   _probe[25].value[9] = -1;</a>
+<a name="ln1148">   _probe[25].value[10] = -1;</a>
+<a name="ln1149">   _probe[25].value[11] = -1;</a>
+<a name="ln1150"> </a>
+<a name="ln1151">   // Dodecapole - mirror-stereo - probe 15</a>
+<a name="ln1152">   _probe[26].value[0] = +1;</a>
+<a name="ln1153">   _probe[26].value[1] = +1;</a>
+<a name="ln1154">   _probe[26].value[2] = +1;</a>
+<a name="ln1155">   _probe[26].value[3] = -1;</a>
+<a name="ln1156">   _probe[26].value[4] = +1;</a>
+<a name="ln1157">   _probe[26].value[5] = -1;</a>
+<a name="ln1158">   _probe[26].value[6] = +1;</a>
+<a name="ln1159">   _probe[26].value[7] = -1;</a>
+<a name="ln1160">   _probe[26].value[8] = -1;</a>
+<a name="ln1161">   _probe[26].value[9] = -1;</a>
+<a name="ln1162">   _probe[26].value[10] = -1;</a>
+<a name="ln1163">   _probe[26].value[11] = +1;</a>
+<a name="ln1164"> </a>
+<a name="ln1165">   // Dodecapole - mirror-stereo - probe 16</a>
+<a name="ln1166">   _probe[27].value[0] = +1;</a>
+<a name="ln1167">   _probe[27].value[1] = +1;</a>
+<a name="ln1168">   _probe[27].value[2] = +1;</a>
+<a name="ln1169">   _probe[27].value[3] = -1;</a>
+<a name="ln1170">   _probe[27].value[4] = +1;</a>
+<a name="ln1171">   _probe[27].value[5] = -1;</a>
+<a name="ln1172">   _probe[27].value[6] = +1;</a>
+<a name="ln1173">   _probe[27].value[7] = +1;</a>
+<a name="ln1174">   _probe[27].value[8] = -1;</a>
+<a name="ln1175">   _probe[27].value[9] = -1;</a>
+<a name="ln1176">   _probe[27].value[10] = -1;</a>
+<a name="ln1177">   _probe[27].value[11] = -1;</a>
+<a name="ln1178"> </a>
+<a name="ln1179">   // Dodecapole - mirror-stereo - probe 17</a>
+<a name="ln1180">   _probe[28].value[0] = +1;</a>
+<a name="ln1181">   _probe[28].value[1] = +1;</a>
+<a name="ln1182">   _probe[28].value[2] = +1;</a>
+<a name="ln1183">   _probe[28].value[3] = +1;</a>
+<a name="ln1184">   _probe[28].value[4] = +1;</a>
+<a name="ln1185">   _probe[28].value[5] = -1;</a>
+<a name="ln1186">   _probe[28].value[6] = -1;</a>
+<a name="ln1187">   _probe[28].value[7] = -1;</a>
+<a name="ln1188">   _probe[28].value[8] = -1;</a>
+<a name="ln1189">   _probe[28].value[9] = -1;</a>
+<a name="ln1190">   _probe[28].value[10] = -1;</a>
+<a name="ln1191">   _probe[28].value[11] = +1;</a>
+<a name="ln1192"> </a>
+<a name="ln1193">   // Dodecapole - mirror-stereo - probe 18</a>
+<a name="ln1194">   _probe[29].value[0] = +1;</a>
+<a name="ln1195">   _probe[29].value[1] = +1;</a>
+<a name="ln1196">   _probe[29].value[2] = +1;</a>
+<a name="ln1197">   _probe[29].value[3] = +1;</a>
+<a name="ln1198">   _probe[29].value[4] = +1;</a>
+<a name="ln1199">   _probe[29].value[5] = -1;</a>
+<a name="ln1200">   _probe[29].value[6] = -1;</a>
+<a name="ln1201">   _probe[29].value[7] = -1;</a>
+<a name="ln1202">   _probe[29].value[8] = -1;</a>
+<a name="ln1203">   _probe[29].value[9] = -1;</a>
+<a name="ln1204">   _probe[29].value[10] = +1;</a>
+<a name="ln1205">   _probe[29].value[11] = -1;</a>
+<a name="ln1206"> </a>
+<a name="ln1207">   // Dodecapole - unique-stereo - probe 1</a>
+<a name="ln1208">   _probe[30].value[0] = +1;</a>
+<a name="ln1209">   _probe[30].value[1] = +1;</a>
+<a name="ln1210">   _probe[30].value[2] = -1;</a>
+<a name="ln1211">   _probe[30].value[3] = -1;</a>
+<a name="ln1212">   _probe[30].value[4] = +1;</a>
+<a name="ln1213">   _probe[30].value[5] = -1;</a>
+<a name="ln1214">   _probe[30].value[6] = +1;</a>
+<a name="ln1215">   _probe[30].value[7] = -1;</a>
+<a name="ln1216">   _probe[30].value[8] = +1;</a>
+<a name="ln1217">   _probe[30].value[9] = -1;</a>
+<a name="ln1218">   _probe[30].value[10] = -1;</a>
+<a name="ln1219">   _probe[30].value[11] = +1;</a>
+<a name="ln1220"> </a>
+<a name="ln1221">   // Dodecapole - unique-stereo - probe 2</a>
+<a name="ln1222">   _probe[31].value[0] = +1;</a>
+<a name="ln1223">   _probe[31].value[1] = +1;</a>
+<a name="ln1224">   _probe[31].value[2] = +1;</a>
+<a name="ln1225">   _probe[31].value[3] = -1;</a>
+<a name="ln1226">   _probe[31].value[4] = -1;</a>
+<a name="ln1227">   _probe[31].value[5] = -1;</a>
+<a name="ln1228">   _probe[31].value[6] = -1;</a>
+<a name="ln1229">   _probe[31].value[7] = -1;</a>
+<a name="ln1230">   _probe[31].value[8] = +1;</a>
+<a name="ln1231">   _probe[31].value[9] = +1;</a>
+<a name="ln1232">   _probe[31].value[10] = +1;</a>
+<a name="ln1233">   _probe[31].value[11] = -1;</a>
+<a name="ln1234"> </a>
+<a name="ln1235">   // Dodecapole - unique-stereo - probe 3</a>
+<a name="ln1236">   _probe[32].value[0] = +1;</a>
+<a name="ln1237">   _probe[32].value[1] = +1;</a>
+<a name="ln1238">   _probe[32].value[2] = +1;</a>
+<a name="ln1239">   _probe[32].value[3] = -1;</a>
+<a name="ln1240">   _probe[32].value[4] = -1;</a>
+<a name="ln1241">   _probe[32].value[5] = +1;</a>
+<a name="ln1242">   _probe[32].value[6] = -1;</a>
+<a name="ln1243">   _probe[32].value[7] = -1;</a>
+<a name="ln1244">   _probe[32].value[8] = -1;</a>
+<a name="ln1245">   _probe[32].value[9] = -1;</a>
+<a name="ln1246">   _probe[32].value[10] = +1;</a>
+<a name="ln1247">   _probe[32].value[11] = +1;</a>
+<a name="ln1248"> </a>
+<a name="ln1249">   // Dodecapole - unique-stereo - probe 4</a>
+<a name="ln1250">   _probe[33].value[0] = +1;</a>
+<a name="ln1251">   _probe[33].value[1] = +1;</a>
+<a name="ln1252">   _probe[33].value[2] = +1;</a>
+<a name="ln1253">   _probe[33].value[3] = -1;</a>
+<a name="ln1254">   _probe[33].value[4] = +1;</a>
+<a name="ln1255">   _probe[33].value[5] = -1;</a>
+<a name="ln1256">   _probe[33].value[6] = -1;</a>
+<a name="ln1257">   _probe[33].value[7] = -1;</a>
+<a name="ln1258">   _probe[33].value[8] = -1;</a>
+<a name="ln1259">   _probe[33].value[9] = +1;</a>
+<a name="ln1260">   _probe[33].value[10] = -1;</a>
+<a name="ln1261">   _probe[33].value[11] = +1;</a>
+<a name="ln1262"> </a>
+<a name="ln1263">   // Dodecapole - unique-stereo - probe 5</a>
+<a name="ln1264">   _probe[34].value[0] = +1;</a>
+<a name="ln1265">   _probe[34].value[1] = +1;</a>
+<a name="ln1266">   _probe[34].value[2] = +1;</a>
+<a name="ln1267">   _probe[34].value[3] = -1;</a>
+<a name="ln1268">   _probe[34].value[4] = +1;</a>
+<a name="ln1269">   _probe[34].value[5] = -1;</a>
+<a name="ln1270">   _probe[34].value[6] = -1;</a>
+<a name="ln1271">   _probe[34].value[7] = -1;</a>
+<a name="ln1272">   _probe[34].value[8] = -1;</a>
+<a name="ln1273">   _probe[34].value[9] = -1;</a>
+<a name="ln1274">   _probe[34].value[10] = +1;</a>
+<a name="ln1275">   _probe[34].value[11] = +1;</a>
+<a name="ln1276"> </a>
+<a name="ln1277">   // Dodecapole - unique-stereo - probe 6</a>
+<a name="ln1278">   _probe[35].value[0] = +1;</a>
+<a name="ln1279">   _probe[35].value[1] = +1;</a>
+<a name="ln1280">   _probe[35].value[2] = +1;</a>
+<a name="ln1281">   _probe[35].value[3] = -1;</a>
+<a name="ln1282">   _probe[35].value[4] = +1;</a>
+<a name="ln1283">   _probe[35].value[5] = -1;</a>
+<a name="ln1284">   _probe[35].value[6] = -1;</a>
+<a name="ln1285">   _probe[35].value[7] = -1;</a>
+<a name="ln1286">   _probe[35].value[8] = +1;</a>
+<a name="ln1287">   _probe[35].value[9] = -1;</a>
+<a name="ln1288">   _probe[35].value[10] = +1;</a>
+<a name="ln1289">   _probe[35].value[11] = -1;</a>
+<a name="ln1290"> </a>
+<a name="ln1291">   // Dodecapole - unique-stereo - probe 7</a>
+<a name="ln1292">   _probe[36].value[0] = +1;</a>
+<a name="ln1293">   _probe[36].value[1] = +1;</a>
+<a name="ln1294">   _probe[36].value[2] = +1;</a>
+<a name="ln1295">   _probe[36].value[3] = -1;</a>
+<a name="ln1296">   _probe[36].value[4] = +1;</a>
+<a name="ln1297">   _probe[36].value[5] = -1;</a>
+<a name="ln1298">   _probe[36].value[6] = -1;</a>
+<a name="ln1299">   _probe[36].value[7] = -1;</a>
+<a name="ln1300">   _probe[36].value[8] = +1;</a>
+<a name="ln1301">   _probe[36].value[9] = -1;</a>
+<a name="ln1302">   _probe[36].value[10] = -1;</a>
+<a name="ln1303">   _probe[36].value[11] = +1;</a>
+<a name="ln1304"> </a>
+<a name="ln1305">   // Dodecapole - unique-stereo - probe 8</a>
+<a name="ln1306">   _probe[37].value[0] = +1;</a>
+<a name="ln1307">   _probe[37].value[1] = +1;</a>
+<a name="ln1308">   _probe[37].value[2] = +1;</a>
+<a name="ln1309">   _probe[37].value[3] = -1;</a>
+<a name="ln1310">   _probe[37].value[4] = +1;</a>
+<a name="ln1311">   _probe[37].value[5] = +1;</a>
+<a name="ln1312">   _probe[37].value[6] = -1;</a>
+<a name="ln1313">   _probe[37].value[7] = -1;</a>
+<a name="ln1314">   _probe[37].value[8] = -1;</a>
+<a name="ln1315">   _probe[37].value[9] = -1;</a>
+<a name="ln1316">   _probe[37].value[10] = -1;</a>
+<a name="ln1317">   _probe[37].value[11] = +1;</a>
+<a name="ln1318"> </a>
+<a name="ln1319">   // Dodecapole - unique-stereo - probe 9</a>
+<a name="ln1320">   _probe[38].value[0] = +1;</a>
+<a name="ln1321">   _probe[38].value[1] = +1;</a>
+<a name="ln1322">   _probe[38].value[2] = +1;</a>
+<a name="ln1323">   _probe[38].value[3] = -1;</a>
+<a name="ln1324">   _probe[38].value[4] = +1;</a>
+<a name="ln1325">   _probe[38].value[5] = +1;</a>
+<a name="ln1326">   _probe[38].value[6] = -1;</a>
+<a name="ln1327">   _probe[38].value[7] = -1;</a>
+<a name="ln1328">   _probe[38].value[8] = +1;</a>
+<a name="ln1329">   _probe[38].value[9] = -1;</a>
+<a name="ln1330">   _probe[38].value[10] = -1;</a>
+<a name="ln1331">   _probe[38].value[11] = -1;</a>
+<a name="ln1332"> </a>
+<a name="ln1333">   // Dodecapole - unique-stereo - probe 10</a>
+<a name="ln1334">   _probe[39].value[0] = +1;</a>
+<a name="ln1335">   _probe[39].value[1] = +1;</a>
+<a name="ln1336">   _probe[39].value[2] = +1;</a>
+<a name="ln1337">   _probe[39].value[3] = -1;</a>
+<a name="ln1338">   _probe[39].value[4] = +1;</a>
+<a name="ln1339">   _probe[39].value[5] = -1;</a>
+<a name="ln1340">   _probe[39].value[6] = -1;</a>
+<a name="ln1341">   _probe[39].value[7] = +1;</a>
+<a name="ln1342">   _probe[39].value[8] = -1;</a>
+<a name="ln1343">   _probe[39].value[9] = +1;</a>
+<a name="ln1344">   _probe[39].value[10] = -1;</a>
+<a name="ln1345">   _probe[39].value[11] = -1;</a>
+<a name="ln1346"> </a>
+<a name="ln1347">   // Dodecapole - unique-stereo - probe 11</a>
+<a name="ln1348">   _probe[40].value[0] = +1;</a>
+<a name="ln1349">   _probe[40].value[1] = +1;</a>
+<a name="ln1350">   _probe[40].value[2] = +1;</a>
+<a name="ln1351">   _probe[40].value[3] = -1;</a>
+<a name="ln1352">   _probe[40].value[4] = +1;</a>
+<a name="ln1353">   _probe[40].value[5] = -1;</a>
+<a name="ln1354">   _probe[40].value[6] = -1;</a>
+<a name="ln1355">   _probe[40].value[7] = +1;</a>
+<a name="ln1356">   _probe[40].value[8] = -1;</a>
+<a name="ln1357">   _probe[40].value[9] = -1;</a>
+<a name="ln1358">   _probe[40].value[10] = +1;</a>
+<a name="ln1359">   _probe[40].value[11] = -1;</a>
+<a name="ln1360"> </a>
+<a name="ln1361">   // Dodecapole - unique-stereo - probe 12</a>
+<a name="ln1362">   _probe[41].value[0] = +1;</a>
+<a name="ln1363">   _probe[41].value[1] = +1;</a>
+<a name="ln1364">   _probe[41].value[2] = +1;</a>
+<a name="ln1365">   _probe[41].value[3] = -1;</a>
+<a name="ln1366">   _probe[41].value[4] = +1;</a>
+<a name="ln1367">   _probe[41].value[5] = -1;</a>
+<a name="ln1368">   _probe[41].value[6] = -1;</a>
+<a name="ln1369">   _probe[41].value[7] = +1;</a>
+<a name="ln1370">   _probe[41].value[8] = -1;</a>
+<a name="ln1371">   _probe[41].value[9] = -1;</a>
+<a name="ln1372">   _probe[41].value[10] = -1;</a>
+<a name="ln1373">   _probe[41].value[11] = +1;</a>
+<a name="ln1374"> </a>
+<a name="ln1375">   // Dodecapole - unique-stereo - probe 13</a>
+<a name="ln1376">   _probe[42].value[0] = +1;</a>
+<a name="ln1377">   _probe[42].value[1] = +1;</a>
+<a name="ln1378">   _probe[42].value[2] = +1;</a>
+<a name="ln1379">   _probe[42].value[3] = -1;</a>
+<a name="ln1380">   _probe[42].value[4] = +1;</a>
+<a name="ln1381">   _probe[42].value[5] = +1;</a>
+<a name="ln1382">   _probe[42].value[6] = -1;</a>
+<a name="ln1383">   _probe[42].value[7] = +1;</a>
+<a name="ln1384">   _probe[42].value[8] = -1;</a>
+<a name="ln1385">   _probe[42].value[9] = -1;</a>
+<a name="ln1386">   _probe[42].value[10] = -1;</a>
+<a name="ln1387">   _probe[42].value[11] = -1;</a>
+<a name="ln1388"> </a>
+<a name="ln1389">   // Dodecapole - unique-stereo - probe 14</a>
+<a name="ln1390">   _probe[43].value[0] = +1;</a>
+<a name="ln1391">   _probe[43].value[1] = +1;</a>
+<a name="ln1392">   _probe[43].value[2] = +1;</a>
+<a name="ln1393">   _probe[43].value[3] = -1;</a>
+<a name="ln1394">   _probe[43].value[4] = +1;</a>
+<a name="ln1395">   _probe[43].value[5] = +1;</a>
+<a name="ln1396">   _probe[43].value[6] = -1;</a>
+<a name="ln1397">   _probe[43].value[7] = -1;</a>
+<a name="ln1398">   _probe[43].value[8] = -1;</a>
+<a name="ln1399">   _probe[43].value[9] = -1;</a>
+<a name="ln1400">   _probe[43].value[10] = +1;</a>
+<a name="ln1401">   _probe[43].value[11] = -1;</a>
+<a name="ln1402"> </a>
+<a name="ln1403">   // Dodecapole - unique-stereo - probe 15</a>
+<a name="ln1404">   _probe[44].value[0] = +1;</a>
+<a name="ln1405">   _probe[44].value[1] = +1;</a>
+<a name="ln1406">   _probe[44].value[2] = +1;</a>
+<a name="ln1407">   _probe[44].value[3] = -1;</a>
+<a name="ln1408">   _probe[44].value[4] = +1;</a>
+<a name="ln1409">   _probe[44].value[5] = -1;</a>
+<a name="ln1410">   _probe[44].value[6] = +1;</a>
+<a name="ln1411">   _probe[44].value[7] = -1;</a>
+<a name="ln1412">   _probe[44].value[8] = -1;</a>
+<a name="ln1413">   _probe[44].value[9] = +1;</a>
+<a name="ln1414">   _probe[44].value[10] = -1;</a>
+<a name="ln1415">   _probe[44].value[11] = -1;</a>
+<a name="ln1416"> </a>
+<a name="ln1417">   // Dodecapole - unique-stereo - probe 16</a>
+<a name="ln1418">   _probe[45].value[0] = +1;</a>
+<a name="ln1419">   _probe[45].value[1] = +1;</a>
+<a name="ln1420">   _probe[45].value[2] = +1;</a>
+<a name="ln1421">   _probe[45].value[3] = -1;</a>
+<a name="ln1422">   _probe[45].value[4] = +1;</a>
+<a name="ln1423">   _probe[45].value[5] = +1;</a>
+<a name="ln1424">   _probe[45].value[6] = +1;</a>
+<a name="ln1425">   _probe[45].value[7] = -1;</a>
+<a name="ln1426">   _probe[45].value[8] = -1;</a>
+<a name="ln1427">   _probe[45].value[9] = -1;</a>
+<a name="ln1428">   _probe[45].value[10] = -1;</a>
+<a name="ln1429">   _probe[45].value[11] = -1;</a>
+<a name="ln1430"> </a>
+<a name="ln1431">   // Dodecapole - unique-stereo - probe 17</a>
+<a name="ln1432">   _probe[46].value[0] = +1;</a>
+<a name="ln1433">   _probe[46].value[1] = +1;</a>
+<a name="ln1434">   _probe[46].value[2] = +1;</a>
+<a name="ln1435">   _probe[46].value[3] = +1;</a>
+<a name="ln1436">   _probe[46].value[4] = +1;</a>
+<a name="ln1437">   _probe[46].value[5] = -1;</a>
+<a name="ln1438">   _probe[46].value[6] = -1;</a>
+<a name="ln1439">   _probe[46].value[7] = -1;</a>
+<a name="ln1440">   _probe[46].value[8] = +1;</a>
+<a name="ln1441">   _probe[46].value[9] = -1;</a>
+<a name="ln1442">   _probe[46].value[10] = -1;</a>
+<a name="ln1443">   _probe[46].value[11] = -1;</a>
+<a name="ln1444"> </a>
+<a name="ln1445">   // Dodecapole - unique-stereo - probe 18</a>
+<a name="ln1446">   _probe[47].value[0] = +1;</a>
+<a name="ln1447">   _probe[47].value[1] = +1;</a>
+<a name="ln1448">   _probe[47].value[2] = +1;</a>
+<a name="ln1449">   _probe[47].value[3] = +1;</a>
+<a name="ln1450">   _probe[47].value[4] = +1;</a>
+<a name="ln1451">   _probe[47].value[5] = -1;</a>
+<a name="ln1452">   _probe[47].value[6] = -1;</a>
+<a name="ln1453">   _probe[47].value[7] = -1;</a>
+<a name="ln1454">   _probe[47].value[8] = -1;</a>
+<a name="ln1455">   _probe[47].value[9] = +1;</a>
+<a name="ln1456">   _probe[47].value[10] = -1;</a>
+<a name="ln1457">   _probe[47].value[11] = -1;</a>
+<a name="ln1458">}</a>
+<a name="ln1459"> </a>
+<a name="ln1460"> </a>
+<a name="ln1461"> </a>
+<a name="ln1462">void</a>
+<a name="ln1463">OBSpectrophore::_calculateProperties(OpenBabel::OBMol* mol)</a>
+<a name="ln1464">{</a>
+<a name="ln1465">   //</a>
+<a name="ln1466">   // PROPERTY 1: ATOMIC PARTIAL CHARGES [0]</a>
+<a name="ln1467">   //</a>
+<a name="ln1468"> </a>
+<a name="ln1469">   // CHI and ETA</a>
+<a name="ln1470">   unsigned int dim(_nAtoms + 1);</a>
+<a name="ln1471">   std::vector&lt;double&gt; CHI(dim);</a>
+<a name="ln1472">   double** ETA = new double*[dim];</a>
+<a name="ln1473">   double** ETA2 = new double*[dim];      // A copy for the electrophilicity later on</a>
+<a name="ln1474">   for (unsigned int i = 0; i &lt; dim; ++i)</a>
+<a name="ln1475">   {</a>
+<a name="ln1476">      ETA[i] = new double[dim];</a>
+<a name="ln1477">      ETA2[i] = new double[dim];</a>
+<a name="ln1478">   }</a>
+<a name="ln1479">   double totalCharge(0.0);</a>
+<a name="ln1480">   unsigned int i(0);</a>
+<a name="ln1481">   unsigned int n;</a>
+<a name="ln1482">   double hardness;</a>
+<a name="ln1483">   double electronegativity;</a>
+<a name="ln1484">   for (OpenBabel::OBMolAtomIter atom(mol); atom; ++atom)</a>
+<a name="ln1485">   {</a>
+<a name="ln1486">      n = (unsigned int) atom-&gt;GetAtomicNum();</a>
+<a name="ln1487">      switch (n)</a>
+<a name="ln1488">      {</a>
+<a name="ln1489">         case 1:  // H</a>
+<a name="ln1490">            hardness = 0.65971;</a>
+<a name="ln1491">            electronegativity = 0.20606;</a>
+<a name="ln1492">            break;</a>
+<a name="ln1493">         case 3:  // Li</a>
+<a name="ln1494">            hardness = 0.32966;</a>
+<a name="ln1495">            electronegativity = 0.36237;</a>
+<a name="ln1496">            break;</a>
+<a name="ln1497">         case 5:  // B</a>
+<a name="ln1498">            hardness = 0.32966;</a>
+<a name="ln1499">            electronegativity = 0.36237;</a>
+<a name="ln1500">            break;</a>
+<a name="ln1501">         case 6:  // C</a>
+<a name="ln1502">            hardness = 0.32966;</a>
+<a name="ln1503">            electronegativity = 0.36237;</a>
+<a name="ln1504">            break;</a>
+<a name="ln1505">         case 7:  // N</a>
+<a name="ln1506">            hardness = 0.34519;</a>
+<a name="ln1507">            electronegativity = 0.49279;</a>
+<a name="ln1508">            break;</a>
+<a name="ln1509">         case 8:  // O</a>
+<a name="ln1510">            hardness = 0.54428;</a>
+<a name="ln1511">            electronegativity = 0.73013;</a>
+<a name="ln1512">            break;</a>
+<a name="ln1513">         case 9:  // F</a>
+<a name="ln1514">            hardness = 0.72664;</a>
+<a name="ln1515">            electronegativity = 0.72052;</a>
+<a name="ln1516">            break;</a>
+<a name="ln1517">         case 11: // Na</a>
+<a name="ln1518">            hardness = 0.32966;</a>
+<a name="ln1519">            electronegativity = 0.36237;</a>
+<a name="ln1520">            break;</a>
+<a name="ln1521">         case 12: // Mg</a>
+<a name="ln1522">            hardness = 0.32966;</a>
+<a name="ln1523">            electronegativity = 0.36237;</a>
+<a name="ln1524">            break;</a>
+<a name="ln1525">         case 14: // Si</a>
+<a name="ln1526">            hardness = 0.32966;</a>
+<a name="ln1527">            electronegativity = 0.36237;</a>
+<a name="ln1528">            break;</a>
+<a name="ln1529">         case 15: // P</a>
+<a name="ln1530">            hardness = 0.32966;</a>
+<a name="ln1531">            electronegativity = 0.36237;</a>
+<a name="ln1532">            break;</a>
+<a name="ln1533">         case 16: // S</a>
+<a name="ln1534">            hardness = 0.20640;</a>
+<a name="ln1535">            electronegativity = 0.62020;</a>
+<a name="ln1536">            break;</a>
+<a name="ln1537">         case 17: // Cl</a>
+<a name="ln1538">            hardness = 0.32966;</a>
+<a name="ln1539">            electronegativity = 0.36237;</a>
+<a name="ln1540">            break;</a>
+<a name="ln1541">         case 19: // K</a>
+<a name="ln1542">            hardness = 0.32966;</a>
+<a name="ln1543">            electronegativity = 0.36237;</a>
+<a name="ln1544">            break;</a>
+<a name="ln1545">         case 20: // Ca</a>
+<a name="ln1546">            hardness = 0.32966;</a>
+<a name="ln1547">            electronegativity = 0.36237;</a>
+<a name="ln1548">            break;</a>
+<a name="ln1549">         case 26: // Fe</a>
+<a name="ln1550">            hardness = 0.32966;</a>
+<a name="ln1551">            electronegativity = 0.36237;</a>
+<a name="ln1552">            break;</a>
+<a name="ln1553">         case 29: // Cu</a>
+<a name="ln1554">            hardness = 0.32966;</a>
+<a name="ln1555">            electronegativity = 0.36237;</a>
+<a name="ln1556">            break;</a>
+<a name="ln1557">         case 30: // Zn</a>
+<a name="ln1558">            hardness = 0.32966;</a>
+<a name="ln1559">            electronegativity = 0.36237;</a>
+<a name="ln1560">            break;</a>
+<a name="ln1561">         case 35: // Br</a>
+<a name="ln1562">            hardness = 0.54554;</a>
+<a name="ln1563">            electronegativity = 0.70052;</a>
+<a name="ln1564">            break;</a>
+<a name="ln1565">         case 53: // I</a>
+<a name="ln1566">            hardness = 0.30664;</a>
+<a name="ln1567">            electronegativity = 0.68052;</a>
+<a name="ln1568">            break;</a>
+<a name="ln1569">         default:</a>
+<a name="ln1570">            hardness = 0.65971;</a>
+<a name="ln1571">            electronegativity = 0.20606;</a>
+<a name="ln1572">            break;</a>
+<a name="ln1573">      }</a>
+<a name="ln1574"> </a>
+<a name="ln1575">      CHI[i] = -electronegativity;</a>
+<a name="ln1576">      ETA[i][i] = 2.0 * hardness;</a>
+<a name="ln1577"> </a>
+<a name="ln1578">      // Adjust the total molecular charge</a>
+<a name="ln1579">      totalCharge += atom-&gt;GetFormalCharge();</a>
+<a name="ln1580"> </a>
+<a name="ln1581">      // Increment</a>
+<a name="ln1582">      ++i;</a>
+<a name="ln1583">   }</a>
+<a name="ln1584"> </a>
+<a name="ln1585">   // Complete CHI</a>
+<a name="ln1586">   CHI[_nAtoms] = totalCharge;</a>
+<a name="ln1587"> </a>
+<a name="ln1588">   // Complete ETA</a>
+<a name="ln1589">   double d;</a>
+<a name="ln1590">   for (unsigned int r = 0; r &lt; _nAtoms; ++r)</a>
+<a name="ln1591">   {</a>
+<a name="ln1592">      for (unsigned int c = r + 1; c &lt; _nAtoms; ++c)</a>
+<a name="ln1593">      {</a>
+<a name="ln1594">         d =  (_oricoor[r][0] - _oricoor[c][0]) * (_oricoor[r][0] - _oricoor[c][0]);</a>
+<a name="ln1595">         d += (_oricoor[r][1] - _oricoor[c][1]) * (_oricoor[r][1] - _oricoor[c][1]);</a>
+<a name="ln1596">         d += (_oricoor[r][2] - _oricoor[c][2]) * (_oricoor[r][2] - _oricoor[c][2]);</a>
+<a name="ln1597">         ETA[r][c] = 0.529176 / sqrt(d);     // 0.529176: Angstrom to au</a>
+<a name="ln1598">         ETA[c][r] = ETA[r][c];</a>
+<a name="ln1599">      }</a>
+<a name="ln1600">   }</a>
+<a name="ln1601">   for (unsigned int i = 0; i &lt; dim; ++i)</a>
+<a name="ln1602">   {</a>
+<a name="ln1603">      ETA[i][_nAtoms] = -1.0;</a>
+<a name="ln1604">      ETA[_nAtoms][i] = +1.0;</a>
+<a name="ln1605">   }</a>
+<a name="ln1606">   ETA[_nAtoms][_nAtoms] = 0.0;</a>
+<a name="ln1607"> </a>
+<a name="ln1608">   // Make ETA2 a copy of ETA</a>
+<a name="ln1609">   for (unsigned int r(0); r &lt; dim; ++r)</a>
+<a name="ln1610">   {</a>
+<a name="ln1611">      for (unsigned int c(0); c &lt; dim; ++c)</a>
+<a name="ln1612">      {</a>
+<a name="ln1613">         ETA2[r][c] = ETA[r][c];</a>
+<a name="ln1614">      }</a>
+<a name="ln1615">   }</a>
+<a name="ln1616"> </a>
+<a name="ln1617">   // Solve the matrix equation</a>
+<a name="ln1618">   _solveMatrix(ETA, &amp;(CHI[0]), dim);    // CHI will contain the values</a>
+<a name="ln1619"> </a>
+<a name="ln1620">   // Add values to property matrix</a>
+<a name="ln1621">   for (unsigned int i = 0; i &lt; _nAtoms; ++i)</a>
+<a name="ln1622">   {</a>
+<a name="ln1623">      _property[i][0] = CHI[i];</a>
+<a name="ln1624">   }</a>
+<a name="ln1625">   double CHIeq2 = CHI[dim - 1] * CHI[dim - 1]; // For electrophilicity later on</a>
+<a name="ln1626"> </a>
+<a name="ln1627">   // Clean</a>
+<a name="ln1628">   for (unsigned int i = 0; i &lt; dim; ++i)</a>
+<a name="ln1629">   {</a>
+<a name="ln1630">      delete[] ETA[i];</a>
+<a name="ln1631">      ETA[i] = nullptr;</a>
+<a name="ln1632">   }</a>
+<a name="ln1633">   delete[] ETA;</a>
+<a name="ln1634">   ETA = nullptr;</a>
+<a name="ln1635"> </a>
+<a name="ln1636"> </a>
+<a name="ln1637"> </a>
+<a name="ln1638">   //</a>
+<a name="ln1639">   // PROPERTY 2: ATOMIC LIPOPHILICITY VALUES [1]</a>
+<a name="ln1640">   //</a>
+<a name="ln1641">   unsigned int a(0);</a>
+<a name="ln1642">   for (OpenBabel::OBMolAtomIter atom(mol); atom; ++atom)</a>
+<a name="ln1643">   {</a>
+<a name="ln1644">      n = (unsigned int) atom-&gt;GetAtomicNum();</a>
+<a name="ln1645">      switch (n)</a>
+<a name="ln1646">      {</a>
+<a name="ln1647">         case 1:		// H</a>
+<a name="ln1648">            if (atom-&gt;GetExplicitDegree())</a>
+<a name="ln1649">            {</a>
+<a name="ln1650">               if (atom-&gt;IsNonPolarHydrogen())</a>
+<a name="ln1651">               // Non-polar H</a>
+<a name="ln1652">               {</a>
+<a name="ln1653">                  _property[a][1] = -0.018;</a>
+<a name="ln1654">               }</a>
+<a name="ln1655">               else</a>
+<a name="ln1656">               // Polar H</a>
+<a name="ln1657">               {</a>
+<a name="ln1658">                  _property[a][1] = -0.374;</a>
+<a name="ln1659">               }</a>
+<a name="ln1660">            }</a>
+<a name="ln1661">            else</a>
+<a name="ln1662">            {</a>
+<a name="ln1663">               _property[a][1] = -0.175;</a>
+<a name="ln1664">            }</a>
+<a name="ln1665">            break;</a>
+<a name="ln1666">        case 6:		// C</a>
+<a name="ln1667">            _property[a][1] = 0.271;</a>
+<a name="ln1668">            break;</a>
+<a name="ln1669">        case 7:		// N</a>
+<a name="ln1670">            _property[a][1] = -0.137;</a>
+<a name="ln1671">            break;</a>
+<a name="ln1672">        case 8:		// O</a>
+<a name="ln1673">            _property[a][1] = -0.321;</a>
+<a name="ln1674">            break;</a>
+<a name="ln1675">        case 9:		// F</a>
+<a name="ln1676">            _property[a][1] = 0.217;</a>
+<a name="ln1677">            break;</a>
+<a name="ln1678">        case 16:	// S</a>
+<a name="ln1679">            _property[a][1] = 0.385;</a>
+<a name="ln1680">            break;</a>
+<a name="ln1681">        case 17:	// Cl</a>
+<a name="ln1682">            _property[a][1] = 0.632;</a>
+<a name="ln1683">            break;</a>
+<a name="ln1684">        case 35:	// Br</a>
+<a name="ln1685">            _property[a][1] = 0.815;</a>
+<a name="ln1686">            break;</a>
+<a name="ln1687">        case 53:	// I</a>
+<a name="ln1688">            _property[a][1] = 0.198;</a>
+<a name="ln1689">            break;</a>
+<a name="ln1690">        default:	// The rest</a>
+<a name="ln1691">            _property[a][1] = -0.175;</a>
+<a name="ln1692">            break;</a>
+<a name="ln1693">        }</a>
+<a name="ln1694"> </a>
+<a name="ln1695">        // Increment</a>
+<a name="ln1696">        ++a;</a>
+<a name="ln1697">    }</a>
+<a name="ln1698"> </a>
+<a name="ln1699"> </a>
+<a name="ln1700"> </a>
+<a name="ln1701">   //</a>
+<a name="ln1702">   // PROPERTY 3: ATOMIC SHAPE DEVIATIONS [2]</a>
+<a name="ln1703">   //</a>
+<a name="ln1704">   for (unsigned int a(0); a &lt; _nAtoms; ++a)</a>
+<a name="ln1705">   {</a>
+<a name="ln1706">      for (unsigned int c(0); c &lt; 3; ++c)</a>
+<a name="ln1707">      {</a>
+<a name="ln1708">         _coor[a][c] = _oricoor[a][c];</a>
+<a name="ln1709">      }</a>
+<a name="ln1710">   }</a>
+<a name="ln1711">   double COG[3]; // Center of geometry</a>
+<a name="ln1712">   for (unsigned int c(0); c &lt; 3; ++c)</a>
+<a name="ln1713">   {</a>
+<a name="ln1714">      COG[c] = _coor[0][c];</a>
+<a name="ln1715">      for (unsigned int a(1); a &lt; _nAtoms; ++a)</a>
+<a name="ln1716">      {</a>
+<a name="ln1717">         COG[c] += _coor[a][c];</a>
+<a name="ln1718">      }</a>
+<a name="ln1719">      COG[c] /= _nAtoms;</a>
+<a name="ln1720">   }</a>
+<a name="ln1721"> </a>
+<a name="ln1722">   // Shift molecules to COG and calculate individual distances</a>
+<a name="ln1723">   std::vector&lt;double&gt; distance(_nAtoms);</a>
+<a name="ln1724">   double averageDistance(0.0);</a>
+<a name="ln1725">   for (unsigned int a(0); a &lt; _nAtoms; ++a)</a>
+<a name="ln1726">   {</a>
+<a name="ln1727">      distance[a] = 0.0;</a>
+<a name="ln1728">      for (unsigned int c(0); c &lt; 3; ++c)</a>
+<a name="ln1729">      {</a>
+<a name="ln1730">         _coor[a][c] -= COG[c];</a>
+<a name="ln1731">         distance[a] += _coor[a][c] * _coor[a][c];</a>
+<a name="ln1732">      }</a>
+<a name="ln1733">      distance[a] = sqrt(distance[a]);</a>
+<a name="ln1734">      averageDistance += distance[a];</a>
+<a name="ln1735">   }</a>
+<a name="ln1736">   averageDistance /= _nAtoms;</a>
+<a name="ln1737"> </a>
+<a name="ln1738">   // Set relative to average distance</a>
+<a name="ln1739">   for (unsigned int a(0); a &lt; _nAtoms; ++a)</a>
+<a name="ln1740">   {</a>
+<a name="ln1741">      distance[a] -= averageDistance;</a>
+<a name="ln1742">      distance[a] *= averageDistance;</a>
+<a name="ln1743">   }</a>
+<a name="ln1744"> </a>
+<a name="ln1745">   // Add property</a>
+<a name="ln1746">   for (unsigned int a(0); a &lt; _nAtoms; ++a)</a>
+<a name="ln1747">   {</a>
+<a name="ln1748">      _property[a][2] = distance[a];</a>
+<a name="ln1749">   }</a>
+<a name="ln1750"> </a>
+<a name="ln1751"> </a>
+<a name="ln1752"> </a>
+<a name="ln1753">   //</a>
+<a name="ln1754">   // PROPERTY 4: ATOMIC ELECTROPHILICITY [3]</a>
+<a name="ln1755">   //</a>
+<a name="ln1756">   // CHI and ETA2</a>
+<a name="ln1757">   for (unsigned int i(0); i &lt; dim; ++i)</a>
+<a name="ln1758">   {</a>
+<a name="ln1759">      CHI[i] = 1.0;</a>
+<a name="ln1760">   }</a>
+<a name="ln1761">   CHI[_nAtoms] = 0.0;</a>
+<a name="ln1762"> </a>
+<a name="ln1763">   // Complete ETA2</a>
+<a name="ln1764">   for (unsigned int i = 0; i &lt; dim; ++i)</a>
+<a name="ln1765">   {</a>
+<a name="ln1766">      ETA2[i][_nAtoms] = 0.0;</a>
+<a name="ln1767">      ETA2[_nAtoms][i] = 1.0;</a>
+<a name="ln1768">   }</a>
+<a name="ln1769">   ETA2[_nAtoms][_nAtoms] = -1.0;</a>
+<a name="ln1770"> </a>
+<a name="ln1771">   // Solve the matrix equation</a>
+<a name="ln1772">   _solveMatrix(ETA2, &amp;(CHI[0]), dim);    // CHI will contain the values</a>
+<a name="ln1773"> </a>
+<a name="ln1774">   // Add values to property matrix</a>
+<a name="ln1775">   for (unsigned int i = 0; i &lt; _nAtoms; ++i)</a>
+<a name="ln1776">   {</a>
+<a name="ln1777">      _property[i][3] = CHI[i] * CHIeq2;</a>
+<a name="ln1778">   }</a>
+<a name="ln1779"> </a>
+<a name="ln1780">   // Clean</a>
+<a name="ln1781">   for (unsigned int i = 0; i &lt; dim; ++i)</a>
+<a name="ln1782">   {</a>
+<a name="ln1783">      delete[] ETA2[i];</a>
+<a name="ln1784">      ETA2[i] = nullptr;</a>
+<a name="ln1785">   }</a>
+<a name="ln1786">   delete[] ETA2;</a>
+<a name="ln1787">   ETA2 = nullptr;</a>
+<a name="ln1788"> </a>
+<a name="ln1789">   //</a>
+<a name="ln1790">   // Return</a>
+<a name="ln1791">   //</a>
+<a name="ln1792">   return;</a>
+<a name="ln1793">}</a>
+<a name="ln1794"> </a>
+<a name="ln1795"> </a>
+<a name="ln1796"> </a>
+<a name="ln1797">void</a>
+<a name="ln1798">OBSpectrophore::_solveMatrix(double** A, double* B, unsigned int dim)</a>
+<a name="ln1799">{</a>
+<a name="ln1800">   std::vector&lt;int&gt; temp(dim);</a>
+<a name="ln1801">   _luDecompose(A, temp, dim);</a>
+<a name="ln1802">   _luSolve(A, temp, B, dim);</a>
+<a name="ln1803">}</a>
+<a name="ln1804"> </a>
+<a name="ln1805"> </a>
+<a name="ln1806"> </a>
+<a name="ln1807">void</a>
+<a name="ln1808">OBSpectrophore::_luDecompose(double** A, std::vector&lt;int&gt;&amp; I, unsigned int dim)</a>
+<a name="ln1809">{</a>
+<a name="ln1810">   unsigned int i, j, k, kMax, iMax;</a>
+<a name="ln1811">   std::vector&lt;double&gt; vScales(dim, 0);</a>
+<a name="ln1812">   double maxVal = 0, dummy = 0;</a>
+<a name="ln1813">   double * pRowi = nullptr;</a>
+<a name="ln1814"> </a>
+<a name="ln1815">   // first find the highest pivot element in each row and store it for implicit scaling</a>
+<a name="ln1816">   for (i = 0; i &lt; dim; ++i)</a>
+<a name="ln1817">   {</a>
+<a name="ln1818">      maxVal = 0.0;</a>
+<a name="ln1819">      for (j = 0; j &lt; dim; ++j)</a>
+<a name="ln1820">      {</a>
+<a name="ln1821">         if ((dummy=fabs(A[i][j])) &gt; maxVal)</a>
+<a name="ln1822">         {</a>
+<a name="ln1823">            maxVal = dummy;</a>
+<a name="ln1824">         }</a>
+<a name="ln1825">      }</a>
+<a name="ln1826">      if (maxVal == 0)</a>
+<a name="ln1827">      {</a>
+<a name="ln1828">         std::cerr &lt;&lt; &quot;OBSpectrophore: Warning singular matrix...&quot; &lt;&lt; std::endl;</a>
+<a name="ln1829">      }</a>
+<a name="ln1830"> </a>
+<a name="ln1831">      vScales[i] = 1.0 / maxVal;</a>
+<a name="ln1832">   }</a>
+<a name="ln1833"> </a>
+<a name="ln1834">   std::vector&lt;double&gt; colJ(dim); // variable to store local copy of column</a>
+<a name="ln1835"> </a>
+<a name="ln1836">   // loop over columns</a>
+<a name="ln1837">   for (j = 0; j &lt; dim; ++j)</a>
+<a name="ln1838">   {</a>
+<a name="ln1839">      // make a local copy of column j</a>
+<a name="ln1840">      for (i = 0; i &lt; dim; ++i) colJ[i] = A[i][j];</a>
+<a name="ln1841">      for (i = 0; i &lt; dim; ++i)</a>
+<a name="ln1842">      {</a>
+<a name="ln1843">         pRowi = A[i];</a>
+<a name="ln1844">         dummy = pRowi[j];</a>
+<a name="ln1845">         kMax = i &lt; j ? i : j;</a>
+<a name="ln1846">         for (k = 0; k &lt; kMax; ++k) dummy -= pRowi[k] * colJ[k];</a>
+<a name="ln1847">         colJ[i] = dummy;</a>
+<a name="ln1848">         pRowi[j] = colJ[i];</a>
+<a name="ln1849">      }</a>
+<a name="ln1850"> </a>
+<a name="ln1851">      // search largest pivot element</a>
+<a name="ln1852">      maxVal = 0.0;</a>
+<a name="ln1853">      iMax = j;</a>
+<a name="ln1854">      for (i = j + 1; i &lt; dim; ++i)</a>
+<a name="ln1855">      {</a>
+<a name="ln1856">         if ((dummy = fabs(colJ[i]) * vScales[i]) &gt;= maxVal)</a>
+<a name="ln1857">         {</a>
+<a name="ln1858">            maxVal = dummy;</a>
+<a name="ln1859">            iMax = i;</a>
+<a name="ln1860">         }</a>
+<a name="ln1861">      }</a>
+<a name="ln1862"> </a>
+<a name="ln1863">      // check if we need to interchange rows</a>
+<a name="ln1864">      if (j != iMax) // if current column index is not the maximal row index we need to interchange</a>
+<a name="ln1865">      {</a>
+<a name="ln1866">         // std::cerr &lt;&lt; &quot;Swap rows: &quot; &lt;&lt; iMax &lt;&lt; &quot; &lt;-&gt; &quot; &lt;&lt; j &lt;&lt; std::endl;</a>
+<a name="ln1867">         _swapRows(A, iMax, j, dim);</a>
+<a name="ln1868">         vScales[iMax] = vScales[j];</a>
+<a name="ln1869">      }</a>
+<a name="ln1870">      // store row index in I</a>
+<a name="ln1871">      I[j] = iMax;</a>
+<a name="ln1872"> </a>
+<a name="ln1873">      // finally divide by the pivot element</a>
+<a name="ln1874">      if (j != dim - 1)</a>
+<a name="ln1875">      {</a>
+<a name="ln1876">         dummy = 1.0 / A[j][j]; // A.GetValueAt(j,j);</a>
+<a name="ln1877">         for (i = j + 1; i &lt; dim; ++i) A[i][j] *= dummy;</a>
+<a name="ln1878">      }</a>
+<a name="ln1879"> </a>
+<a name="ln1880"> </a>
+<a name="ln1881">   } // next column</a>
+<a name="ln1882"> </a>
+<a name="ln1883">   return;</a>
+<a name="ln1884">}</a>
+<a name="ln1885"> </a>
+<a name="ln1886"> </a>
+<a name="ln1887"> </a>
+<a name="ln1888">void</a>
+<a name="ln1889">OBSpectrophore::_luSolve(double** A, std::vector&lt;int&gt;&amp; I, double* B, unsigned int dim)</a>
+<a name="ln1890">{</a>
+<a name="ln1891">   for (unsigned int i = 0; i &lt; dim; ++i) _swapRows(B, i, I[i]);</a>
+<a name="ln1892"> </a>
+<a name="ln1893">   // forward substitution pass</a>
+<a name="ln1894">   for (unsigned int k = 0; k &lt; dim; ++k)</a>
+<a name="ln1895">   {</a>
+<a name="ln1896">      for (unsigned int i = k+1; i &lt; dim; ++i)</a>
+<a name="ln1897">      {</a>
+<a name="ln1898">         B[i] -= A[i][k] * B[k];</a>
+<a name="ln1899">      }</a>
+<a name="ln1900">   }</a>
+<a name="ln1901"> </a>
+<a name="ln1902">   // do the backsubstitution</a>
+<a name="ln1903">   for (int i = dim - 1; i &gt;= 0; --i)</a>
+<a name="ln1904">   {</a>
+<a name="ln1905">      B[i] /= A[i][i];</a>
+<a name="ln1906">      for (int k = 0; k &lt; i; ++k)</a>
+<a name="ln1907">      {</a>
+<a name="ln1908">         B[k] -= A[k][i] * B[i];</a>
+<a name="ln1909">      }</a>
+<a name="ln1910">   }</a>
+<a name="ln1911"> </a>
+<a name="ln1912">   return;</a>
+<a name="ln1913">}</a>
+<a name="ln1914"> </a>
+<a name="ln1915"> </a>
+<a name="ln1916"> </a>
+<a name="ln1917">void</a>
+<a name="ln1918">OBSpectrophore::_swapRows(double** _pMatrix, unsigned int i, unsigned int j, unsigned int nCols)</a>
+<a name="ln1919">{</a>
+<a name="ln1920">   double dummy;</a>
+<a name="ln1921">   for (unsigned int k = 0; k &lt; nCols; ++k)         // loop over all columns</a>
+<a name="ln1922">   {</a>
+<a name="ln1923">      dummy = _pMatrix[i][k];</a>
+<a name="ln1924">      _pMatrix[i][k] = _pMatrix[j][k];</a>
+<a name="ln1925">      _pMatrix[j][k] = dummy;</a>
+<a name="ln1926">   }</a>
+<a name="ln1927">   return;</a>
+<a name="ln1928">}</a>
+<a name="ln1929"> </a>
+<a name="ln1930"> </a>
+<a name="ln1931"> </a>
+<a name="ln1932">void</a>
+<a name="ln1933">OBSpectrophore::_swapRows(double* _pMatrix, unsigned int i, unsigned int j)</a>
+<a name="ln1934">{</a>
+<a name="ln1935">   double dummy;</a>
+<a name="ln1936">   dummy = _pMatrix[i];</a>
+<a name="ln1937">   _pMatrix[i] = _pMatrix[j];</a>
+<a name="ln1938">   _pMatrix[j] = dummy;</a>
+<a name="ln1939">   return;</a>
+<a name="ln1940">}</a>
+<a name="ln1941"> </a>
+<a name="ln1942">} // end namespace OpenBabel</a>
+<a name="ln1943"> </a>
+<a name="ln1944">//! \file spectrophore.cpp</a>
+<a name="ln1945">//! \brief Spectrophore(TM) calculator. Implementation of OBSpectrophore.</a>
+<a name="ln1946"> </a>
+
+</code></pre>
+<div class="balloon" rel="498"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 498, 534</p></div>
+<div class="balloon" rel="522"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 522, 525</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

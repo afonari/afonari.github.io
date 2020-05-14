@@ -1,0 +1,1134 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>chemkinformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">  /**********************************************************************</a>
+<a name="ln2">Copyright (C) 2005-2007 by Chris Morley</a>
+<a name="ln3"> </a>
+<a name="ln4">This file is part of the Open Babel project.</a>
+<a name="ln5">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln6"> </a>
+<a name="ln7">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln8">it under the terms of the GNU General Public License as published by</a>
+<a name="ln9">the Free Software Foundation version 2 of the License.</a>
+<a name="ln10"> </a>
+<a name="ln11">This program is distributed in the hope that it will be useful,</a>
+<a name="ln12">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln13">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln14">GNU General Public License for more details.</a>
+<a name="ln15">***********************************************************************/</a>
+<a name="ln16">#include &quot;openbabel/babelconfig.h&quot;</a>
+<a name="ln17"> </a>
+<a name="ln18">#include &lt;string&gt;</a>
+<a name="ln19">#include &lt;iomanip&gt;</a>
+<a name="ln20">#include &lt;map&gt;</a>
+<a name="ln21">#include &lt;set&gt;</a>
+<a name="ln22">#include &lt;iterator&gt;</a>
+<a name="ln23">#include &lt;locale&gt;</a>
+<a name="ln24"> </a>
+<a name="ln25">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln26">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln27">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln28">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln29"> </a>
+<a name="ln30">#include &quot;openbabel/oberror.h&quot;</a>
+<a name="ln31">#include &quot;openbabel/obconversion.h&quot;</a>
+<a name="ln32">#include &quot;openbabel/reaction.h&quot;</a>
+<a name="ln33">#include &quot;openbabel/kinetics.h&quot;</a>
+<a name="ln34">#include &quot;openbabel/obmolecformat.h&quot;</a>
+<a name="ln35"> </a>
+<a name="ln36">#include &lt;cstdlib&gt;</a>
+<a name="ln37"> </a>
+<a name="ln38">using namespace std;</a>
+<a name="ln39"> </a>
+<a name="ln40">namespace OpenBabel</a>
+<a name="ln41">{</a>
+<a name="ln42"> </a>
+<a name="ln43">class ChemKinFormat : public OBFormat</a>
+<a name="ln44">{</a>
+<a name="ln45">public:</a>
+<a name="ln46">  ChemKinFormat()</a>
+<a name="ln47">  {</a>
+<a name="ln48">    OBConversion::RegisterFormat(&quot;ck&quot;,this);</a>
+<a name="ln49">    OBConversion::RegisterOptionParam(&quot;s&quot;, this); //no params</a>
+<a name="ln50">    OBConversion::RegisterOptionParam(&quot;t&quot;, this);</a>
+<a name="ln51">    Init();</a>
+<a name="ln52">  }</a>
+<a name="ln53"> </a>
+<a name="ln54">  virtual const char* Description()</a>
+<a name="ln55">  {</a>
+<a name="ln56">      return</a>
+<a name="ln57">&quot;ChemKin format\n&quot;</a>
+<a name="ln58">&quot;Read Options e.g. -aL\n&quot;</a>
+<a name="ln59">&quot; f &lt;file&gt; File with standard thermo data: default therm.dat\n&quot;</a>
+<a name="ln60">&quot; z Use standard thermo only\n&quot;</a>
+<a name="ln61">&quot; L Reactions have labels (Usually optional)\n&quot;</a>
+<a name="ln62">&quot;\n&quot;</a>
+<a name="ln63">&quot;Write Options e.g. -xs\n&quot;</a>
+<a name="ln64">&quot; s Simple output: reactions only\n&quot;</a>
+<a name="ln65">&quot; t Do not include species thermo data\n&quot;</a>
+<a name="ln66">&quot; 0 Omit reactions with zero rates\n&quot;</a>
+<a name="ln67">&quot;\n&quot;;</a>
+<a name="ln68">  };</a>
+<a name="ln69"> </a>
+<a name="ln70">  virtual const char* TargetClassDescription()</a>
+<a name="ln71">  {</a>
+<a name="ln72">      return OBReaction::ClassDescription();</a>
+<a name="ln73">  };</a>
+<a name="ln74"> </a>
+<a name="ln75">  const type_info&amp; GetType()</a>
+<a name="ln76">  {</a>
+<a name="ln77">    return typeid(OBReaction*);</a>
+<a name="ln78">  };</a>
+<a name="ln79">private:</a>
+<a name="ln80">  void              Init();</a>
+<a name="ln81">  ///\return -1 eof or error; +1 reactionline found; 0 otherwise</a>
+<a name="ln82">  int               ReadLine(istream&amp; ifs);</a>
+<a name="ln83">  bool              ReadHeader(istream&amp; ifs, OBConversion* pConv);</a>
+<a name="ln84">  bool              ParseReactionLine(OBReaction* pReact, OBConversion* pConv);</a>
+<a name="ln85">  bool              ReadReactionQualifierLines(istream&amp; ifs, OBReaction* pReact);</a>
+<a name="ln86">  obsharedptr&lt;OBMol&gt; CheckSpecies(string&amp; name, string&amp; ln, bool MustBeKnown);</a>
+<a name="ln87">  bool              ReadThermo(OBConversion* pConv);</a>
+<a name="ln88">  bool              ReadStdThermo(const string&amp; datafilename);</a>
+<a name="ln89">  OBFormat*         GetThermoFormat();</a>
+<a name="ln90">  bool              CheckAllMolsHaveThermo();</a>
+<a name="ln91">  bool              WriteReactionLine(OBReaction* pReact, OBConversion* pConv);</a>
+<a name="ln92">  bool              WriteHeader(OBConversion* pConv);</a>
+<a name="ln93">private:</a>
+<a name="ln94">  typedef map&lt;string,obsharedptr&lt;OBMol&gt; &gt; MolMap;</a>
+<a name="ln95">  typedef set&lt;obsharedptr&lt;OBMol&gt; &gt; MolSet;</a>
+<a name="ln96">  //used on input</a>
+<a name="ln97">  MolMap IMols;</a>
+<a name="ln98">  string ln;</a>
+<a name="ln99">  bool SpeciesListed;</a>
+<a name="ln100">  double AUnitsFactor, EUnitsFactor;</a>
+<a name="ln101">  string comment;</a>
+<a name="ln102">  //used on output</a>
+<a name="ln103">  MolSet OMols;</a>
+<a name="ln104">  stringstream ss;</a>
+<a name="ln105"> </a>
+<a name="ln106">  ////////////////////////////////////////////////////</a>
+<a name="ln107">  /// The &quot;API&quot; interface functions</a>
+<a name="ln108">  virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln109">  virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln110"> </a>
+<a name="ln111">  ////////////////////////////////////////////////////</a>
+<a name="ln112">  /// The &quot;Convert&quot; interface functions</a>
+<a name="ln113">  virtual bool ReadChemObject(OBConversion* pConv)</a>
+<a name="ln114">  {</a>
+<a name="ln115">    std::string auditMsg = &quot;OpenBabel::Read ChemKinFormat&quot;;</a>
+<a name="ln116">    std::string description(Description());</a>
+<a name="ln117">    auditMsg += description.substr(0,description.find('\n'));</a>
+<a name="ln118">    obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln119">              auditMsg,</a>
+<a name="ln120">              obAuditMsg);</a>
+<a name="ln121">    //Makes a new OBReaction</a>
+<a name="ln122">    OBReaction* pReact = new OBReaction;</a>
+<a name="ln123">    bool ret=ReadMolecule(pReact,pConv); //call the &quot;API&quot; read function</a>
+<a name="ln124"> </a>
+<a name="ln125">    if(ret) //Do transformation and return molecule</a>
+<a name="ln126">      return pConv-&gt;AddChemObject(pReact-&gt;DoTransformations(pConv-&gt;GetOptions(OBConversion::GENOPTIONS),pConv))!=0;</a>
+<a name="ln127">    else</a>
+<a name="ln128">        pConv-&gt;AddChemObject(nullptr);</a>
+<a name="ln129">    return false;</a>
+<a name="ln130">  }</a>
+<a name="ln131"> </a>
+<a name="ln132">  virtual bool WriteChemObject(OBConversion* pConv)</a>
+<a name="ln133">  {</a>
+<a name="ln134">    OBBase* pOb=pConv-&gt;GetChemObject();</a>
+<a name="ln135">    OBReaction* pReact = dynamic_cast&lt;OBReaction*&gt;(pOb);</a>
+<a name="ln136">    bool ret=false;</a>
+<a name="ln137">    if (pReact != nullptr)</a>
+<a name="ln138">    {</a>
+<a name="ln139">      ret=WriteMolecule(pReact,pConv);</a>
+<a name="ln140"> </a>
+<a name="ln141">      std::string auditMsg = &quot;OpenBabel::Write reaction &quot;;</a>
+<a name="ln142">      std::string description(Description());</a>
+<a name="ln143">            auditMsg += description.substr( 0, description.find('\n') );</a>
+<a name="ln144">            obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln145">                                  auditMsg,</a>
+<a name="ln146">                                  obAuditMsg);</a>
+<a name="ln147">    }</a>
+<a name="ln148">    delete pOb;</a>
+<a name="ln149">    return ret;</a>
+<a name="ln150">  }</a>
+<a name="ln151">};</a>
+<a name="ln152"> </a>
+<a name="ln153">//Make an instance of the format class</a>
+<a name="ln154">ChemKinFormat theChemKinFormat;</a>
+<a name="ln155"> </a>
+<a name="ln156">/////////////////////////////////////////////////////////////////</a>
+<a name="ln157">bool ChemKinFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln158">{</a>
+<a name="ln159">  /*Badly name function. It handles OBReaction objects.</a>
+<a name="ln160"> </a>
+<a name="ln161">  This format can be used with Chemkin files or with simple lists of</a>
+<a name="ln162">  reactions.</a>
+<a name="ln163"> </a>
+<a name="ln164">  In the simple case:</a>
+<a name="ln165">  Reversible reactions use = or &lt;=&gt; Irreversible reactions use =&gt;</a>
+<a name="ln166">      A + B = C</a>
+<a name="ln167">      D     =&gt; E + F</a>
+<a name="ln168">  Rate parameters A, n and E can follow, separated by spaces.</a>
+<a name="ln169">      A+B=C 1.2E12 1.0 5000</a>
+<a name="ln170">  The species can have names containing spaces</a>
+<a name="ln171">      first reactant + second reactant =&gt; first product + second product</a>
+<a name="ln172">  The reactions can optionally have a label</a>
+<a name="ln173">      label first reactant =&gt; first product</a>
+<a name="ln174">  In ambiguous cases like</a>
+<a name="ln175">      label A + B = C</a>
+<a name="ln176">  the program assumes that &quot;label A&quot; is the first reactant. To force the</a>
+<a name="ln177">  correct interetation, use the -al option &quot;Reactions have labels&quot;.</a>
+<a name="ln178">  Even in the simple case, each reaction can be followed by lines with</a>
+<a name="ln179">  additional information in the CheKin style, like low pressure rates,</a>
+<a name="ln180">  third body efficiencies, etc.</a>
+<a name="ln181"> </a>
+<a name="ln182">  On the first call, the function reads any header sections, ELEMENTS,</a>
+<a name="ln183">  SPECIES,  THERMO that are present and populates the IMols list of</a>
+<a name="ln184">  molecules. It then reads the first reaction and returns true.</a>
+<a name="ln185">  Subsequent calls also read a single reaction. A return of false</a>
+<a name="ln186">  indicates there are no more reactions.</a>
+<a name="ln187">  */</a>
+<a name="ln188">  OBReaction* pReact = dynamic_cast&lt;OBReaction*&gt;(pOb);</a>
+<a name="ln189">  if(!pReact)</a>
+<a name="ln190">    return false;</a>
+<a name="ln191"> </a>
+<a name="ln192">  istream&amp; ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln193"> </a>
+<a name="ln194">  if(pConv-&gt;IsFirstInput())</a>
+<a name="ln195">  {</a>
+<a name="ln196">    Init();</a>
+<a name="ln197">    if(!ReadHeader(ifs, pConv))</a>
+<a name="ln198">    {</a>
+<a name="ln199">      obErrorLog.ThrowError(__FUNCTION__, &quot;Unexpected end of file or file reading error&quot;, obError);</a>
+<a name="ln200">      return false;</a>
+<a name="ln201">    }</a>
+<a name="ln202">  }</a>
+<a name="ln203"> </a>
+<a name="ln204">  if(!ifs                                      //possibly EOF</a>
+<a name="ln205">   || !ReadLine(ifs)                           //not a reaction line</a>
+<a name="ln206">   || !ParseReactionLine(pReact, pConv)        //faulty parse</a>
+<a name="ln207">   || !ReadReactionQualifierLines(ifs, pReact))//END or erroneous line found</a>
+<a name="ln208">   return false;</a>
+<a name="ln209"> </a>
+<a name="ln210">  //return true if reaction has either reactants or products</a>
+<a name="ln211">  return pReact-&gt;NumReactants() + pReact-&gt;NumProducts()&gt;0;</a>
+<a name="ln212">}</a>
+<a name="ln213"> </a>
+<a name="ln214">/////////////////////////////////////////////////</a>
+<a name="ln215">void ChemKinFormat::Init()</a>
+<a name="ln216">{    //initialize the member variables used during input</a>
+<a name="ln217">    ln.clear();</a>
+<a name="ln218">    AUnitsFactor = 1.0;</a>
+<a name="ln219">    EUnitsFactor = 1.0;</a>
+<a name="ln220">    SpeciesListed=false;</a>
+<a name="ln221">    IMols.clear();</a>
+<a name="ln222">    //Special species name</a>
+<a name="ln223">    obsharedptr&lt;OBMol&gt; sp(new OBMol);</a>
+<a name="ln224">    sp.get()-&gt;SetTitle(&quot;M&quot;);</a>
+<a name="ln225">    IMols[&quot;M&quot;] = sp;</a>
+<a name="ln226">}</a>
+<a name="ln227"> </a>
+<a name="ln228">/////////////////////////////////////////////////</a>
+<a name="ln229">// Uses the line from the member variable ln, probably from previous call to</a>
+<a name="ln230">// ReadMolecule, if it is not empty. Otherwise read a line and extract the comment.</a>
+<a name="ln231">// Returns -1 on eof or error; +1 if line is a reaction; 0 otherwise.</a>
+<a name="ln232">int ChemKinFormat::ReadLine(istream&amp; ifs )</a>
+<a name="ln233">{</a>
+<a name="ln234">  while(ln.empty())</a>
+<a name="ln235">  {</a>
+<a name="ln236">    if(!getline(ifs,ln))</a>
+<a name="ln237">      return -1;</a>
+<a name="ln238">    //discard lines that are empty or contain just a comment</a>
+<a name="ln239">    if(Trim(ln).empty() || ln[0]=='!')</a>
+<a name="ln240">      ln.clear();</a>
+<a name="ln241">    comment.clear();</a>
+<a name="ln242">  }</a>
+<a name="ln243">  string::size_type eqpos, commentpos;</a>
+<a name="ln244">  commentpos = ln.find('!');</a>
+<a name="ln245">  //Extract and remove comment</a>
+<a name="ln246">  if(commentpos!=string::npos)</a>
+<a name="ln247">  {</a>
+<a name="ln248">    comment = ln.substr(commentpos+1);</a>
+<a name="ln249">    ln.erase(commentpos);</a>
+<a name="ln250">  }</a>
+<a name="ln251"> </a>
+<a name="ln252">  eqpos = ln.find('=');</a>
+<a name="ln253">  //eof may have been set, but we need ReadMolecule() to be called again to process this line</a>
+<a name="ln254">  ifs.clear();</a>
+<a name="ln255">  return eqpos==string::npos? 0 : +1;</a>
+<a name="ln256">}</a>
+<a name="ln257"> </a>
+<a name="ln258">//////////////////////////////////////////////////////</a>
+<a name="ln259">bool ChemKinFormat::ReadHeader(istream&amp; ifs, OBConversion* pConv)</a>
+<a name="ln260">{</a>
+<a name="ln261">  bool doingspecies=false;</a>
+<a name="ln262">  //loop for each line until a reaction line is found</a>
+<a name="ln263">  while(ifs)</a>
+<a name="ln264">  {</a>
+<a name="ln265">    if(int ret=ReadLine(ifs)!=0)</a>
+<a name="ln266">      return ret&gt;0; //reaction line found: there may have been no header</a>
+<a name="ln267"> </a>
+<a name="ln268">    vector&lt;string&gt; toks;</a>
+<a name="ln269">    tokenize(toks, ln, &quot; \t\n\r/\\&quot;);</a>
+<a name="ln270">    ln.clear(); //have to clear line when it has been dealt with</a>
+<a name="ln271"> </a>
+<a name="ln272">    if(doingspecies || !strcasecmp(toks[0].c_str(),&quot;SPECIES&quot;) || !strcasecmp(toks[0].c_str(),&quot;SPEC&quot;))</a>
+<a name="ln273">    {</a>
+<a name="ln274">      SpeciesListed = true; //Means that molecules in reactions must have been specified in SPECIES</a>
+<a name="ln275"> </a>
+<a name="ln276">      vector&lt;string&gt;::iterator itr;</a>
+<a name="ln277">      itr=toks.begin();</a>
+<a name="ln278">      if(!doingspecies) ++itr; //ignore &quot;SPECIES&quot;</a>
+<a name="ln279">      doingspecies=true;</a>
+<a name="ln280">      for(;itr!=toks.end();++itr)</a>
+<a name="ln281">      {</a>
+<a name="ln282">        if(*itr==&quot;END&quot; || *itr==&quot;end&quot;)</a>
+<a name="ln283">        {</a>
+<a name="ln284">          doingspecies=false;</a>
+<a name="ln285">          break;</a>
+<a name="ln286">        }</a>
+<a name="ln287">        //Add all species to IMols</a>
+<a name="ln288">        obsharedptr&lt;OBMol&gt; sp(new OBMol);</a>
+<a name="ln289">        sp.get()-&gt;SetTitle(*itr);</a>
+<a name="ln290">        IMols[*itr] = sp;</a>
+<a name="ln291">      }</a>
+<a name="ln292">    }</a>
+<a name="ln293"> </a>
+<a name="ln294">    else if(!strcasecmp(toks[0].c_str(),&quot;THERMO&quot;))</a>
+<a name="ln295">    {</a>
+<a name="ln296">      //Read following data using Thermo format</a>
+<a name="ln297">      if(!pConv-&gt;IsOption(&quot;z&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln298">      {</a>
+<a name="ln299">        pConv-&gt;AddOption(&quot;e&quot;, OBConversion::INOPTIONS); //stops on END</a>
+<a name="ln300">        ReadThermo(pConv);</a>
+<a name="ln301">        pConv-&gt;RemoveOption(&quot;e&quot;, OBConversion::INOPTIONS);</a>
+<a name="ln302">      }</a>
+<a name="ln303">    }</a>
+<a name="ln304"> </a>
+<a name="ln305">    else if(!strcasecmp(toks[0].c_str(),&quot;REACTIONS&quot;) || !strcasecmp(toks[0].c_str(),&quot;REAC&quot;))</a>
+<a name="ln306">    {</a>
+<a name="ln307">      //Units may be specified on this line</a>
+<a name="ln308">      string EKeywords[6] ={&quot;CAL/MOLE&quot;,&quot;KCAL/MOLE&quot;,&quot;JOULES/MOLE&quot;,&quot;KJOULES/MOLE&quot;,&quot;KELVINS&quot;,&quot;EVOLTS&quot;};</a>
+<a name="ln309">      double EFactor[6]   ={   1.0    ,   0.001  ,    4.1816    ,   0.041816   ,   1.98  , 0.0};</a>
+<a name="ln310">      double AvFactor = 6.023E23;</a>
+<a name="ln311"> </a>
+<a name="ln312">      for (unsigned int i=1; i&lt;toks.size(); ++i)</a>
+<a name="ln313">      {</a>
+<a name="ln314">        for(int j=0;j&lt;6;++j)</a>
+<a name="ln315">          if(!strcasecmp(toks[i].c_str(), EKeywords[j].c_str()))</a>
+<a name="ln316">            EUnitsFactor = EFactor[j];</a>
+<a name="ln317">        if(!strcasecmp(toks[i].c_str(),&quot;MOLECULES&quot;))</a>
+<a name="ln318">          AUnitsFactor = AvFactor;</a>
+<a name="ln319">      }</a>
+<a name="ln320"> </a>
+<a name="ln321">      //Need to check here whether thermo data has been input and if not</a>
+<a name="ln322">      //load it from therm.dat</a>
+<a name="ln323">      if(!CheckAllMolsHaveThermo())</a>
+<a name="ln324">      {</a>
+<a name="ln325">        string stdthermo(&quot;therm.dat&quot;); //default</a>
+<a name="ln326">        const char* pstd = pConv-&gt;IsOption(&quot;f&quot;,OBConversion::INOPTIONS);</a>
+<a name="ln327">        if(pstd)</a>
+<a name="ln328">          stdthermo=pstd;</a>
+<a name="ln329">        if(!ReadStdThermo(stdthermo))</a>
+<a name="ln330">          return false;</a>
+<a name="ln331">      }</a>
+<a name="ln332"> </a>
+<a name="ln333">    }</a>
+<a name="ln334"> </a>
+<a name="ln335">  // Anthing not in a SPECIES or THERMO section is ignored.</a>
+<a name="ln336">  // This includes the ELEMENTS section</a>
+<a name="ln337">  }</a>
+<a name="ln338">  return false; //failed file read</a>
+<a name="ln339">}</a>
+<a name="ln340"> </a>
+<a name="ln341">//////////////////////////////////////////////</a>
+<a name="ln342">bool ChemKinFormat::ParseReactionLine(OBReaction* pReact, OBConversion* pConv)</a>
+<a name="ln343">{</a>
+<a name="ln344">  /* Line is a reaction</a>
+<a name="ln345">  Lines like the following are handled</a>
+<a name="ln346">  Label A + B =&gt; C + D 1E-12 0.2 2300 !comment</a>
+<a name="ln347">  H2 = 2H 1e-8 0 112000 comment: has A n E</a>
+<a name="ln348">  2H + M =&gt; H2 + M 1e-16 comment: has A only</a>
+<a name="ln349">  Label A+B = C+D comment: has no rates</a>
+<a name="ln350">  */</a>
+<a name="ln351">  OBRateData* pRD = new OBRateData; //to store rate constant data. Attach only if rate data found</a>
+<a name="ln352"> </a>
+<a name="ln353">  int n=0;</a>
+<a name="ln354">  obsharedptr&lt;OBMol&gt; sp;</a>
+<a name="ln355"> </a>
+<a name="ln356">  string::size_type eqpos = ln.find('=');</a>
+<a name="ln357"> </a>
+<a name="ln358">  bool r1=false, r2=false;</a>
+<a name="ln359">  //Ensure divider between reactants and products is just '='</a>
+<a name="ln360">  if(eqpos&gt;0 &amp;&amp; ln[eqpos-1]=='&lt;')</a>
+<a name="ln361">  {</a>
+<a name="ln362">    ln[eqpos-1] = ' ';</a>
+<a name="ln363">    r1=true;</a>
+<a name="ln364">  }</a>
+<a name="ln365">  if(eqpos &lt; ln.size()-1 &amp;&amp; ln[eqpos+1]=='&gt;')</a>
+<a name="ln366">  {</a>
+<a name="ln367">    ln[eqpos+1] = ' ';</a>
+<a name="ln368">    r2=true;</a>
+<a name="ln369">  }</a>
+<a name="ln370">  if(r1 || !r2)</a>
+<a name="ln371">  {</a>
+<a name="ln372">    //Reaction is reversible: contains &lt;=&gt; or =</a>
+<a name="ln373">    pReact-&gt;SetReversible();</a>
+<a name="ln374">  }</a>
+<a name="ln375"> </a>
+<a name="ln376">  //Replace each (+M) by M</a>
+<a name="ln377">  string::size_type pos;</a>
+<a name="ln378">  while((pos = ln.find(&quot;(+M)&quot;)) != string::npos)</a>
+<a name="ln379">    ln.replace(pos, 4, &quot; +M &quot;);</a>
+<a name="ln380">  while((pos = ln.find(&quot;(+m)&quot;)) != string::npos)</a>
+<a name="ln381">    ln.replace(pos, 4, &quot; +M &quot;);</a>
+<a name="ln382"> </a>
+<a name="ln383">  //Do reactants</a>
+<a name="ln384">  vector&lt;string&gt; toks;</a>
+<a name="ln385">  vector&lt;string&gt;::iterator itr;</a>
+<a name="ln386">  string temp = ln.substr(0, eqpos);</a>
+<a name="ln387">  tokenize(toks, temp, &quot;+&quot;);</a>
+<a name="ln388">  //(ln is cleared later)</a>
+<a name="ln389"> </a>
+<a name="ln390">  for(itr=toks.begin();itr!=toks.end();++itr)</a>
+<a name="ln391">  {</a>
+<a name="ln392">    Trim(*itr);</a>
+<a name="ln393">    if(itr==toks.begin())</a>
+<a name="ln394">    {</a>
+<a name="ln395">      /*First token can contain a label, and reactant can contain spaces</a>
+<a name="ln396">        label reactant1      +  1</a>
+<a name="ln397">        first reactant       +  case 2</a>
+<a name="ln398">        label first reactant +  case 3</a>
+<a name="ln399">        reactant1            +  case 4</a>
+<a name="ln400">        label                =  case 5</a>
+<a name="ln401">        reactant1            =  case 6</a>
+<a name="ln402">        (1 and 2) and (5 and 6) are ambiguous if -al option not set. Assume 2 or 6 and issue a warning</a>
+<a name="ln403">      */</a>
+<a name="ln404">      vector&lt;string&gt; firstr;</a>
+<a name="ln405">      tokenize(firstr, *itr, &quot; \t&quot;);</a>
+<a name="ln406">      if(isalpha(firstr[0][0]))</a>
+<a name="ln407">      {</a>
+<a name="ln408">        //Starts with letter, so could be a label. Further tests...</a>
+<a name="ln409">        if(pConv-&gt;IsOption(&quot;L&quot;,OBConversion::INOPTIONS)//this option mandates a label</a>
+<a name="ln410">          || firstr.size()&gt;2                           //case 3 above</a>
+<a name="ln411">          || (SpeciesListed &amp;&amp; !IMols.count(*itr)))    // there is a species list and it is not a species name</a>
+<a name="ln412">        {</a>
+<a name="ln413">          pReact-&gt;SetTitle(firstr[0]);             //Add label to OBReaction</a>
+<a name="ln414">          Trim(toks[0].erase(0, firstr[0].size()));//Remove label leaving only first reactant</a>
+<a name="ln415">        }</a>
+<a name="ln416"> </a>
+<a name="ln417">        //Ambiguous cases</a>
+<a name="ln418">        else if(firstr.size()==2 || (firstr.size()==1 &amp;&amp; toks.size()==1))</a>
+<a name="ln419">          obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln420">            &quot;In &quot; + ln +</a>
+<a name="ln421">            &quot;\nThe string &quot; + firstr[0] + &quot; has been assumed NOT to be a label\n&quot;</a>
+<a name="ln422">            &quot;If it should be, use the -aL option which mandates labels on reactions.\n&quot;</a>
+<a name="ln423">            &quot;A species missing from the SPECIES section, if one is used, can also give this error&quot;,</a>
+<a name="ln424">            obWarning);</a>
+<a name="ln425">      }</a>
+<a name="ln426">    }</a>
+<a name="ln427"> </a>
+<a name="ln428">    if(isalpha((*itr)[0]))</a>
+<a name="ln429">    {</a>
+<a name="ln430">      if(*itr == &quot;m&quot;)</a>
+<a name="ln431">        *itr=&quot;M&quot;;</a>
+<a name="ln432">      if(*itr == &quot;M&quot;)</a>
+<a name="ln433">        pRD-&gt;ReactionType = OBRateData::THREEBODY;</a>
+<a name="ln434">      sp = CheckSpecies(*itr, ln, SpeciesListed);</a>
+<a name="ln435">      if(!sp.get())</a>
+<a name="ln436">      {</a>
+<a name="ln437">        ln.clear();</a>
+<a name="ln438">        return false;</a>
+<a name="ln439">      }</a>
+<a name="ln440">      pReact-&gt;AddReactant(sp);</a>
+<a name="ln441">      continue;</a>
+<a name="ln442">    }</a>
+<a name="ln443">    else</a>
+<a name="ln444">    {</a>
+<a name="ln445">      if(isalpha((*itr)[1]))</a>
+<a name="ln446">      {</a>
+<a name="ln447">        //species multiplier (single digit)</a>
+<a name="ln448">        unsigned mult = atoi(itr-&gt;c_str());</a>
+<a name="ln449">        string temp = itr-&gt;substr(1);</a>
+<a name="ln450">        sp = CheckSpecies(temp, ln, SpeciesListed);</a>
+<a name="ln451">        if(!sp.get())</a>
+<a name="ln452">        {</a>
+<a name="ln453">          ln.clear();</a>
+<a name="ln454">          return false;</a>
+<a name="ln455">        }</a>
+<a name="ln456">        for (unsigned int i=0; i&lt;mult; ++i)</a>
+<a name="ln457">          pReact-&gt;AddReactant(sp);</a>
+<a name="ln458">        continue;</a>
+<a name="ln459">      }</a>
+<a name="ln460">      else</a>
+<a name="ln461">      {</a>
+<a name="ln462">        obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln463">          &quot;In &quot; + ln  +</a>
+<a name="ln464">          &quot;\nThe species multiplier must be a single digit integer&quot;,</a>
+<a name="ln465">          obError);</a>
+<a name="ln466">        ln.clear();</a>
+<a name="ln467">        return false; //incorrect multiplier</a>
+<a name="ln468">      }</a>
+<a name="ln469">    }</a>
+<a name="ln470">  }</a>
+<a name="ln471"> </a>
+<a name="ln472">  //Do products</a>
+<a name="ln473">  temp = ln.substr(eqpos+1);</a>
+<a name="ln474">  tokenize(toks, temp, &quot;+&quot;);</a>
+<a name="ln475">  if(toks.size()&gt;0)</a>
+<a name="ln476">  {</a>
+<a name="ln477">    /*</a>
+<a name="ln478">      product1</a>
+<a name="ln479">      2product1</a>
+<a name="ln480">      first product</a>
+<a name="ln481">      last product   7.7 8.8</a>
+<a name="ln482">      product   7.7 8.8</a>
+<a name="ln483">      product   7.7 8.8E</a>
+<a name="ln484">      12 0</a>
+<a name="ln485">    */</a>
+<a name="ln486">    //Combine tokens erroneously split at + in 8.8E+12</a>
+<a name="ln487">    for(int i = toks.size()-1;i&gt;0 &amp;&amp; isdigit(toks[i][0]);--i)//break when starts with letter</a>
+<a name="ln488">    {</a>
+<a name="ln489">      char lastch = toks[i-1][toks[i-1].size()-1];</a>
+<a name="ln490">      if(lastch=='E' || lastch=='e')</a>
+<a name="ln491">      {</a>
+<a name="ln492">        toks[i-1] += toks[i];</a>
+<a name="ln493">        toks.pop_back();</a>
+<a name="ln494">      }</a>
+<a name="ln495">    }</a>
+<a name="ln496"> </a>
+<a name="ln497">    //Split the last token and separate the rate parameters</a>
+<a name="ln498">    vector&lt;string&gt; lastp;</a>
+<a name="ln499">    tokenize(lastp, toks[toks.size()-1], &quot; \t&quot;);</a>
+<a name="ln500">    toks[toks.size()-1].clear();</a>
+<a name="ln501">    bool HasRateData=false;</a>
+<a name="ln502">    n=0;</a>
+<a name="ln503">    for(itr=lastp.begin();itr!=lastp.end();++itr)</a>
+<a name="ln504">    {</a>
+<a name="ln505">      Trim(*itr);</a>
+<a name="ln506">      //copy species names and species names with multiplier (single digit) back into orig token</a>
+<a name="ln507">      unsigned len = itr-&gt;size();</a>
+<a name="ln508"> </a>
+<a name="ln509">      //Separate products like 2C2H6 2O 2ETR 2H2 from rate params like 2E25 2E+12 -1 .00</a>
+<a name="ln510">      if(isalpha((*itr)[0]) ||            //to be a product: 1st char is a letter or...</a>
+<a name="ln511">        (len&gt;=2 &amp;&amp; isalpha((*itr)[1])     //both second char (it there is one) is a letter and</a>
+<a name="ln512">        &amp;&amp; (len&lt;=2 || isalpha((*itr)[2])  //  third char(if there is one) is a letter</a>
+<a name="ln513">        || toupper((*itr)[1])!='E')))     //  or the second char is not 'E'</a>
+<a name="ln514">      {</a>
+<a name="ln515">        toks[toks.size()-1] += ' ' + *itr;</a>
+<a name="ln516">        continue;</a>
+<a name="ln517">      }</a>
+<a name="ln518"> </a>
+<a name="ln519">      //Read in rate parameters</a>
+<a name="ln520">      stringstream ss(*itr);</a>
+<a name="ln521">      locale cLocale(&quot;C&quot;);</a>
+<a name="ln522">      ss.imbue(cLocale);</a>
+<a name="ln523"> </a>
+<a name="ln524">      double val;</a>
+<a name="ln525">      ss &gt;&gt; val;</a>
+<a name="ln526">      if(n==0)</a>
+<a name="ln527">        val /= pow(AUnitsFactor,pReact-&gt;NumReactants());</a>
+<a name="ln528">      else if(n==2)</a>
+<a name="ln529">        val /= EUnitsFactor;</a>
+<a name="ln530">      pRD-&gt;SetRate((OBRateData::rate_type)n++, val);</a>
+<a name="ln531">      if(!ss)</a>
+<a name="ln532">      {</a>
+<a name="ln533">        //not numeric: put into comment (better than doing nothing)</a>
+<a name="ln534">        pReact-&gt;SetComment(*itr);</a>
+<a name="ln535">        break;</a>
+<a name="ln536">      }</a>
+<a name="ln537">      HasRateData=true;</a>
+<a name="ln538">    }</a>
+<a name="ln539">    //Rate parameters were specified, so OBReaction needs to have the OBRateData attached</a>
+<a name="ln540">    if(HasRateData)</a>
+<a name="ln541">      pReact-&gt;SetData(pRD);</a>
+<a name="ln542">    else if(SpeciesListed) //a true ChemKin file</a>
+<a name="ln543">      obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln544">            &quot;In &quot; + ln + &quot;\nNo rate data found.&quot;, obWarning);</a>
+<a name="ln545"> </a>
+<a name="ln546">    //Read in product species</a>
+<a name="ln547">    for(itr=toks.begin();itr!=toks.end();++itr)</a>
+<a name="ln548">    {</a>
+<a name="ln549">      Trim(*itr);</a>
+<a name="ln550">      if(isalpha((*itr)[0]))</a>
+<a name="ln551">      {</a>
+<a name="ln552">        if(*itr == &quot;m&quot;)</a>
+<a name="ln553">          *itr=&quot;M&quot;;</a>
+<a name="ln554"> </a>
+<a name="ln555">        sp = CheckSpecies(*itr, ln, SpeciesListed);</a>
+<a name="ln556">        if(!sp.get())</a>
+<a name="ln557">        {</a>
+<a name="ln558">          ln.clear();</a>
+<a name="ln559">          return false;</a>
+<a name="ln560">        }</a>
+<a name="ln561">        pReact-&gt;AddProduct(sp);</a>
+<a name="ln562">      }</a>
+<a name="ln563">      else</a>
+<a name="ln564">      {</a>
+<a name="ln565">        if(itr-&gt;size()&gt;1 &amp;&amp; isalpha((*itr)[1]))</a>
+<a name="ln566">        {</a>
+<a name="ln567">          //species multiplier (single digit)</a>
+<a name="ln568">          unsigned mult = atoi(itr-&gt;c_str());</a>
+<a name="ln569">          string temp = itr-&gt;substr(1);</a>
+<a name="ln570">          sp = CheckSpecies(temp, ln, SpeciesListed);</a>
+<a name="ln571">          if(!sp.get())</a>
+<a name="ln572">          {</a>
+<a name="ln573">            ln.clear();</a>
+<a name="ln574">            return false;</a>
+<a name="ln575">          }</a>
+<a name="ln576">          for (unsigned int j=0; j&lt;mult; ++j)</a>
+<a name="ln577">            pReact-&gt;AddProduct(sp);</a>
+<a name="ln578">        }</a>
+<a name="ln579">        else</a>
+<a name="ln580">          obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln581">            &quot;In &quot; + ln + &quot;\nError in products or rate parameters.&quot;, obError);</a>
+<a name="ln582">      }</a>
+<a name="ln583">    }</a>
+<a name="ln584">  }</a>
+<a name="ln585">  pReact-&gt;SetComment(comment);</a>
+<a name="ln586">  ln.clear();</a>
+<a name="ln587">  return true;</a>
+<a name="ln588">}</a>
+<a name="ln589"> </a>
+<a name="ln590">/////////////////////////////////////////////</a>
+<a name="ln591">bool ChemKinFormat::ReadReactionQualifierLines(istream&amp; ifs, OBReaction* pReact)</a>
+<a name="ln592">{</a>
+<a name="ln593">  OBRateData* pRD = (OBRateData*)pReact-&gt;GetData(&quot;Rate data&quot;);</a>
+<a name="ln594"> </a>
+<a name="ln595">  while(ifs)</a>
+<a name="ln596">  {</a>
+<a name="ln597">    if(int ret=ReadLine(ifs)!=0)</a>
+<a name="ln598">      return ret&gt;0; //The next reaction has been found</a>
+<a name="ln599"> </a>
+<a name="ln600">    vector&lt;string&gt; toks;</a>
+<a name="ln601">    tokenize(toks, ln, &quot; \t\n\r/\\&quot;);</a>
+<a name="ln602">    ln.clear(); //have to clear line when it has been dealt with</a>
+<a name="ln603"> </a>
+<a name="ln604">    if(pRD &amp;&amp; !strcasecmp(toks[0].c_str(),&quot;LOW&quot;))</a>
+<a name="ln605">    {</a>
+<a name="ln606">      if(pRD-&gt;ReactionType != OBRateData::TROE)</a>
+<a name="ln607">        pRD-&gt;ReactionType = OBRateData::LINDERMANN;</a>
+<a name="ln608">      unsigned n;</a>
+<a name="ln609">      for(n=0;n&lt;3;++n)</a>
+<a name="ln610">      {</a>
+<a name="ln611">        double val = atof(toks[n+1].c_str());</a>
+<a name="ln612">        if(n==0)</a>
+<a name="ln613">          val /= pow(AUnitsFactor, pReact-&gt;NumReactants());</a>
+<a name="ln614">        else if(n==2)</a>
+<a name="ln615">          val /= EUnitsFactor;</a>
+<a name="ln616">        pRD-&gt;SetLoRate((OBRateData::rate_type)n, val );</a>
+<a name="ln617">      }</a>
+<a name="ln618">    }</a>
+<a name="ln619">    else if(pRD &amp;&amp; !strcasecmp(toks[0].c_str(),&quot;TROE&quot;))</a>
+<a name="ln620">    {</a>
+<a name="ln621">      pRD-&gt;ReactionType = OBRateData::TROE;</a>
+<a name="ln622">      for(int i=0;i&lt;4;++i)</a>
+<a name="ln623">        pRD-&gt;SetTroeParams(i, atof(toks[i+1].c_str()));</a>
+<a name="ln624">    }</a>
+<a name="ln625"> </a>
+<a name="ln626">    else if(!strcasecmp(toks[0].c_str(),&quot;DUPLICATE&quot;))</a>
+<a name="ln627">    {}</a>
+<a name="ln628"> </a>
+<a name="ln629">    else if(pReact &amp;&amp; !strcasecmp(toks[0].c_str(),&quot;TS&quot;))</a>
+<a name="ln630">    {</a>
+<a name="ln631">      //Defines the molecule which is a transition state for a reaction</a>
+<a name="ln632">      //This is not a ChemKin keyword. Used for Mesmer.</a>
+<a name="ln633">      pReact-&gt;SetTransitionState(CheckSpecies(toks[1], ln, SpeciesListed));</a>
+<a name="ln634">    }</a>
+<a name="ln635"> </a>
+<a name="ln636">    else if(pRD &amp;&amp; strcasecmp(toks[0].c_str(),&quot;END&quot;) &amp;&amp; toks.size()%2==0)</a>
+<a name="ln637">    {</a>
+<a name="ln638">      //not &quot;END&quot;. Has an even number of tokens.</a>
+<a name="ln639">      //3-body efficiencies</a>
+<a name="ln640">      for(int i=0;i&lt;toks.size()-1;++i)//also incremented in body to retrieve id,val pairs</a>
+<a name="ln641">      {</a>
+<a name="ln642">        string sp(toks[i++]);</a>
+<a name="ln643">        pRD-&gt;SetEfficiency(sp, atof(toks[i].c_str()));</a>
+<a name="ln644">      }</a>
+<a name="ln645">    }</a>
+<a name="ln646">  }</a>
+<a name="ln647">  return (bool)ifs;</a>
+<a name="ln648">}</a>
+<a name="ln649"> </a>
+<a name="ln650">///////////////////////////////////////////////////////////////</a>
+<a name="ln651">obsharedptr&lt;OBMol&gt; ChemKinFormat::CheckSpecies(string&amp; name, string&amp; ln, bool MustBeKnown)</a>
+<a name="ln652">{</a>
+<a name="ln653">  MolMap::iterator mapitr = IMols.find(name);</a>
+<a name="ln654">  if(mapitr==IMols.end())</a>
+<a name="ln655">  {</a>
+<a name="ln656">    //unknown species</a>
+<a name="ln657">    if(MustBeKnown)</a>
+<a name="ln658">    {</a>
+<a name="ln659">      obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln660">        name + &quot; not recognized as a species in\n&quot; + ln, obError);</a>
+<a name="ln661">      obsharedptr&lt;OBMol&gt; sp;</a>
+<a name="ln662">      return sp; //empty</a>
+<a name="ln663">    }</a>
+<a name="ln664">    else</a>
+<a name="ln665">    {</a>
+<a name="ln666">      // There was no REACTIONS section in input file and probably no SPECIES section.</a>
+<a name="ln667">      // Unknown species that appear in a reaction can be made here with just a name.</a>
+<a name="ln668">      obsharedptr&lt;OBMol&gt; sp(new OBMol);</a>
+<a name="ln669">      sp-&gt;SetTitle(name.c_str());</a>
+<a name="ln670">      return sp;</a>
+<a name="ln671">    }</a>
+<a name="ln672">  }</a>
+<a name="ln673">  else</a>
+<a name="ln674">    return mapitr-&gt;second;</a>
+<a name="ln675">}</a>
+<a name="ln676"> </a>
+<a name="ln677"> </a>
+<a name="ln678">//////////////////////////////////////////////////////////////////</a>
+<a name="ln679">bool ChemKinFormat::ReadThermo(OBConversion* pConv)</a>
+<a name="ln680">{</a>
+<a name="ln681">  /*	Reads molecule using thermoformat.</a>
+<a name="ln682">      Finds mol in IMols with same name</a>
+<a name="ln683">       and combines the one with OBNasaThermoData with it.</a>
+<a name="ln684">      Continue with all molecules.</a>
+<a name="ln685">      Construct index if pIndex!=NULL.</a>
+<a name="ln686">  */</a>
+<a name="ln687">  OBFormat* pThermFormat = OBConversion::FindFormat(&quot;therm&quot;);</a>
+<a name="ln688">  if(!pThermFormat)</a>
+<a name="ln689">  {</a>
+<a name="ln690">    obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln691">    &quot;Thermo format needed but not available&quot;, obError);</a>
+<a name="ln692">    return false;</a>
+<a name="ln693">  }</a>
+<a name="ln694">  else</a>
+<a name="ln695">  {</a>
+<a name="ln696">    pConv-&gt;SetInFormat(pThermFormat);</a>
+<a name="ln697">    pConv-&gt;AddOption(&quot;e&quot;, OBConversion::INOPTIONS); //stops on END</a>
+<a name="ln698"> </a>
+<a name="ln699">    OBMol thmol;</a>
+<a name="ln700">    while(pConv-&gt;Read(&amp;thmol))</a>
+<a name="ln701">    {</a>
+<a name="ln702">      MolMap::iterator mapitr = IMols.find(thmol.GetTitle());</a>
+<a name="ln703">      if(mapitr!=IMols.end())</a>
+<a name="ln704">      {</a>
+<a name="ln705">        obsharedptr&lt;OBMol&gt; psnewmol(OBMoleculeFormat::MakeCombinedMolecule(mapitr-&gt;second.get(),&amp;thmol));</a>
+<a name="ln706">        IMols.erase(mapitr);</a>
+<a name="ln707">        IMols[thmol.GetTitle()] = psnewmol;</a>
+<a name="ln708">      }</a>
+<a name="ln709">      thmol.Clear();</a>
+<a name="ln710">    }</a>
+<a name="ln711">    pConv-&gt;SetInFormat(this);</a>
+<a name="ln712">  }</a>
+<a name="ln713">  pConv-&gt;RemoveOption(&quot;e&quot;, OBConversion::INOPTIONS);</a>
+<a name="ln714">  return true;</a>
+<a name="ln715">}</a>
+<a name="ln716"> </a>
+<a name="ln717">/////////////////////////////////////////////////////////////////</a>
+<a name="ln718">bool ChemKinFormat::ReadStdThermo(const string&amp; datafilename)</a>
+<a name="ln719">{</a>
+<a name="ln720">  OBMoleculeFormat::NameIndexType index;</a>
+<a name="ln721">  OBFormat* pThermFormat = GetThermoFormat();</a>
+<a name="ln722"> </a>
+<a name="ln723">  //Get the index of std thermo file, which may involve it being prepared</a>
+<a name="ln724">  if(!pThermFormat || !OBMoleculeFormat::ReadNameIndex(index, datafilename, pThermFormat))</a>
+<a name="ln725">    return false;</a>
+<a name="ln726"> </a>
+<a name="ln727">  string missing; // list of molecules which do not have thermodata</a>
+<a name="ln728">  OBConversion StdThermConv;</a>
+<a name="ln729">  ifstream stdthermo;</a>
+<a name="ln730">  OpenDatafile(stdthermo, datafilename);</a>
+<a name="ln731">  if(!stdthermo)</a>
+<a name="ln732">  {</a>
+<a name="ln733">    obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln734">    datafilename + &quot; was not found&quot;, obError);</a>
+<a name="ln735">    return false;</a>
+<a name="ln736">  }</a>
+<a name="ln737">  StdThermConv.SetInFormat(pThermFormat);</a>
+<a name="ln738">  StdThermConv.SetInStream(&amp;stdthermo);</a>
+<a name="ln739"> </a>
+<a name="ln740">  MolMap::iterator mapitr;</a>
+<a name="ln741">  for(mapitr=IMols.begin();mapitr!=IMols.end();++mapitr)</a>
+<a name="ln742">  {</a>
+<a name="ln743">    //Look up each molecules's name in index, move the the returned seek position,</a>
+<a name="ln744">    //read the molecule and combine it with the one in Imols</a>
+<a name="ln745">    OBMoleculeFormat::NameIndexType::iterator itr = index.find(mapitr-&gt;first);</a>
+<a name="ln746">    if(itr!=index.end())</a>
+<a name="ln747">    {</a>
+<a name="ln748">      OBMol thmol;</a>
+<a name="ln749">      stdthermo.seekg(itr-&gt;second);</a>
+<a name="ln750">      StdThermConv.Read(&amp;thmol);</a>
+<a name="ln751">      obsharedptr&lt;OBMol&gt; psnewmol(OBMoleculeFormat::MakeCombinedMolecule(mapitr-&gt;second.get(),&amp;thmol));</a>
+<a name="ln752">      IMols[thmol.GetTitle()] = psnewmol;</a>
+<a name="ln753">    }</a>
+<a name="ln754">    else</a>
+<a name="ln755">      if(mapitr-&gt;first!=&quot;M&quot;)</a>
+<a name="ln756">        missing += mapitr-&gt;first + ',';</a>
+<a name="ln757">  }</a>
+<a name="ln758">  if(!missing.empty())</a>
+<a name="ln759">  {</a>
+<a name="ln760">    obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln761">    datafilename + &quot; does not contain thermodata for &quot; + missing, obError);</a>
+<a name="ln762">    return false;</a>
+<a name="ln763">  }</a>
+<a name="ln764">  return true;</a>
+<a name="ln765">}</a>
+<a name="ln766"> </a>
+<a name="ln767">//////////////////////////////////////////////////////////</a>
+<a name="ln768">bool ChemKinFormat::CheckAllMolsHaveThermo()</a>
+<a name="ln769">{</a>
+<a name="ln770">  MolMap::iterator mapitr;</a>
+<a name="ln771">  for(mapitr=IMols.begin();mapitr!=IMols.end();++mapitr)</a>
+<a name="ln772">  {</a>
+<a name="ln773">    if(!mapitr-&gt;second-&gt;GetData(ThermoData) &amp;&amp; mapitr-&gt;first!=&quot;M&quot;)</a>
+<a name="ln774">      return false;</a>
+<a name="ln775">  }</a>
+<a name="ln776">  return true;</a>
+<a name="ln777">}</a>
+<a name="ln778"> </a>
+<a name="ln779">/////////////////////////////////////////////////////////////////</a>
+<a name="ln780">bool ChemKinFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln781">{</a>
+<a name="ln782">  //It's really a reaction, not a molecule. Called separately for each reaction.</a>
+<a name="ln783">  //Cast output object to the class type need, i.e. OBReaction</a>
+<a name="ln784">  OBReaction* pReact = dynamic_cast&lt;OBReaction*&gt;(pOb);</a>
+<a name="ln785">  if (pReact == nullptr)</a>
+<a name="ln786">      return false;</a>
+<a name="ln787"> </a>
+<a name="ln788">  //Read in reaction, store mols in OMols, write reaction to stringstream ss.</a>
+<a name="ln789">  if(pConv-&gt;GetOutputIndex()==1)</a>
+<a name="ln790">  {</a>
+<a name="ln791">    OMols.clear();</a>
+<a name="ln792">    ss.str(&quot;&quot;);</a>
+<a name="ln793">  }</a>
+<a name="ln794"> </a>
+<a name="ln795">  WriteReactionLine(pReact, pConv);</a>
+<a name="ln796"> </a>
+<a name="ln797">  //At end, construct ELEMENTS and SPECIES and output to ofs followed by ss</a>
+<a name="ln798">  if(pConv-&gt;IsLast())</a>
+<a name="ln799">  {</a>
+<a name="ln800">    ostream&amp; ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln801">    if(!pConv-&gt;IsOption(&quot;s&quot;)) //Simple output option - reactions only</a>
+<a name="ln802">    {</a>
+<a name="ln803">      if(!WriteHeader(pConv))</a>
+<a name="ln804">        return false;</a>
+<a name="ln805">      ofs &lt;&lt; &quot;REACTIONS\n&quot;;</a>
+<a name="ln806">    }</a>
+<a name="ln807">    ofs  &lt;&lt; ss.rdbuf() &lt;&lt; endl;</a>
+<a name="ln808">    if(!pConv-&gt;IsOption(&quot;s&quot;))</a>
+<a name="ln809">      ofs &lt;&lt; &quot;END&quot; &lt;&lt; endl;</a>
+<a name="ln810">  }</a>
+<a name="ln811">  return true;</a>
+<a name="ln812">}</a>
+<a name="ln813"> </a>
+<a name="ln814">//////////////////////////////////////////////////////////////////</a>
+<a name="ln815">bool ChemKinFormat::WriteHeader(OBConversion* pConv)</a>
+<a name="ln816">{</a>
+<a name="ln817">  ostream&amp; ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln818"> </a>
+<a name="ln819">  set&lt;string&gt; elements;</a>
+<a name="ln820">  vector&lt;string&gt; species;</a>
+<a name="ln821">  MolSet::iterator itr;</a>
+<a name="ln822">  for(itr= OMols.begin();itr!=OMols.end();++itr)</a>
+<a name="ln823">  {</a>
+<a name="ln824">    const char* title = (*itr)-&gt;GetTitle();</a>
+<a name="ln825">    if(strcmp(title, &quot;M&quot;))</a>
+<a name="ln826">      species.push_back(title);</a>
+<a name="ln827">    FOR_ATOMS_OF_MOL(atom, itr-&gt;get())</a>
+<a name="ln828">      elements.insert(OBElements::GetSymbol(atom-&gt;GetAtomicNum()));</a>
+<a name="ln829">  }</a>
+<a name="ln830">  if(!elements.empty())</a>
+<a name="ln831">  {</a>
+<a name="ln832">    ofs &lt;&lt; &quot;ELEMENTS\n&quot;;</a>
+<a name="ln833">    copy(elements.begin(),elements.end(), ostream_iterator&lt;string&gt;(ofs,&quot; &quot;));</a>
+<a name="ln834">    ofs &lt;&lt; &quot;\nEND\n&quot;;</a>
+<a name="ln835">  }</a>
+<a name="ln836">  else</a>
+<a name="ln837">    obErrorLog.ThrowError(__FUNCTION__, &quot;No element data available&quot;, obWarning);</a>
+<a name="ln838"> </a>
+<a name="ln839">  ofs &lt;&lt; &quot;SPECIES\n&quot;;</a>
+<a name="ln840">  vector&lt;string&gt;::iterator sitr;</a>
+<a name="ln841">  unsigned int maxlen=0;</a>
+<a name="ln842">  for(sitr= species.begin();sitr!=species.end();++sitr)</a>
+<a name="ln843">    if(sitr-&gt;size()&gt;maxlen) maxlen = sitr-&gt;size();</a>
+<a name="ln844"> </a>
+<a name="ln845">  unsigned int n=0;</a>
+<a name="ln846">  for(sitr=species.begin();sitr!=species.end();++sitr, ++n)</a>
+<a name="ln847">  {</a>
+<a name="ln848">    if(maxlen&gt;0 &amp;&amp; n &gt; 80 / maxlen)</a>
+<a name="ln849">    {</a>
+<a name="ln850">      ofs &lt;&lt; '\n';</a>
+<a name="ln851">      n=0;</a>
+<a name="ln852">    }</a>
+<a name="ln853">    ofs &lt;&lt; setw(maxlen+1) &lt;&lt; *sitr;</a>
+<a name="ln854">  }</a>
+<a name="ln855">  ofs &lt;&lt; &quot;\nEND\n&quot;;</a>
+<a name="ln856"> </a>
+<a name="ln857">  if(!pConv-&gt;IsOption(&quot;t&quot;))</a>
+<a name="ln858">  {</a>
+<a name="ln859">    OBFormat* pFormat = OBConversion::FindFormat(&quot;therm&quot;);</a>
+<a name="ln860">    if(!pFormat)</a>
+<a name="ln861">    {</a>
+<a name="ln862">      obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln863">      &quot;Thermo format needed but not available&quot;, obError);</a>
+<a name="ln864">      return false;</a>
+<a name="ln865">    }</a>
+<a name="ln866">    else</a>
+<a name="ln867">    {</a>
+<a name="ln868">      stringstream thermss;</a>
+<a name="ln869">      thermss &lt;&lt; &quot;THERMO ALL\n&quot;;</a>
+<a name="ln870">      thermss &lt;&lt; &quot;   300.000  1000.000  5000.000\n&quot;;</a>
+<a name="ln871">      OBConversion ConvThermo(*pConv);</a>
+<a name="ln872">      ConvThermo.SetOutFormat(pFormat);</a>
+<a name="ln873">      ConvThermo.SetOutStream(&amp;thermss);</a>
+<a name="ln874">      int ntherm=0;</a>
+<a name="ln875">      for(itr= OMols.begin();itr!=OMols.end();++itr)</a>
+<a name="ln876">      {</a>
+<a name="ln877">        const char* title = (*itr)-&gt;GetTitle();</a>
+<a name="ln878">        if(strcmp(title, &quot;M&quot;))</a>
+<a name="ln879">          if(ConvThermo.Write(itr-&gt;get()))</a>
+<a name="ln880">            ++ntherm;</a>
+<a name="ln881">      }</a>
+<a name="ln882"> </a>
+<a name="ln883">      thermss &lt;&lt; &quot;END\n&quot;;</a>
+<a name="ln884">      if(ntherm)</a>
+<a name="ln885">        ofs &lt;&lt; thermss.str(); //but don't output unless there was some thermo data</a>
+<a name="ln886">    }</a>
+<a name="ln887">  }</a>
+<a name="ln888">  return true;</a>
+<a name="ln889">}</a>
+<a name="ln890"> </a>
+<a name="ln891">//////////////////////////////////////////////////////////////////</a>
+<a name="ln892">bool ChemKinFormat::WriteReactionLine(OBReaction* pReact, OBConversion* pConv)</a>
+<a name="ln893">{</a>
+<a name="ln894">  //Get rate data so that we know what kind of reaction it is</a>
+<a name="ln895">  OBRateData* pRD = static_cast&lt;OBRateData*&gt;(pReact-&gt;GetData(RateData));</a>
+<a name="ln896"> </a>
+<a name="ln897">  //If -0 option set, omit reactions with zero rates. However, number of reactions converted remains the same.</a>
+<a name="ln898">  if(pConv-&gt;IsOption(&quot;0&quot;))</a>
+<a name="ln899">    if(!pRD || pRD-&gt;GetRate(OBRateData::A)==0.0)</a>
+<a name="ln900">      return false;</a>
+<a name="ln901"> </a>
+<a name="ln902">  ss &lt;&lt; pReact-&gt;GetTitle() &lt;&lt; '\t';</a>
+<a name="ln903"> </a>
+<a name="ln904">  if(!pRD &amp;&amp; !pConv-&gt;IsOption(&quot;s&quot;))</a>
+<a name="ln905">    obErrorLog.ThrowError(__FUNCTION__, &quot;Reaction &quot; + pReact-&gt;GetTitle()</a>
+<a name="ln906">     + &quot; has no rate data&quot;, obWarning);</a>
+<a name="ln907"> </a>
+<a name="ln908">  string mstring;</a>
+<a name="ln909">  if(pRD)</a>
+<a name="ln910">  {</a>
+<a name="ln911">    switch(pRD-&gt;ReactionType)</a>
+<a name="ln912">    {</a>
+<a name="ln913">    case OBRateData::TROE:</a>
+<a name="ln914">    case OBRateData::SRI:</a>
+<a name="ln915">    case OBRateData::LINDERMANN:</a>
+<a name="ln916">      mstring = &quot; (+M) &quot;;</a>
+<a name="ln917">    }</a>
+<a name="ln918">  }</a>
+<a name="ln919"> </a>
+<a name="ln920">  int i;</a>
+<a name="ln921">  for(i=0;i&lt;pReact-&gt;NumReactants();++i)</a>
+<a name="ln922">  {</a>
+<a name="ln923">    obsharedptr&lt;OBMol&gt; psMol = pReact-&gt;GetReactant(i);</a>
+<a name="ln924">//    if(strcasecmp(psMol-&gt;GetTitle(),&quot;M&quot;))</a>
+<a name="ln925">    OMols.insert(psMol);</a>
+<a name="ln926"> </a>
+<a name="ln927">    //If reactant has no title use its formula</a>
+<a name="ln928">    if(*psMol-&gt;GetTitle()=='\0')</a>
+<a name="ln929">      psMol-&gt;SetTitle(psMol-&gt;GetSpacedFormula(1,&quot;&quot;).c_str());</a>
+<a name="ln930"> </a>
+<a name="ln931">    //write species name but, if M, only if (+M) is not going to be output</a>
+<a name="ln932">    if(mstring.empty() || strcasecmp(psMol-&gt;GetTitle(),&quot;M&quot;))</a>
+<a name="ln933">    {</a>
+<a name="ln934">      if (i)</a>
+<a name="ln935">        ss &lt;&lt; &quot; + &quot;;</a>
+<a name="ln936">      ss &lt;&lt; setw(3) &lt;&lt; left &lt;&lt; psMol-&gt;GetTitle();</a>
+<a name="ln937">    }</a>
+<a name="ln938">  }</a>
+<a name="ln939"> </a>
+<a name="ln940">  /*</a>
+<a name="ln941">  3-body</a>
+<a name="ln942">  H + H + M &lt;=&gt; H2 + M  May have efficiencies</a>
+<a name="ln943">  Lindemann</a>
+<a name="ln944">  O + CO (+M) &lt;=&gt; CO2 (+M) Has LOW/ and may have efficiencies. Troe[0]=0</a>
+<a name="ln945">  Troe</a>
+<a name="ln946">  H + CH3 (+M) &lt;=&gt; CH4 (+M) Has LOW/ and TROE/ and may have efficiencies</a>
+<a name="ln947">  SRI</a>
+<a name="ln948">  */</a>
+<a name="ln949"> </a>
+<a name="ln950">  if(mstring.empty() &amp;&amp; pReact-&gt;NumReactants()&lt;3)</a>
+<a name="ln951">    ss &lt;&lt; &quot;     &quot;;</a>
+<a name="ln952"> </a>
+<a name="ln953">  ss &lt;&lt; mstring;</a>
+<a name="ln954"> </a>
+<a name="ln955">  if(pReact-&gt;IsReversible())</a>
+<a name="ln956">    ss &lt;&lt; &quot;\t &lt;=&gt; \t&quot;;</a>
+<a name="ln957">  else</a>
+<a name="ln958">    ss &lt;&lt; &quot;\t =&gt; \t&quot;;</a>
+<a name="ln959"> </a>
+<a name="ln960">  for(i=0;i&lt;pReact-&gt;NumProducts();++i)</a>
+<a name="ln961">  {</a>
+<a name="ln962">    obsharedptr&lt;OBMol&gt; psMol = pReact-&gt;GetProduct(i);</a>
+<a name="ln963">    if(strcasecmp(psMol-&gt;GetTitle(),&quot;M&quot;))</a>
+<a name="ln964">      OMols.insert(psMol);</a>
+<a name="ln965"> </a>
+<a name="ln966">    //If product has no title use its formula</a>
+<a name="ln967">    if(*psMol-&gt;GetTitle()=='\0')</a>
+<a name="ln968">      psMol-&gt;SetTitle(psMol-&gt;GetSpacedFormula(1,&quot;&quot;).c_str());</a>
+<a name="ln969"> </a>
+<a name="ln970">    //write species name but, if M, only if (+M) is not going to be output</a>
+<a name="ln971">    if(mstring.empty() || strcasecmp(psMol-&gt;GetTitle(),&quot;M&quot;))</a>
+<a name="ln972">    {</a>
+<a name="ln973">      if (i)</a>
+<a name="ln974">        ss &lt;&lt; &quot; + &quot;;</a>
+<a name="ln975">      ss &lt;&lt; setw(3) &lt;&lt; left &lt;&lt; psMol-&gt;GetTitle();</a>
+<a name="ln976">    }</a>
+<a name="ln977">  }</a>
+<a name="ln978">  if(mstring.empty() &amp;&amp; pReact-&gt;NumProducts()&lt;3)</a>
+<a name="ln979">    ss &lt;&lt; &quot;     &quot;;</a>
+<a name="ln980"> </a>
+<a name="ln981">  ss &lt;&lt; mstring;</a>
+<a name="ln982"> </a>
+<a name="ln983">  if(pRD)</a>
+<a name="ln984">  {</a>
+<a name="ln985">    ss &lt;&lt; &quot; \t&quot; &lt;&lt; scientific &lt;&lt; setprecision(3) &lt;&lt; pRD-&gt;GetRate(OBRateData::A) &lt;&lt; ' '</a>
+<a name="ln986">      &lt;&lt; fixed &lt;&lt; pRD-&gt;GetRate(OBRateData::n)	&lt;&lt; ' '</a>
+<a name="ln987">      &lt;&lt; setprecision(1) &lt;&lt; pRD-&gt;GetRate(OBRateData::E)</a>
+<a name="ln988">      &lt;&lt; &quot; \t&quot; &lt;&lt; pReact-&gt;GetComment() &lt;&lt; endl;</a>
+<a name="ln989"> </a>
+<a name="ln990">    switch(pRD-&gt;ReactionType)</a>
+<a name="ln991">    {</a>
+<a name="ln992">    case OBRateData::TROE:</a>
+<a name="ln993">      ss &lt;&lt; &quot;\tTROE / &quot; &lt;&lt; setprecision(3) &lt;&lt; pRD-&gt;GetTroeParam(0) &lt;&lt; ' '</a>
+<a name="ln994">        &lt;&lt; pRD-&gt;GetTroeParam(1) &lt;&lt; ' ' &lt;&lt; pRD-&gt;GetTroeParam(2);</a>
+<a name="ln995">      if(pRD-&gt;GetTroeParam(3))</a>
+<a name="ln996">        ss &lt;&lt; ' ' &lt;&lt;pRD-&gt;GetTroeParam(3);</a>
+<a name="ln997">      ss &lt;&lt; '/' &lt;&lt; endl;</a>
+<a name="ln998">      //fallthrough</a>
+<a name="ln999">    case OBRateData::LINDERMANN:</a>
+<a name="ln1000">      ss &lt;&lt; &quot;\tLOW / &quot; &lt;&lt; scientific &lt;&lt; setprecision(3) &lt;&lt; pRD-&gt;GetLoRate(OBRateData::A) &lt;&lt; ' '</a>
+<a name="ln1001">        &lt;&lt; fixed &lt;&lt; pRD-&gt;GetLoRate(OBRateData::n) &lt;&lt; ' '</a>
+<a name="ln1002">        &lt;&lt; setprecision(1) &lt;&lt; pRD-&gt;GetLoRate(OBRateData::E) &lt;&lt; '/' &lt;&lt; endl;</a>
+<a name="ln1003">      //fallthrough</a>
+<a name="ln1004">    case OBRateData::THREEBODY:</a>
+<a name="ln1005">      string id;</a>
+<a name="ln1006">      double eff;</a>
+<a name="ln1007">      int neffs=0;</a>
+<a name="ln1008">      while(pRD-&gt;GetNextEff(id,eff))</a>
+<a name="ln1009">      {</a>
+<a name="ln1010">        if(!neffs) ss &lt;&lt; '\t';</a>
+<a name="ln1011">        ss &lt;&lt; id &lt;&lt; &quot;/ &quot; &lt;&lt; setprecision(2) &lt;&lt; eff &lt;&lt; &quot;/ &quot;;</a>
+<a name="ln1012">        ++neffs;</a>
+<a name="ln1013">      }</a>
+<a name="ln1014">      if(neffs)</a>
+<a name="ln1015">        ss &lt;&lt; endl;</a>
+<a name="ln1016">    }</a>
+<a name="ln1017">  }</a>
+<a name="ln1018">  else //simple option</a>
+<a name="ln1019">    ss &lt;&lt; pReact-&gt;GetComment() &lt;&lt; endl;</a>
+<a name="ln1020"> </a>
+<a name="ln1021">  return true;</a>
+<a name="ln1022">}</a>
+<a name="ln1023"> </a>
+<a name="ln1024">OBFormat* ChemKinFormat::GetThermoFormat()</a>
+<a name="ln1025">{</a>
+<a name="ln1026">  OBFormat* pThermFormat = OBConversion::FindFormat(&quot;therm&quot;);</a>
+<a name="ln1027">  if(!pThermFormat)</a>
+<a name="ln1028">  {</a>
+<a name="ln1029">    obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln1030">    &quot;Thermo format needed but not available&quot;, obError);</a>
+<a name="ln1031">    return nullptr;</a>
+<a name="ln1032">  }</a>
+<a name="ln1033">  return pThermFormat;</a>
+<a name="ln1034">}</a>
+<a name="ln1035">} //namespace</a>
+<a name="ln1036">/*</a>
+<a name="ln1037">LINDEMANN FALLOFF FORM</a>
+<a name="ln1038">This treatment applies if no specific falloff parameters are given.</a>
+<a name="ln1039">At pressures intermediate to the high and low pressure limits,</a>
+<a name="ln1040">the rate constant is given by the Lindemann formula:</a>
+<a name="ln1041"> </a>
+<a name="ln1042">                    k_inf</a>
+<a name="ln1043">         k = ----------------</a>
+<a name="ln1044">             1  +  k_inf/k_o[M]</a>
+<a name="ln1045"> </a>
+<a name="ln1046">In cases where no high pressure limit rate constant parameters are given</a>
+<a name="ln1047">(i.e., the collider M as a reactant is not in parenthesis),</a>
+<a name="ln1048">the reaction is in the low pressure limit.</a>
+<a name="ln1049"> </a>
+<a name="ln1050">TROE FALLOFF FORM</a>
+<a name="ln1051">A more refined treatment of pressure effects than Lindemann is employed</a>
+<a name="ln1052">using the TROE parameters. The falloff parameter F_cent for a unimolecular</a>
+<a name="ln1053">reaction is calculated from the values of a, b, c, and d by the formula of Troe</a>
+<a name="ln1054"> </a>
+<a name="ln1055">      F_cent  =  (1-a) exp(-T/b)  +  a exp(-T/c)  +  exp(-d/T)</a>
+<a name="ln1056"> </a>
+<a name="ln1057">which gives the temperature dependence of F_cent, the factor by which</a>
+<a name="ln1058">the rate constant of a given unimolecular reaction at temperature T and</a>
+<a name="ln1059">reduced pressure P_r = k_o[M]/k_inf of 1.0 is less than the value k_inf/2 which</a>
+<a name="ln1060">it would have if unimolecular reactions behaved according to the Lindemann formula.</a>
+<a name="ln1061"> </a>
+<a name="ln1062">The broadening factor F, which is 1 for the Lindemann case where no parameters</a>
+<a name="ln1063">for F_cent are provided, is computed from F_cent by</a>
+<a name="ln1064"> </a>
+<a name="ln1065">                                log F_cent</a>
+<a name="ln1066">      log F = ---------------------------------------------</a>
+<a name="ln1067">              1 + [(log P_r + C)/(N - 0.14{log P_r + C})]^2</a>
+<a name="ln1068"> </a>
+<a name="ln1069"> </a>
+<a name="ln1070">      with N = 0.75 - 1.27log F_cent  and  C = -0.4 - 0.67log F_cent.</a>
+<a name="ln1071"> </a>
+<a name="ln1072">The rate coefficient, k, is then given by multiplying the Lindemann formula by F.</a>
+<a name="ln1073">a,b,c,d = a, T***, T*, T**</a>
+<a name="ln1074"> </a>
+<a name="ln1075">See also http://gems.mines.edu/~reactionxml/Fall-off2.pdf</a>
+<a name="ln1076">*/</a>
+<a name="ln1077">/*</a>
+<a name="ln1078">@todo</a>
+<a name="ln1079">Make case independent</a>
+<a name="ln1080">Isotopes like D in ELEMENTS list</a>
+<a name="ln1081">ELEM and END is optional</a>
+<a name="ln1082">*/</a>
+
+</code></pre>
+<div class="balloon" rel="51"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1053/" target="_blank">V1053</a> Calling the 'Init' virtual function in the constructor may lead to unexpected result at runtime.</p></div>
+<div class="balloon" rel="265"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v593/" target="_blank">V593</a> Consider reviewing the expression of the 'A = B != C' kind. The expression is calculated as following: 'A = (B != C)'.</p></div>
+<div class="balloon" rel="438"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v773/" target="_blank">V773</a> The function was exited without releasing the 'pRD' pointer. A memory leak is possible.</p></div>
+<div class="balloon" rel="520"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v688/" target="_blank">V688</a> The 'ss' local variable possesses the same name as one of the class members, which can result in a confusion.</p></div>
+<div class="balloon" rel="597"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v593/" target="_blank">V593</a> Consider reviewing the expression of the 'A = B != C' kind. The expression is calculated as following: 'A = (B != C)'.</p></div>
+<div class="balloon" rel="911"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v719/" target="_blank">V719</a> The switch statement does not cover all values of the 'reaction_type' enum: ARRHENIUS, THREEBODY.</p></div>
+<div class="balloon" rel="990"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v719/" target="_blank">V719</a> The switch statement does not cover all values of the 'reaction_type' enum: ARRHENIUS, SRI.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

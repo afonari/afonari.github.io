@@ -1,0 +1,930 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>ichimap1.c</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/*</a>
+<a name="ln2"> * International Chemical Identifier (InChI)</a>
+<a name="ln3"> * Version 1</a>
+<a name="ln4"> * Software version 1.04</a>
+<a name="ln5"> * September 9, 2011</a>
+<a name="ln6"> *</a>
+<a name="ln7"> * The InChI library and programs are free software developed under the</a>
+<a name="ln8"> * auspices of the International Union of Pure and Applied Chemistry (IUPAC).</a>
+<a name="ln9"> * Originally developed at NIST. Modifications and additions by IUPAC </a>
+<a name="ln10"> * and the InChI Trust.</a>
+<a name="ln11"> *</a>
+<a name="ln12"> * IUPAC/InChI-Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln13"> * Software version 1.0.</a>
+<a name="ln14"> * Copyright (C) IUPAC and InChI Trust Limited</a>
+<a name="ln15"> * </a>
+<a name="ln16"> * This library is free software; you can redistribute it and/or modify it under the </a>
+<a name="ln17"> * terms of the IUPAC/InChI Trust Licence for the International Chemical Identifier </a>
+<a name="ln18"> * (InChI) Software version 1.0; either version 1.0 of the License, or </a>
+<a name="ln19"> * (at your option) any later version.</a>
+<a name="ln20"> * </a>
+<a name="ln21"> * This library is distributed in the hope that it will be useful, </a>
+<a name="ln22"> * but WITHOUT ANY WARRANTY; without even the implied warranty of </a>
+<a name="ln23"> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  </a>
+<a name="ln24"> * See the IUPAC/InChI Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln25"> * Software version 1.0 for more details.</a>
+<a name="ln26"> * </a>
+<a name="ln27"> * You should have received a copy of the IUPAC/InChI Trust Licence for the </a>
+<a name="ln28"> * International Chemical Identifier (InChI) Software version 1.0 along with </a>
+<a name="ln29"> * this library; if not, write to:</a>
+<a name="ln30"> * </a>
+<a name="ln31"> * The InChI Trust</a>
+<a name="ln32"> * c/o FIZ CHEMIE Berlin</a>
+<a name="ln33"> * Franklinstrasse 11</a>
+<a name="ln34"> * 10587 Berlin</a>
+<a name="ln35"> * GERMANY</a>
+<a name="ln36"> * </a>
+<a name="ln37"> */</a>
+<a name="ln38"> </a>
+<a name="ln39"> </a>
+<a name="ln40">#include &lt;stdio.h&gt;</a>
+<a name="ln41">#include &lt;stdlib.h&gt;</a>
+<a name="ln42">#include &lt;string.h&gt;</a>
+<a name="ln43"> </a>
+<a name="ln44">#include &quot;mode.h&quot;</a>
+<a name="ln45"> </a>
+<a name="ln46">#include &quot;incomdef.h&quot;</a>
+<a name="ln47">#include &quot;extr_ct.h&quot;</a>
+<a name="ln48">#include &quot;ichitaut.h&quot;</a>
+<a name="ln49">#include &quot;ichicant.h&quot;</a>
+<a name="ln50">#include &quot;ichicomn.h&quot;</a>
+<a name="ln51"> </a>
+<a name="ln52">#include &quot;ichicomp.h&quot;</a>
+<a name="ln53"> </a>
+<a name="ln54"> </a>
+<a name="ln55"> </a>
+<a name="ln56"> </a>
+<a name="ln57">/**************************************************************************************/</a>
+<a name="ln58">/*  Check if all equivalent to cr1 possibly stereogenic atoms: */</a>
+<a name="ln59">/*  1) have KNOWN parity, and */</a>
+<a name="ln60">/*  2) their parities are same */</a>
+<a name="ln61">/**************************************************************************************/</a>
+<a name="ln62">int All_SC_Same(  AT_RANK canon_rank1, /*  canonical number */</a>
+<a name="ln63">                  const ppAT_RANK pRankStack1, const ppAT_RANK pRankStack2,</a>
+<a name="ln64">                  const AT_RANK *nAtomNumberCanonFrom,</a>
+<a name="ln65">                  const sp_ATOM *at )</a>
+<a name="ln66">{</a>
+<a name="ln67">    int     n1 = (int)nAtomNumberCanonFrom[(int)canon_rank1-1];</a>
+<a name="ln68">    AT_RANK r1 = pRankStack1[0][n1];</a>
+<a name="ln69">    int     iMax1 = (int)r1;</a>
+<a name="ln70">    int     i1, s1;</a>
+<a name="ln71">    int     bFound=0, stereo_atom_parity=-1;</a>
+<a name="ln72"> </a>
+<a name="ln73">    /*  find one stereo atom such that canon_rank1 can be mapped on it */</a>
+<a name="ln74">    for ( i1 = 1; i1 &lt;= iMax1 &amp;&amp; r1 == pRankStack2[0][s1=(int)pRankStack2[1][iMax1-i1]]; i1++ ) {</a>
+<a name="ln75">        if ( at[s1].stereo_bond_neighbor[0] ) {</a>
+<a name="ln76">            bFound=0; /* at[s1] is not sp3-stereogenic: it belongs to a stereobond */</a>
+<a name="ln77">            break;</a>
+<a name="ln78">        } else</a>
+<a name="ln79">        if ( i1 == 1 ) {</a>
+<a name="ln80">            stereo_atom_parity = PARITY_VAL(at[s1].stereo_atom_parity);</a>
+<a name="ln81">            if ( !ATOM_PARITY_KNOWN(stereo_atom_parity) ) {</a>
+<a name="ln82">                bFound=0;  /* at[s1] does not have a KNOWN parity */</a>
+<a name="ln83">                break;</a>
+<a name="ln84">            }</a>
+<a name="ln85">        } else</a>
+<a name="ln86">        if ( stereo_atom_parity != PARITY_VAL(at[s1].stereo_atom_parity) ) {</a>
+<a name="ln87">            bFound=0; /* two equivalent atoms have different parities */</a>
+<a name="ln88">            break;</a>
+<a name="ln89">        }</a>
+<a name="ln90">        bFound ++;</a>
+<a name="ln91">    }</a>
+<a name="ln92">    return bFound;</a>
+<a name="ln93">}</a>
+<a name="ln94">/**************************************************************************************/</a>
+<a name="ln95">/*  get next available (not mapped yet) rank for a stereo center atom */</a>
+<a name="ln96">int Next_SC_At_CanonRank2( AT_RANK *canon_rank1,    /*  1st call input: largest canon number mapped so far or 0 */</a>
+<a name="ln97">                                                    /*  output: suggested canon. rank &gt; than input if success */</a>
+<a name="ln98">                          AT_RANK *canon_rank1_min, /*  1st call:0 next calls: first tried canon. number */</a>
+<a name="ln99">                          int *bFirstTime,          /*  1 at the time of the 1st call  */</a>
+<a name="ln100">                          S_CHAR *bAtomUsedForStereo, /*  STEREO_AT_MARK if the atom has not been mapped yet */</a>
+<a name="ln101">                    const ppAT_RANK pRankStack1,    /*  mapping ranks/sort order of atoms with canon. numbers (from) */</a>
+<a name="ln102">                    const ppAT_RANK pRankStack2,    /*  mapping ranks/sort order of atoms with stereo (to) */</a>
+<a name="ln103">                    const AT_RANK *nAtomNumberCanonFrom, /*  sorted order of the canon. numbers */</a>
+<a name="ln104">                    int num_atoms )</a>
+<a name="ln105">{</a>
+<a name="ln106">    AT_RANK canon_rank1_inp = *canon_rank1;</a>
+<a name="ln107">    AT_RANK cr1;  /*  canonical rank (canonical number) */</a>
+<a name="ln108">    AT_RANK r1;   /*  mapping rank */</a>
+<a name="ln109">    int     n1;   /*  ord. number of an atom with the canon. number */</a>
+<a name="ln110">    int     s1;   /*  ord. number of an atom with stereo */</a>
+<a name="ln111">    int     i1, bFound=0;</a>
+<a name="ln112">    int     iMax1;</a>
+<a name="ln113"> </a>
+<a name="ln114">    if ( canon_rank1_inp &lt;  *canon_rank1_min ) {</a>
+<a name="ln115">        canon_rank1_inp = *canon_rank1_min;</a>
+<a name="ln116">    } else</a>
+<a name="ln117">    if ( canon_rank1_inp &lt; 1 ) {</a>
+<a name="ln118">        canon_rank1_inp = 1;</a>
+<a name="ln119">    } else {</a>
+<a name="ln120">        canon_rank1_inp ++; /*  next canonical rank */</a>
+<a name="ln121">    }</a>
+<a name="ln122">    cr1 = canon_rank1_inp;</a>
+<a name="ln123">    </a>
+<a name="ln124">    while ( (int) cr1 &lt;= num_atoms ) {</a>
+<a name="ln125">        n1 = (int)nAtomNumberCanonFrom[(int)cr1-1]; /*  atom1 (which has canon. rank cr1) ord. number */</a>
+<a name="ln126">        iMax1 = (int)(r1 = pRankStack1[0][n1]); /*  mapping rank of atom1 */</a>
+<a name="ln127">        /*  find atoms &quot;to&quot; to which the canon. number can be mapped; they have mapping rank r1, number s1 */</a>
+<a name="ln128">        for ( i1 = 1; i1 &lt;= iMax1 &amp;&amp; r1 == pRankStack2[0][s1=(int)pRankStack2[1][iMax1-i1]]; i1++ ) {</a>
+<a name="ln129">            /*  looking for a stereo center atom that has mapping rank r1 */</a>
+<a name="ln130">            if ( bAtomUsedForStereo[s1] == STEREO_AT_MARK ) {</a>
+<a name="ln131">                /*  found a sterogenic atom that has not been mapped yet */</a>
+<a name="ln132">                bFound = 1;</a>
+<a name="ln133">                break;</a>
+<a name="ln134">            }</a>
+<a name="ln135">        }</a>
+<a name="ln136">        if ( bFound ) {</a>
+<a name="ln137">            /*  one stereogenic not mapped yet atom &quot;to&quot; has been found */</a>
+<a name="ln138">            if ( *bFirstTime ) {</a>
+<a name="ln139">                *canon_rank1_min = cr1;</a>
+<a name="ln140">                *bFirstTime = 0;</a>
+<a name="ln141">            }</a>
+<a name="ln142">            break;</a>
+<a name="ln143">        } else {</a>
+<a name="ln144">            /*  a not mapped yet stereogenic atom has not found */</a>
+<a name="ln145">            /*  for the mapping rank r1 defined by the canonical rank cr1; try next cr1 */</a>
+<a name="ln146">            cr1 ++;</a>
+<a name="ln147">        }</a>
+<a name="ln148">    }</a>
+<a name="ln149">    if ( bFound ) {</a>
+<a name="ln150">        /*  success */</a>
+<a name="ln151">        *canon_rank1 = cr1;</a>
+<a name="ln152">        return 1;</a>
+<a name="ln153">    }</a>
+<a name="ln154">    return 0;</a>
+<a name="ln155">}</a>
+<a name="ln156">/**********************************************************************/</a>
+<a name="ln157">int CompareLinCtStereoDble ( AT_STEREO_DBLE *LinearCTStereoDble1, int nLenLinearCTStereoDble1,</a>
+<a name="ln158">                             AT_STEREO_DBLE *LinearCTStereoDble2, int nLenLinearCTStereoDble2 )</a>
+<a name="ln159">{</a>
+<a name="ln160">    int i, num, ret = 0;</a>
+<a name="ln161"> </a>
+<a name="ln162">    /* compare double bonds */</a>
+<a name="ln163">    if ( LinearCTStereoDble1 &amp;&amp; LinearCTStereoDble2 ) {</a>
+<a name="ln164">        num = inchi_min(nLenLinearCTStereoDble1, nLenLinearCTStereoDble2);</a>
+<a name="ln165">        for ( i = 0; i &lt; num; i ++ ) {</a>
+<a name="ln166">            if ( (ret = (int)LinearCTStereoDble1[i].at_num1 - (int)LinearCTStereoDble2[i].at_num1) )</a>
+<a name="ln167">                break;</a>
+<a name="ln168">            if ( (ret = (int)LinearCTStereoDble1[i].at_num2 - (int)LinearCTStereoDble2[i].at_num2) )</a>
+<a name="ln169">                break;</a>
+<a name="ln170">            if ( (ret = (int)LinearCTStereoDble1[i].parity - (int)LinearCTStereoDble2[i].parity) )</a>
+<a name="ln171">                break;</a>
+<a name="ln172">        }</a>
+<a name="ln173">        if ( !ret ) {</a>
+<a name="ln174">            ret = nLenLinearCTStereoDble1 - nLenLinearCTStereoDble2;</a>
+<a name="ln175">        }</a>
+<a name="ln176">    } else</a>
+<a name="ln177">    if ( LinearCTStereoDble1 &amp;&amp; nLenLinearCTStereoDble1 &gt; 0 ) {</a>
+<a name="ln178">        ret = 1;</a>
+<a name="ln179">    } else</a>
+<a name="ln180">    if ( LinearCTStereoDble2 &amp;&amp; nLenLinearCTStereoDble2 &gt; 0 ) {</a>
+<a name="ln181">        ret = -1;</a>
+<a name="ln182">    }</a>
+<a name="ln183">    return ret;</a>
+<a name="ln184">}</a>
+<a name="ln185">/**********************************************************************/</a>
+<a name="ln186">int CompareLinCtStereoCarb ( AT_STEREO_CARB *LinearCTStereoCarb1, int nLenLinearCTStereoCarb1,</a>
+<a name="ln187">                             AT_STEREO_CARB *LinearCTStereoCarb2, int nLenLinearCTStereoCarb2 )</a>
+<a name="ln188">{</a>
+<a name="ln189">    int i, num, ret = 0;</a>
+<a name="ln190"> </a>
+<a name="ln191">    /* compare stereocenters */</a>
+<a name="ln192">    if ( LinearCTStereoCarb1 &amp;&amp; LinearCTStereoCarb2 ) {</a>
+<a name="ln193">        num = inchi_min(nLenLinearCTStereoCarb1, nLenLinearCTStereoCarb2);</a>
+<a name="ln194">        for ( i = 0; i &lt; num; i ++ ) {</a>
+<a name="ln195">            if ( (ret = (int)LinearCTStereoCarb1[i].at_num - (int)LinearCTStereoCarb2[i].at_num) )</a>
+<a name="ln196">                break;</a>
+<a name="ln197">            if ( (ret = (int)LinearCTStereoCarb1[i].parity - (int)LinearCTStereoCarb2[i].parity) )</a>
+<a name="ln198">                break;</a>
+<a name="ln199">        }</a>
+<a name="ln200">        if ( !ret ) {</a>
+<a name="ln201">            ret = nLenLinearCTStereoCarb1 - nLenLinearCTStereoCarb2;</a>
+<a name="ln202">        }</a>
+<a name="ln203">    } else</a>
+<a name="ln204">    if ( LinearCTStereoCarb1 &amp;&amp; nLenLinearCTStereoCarb1 &gt; 0 ) {</a>
+<a name="ln205">        ret = 1;</a>
+<a name="ln206">    } else</a>
+<a name="ln207">    if ( LinearCTStereoCarb2 &amp;&amp; nLenLinearCTStereoCarb2 &gt; 0 ) {</a>
+<a name="ln208">        ret = -1;</a>
+<a name="ln209">    }</a>
+<a name="ln210"> </a>
+<a name="ln211">    return ret;</a>
+<a name="ln212">}</a>
+<a name="ln213">/**********************************************************************/</a>
+<a name="ln214">int CompareLinCtStereo ( AT_STEREO_DBLE *LinearCTStereoDble1, int nLenLinearCTStereoDble1,</a>
+<a name="ln215">                         AT_STEREO_CARB *LinearCTStereoCarb1, int nLenLinearCTStereoCarb1,</a>
+<a name="ln216">                         AT_STEREO_DBLE *LinearCTStereoDble2, int nLenLinearCTStereoDble2,</a>
+<a name="ln217">                         AT_STEREO_CARB *LinearCTStereoCarb2, int nLenLinearCTStereoCarb2 )</a>
+<a name="ln218">{</a>
+<a name="ln219">    int ret;</a>
+<a name="ln220"> </a>
+<a name="ln221">    /* compare double bonds */</a>
+<a name="ln222">    ret = CompareLinCtStereoDble ( LinearCTStereoDble1, nLenLinearCTStereoDble1,</a>
+<a name="ln223">                                   LinearCTStereoDble2, nLenLinearCTStereoDble2 );</a>
+<a name="ln224">    if ( !ret ) {</a>
+<a name="ln225">        ret = CompareLinCtStereoCarb ( LinearCTStereoCarb1, nLenLinearCTStereoCarb1,</a>
+<a name="ln226">                                       LinearCTStereoCarb2, nLenLinearCTStereoCarb2 );</a>
+<a name="ln227">    }</a>
+<a name="ln228">    return ret;</a>
+<a name="ln229">}</a>
+<a name="ln230">/**************************************************************************************/</a>
+<a name="ln231">int CompareLinCtStereoAtomToValues( AT_STEREO_CARB *LinearCTStereoCarb,</a>
+<a name="ln232">                              AT_RANK at_rank_canon1, U_CHAR parity )</a>
+<a name="ln233">{</a>
+<a name="ln234">    if ( LinearCTStereoCarb-&gt;at_num CT_GREATER_THAN at_rank_canon1 )</a>
+<a name="ln235">        return 1;</a>
+<a name="ln236">    if ( LinearCTStereoCarb-&gt;at_num != at_rank_canon1 )</a>
+<a name="ln237">        return -1;</a>
+<a name="ln238">    if ( LinearCTStereoCarb-&gt;parity CT_GREATER_THAN parity )</a>
+<a name="ln239">        return 1;</a>
+<a name="ln240">    if ( LinearCTStereoCarb-&gt;parity != parity )</a>
+<a name="ln241">        return -1;</a>
+<a name="ln242">    return 0;</a>
+<a name="ln243">}</a>
+<a name="ln244">/**************************************************************************************/</a>
+<a name="ln245">/*  Find atom number from the mapping rank and return 1, or */</a>
+<a name="ln246">/*  if the mapping rank is tied and the atom number is not unique then return 0 */</a>
+<a name="ln247">int bUniqueAtNbrFromMappingRank( AT_RANK **pRankStack, AT_RANK nAtRank, AT_NUMB *nAtNumber )</a>
+<a name="ln248">{</a>
+<a name="ln249">    int       r = (int)nAtRank-1;</a>
+<a name="ln250">    AT_NUMB   i = pRankStack[1][r];</a>
+<a name="ln251">    if ( nAtRank == pRankStack[0][(int)i] &amp;&amp;</a>
+<a name="ln252">         (!r || nAtRank != pRankStack[0][pRankStack[1][r-1]])</a>
+<a name="ln253">       ) {</a>
+<a name="ln254">        *nAtNumber = i;</a>
+<a name="ln255">        return 1;</a>
+<a name="ln256">    }</a>
+<a name="ln257">    return 0;</a>
+<a name="ln258">}</a>
+<a name="ln259">/**************************************************************************************/</a>
+<a name="ln260">/*  Get minimal set (class) representative and partially compress the partitioning */</a>
+<a name="ln261">/*  mcr = minimal class representative. */</a>
+<a name="ln262">AT_RANK nGetMcr( AT_RANK *nEqArray, AT_RANK n )</a>
+<a name="ln263">{</a>
+<a name="ln264">    AT_RANK n1, n2, mcr; /*  recursive version is much shorter. */</a>
+<a name="ln265">    </a>
+<a name="ln266">    n1=nEqArray[(int)n];</a>
+<a name="ln267">    if ( n == n1 ) {</a>
+<a name="ln268">        return n;</a>
+<a name="ln269">    }</a>
+<a name="ln270">    /*  1st pass: find mcr */</a>
+<a name="ln271">    while ( n1 != (n2=nEqArray[(int)n1])) {</a>
+<a name="ln272">        n1 = n2;</a>
+<a name="ln273">    }</a>
+<a name="ln274">    /*  2nd pass: copy mcr to each element of the set starting from nEqArray[n] */</a>
+<a name="ln275">    mcr = n1;</a>
+<a name="ln276">    n1  = n;</a>
+<a name="ln277">    while ( /*n1*/ mcr != (n2=nEqArray[(int)n1]) ) {</a>
+<a name="ln278">        nEqArray[(int)n1]=mcr;</a>
+<a name="ln279">        n1 = n2;</a>
+<a name="ln280">    }</a>
+<a name="ln281">    return ( mcr );</a>
+<a name="ln282">}</a>
+<a name="ln283">/**************************************************************************************/</a>
+<a name="ln284">/*  Join 2 sets (classes) that have members n1 and n2 */</a>
+<a name="ln285">int nJoin2Mcrs( AT_RANK *nEqArray, AT_RANK n1, AT_RANK n2 )</a>
+<a name="ln286">{</a>
+<a name="ln287">    n1 = nGetMcr( nEqArray, n1 );</a>
+<a name="ln288">    n2 = nGetMcr( nEqArray, n2 );</a>
+<a name="ln289">    if ( n1 &lt; n2 ) {</a>
+<a name="ln290">        nEqArray[n2] = n1;</a>
+<a name="ln291">        return 1; /*  a change has been made */</a>
+<a name="ln292">    }</a>
+<a name="ln293">    if ( n2 &lt; n1 ) {</a>
+<a name="ln294">        nEqArray[n1] = n2;</a>
+<a name="ln295">        return 1; /*  a change has been made */</a>
+<a name="ln296">    }</a>
+<a name="ln297">    return 0; /*  no changes */</a>
+<a name="ln298">}</a>
+<a name="ln299"> </a>
+<a name="ln300">/*********************************************************************************</a>
+<a name="ln301"> *  For all pairs of atoms that are:                                             *     </a>
+<a name="ln302"> *  (a) connected by a possibly stereogenic bond                                 *</a>
+<a name="ln303"> *  (b) &quot;equivalent&quot; at this point to canon_rank1-canon_rank2 :                  *</a>
+<a name="ln304"> *  Check if they:                                                               *</a>
+<a name="ln305"> *  1) are connected by a stereo bond or cumulene bonds of the same length       *</a>
+<a name="ln306"> *  2) have KNOWN parity, and                                                    *</a>
+<a name="ln307"> *  3) their parities are same                                                   *</a>
+<a name="ln308"> *********************************************************************************/</a>
+<a name="ln309">int All_SB_Same(  AT_RANK canon_rank1, AT_RANK canon_rank2, /*  canonical numbers */</a>
+<a name="ln310">                  const ppAT_RANK pRankStack1, const ppAT_RANK pRankStack2,</a>
+<a name="ln311">                  const AT_RANK *nAtomNumberCanonFrom, sp_ATOM *at )</a>
+<a name="ln312">{</a>
+<a name="ln313">    int     n1 = (int)nAtomNumberCanonFrom[(int)canon_rank1-1]; /* at1 has canon_rank1 */</a>
+<a name="ln314">    int     n2 = (int)nAtomNumberCanonFrom[(int)canon_rank2-1]; /* at2 has canon_rank2 */</a>
+<a name="ln315">    AT_RANK r1 = pRankStack1[0][n1]; /* at1 mapping rank */</a>
+<a name="ln316">    AT_RANK r2 = pRankStack1[0][n2]; /* at2 mapping rank */</a>
+<a name="ln317">    AT_RANK rNeigh1, rNeigh2;</a>
+<a name="ln318">    int     iMax1 = (int)r1;</a>
+<a name="ln319">    /* int     iMax2 = (int)r2; */</a>
+<a name="ln320">    int     i1, i2, s1, s2, k1, k2, m, k, num_equal;</a>
+<a name="ln321">    int     bNotFound=1, cumulene_len, stereo_bond_parity;</a>
+<a name="ln322"> </a>
+<a name="ln323">    /*  at the first atom that possibly may have canon_rank1 find one stereo bond such that */</a>
+<a name="ln324">    /*  canon_rank1-canon_rank2 possibly may be mapped on it */</a>
+<a name="ln325">    for ( i1 = 1; i1 &lt;= iMax1 &amp;&amp; r1 == pRankStack2[0][s1=(int)pRankStack2[1][iMax1-i1]]; i1++ ) {</a>
+<a name="ln326">        /* at[n1] may be possible to map on at[s1] */</a>
+<a name="ln327">        for ( k1 = 0, s2= 0, bNotFound=1;</a>
+<a name="ln328">              k1 &lt; MAX_NUM_STEREO_BONDS &amp;&amp; (s2=(int)at[s1].stereo_bond_neighbor[k1]) &amp;&amp;</a>
+<a name="ln329">                                   (bNotFound = (r2 != pRankStack2[0][--s2])); k1 ++ )</a>
+<a name="ln330">            ; /* continue until the 1st at[s2] (to which at[n2] may be mapped) have been found */</a>
+<a name="ln331">        if ( !bNotFound ) {</a>
+<a name="ln332">          break; /* stop at 1st found */</a>
+<a name="ln333">        }</a>
+<a name="ln334">    }</a>
+<a name="ln335">    if ( bNotFound ) {</a>
+<a name="ln336">        return -1; /*  error: no mapping exists */</a>
+<a name="ln337">    }</a>
+<a name="ln338">    for ( k2 = 0, m = 0; k2 &lt; MAX_NUM_STEREO_BONDS &amp;&amp; (m=(int)at[s2].stereo_bond_neighbor[k2]) &amp;&amp; m-1 != s1; k2 ++ )</a>
+<a name="ln339">        ;</a>
+<a name="ln340">    if ( m-1 != s1 ) {</a>
+<a name="ln341">        return -1; /*  program error: stereo bond in opposite direction not found */</a>
+<a name="ln342">    }</a>
+<a name="ln343">    stereo_bond_parity = at[s1].stereo_bond_parity[k1];</a>
+<a name="ln344">    if ( !PARITY_KNOWN(stereo_bond_parity) ) {</a>
+<a name="ln345">        return 0;</a>
+<a name="ln346">    }</a>
+<a name="ln347">    cumulene_len       = BOND_CHAIN_LEN(stereo_bond_parity);</a>
+<a name="ln348">    rNeigh1            = pRankStack2[0][(int)at[s1].neighbor[(int)at[s1].stereo_bond_ord[k1]]];</a>
+<a name="ln349">    rNeigh2            = pRankStack2[0][(int)at[s2].neighbor[(int)at[s2].stereo_bond_ord[k2]]];</a>
+<a name="ln350"> </a>
+<a name="ln351">    num_equal = 0;</a>
+<a name="ln352">    /*  Search among ALL neighbors because sometimes a stereo bond may be mapped on a non-stereo bond. */</a>
+<a name="ln353">    /*  If is so then return 0: not all mappings are stereo-equivalent */</a>
+<a name="ln354">    for ( s1 = 1; s1 &lt;= iMax1 &amp;&amp; r1 == pRankStack2[0][i1=(int)pRankStack2[1][iMax1-s1]]; s1++ ) {</a>
+<a name="ln355">        for ( k = 0; k &lt; at[i1].valence; k ++ ) {</a>
+<a name="ln356">            n1 = at[i1].neighbor[k];</a>
+<a name="ln357">            if ( rNeigh1 != pRankStack2[0][n1] ) {</a>
+<a name="ln358">                continue; /*  wrong neighbor */</a>
+<a name="ln359">            }</a>
+<a name="ln360">            if ( cumulene_len ) {</a>
+<a name="ln361">                int prev, next, len, j;</a>
+<a name="ln362">                for ( prev=i1, len=0, next = n1; len &lt; cumulene_len; len ++ ) {</a>
+<a name="ln363">                    if ( at[next].valence == 2 &amp;&amp; !at[next].num_H ) {</a>
+<a name="ln364">                        j = ((int)at[next].neighbor[0] == prev);</a>
+<a name="ln365">                        prev = next;</a>
+<a name="ln366">                        next = at[next].neighbor[j];</a>
+<a name="ln367">                    } else {</a>
+<a name="ln368">                        break; /*  cannot continue */</a>
+<a name="ln369">                    }</a>
+<a name="ln370">                }</a>
+<a name="ln371">                if ( len     != cumulene_len ||</a>
+<a name="ln372">                     r2      != pRankStack2[0][next] ||</a>
+<a name="ln373">                     rNeigh2 != pRankStack2[0][prev] ) {</a>
+<a name="ln374">                    /*  cumulene chain not found */</a>
+<a name="ln375">                    continue;</a>
+<a name="ln376">                }</a>
+<a name="ln377">                i2 = next;</a>
+<a name="ln378">            } else {</a>
+<a name="ln379">                i2 = n1;</a>
+<a name="ln380">            }</a>
+<a name="ln381">            /*  find if a stereogenic bond between at[i1]-at[i2] exists */</a>
+<a name="ln382">            for ( k1 = 0; k1 &lt; MAX_NUM_STEREO_BONDS &amp;&amp;</a>
+<a name="ln383">                          (m=(int)at[i1].stereo_bond_neighbor[k1]) &amp;&amp; m-1 != i2; k1 ++ )</a>
+<a name="ln384">                ;</a>
+<a name="ln385">            if ( m-1 != i2 ) {</a>
+<a name="ln386">                return 0;</a>
+<a name="ln387">            }</a>
+<a name="ln388">            for ( k2 = 0; k2 &lt; MAX_NUM_STEREO_BONDS &amp;&amp;</a>
+<a name="ln389">                          (m=(int)at[i2].stereo_bond_neighbor[k2]) &amp;&amp; m-1 != i1; k2 ++ )</a>
+<a name="ln390">                ;</a>
+<a name="ln391">            if ( m-1 != i1 ) {</a>
+<a name="ln392">                return 0;</a>
+<a name="ln393">            }</a>
+<a name="ln394">            if ( at[i1].stereo_bond_parity[k1] != at[i2].stereo_bond_parity[k2] ) {</a>
+<a name="ln395">                return -1; /*  program error */</a>
+<a name="ln396">            }</a>
+<a name="ln397">            if ( stereo_bond_parity != at[i1].stereo_bond_parity[k1] ) {</a>
+<a name="ln398">                return 0;</a>
+<a name="ln399">            }</a>
+<a name="ln400">            num_equal ++;</a>
+<a name="ln401">        }</a>
+<a name="ln402">    }</a>
+<a name="ln403">    return num_equal;</a>
+<a name="ln404">}</a>
+<a name="ln405">                </a>
+<a name="ln406">/**************************************************************************************/</a>
+<a name="ln407">/*  get min. ranks for the stereo bond atoms */</a>
+<a name="ln408">int Next_SB_At_CanonRanks2( AT_RANK *canon_rank1, AT_RANK *canon_rank2, /*  canonical numbers */</a>
+<a name="ln409">                          AT_RANK *canon_rank1_min, AT_RANK *canon_rank2_min,</a>
+<a name="ln410">                          int *bFirstTime, S_CHAR *bAtomUsedForStereo,</a>
+<a name="ln411">                          const ppAT_RANK pRankStack1, const ppAT_RANK pRankStack2,</a>
+<a name="ln412">                          const AT_RANK *nCanonRankFrom, const AT_RANK *nAtomNumberCanonFrom,</a>
+<a name="ln413">                          const sp_ATOM *at, int num_atoms, int bAllene )</a>
+<a name="ln414">{</a>
+<a name="ln415">    AT_RANK canon_rank1_inp = *canon_rank1;</a>
+<a name="ln416">    AT_RANK canon_rank2_inp = *canon_rank2;</a>
+<a name="ln417">    AT_RANK cr1, cr2; /*  canonical ranks (canonical numbers) */</a>
+<a name="ln418">    AT_RANK r1, r2;   /*  mapping ranks */</a>
+<a name="ln419">    int     n1, n2;   /*  ord. numbers of atoms with stereo */</a>
+<a name="ln420">    int     s1, s2;   /*  ord. numbers of atoms with canon. numbers */</a>
+<a name="ln421">    int     i1, i2, k, m;</a>
+<a name="ln422">    int     iMax1, iMax2;</a>
+<a name="ln423"> </a>
+<a name="ln424">    if ( canon_rank1_inp &lt;  *canon_rank1_min ||</a>
+<a name="ln425">         (canon_rank1_inp == *canon_rank1_min &amp;&amp;</a>
+<a name="ln426">         canon_rank2_inp &lt;  *canon_rank2_min) ) {</a>
+<a name="ln427"> </a>
+<a name="ln428">        canon_rank1_inp = *canon_rank1_min;</a>
+<a name="ln429">        canon_rank2_inp = *canon_rank2_min;</a>
+<a name="ln430">    } else</a>
+<a name="ln431">    if ( canon_rank1_inp &lt; 2 ) {</a>
+<a name="ln432">        canon_rank1_inp = 2;</a>
+<a name="ln433">        canon_rank2_inp = 0;</a>
+<a name="ln434">    }</a>
+<a name="ln435">    cr1 = canon_rank1_inp;</a>
+<a name="ln436">    cr2 = num_atoms; /* initialize. 1/8/2002 */</a>
+<a name="ln437">    while ( (int) cr1 &lt;= num_atoms ) {</a>
+<a name="ln438">        cr2 = cr1;</a>
+<a name="ln439">        n1 = (int)nAtomNumberCanonFrom[(int)cr1-1]; /*  atom1=at[n1] (which has canon. rank) ord. number */</a>
+<a name="ln440">        iMax1 = (int)(r1 = pRankStack1[0][n1]); /*  mapping rank of atom1 */</a>
+<a name="ln441">        for ( i1 = 1; i1 &lt;= iMax1 &amp;&amp; r1 == pRankStack2[0][s1=(int)pRankStack2[1][iMax1-i1]]; i1++ ) {</a>
+<a name="ln442">            /*  looking for a stereo bond atom that has mapping rank r1 */</a>
+<a name="ln443">            /*  found at[s1] such that rank cr1 can be mapped on at[s1] because cr1 and s1 have equal */</a>
+<a name="ln444">            /*  mapping rank = r1. Check at[s1] stereo bonds */</a>
+<a name="ln445">            if ( bAtomUsedForStereo[s1] &amp;&amp; bAtomUsedForStereo[s1] &lt; STEREO_AT_MARK ) {</a>
+<a name="ln446">                for ( k = 0, s2 = 0; k &lt; MAX_NUM_STEREO_BONDS &amp;&amp; (s2=(int)at[s1].stereo_bond_neighbor[k]); k ++ ) {</a>
+<a name="ln447">                    /*  stereo bond at[s1]-at[s2] has been found */</a>
+<a name="ln448">                    if ( bAtomUsedForStereo[--s2] ) {</a>
+<a name="ln449">                        /*  stereo bonds have not been mapped. however, this check is not needed */</a>
+<a name="ln450">                        int cumulene_len = BOND_CHAIN_LEN(at[s1].stereo_bond_parity[k]);</a>
+<a name="ln451">                        if ( (cumulene_len%2  &amp;&amp; !bAllene) || /* 09-26-2003 */</a>
+<a name="ln452">                             (!(cumulene_len%2) &amp;&amp;  bAllene)  ) { /* 08-17-2003 Fix05 */</a>
+<a name="ln453">                            continue;</a>
+<a name="ln454">                        }</a>
+<a name="ln455">                        iMax2 = (int)(r2 = pRankStack2[0][s2]); /*  mapping rank of atom2 */</a>
+<a name="ln456">                        /*  Go back to canonical ranks and find an atom that has mapping rank r2 */</a>
+<a name="ln457">                        /*  and is connected to the atom with canonical rank cr1 (possibly by cumulene chain) */</a>
+<a name="ln458">                        /*  These cr1-cr2 canon. ranks possibly can be mapped on at[s1]-at[s2] stereo bond */</a>
+<a name="ln459">                        for ( i2 = 1; i2 &lt;= iMax2 &amp;&amp; r2 == pRankStack1[0][n2=(int)pRankStack1[1][iMax2-i2]]; i2++ ) {</a>
+<a name="ln460">                            if ( cumulene_len ) {</a>
+<a name="ln461">                                int prev, next, len, j;</a>
+<a name="ln462">                                for ( m = 0; m &lt; at[n1].valence; m ++ ) {</a>
+<a name="ln463">                                    for ( prev=n1, len=0, next = (int)at[n1].neighbor[m]; len &lt; cumulene_len; len ++ ) {</a>
+<a name="ln464">                                        if ( at[next].valence == 2 &amp;&amp; !at[next].num_H ) {</a>
+<a name="ln465">                                            j = ((int)at[next].neighbor[0] == prev);</a>
+<a name="ln466">                                            prev = next;</a>
+<a name="ln467">                                            next = at[next].neighbor[j];</a>
+<a name="ln468">                                        } else {</a>
+<a name="ln469">                                            break; /*  cannot continue */</a>
+<a name="ln470">                                        }</a>
+<a name="ln471">                                    }</a>
+<a name="ln472">                                    if ( len == cumulene_len &amp;&amp; n2 == next ) {</a>
+<a name="ln473">                                        break;</a>
+<a name="ln474">                                    }</a>
+<a name="ln475">                                }</a>
+<a name="ln476">                            } else {</a>
+<a name="ln477">                                for ( m = 0; m &lt; at[n1].valence &amp;&amp; n2 != (int)at[n1].neighbor[m]; m ++ )</a>
+<a name="ln478">                                    ;</a>
+<a name="ln479">                            }</a>
+<a name="ln480">                            if ( m &lt; at[n1].valence &amp;&amp;</a>
+<a name="ln481">                                 nCanonRankFrom[n2] &lt; cr2 &amp;&amp;</a>
+<a name="ln482">                                 nCanonRankFrom[n2] &gt; canon_rank2_inp ) {</a>
+<a name="ln483"> </a>
+<a name="ln484">                                cr2 = nCanonRankFrom[n2]; /*  found a candidate for cr2 */</a>
+<a name="ln485">                            }</a>
+<a name="ln486">                        }</a>
+<a name="ln487">                    }</a>
+<a name="ln488">                }</a>
+<a name="ln489">            }</a>
+<a name="ln490">        }</a>
+<a name="ln491">        if ( cr2 &gt;= cr1 ) {</a>
+<a name="ln492">            /*  not found for this r1 */</a>
+<a name="ln493">            cr1 ++;</a>
+<a name="ln494">            canon_rank2_inp = 0;</a>
+<a name="ln495">        } else {</a>
+<a name="ln496">            /* found cr2 &lt; cr1 */</a>
+<a name="ln497">            if ( *bFirstTime ) {</a>
+<a name="ln498">                *canon_rank1_min = cr1;</a>
+<a name="ln499">                *canon_rank2_min = cr2;</a>
+<a name="ln500">                *bFirstTime = 0;</a>
+<a name="ln501">            }</a>
+<a name="ln502">            break;</a>
+<a name="ln503">        }</a>
+<a name="ln504">    }</a>
+<a name="ln505">    if ( cr1 &gt; cr2 &amp;&amp; cr1 &lt;= num_atoms ) {</a>
+<a name="ln506">        /*  success */</a>
+<a name="ln507">        *canon_rank1 = cr1;</a>
+<a name="ln508">        *canon_rank2 = cr2;</a>
+<a name="ln509">        return 1;</a>
+<a name="ln510">    }</a>
+<a name="ln511">    return 0;</a>
+<a name="ln512">}</a>
+<a name="ln513">/******************************************************************************************/</a>
+<a name="ln514">int NextStereoParity2Test( int *stereo_bond_parity, int *sb_parity_calc,</a>
+<a name="ln515">                           int nNumBest, int nNumWorse, int nNumUnkn, int nNumUndf, int nNumCalc,</a>
+<a name="ln516">                           int vABParityUnknown)</a>
+<a name="ln517">{</a>
+<a name="ln518">    /* sequence of (stereo_bond_parity, sb_parity_calc) pairs:</a>
+<a name="ln519"> </a>
+<a name="ln520">          (BEST_PARITY, BEST_PARITY)  &lt;calc&gt;</a>
+<a name="ln521">                      |</a>
+<a name="ln522">          (BEST_PARITY, WORSE_PARITY) &lt;known&gt;</a>
+<a name="ln523">                      |</a>
+<a name="ln524">          (WORSE_PARITY, WORSE_PARITY) &lt;calc&gt;                (BEST_PARITY, 0) &lt;known&gt;</a>
+<a name="ln525">                       \___________________________________________/</a>
+<a name="ln526">                                              |</a>
+<a name="ln527">                                       (WORSE_PARITY, 0)   &lt;known&gt;</a>
+<a name="ln528">                                              |</a>
+<a name="ln529">                                       (AB_PARITY_UNKN, 0) &lt;known&gt;</a>
+<a name="ln530">                                              |</a>
+<a name="ln531">                                       (AB_PARITY_UNDF, 0) &lt;known&gt;</a>
+<a name="ln532">                                              |</a>
+<a name="ln533">                                       &lt;next pair of ranks&gt;</a>
+<a name="ln534">      Meaning:</a>
+<a name="ln535">      stereo_bond_parity is the parity we are looking for</a>
+<a name="ln536">      stereo_bond_parity==sb_parity_calc  =&gt; parity to be calculated from canonical numbers</a>
+<a name="ln537">      stereo_bond_parity!=sb_parity_calc  =&gt; parity is already known</a>
+<a name="ln538">     */</a>
+<a name="ln539">get_next_parity:</a>
+<a name="ln540">    switch ( *stereo_bond_parity ) {</a>
+<a name="ln541">    case BEST_PARITY:</a>
+<a name="ln542">        switch ( *sb_parity_calc ) {</a>
+<a name="ln543">        case 0:                                 /*  BEST_PARITY(known) : (BEST_PARITY, 0) -&gt; */</a>
+<a name="ln544">            *stereo_bond_parity = WORSE_PARITY;  /*  WORSE_PARITY(known): (WORSE_PARITY, 0) */</a>
+<a name="ln545">            if ( !nNumWorse ) {</a>
+<a name="ln546">                goto get_next_parity;</a>
+<a name="ln547">            }</a>
+<a name="ln548">            break;</a>
+<a name="ln549">        case BEST_PARITY:                       /*  BEST_PARITY(calc) : (BEST_PARITY, BEST_PARITY) -&gt; */</a>
+<a name="ln550">            *sb_parity_calc = WORSE_PARITY;      /*  BEST_PARITY(known): (BEST_PARITY, WORSE_PARITY) */</a>
+<a name="ln551">            if ( !nNumBest ) {</a>
+<a name="ln552">                goto get_next_parity;</a>
+<a name="ln553">            }</a>
+<a name="ln554">            break;</a>
+<a name="ln555">        case WORSE_PARITY:                      /*  BEST_PARITY(known): (BEST_PARITY, WORSE_PARITY)-&gt; */</a>
+<a name="ln556">            *stereo_bond_parity = WORSE_PARITY;  /*  WORSE_PARITY(calc): (WORSE_PARITY,WORSE_PARITY) */</a>
+<a name="ln557">            if ( !nNumCalc ) { /* added 12-17-2003 */</a>
+<a name="ln558">                goto get_next_parity;</a>
+<a name="ln559">            }</a>
+<a name="ln560">            break;</a>
+<a name="ln561">        }</a>
+<a name="ln562">        break;</a>
+<a name="ln563">    case WORSE_PARITY:</a>
+<a name="ln564">        switch ( *sb_parity_calc ) {</a>
+<a name="ln565">        case 0:                                 /*  WORSE_PARITY(known)  : (WORSE_PARITY, 0) -&gt; */</a>
+<a name="ln566">            *stereo_bond_parity = vABParityUnknown /* AB_PARITY_UNKN */;/*  AB_PARITY_UNKN(known): (AB_PARITY_UNKN, 0) */</a>
+<a name="ln567">            if ( !nNumUnkn ) {</a>
+<a name="ln568">                goto get_next_parity;</a>
+<a name="ln569">            }</a>
+<a name="ln570">            break;</a>
+<a name="ln571">        case BEST_PARITY:                       /*  error */</a>
+<a name="ln572">            return CT_STEREOCOUNT_ERR;          /*   &lt;BRKPT&gt; */</a>
+<a name="ln573">        case WORSE_PARITY:                      /*  WORSE_PARITY(calc) : (WORSE_PARITY,WORSE_PARITY)-&gt; */</a>
+<a name="ln574">            *sb_parity_calc = 0;                 /*  WORSE_PARITY(known): (WORSE_PARITY, 0) */</a>
+<a name="ln575">            if ( !nNumWorse ) {</a>
+<a name="ln576">                goto get_next_parity;</a>
+<a name="ln577">            }</a>
+<a name="ln578">            break;</a>
+<a name="ln579">        }</a>
+<a name="ln580">        break;</a>
+<a name="ln581">    </a>
+<a name="ln582">    case AB_PARITY_UNKN:                        /* AB_PARITY_UNKN(known): (AB_PARITY_UNKN, 0) -&gt; */</a>
+<a name="ln583">            if ( *sb_parity_calc )                 /*  error */</a>
+<a name="ln584">            {</a>
+<a name="ln585">                return CT_STEREOCOUNT_ERR;          /*   &lt;BRKPT&gt; */</a>
+<a name="ln586">            }</a>
+<a name="ln587">            *stereo_bond_parity = AB_PARITY_UNDF;    /* AB_PARITY_UNDF(known): (AB_PARITY_UNDF, 0) */</a>
+<a name="ln588">            if ( !nNumUndf ) </a>
+<a name="ln589">            {</a>
+<a name="ln590">                return 1; /*goto next_canon_ranks;*/</a>
+<a name="ln591">            }</a>
+<a name="ln592">        break;                                  </a>
+<a name="ln593"> </a>
+<a name="ln594">    case AB_PARITY_UNDF:                        /*  AB_PARITY_UNDF(known): (AB_PARITY_UNDF, 0) -&gt; */</a>
+<a name="ln595">        if ( *sb_parity_calc ) {                /*  error */</a>
+<a name="ln596">            return CT_STEREOCOUNT_ERR;          /*   &lt;BRKPT&gt; */</a>
+<a name="ln597">        }</a>
+<a name="ln598">        return 1; /*goto next_canon_ranks;*/     /*  next canon ranks */</a>
+<a name="ln599">    }</a>
+<a name="ln600">    return 0;</a>
+<a name="ln601">}</a>
+<a name="ln602">/**************************************************************************************/</a>
+<a name="ln603">int CompareLinCtStereoDoubleToValues( AT_STEREO_DBLE *LinearCTStereoDble,</a>
+<a name="ln604">                              AT_RANK at_rank_canon1, AT_RANK at_rank_canon2, U_CHAR bond_parity )</a>
+<a name="ln605">{</a>
+<a name="ln606">    if ( LinearCTStereoDble-&gt;at_num1 CT_GREATER_THAN at_rank_canon1 )</a>
+<a name="ln607">        return 1;</a>
+<a name="ln608">    if ( LinearCTStereoDble-&gt;at_num1 != at_rank_canon1 )</a>
+<a name="ln609">        return -1;</a>
+<a name="ln610">    if ( LinearCTStereoDble-&gt;at_num2 CT_GREATER_THAN at_rank_canon2 )</a>
+<a name="ln611">        return 1;</a>
+<a name="ln612">    if ( LinearCTStereoDble-&gt;at_num2 != at_rank_canon2 )</a>
+<a name="ln613">        return -1;</a>
+<a name="ln614">    if ( LinearCTStereoDble-&gt;parity CT_GREATER_THAN bond_parity )</a>
+<a name="ln615">        return 1;</a>
+<a name="ln616">    if ( LinearCTStereoDble-&gt;parity != bond_parity )</a>
+<a name="ln617">        return -1;</a>
+<a name="ln618">    return 0;</a>
+<a name="ln619">}</a>
+<a name="ln620">/**************************************************************************************/</a>
+<a name="ln621">/*  Set for at[i]: */</a>
+<a name="ln622">/*   0                  if atom has no parity */</a>
+<a name="ln623">/*   STEREO_AT_MARK=8   if atom has stereo parity and has no stereo bonds */</a>
+<a name="ln624">/*   num_stereo_bonds   number of stereogenic bonds adjacent to the atom &lt;= 3   */</a>
+<a name="ln625">void SetUseAtomForStereo( S_CHAR *bAtomUsedForStereo, sp_ATOM *at, int num_atoms )</a>
+<a name="ln626">{</a>
+<a name="ln627">    int i, k;</a>
+<a name="ln628">    memset( bAtomUsedForStereo, 0, sizeof( bAtomUsedForStereo[0] )*num_atoms );</a>
+<a name="ln629">    for ( i = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln630">        if ( at[i].parity ) {</a>
+<a name="ln631">            for ( k = 0; k &lt; MAX_NUM_STEREO_BONDS &amp;&amp; at[i].stereo_bond_neighbor[k]; k ++ )</a>
+<a name="ln632">                ;</a>
+<a name="ln633">            bAtomUsedForStereo[i] = k? k : STEREO_AT_MARK;</a>
+<a name="ln634">        }</a>
+<a name="ln635">    }</a>
+<a name="ln636">}</a>
+<a name="ln637"> </a>
+<a name="ln638">/*********************************************************************************</a>
+<a name="ln639"> * tree structure: one segment</a>
+<a name="ln640"> *</a>
+<a name="ln641"> *   canon. rank</a>
+<a name="ln642"> *   at.no       // orig. atom numbers on which the canon.</a>
+<a name="ln643"> *               // rank has been successfully mapped</a>
+<a name="ln644"> *   ...</a>
+<a name="ln645"> *   at.no       // except the last at.no: it is not known if</a>
+<a name="ln646"> *               // it has been mapped until all atoms are mapped</a>
+<a name="ln647"> *   num.at+1    // number of atoms in this segment plus one canon. rank</a>
+<a name="ln648"> *</a>
+<a name="ln649"> *********************************************************************************/</a>
+<a name="ln650"> </a>
+<a name="ln651"> </a>
+<a name="ln652"> /********************************************************************************</a>
+<a name="ln653">typedef struct tagCurTree {</a>
+<a name="ln654">    AT_NUMB  *tree;</a>
+<a name="ln655">    int       max_len;  // allocated length of tree in sizeof(tree[0]) units</a>
+<a name="ln656">    int       cur_len;  // currently used length</a>
+<a name="ln657">    int       incr_len; // reallocation increment</a>
+<a name="ln658">} CUR_TREE;</a>
+<a name="ln659"> *********************************************************************************/</a>
+<a name="ln660"> </a>
+<a name="ln661"> </a>
+<a name="ln662">/**************************************************************************************/</a>
+<a name="ln663">int CurTreeAlloc( CUR_TREE *cur_tree, int num_atoms )</a>
+<a name="ln664">{</a>
+<a name="ln665">    if ( cur_tree ) {</a>
+<a name="ln666">        if ( cur_tree-&gt;tree &amp;&amp; cur_tree-&gt;max_len &gt; 0 &amp;&amp; !(cur_tree-&gt;max_len % num_atoms) ) {</a>
+<a name="ln667">            /*  do not reallocate */</a>
+<a name="ln668">            cur_tree-&gt;cur_len = 0;</a>
+<a name="ln669">            cur_tree-&gt;incr_len = num_atoms;</a>
+<a name="ln670">            memset( cur_tree-&gt;tree, 0, cur_tree-&gt;max_len * sizeof(cur_tree-&gt;tree[0]) );</a>
+<a name="ln671">            return 0; /*  ok */</a>
+<a name="ln672">        }</a>
+<a name="ln673">        inchi_free( cur_tree-&gt;tree );</a>
+<a name="ln674">        memset( cur_tree, 0, sizeof(*cur_tree) );</a>
+<a name="ln675">        if ( (cur_tree-&gt;tree = (AT_NUMB *)inchi_calloc( num_atoms, sizeof(cur_tree-&gt;tree[0]) )) ) {</a>
+<a name="ln676">            cur_tree-&gt;incr_len =</a>
+<a name="ln677">            cur_tree-&gt;max_len  = num_atoms;</a>
+<a name="ln678">            return 0; /*  ok */</a>
+<a name="ln679">        }</a>
+<a name="ln680">    }</a>
+<a name="ln681">    return -1; /*  error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln682">}</a>
+<a name="ln683">/**************************************************************************************/</a>
+<a name="ln684">int CurTreeReAlloc( CUR_TREE *cur_tree )</a>
+<a name="ln685">{</a>
+<a name="ln686">    if ( cur_tree ) {</a>
+<a name="ln687">        if ( cur_tree-&gt;tree &amp;&amp; cur_tree-&gt;max_len &gt; 0 &amp;&amp; cur_tree-&gt;incr_len &gt; 0 ) {</a>
+<a name="ln688">            void *p = cur_tree-&gt;tree;</a>
+<a name="ln689">            if ( (cur_tree-&gt;tree = (AT_NUMB *)inchi_calloc( cur_tree-&gt;max_len + cur_tree-&gt;incr_len, sizeof(cur_tree-&gt;tree[0]) )) ) {</a>
+<a name="ln690">                memcpy( cur_tree-&gt;tree, p, cur_tree-&gt;cur_len * sizeof(cur_tree-&gt;tree[0]) );</a>
+<a name="ln691">                inchi_free( p );</a>
+<a name="ln692">                cur_tree-&gt;max_len += cur_tree-&gt;incr_len;</a>
+<a name="ln693">                return 0; /*  ok */</a>
+<a name="ln694">            }</a>
+<a name="ln695">        }</a>
+<a name="ln696">    }</a>
+<a name="ln697">    return -1; /*  error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln698">}</a>
+<a name="ln699">/**************************************************************************************/</a>
+<a name="ln700">void CurTreeFree( CUR_TREE *cur_tree )</a>
+<a name="ln701">{</a>
+<a name="ln702">    if ( cur_tree ) {</a>
+<a name="ln703">        inchi_free( cur_tree-&gt;tree );</a>
+<a name="ln704">        memset( cur_tree, 0, sizeof(*cur_tree) );</a>
+<a name="ln705">    }</a>
+<a name="ln706">}</a>
+<a name="ln707">/**************************************************************************************/</a>
+<a name="ln708">int CurTreeAddRank( CUR_TREE *cur_tree, AT_NUMB rank )</a>
+<a name="ln709">{</a>
+<a name="ln710">    if ( cur_tree ) {</a>
+<a name="ln711">        if ( cur_tree-&gt;cur_len + 2 &gt; cur_tree-&gt;max_len ) {</a>
+<a name="ln712">            if ( CurTreeReAlloc( cur_tree ) ) {</a>
+<a name="ln713">                return -1; /*  error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln714">            }</a>
+<a name="ln715">        }</a>
+<a name="ln716">        cur_tree-&gt;tree[cur_tree-&gt;cur_len++] = rank;</a>
+<a name="ln717">        cur_tree-&gt;tree[cur_tree-&gt;cur_len++] = 1;</a>
+<a name="ln718">        return 0;</a>
+<a name="ln719">    }</a>
+<a name="ln720">    return -1;  /*  error  */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln721">}</a>
+<a name="ln722">/**************************************************************************************/</a>
+<a name="ln723">int CurTreeIsLastRank( CUR_TREE *cur_tree, AT_NUMB rank )</a>
+<a name="ln724">{</a>
+<a name="ln725">    if ( cur_tree &amp;&amp; cur_tree-&gt;cur_len &gt; 0 ) {</a>
+<a name="ln726">        int rank_pos;</a>
+<a name="ln727">        rank_pos = cur_tree-&gt;cur_len-1;</a>
+<a name="ln728">        rank_pos -= cur_tree-&gt;tree[rank_pos];</a>
+<a name="ln729">        if ( rank_pos &gt;= 0 ) {</a>
+<a name="ln730">            return (rank == cur_tree-&gt;tree[rank_pos]);</a>
+<a name="ln731">        }</a>
+<a name="ln732">    }</a>
+<a name="ln733">    return 0;  /*  not found */</a>
+<a name="ln734">}</a>
+<a name="ln735">/**************************************************************************************/</a>
+<a name="ln736">int CurTreeRemoveLastRankIfNoAtoms( CUR_TREE *cur_tree )</a>
+<a name="ln737">{</a>
+<a name="ln738">    if ( cur_tree &amp;&amp; cur_tree-&gt;tree &amp;&amp; cur_tree-&gt;cur_len &gt;= 2 ) {</a>
+<a name="ln739">        if ( 1 == cur_tree-&gt;tree[ cur_tree-&gt;cur_len - 1 ] ) {</a>
+<a name="ln740">            return CurTreeRemoveLastRank( cur_tree ); /*  0=&gt; success, -1=&gt;failed */</a>
+<a name="ln741">        }</a>
+<a name="ln742">        return 1; /*  cannot remove */</a>
+<a name="ln743">    }</a>
+<a name="ln744">    return -1; /*  error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln745">}</a>
+<a name="ln746">/**************************************************************************************/</a>
+<a name="ln747">int CurTreeAddAtom( CUR_TREE *cur_tree, int at_no )</a>
+<a name="ln748">{</a>
+<a name="ln749">    if ( cur_tree ) {</a>
+<a name="ln750">        if ( cur_tree-&gt;cur_len + 1 &gt; cur_tree-&gt;max_len ) {</a>
+<a name="ln751">            if ( CurTreeReAlloc( cur_tree ) ) {</a>
+<a name="ln752">                return -1; /*  error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln753">            }</a>
+<a name="ln754">        }</a>
+<a name="ln755">        if ( cur_tree-&gt;cur_len &gt; 0 ) {</a>
+<a name="ln756">            AT_NUMB new_len = cur_tree-&gt;tree[ --cur_tree-&gt;cur_len ] + 1;</a>
+<a name="ln757">            cur_tree-&gt;tree[cur_tree-&gt;cur_len++] = (AT_NUMB)at_no;</a>
+<a name="ln758">            cur_tree-&gt;tree[cur_tree-&gt;cur_len++] = new_len;</a>
+<a name="ln759">            return 0;</a>
+<a name="ln760">        }</a>
+<a name="ln761">    }</a>
+<a name="ln762">    return -1;</a>
+<a name="ln763">}</a>
+<a name="ln764">/**************************************************************************************/</a>
+<a name="ln765">void CurTreeKeepLastAtomsOnly( CUR_TREE *cur_tree, int tpos, int shift )</a>
+<a name="ln766">{   /*  on first entry: shift = 1; other values may occur in subsequent recursion */</a>
+<a name="ln767">    /*  cur_tree[cur_tree-&gt;cur_len - shift] is the length of a segment */</a>
+<a name="ln768">    /*  action: remove all atoms except the last from all segments</a>
+<a name="ln769">                that have length value positon to the right from tpos */</a>
+<a name="ln770">    int cur_length_pos;</a>
+<a name="ln771">    if ( cur_tree &amp;&amp; cur_tree-&gt;tree &amp;&amp; (cur_length_pos = cur_tree-&gt;cur_len - shift) &gt; tpos ) {</a>
+<a name="ln772">        if ( cur_tree-&gt;tree[ cur_length_pos ] &gt; 2 ) {</a>
+<a name="ln773">            /*  current segment contains more than 1 atom. Leave in the segment: rank, the last atom, length value */</a>
+<a name="ln774">            /*  subtract (old segment length)-(new segment length) from the tree length  */</a>
+<a name="ln775">            /*  actual segment length including segment length value = (cur_tree-&gt;tree[cur_length_pos]+1) */</a>
+<a name="ln776">            cur_tree-&gt;cur_len  -= (int)cur_tree-&gt;tree[ cur_length_pos ] - 2;</a>
+<a name="ln777">            memmove( cur_tree-&gt;tree + cur_length_pos - cur_tree-&gt;tree[ cur_length_pos ] + 1, /*  1st atom pos */</a>
+<a name="ln778">                     cur_tree-&gt;tree + cur_length_pos - 1,  /*  last atom in the current segment position */</a>
+<a name="ln779">                     (shift+1)*sizeof(cur_tree-&gt;tree[0]) ); </a>
+<a name="ln780">            /*  (current segment length) distance from the last tree element has not changed */</a>
+<a name="ln781">            cur_tree-&gt;tree[ cur_tree-&gt;cur_len - shift] = 2;</a>
+<a name="ln782">            /*  add 3 to move to the previous segment length position */</a>
+<a name="ln783">            shift += 3; /*  lenghth = 3 accounts for 3 currently present. segment items:</a>
+<a name="ln784">                            (1) the last atom, (2) rank, (3) length value */</a>
+<a name="ln785">        } else {</a>
+<a name="ln786">            shift += (int)cur_tree-&gt;tree[ cur_length_pos ] + 1; /*  cur_tree-&gt;cur_len - (previous segment length position) */</a>
+<a name="ln787">        }</a>
+<a name="ln788">        CurTreeKeepLastAtomsOnly( cur_tree, tpos, shift );</a>
+<a name="ln789">    }</a>
+<a name="ln790">}</a>
+<a name="ln791">/**************************************************************************************/</a>
+<a name="ln792">int CurTreeRemoveIfLastAtom( CUR_TREE *cur_tree, int at_no )</a>
+<a name="ln793">{</a>
+<a name="ln794">    if ( cur_tree &amp;&amp; cur_tree-&gt;tree &amp;&amp; cur_tree-&gt;cur_len &gt; 2 ) {</a>
+<a name="ln795">        AT_NUMB len = cur_tree-&gt;tree[ cur_tree-&gt;cur_len - 1 ];</a>
+<a name="ln796">        if ( len &gt;= 2 &amp;&amp; (int)cur_tree-&gt;tree[ cur_tree-&gt;cur_len - 2 ] == at_no ) {</a>
+<a name="ln797">            cur_tree-&gt;tree[--cur_tree-&gt;cur_len-1] = len-1;</a>
+<a name="ln798">            return 0;</a>
+<a name="ln799">        }</a>
+<a name="ln800">        return 1; /*  not found */</a>
+<a name="ln801">    }</a>
+<a name="ln802">    return -1; /*  error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln803">}</a>
+<a name="ln804">/**************************************************************************************/</a>
+<a name="ln805">int CurTreeGetPos( CUR_TREE *cur_tree )</a>
+<a name="ln806">{</a>
+<a name="ln807">    if ( cur_tree ) {</a>
+<a name="ln808">        return cur_tree-&gt;cur_len;</a>
+<a name="ln809">    }</a>
+<a name="ln810">    return -1;</a>
+<a name="ln811">}</a>
+<a name="ln812">/**************************************************************************************/</a>
+<a name="ln813">int CurTreeSetPos( CUR_TREE *cur_tree, int len )</a>
+<a name="ln814">{</a>
+<a name="ln815">    if ( cur_tree ) {</a>
+<a name="ln816">        cur_tree-&gt;cur_len = len;</a>
+<a name="ln817">        return 0;</a>
+<a name="ln818">    }</a>
+<a name="ln819">    return -1;</a>
+<a name="ln820">}</a>
+<a name="ln821">/**************************************************************************************/</a>
+<a name="ln822">int CurTreeRemoveLastRank( CUR_TREE *cur_tree )</a>
+<a name="ln823">{</a>
+<a name="ln824">    if ( cur_tree &amp;&amp; cur_tree-&gt;cur_len &gt; 0 ) {</a>
+<a name="ln825">        cur_tree-&gt;cur_len -= cur_tree-&gt;tree[cur_tree-&gt;cur_len-1]+1;</a>
+<a name="ln826">        if ( cur_tree-&gt;cur_len &gt;= 0 ) {</a>
+<a name="ln827">            return 0;</a>
+<a name="ln828">        }</a>
+<a name="ln829">    }</a>
+<a name="ln830">    return -1;</a>
+<a name="ln831">}</a>
+<a name="ln832">/**************************************************************************************/</a>
+<a name="ln833">/*  Find if the atom is equivalent to already successfully tried current atoms */</a>
+<a name="ln834">int CurTreeIsLastAtomEqu( CUR_TREE *cur_tree, int at_no, AT_NUMB *nSymmStereo )</a>
+<a name="ln835">{</a>
+<a name="ln836">    if ( cur_tree &amp;&amp; cur_tree-&gt;tree &amp;&amp; nSymmStereo &amp;&amp; cur_tree-&gt;cur_len &gt; 1 ) {</a>
+<a name="ln837">        AT_NUMB nEq = nSymmStereo[at_no];</a>
+<a name="ln838">        int end = cur_tree-&gt;cur_len-1;</a>
+<a name="ln839">        int len = cur_tree-&gt;tree[end]-1;</a>
+<a name="ln840">        for ( ; len &gt; 0; len -- ) {</a>
+<a name="ln841">            if ( nSymmStereo[(int)cur_tree-&gt;tree[end-len]] == nEq )</a>
+<a name="ln842">                return 1;</a>
+<a name="ln843">        }</a>
+<a name="ln844">        return 0;</a>
+<a name="ln845">    }</a>
+<a name="ln846">    return -1; /*  error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln847">}</a>
+<a name="ln848">#ifdef NEVER /* not used */</a>
+<a name="ln849">/**************************************************************************************/</a>
+<a name="ln850">int CurTreeRemoveLastAtom( CUR_TREE *cur_tree )</a>
+<a name="ln851">{</a>
+<a name="ln852">    if ( cur_tree &amp;&amp; cur_tree-&gt;tree &amp;&amp; cur_tree-&gt;cur_len &gt; 2 ) {</a>
+<a name="ln853">        AT_NUMB len = cur_tree-&gt;tree[ --cur_tree-&gt;cur_len ];</a>
+<a name="ln854">        if ( len &gt;= 2 ) {</a>
+<a name="ln855">            cur_tree-&gt;tree[cur_tree-&gt;cur_len-1] = len-1;</a>
+<a name="ln856">            return 0;</a>
+<a name="ln857">        }</a>
+<a name="ln858">    }</a>
+<a name="ln859">    return -1;</a>
+<a name="ln860">}</a>
+<a name="ln861">/**************************************************************************************/</a>
+<a name="ln862">int CurTreeReplaceLastRank( CUR_TREE *cur_tree, AT_NUMB rank )</a>
+<a name="ln863">{</a>
+<a name="ln864">    if ( !CurTreeRemoveLastRank( cur_tree ) ) {</a>
+<a name="ln865">        return CurTreeAddRank( cur_tree, rank );</a>
+<a name="ln866">    }</a>
+<a name="ln867">    return -1;</a>
+<a name="ln868">}</a>
+<a name="ln869">/**************************************************************************************/</a>
+<a name="ln870">/*  returns cur_tree-&gt;cur_len for the block containing the rank */</a>
+<a name="ln871">int CurTreeFindTheRankPos( CUR_TREE *cur_tree, AT_NUMB rank )</a>
+<a name="ln872">{</a>
+<a name="ln873">    int i, k;</a>
+<a name="ln874">    if ( cur_tree &amp;&amp; cur_tree-&gt;tree &amp;&amp; (i=cur_tree-&gt;cur_len) &gt; 0 ) {</a>
+<a name="ln875">        while( 0 &lt;= (k = i-(int)cur_tree-&gt;tree[i-1]-1) ) {  </a>
+<a name="ln876">            if ( cur_tree-&gt;tree[k] == rank ) {</a>
+<a name="ln877">                return i;</a>
+<a name="ln878">            }</a>
+<a name="ln879">            i = k;</a>
+<a name="ln880">        }</a>
+<a name="ln881">    }</a>
+<a name="ln882">    return -1; /*  error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln883">}</a>
+<a name="ln884">#endif</a>
+
+</code></pre>
+<div class="balloon" rel="451"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v728/" target="_blank">V728</a> An excessive check can be simplified. The '(A && !B) || (!A && B)' expression is equivalent to the 'bool(A) != bool(B)' expression.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

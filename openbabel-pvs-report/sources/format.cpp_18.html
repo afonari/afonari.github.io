@@ -1,0 +1,180 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>format.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">obconversion.cpp -  Definitions for OBFormat</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 2004 by Chris Morley</a>
+<a name="ln5">Some portions Copyright (C) 2005-2007 by Geoffrey Hutchison</a>
+<a name="ln6"> </a>
+<a name="ln7">This file is part of the Open Babel project.</a>
+<a name="ln8">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln11">it under the terms of the GNU General Public License as published by</a>
+<a name="ln12">the Free Software Foundation version 2 of the License.</a>
+<a name="ln13"> </a>
+<a name="ln14">This program is distributed in the hope that it will be useful,</a>
+<a name="ln15">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln16">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln17">GNU General Public License for more details.</a>
+<a name="ln18">***********************************************************************/</a>
+<a name="ln19">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/format.h&gt;</a>
+<a name="ln21">#include &lt;typeinfo&gt;</a>
+<a name="ln22"> </a>
+<a name="ln23">using namespace std;</a>
+<a name="ln24">namespace OpenBabel</a>
+<a name="ln25">{</a>
+<a name="ln26">#if defined(__CYGWIN__) || defined(__MINGW32__)</a>
+<a name="ln27">  // macro to implement static OBPlugin::PluginMapType&amp; Map()</a>
+<a name="ln28">  PLUGIN_CPP_FILE(OBFormat)</a>
+<a name="ln29">#endif</a>
+<a name="ln30"> </a>
+<a name="ln31">int OBFormat::RegisterFormat(const char* ID, const char* MIME)</a>
+<a name="ln32">{</a>
+<a name="ln33">  GetMap()[ID] = this;</a>
+<a name="ln34">  if (MIME)</a>
+<a name="ln35">    FormatsMIMEMap()[MIME] = this;</a>
+<a name="ln36">  if(Flags() &amp; DEFAULTFORMAT)</a>
+<a name="ln37">    Default() = this;</a>
+<a name="ln38"> </a>
+<a name="ln39">  //ensure &quot;formats&quot; is registered as a plugin</a>
+<a name="ln40">  PluginMap()[TypeID()] =this;</a>
+<a name="ln41">  _id=ID;</a>
+<a name="ln42">  return GetMap().size();</a>
+<a name="ln43">}</a>
+<a name="ln44"> </a>
+<a name="ln45">//////////////////////////////////////////////////////////</a>
+<a name="ln46">const char* OBFormat::TargetClassDescription()</a>
+<a name="ln47">{</a>
+<a name="ln48">  //Provides class of default format unless overridden</a>
+<a name="ln49">  if (OBFormat::FindType(nullptr))</a>
+<a name="ln50">    return OBFormat::FindType(nullptr)-&gt;TargetClassDescription();</a>
+<a name="ln51">  else</a>
+<a name="ln52">    return &quot;&quot;;</a>
+<a name="ln53">}</a>
+<a name="ln54"> </a>
+<a name="ln55">//////////////////////////////////////////////////////////</a>
+<a name="ln56">const type_info&amp; OBFormat::GetType()</a>
+<a name="ln57">{</a>
+<a name="ln58">  //Provides info on class of default format unless overridden</a>
+<a name="ln59">  if (OBFormat::FindType(nullptr))</a>
+<a name="ln60">    return OBFormat::FindType(nullptr)-&gt;GetType();</a>
+<a name="ln61">  else</a>
+<a name="ln62">    return typeid(this); //rubbish return if DefaultFormat not set</a>
+<a name="ln63">}</a>
+<a name="ln64"> </a>
+<a name="ln65">//////////////////////////////////////////////////////////</a>
+<a name="ln66">OBFormat* OBFormat::FormatFromMIME(const char* MIME)</a>
+<a name="ln67">{</a>
+<a name="ln68">  if(FormatsMIMEMap().find(MIME) == FormatsMIMEMap().end())</a>
+<a name="ln69">    return nullptr;</a>
+<a name="ln70">  else</a>
+<a name="ln71">    return static_cast&lt;OBFormat*&gt;(FormatsMIMEMap()[MIME]);</a>
+<a name="ln72">}</a>
+<a name="ln73"> </a>
+<a name="ln74">//////////////////////////////////////////////////////////</a>
+<a name="ln75">bool OBFormat::Display(std::string&amp; txt, const char* param, const char* ID)</a>
+<a name="ln76">{</a>
+<a name="ln77">  //No output for formats which can't be written or read</a>
+<a name="ln78">  if((Flags() &amp; NOTREADABLE) &amp;&amp; (Flags() &amp; NOTWRITABLE))</a>
+<a name="ln79">    return false;</a>
+<a name="ln80"> </a>
+<a name="ln81">  bool justread=false, justwrite=false;</a>
+<a name="ln82">  //No output if formats is not readable or writable if this was requested</a>
+<a name="ln83">  if(param)</a>
+<a name="ln84">  {</a>
+<a name="ln85">    if((!strncasecmp(param, &quot;in&quot;, 2) || !strncasecmp(param, &quot;read&quot;,4)))</a>
+<a name="ln86">    {</a>
+<a name="ln87">      justread=true;</a>
+<a name="ln88">      if(Flags() &amp; NOTREADABLE)</a>
+<a name="ln89">        return false;</a>
+<a name="ln90">    }</a>
+<a name="ln91">    if((!strncasecmp(param, &quot;out&quot;,3) || !strncasecmp(param, &quot;write&quot;,5)))</a>
+<a name="ln92">    {</a>
+<a name="ln93">      justwrite=true;</a>
+<a name="ln94">      if(Flags() &amp; NOTWRITABLE)</a>
+<a name="ln95">        return false;</a>
+<a name="ln96">    }</a>
+<a name="ln97">  }</a>
+<a name="ln98"> </a>
+<a name="ln99">  //Use the provided ID if possible. If more than one ID has been registed</a>
+<a name="ln100">  //for the format, e.g. &quot;smiles&quot; and &quot;smi&quot;, the contents of the member</a>
+<a name="ln101">  //variable _id, returned by GetID() is the last one.</a>
+<a name="ln102">  if(ID)</a>
+<a name="ln103">    txt = ID;</a>
+<a name="ln104">  else</a>
+<a name="ln105">    txt = GetID();</a>
+<a name="ln106">  txt += &quot; -- &quot;;</a>
+<a name="ln107">  txt += FirstLine(Description());</a>
+<a name="ln108">  if(!justread &amp;&amp; (Flags() &amp; NOTWRITABLE))</a>
+<a name="ln109">    txt += &quot; [Read-only]&quot;;</a>
+<a name="ln110">  if(!justwrite &amp;&amp; (Flags() &amp; NOTREADABLE))</a>
+<a name="ln111">    txt += &quot; [Write-only]&quot;;</a>
+<a name="ln112"> </a>
+<a name="ln113">  if(param &amp;&amp; strstr(param, &quot;verbose&quot;))</a>
+<a name="ln114">  {</a>
+<a name="ln115">    const char* nl = strchr(Description(), '\n');</a>
+<a name="ln116">    if(nl)</a>
+<a name="ln117">    {</a>
+<a name="ln118">      txt += '\n';</a>
+<a name="ln119">      txt += ++nl; // add rest of description</a>
+<a name="ln120">      if(strlen(SpecificationURL()))</a>
+<a name="ln121">      {</a>
+<a name="ln122">        txt += &quot;\nSpecification at: &quot;;</a>
+<a name="ln123">        txt += SpecificationURL();</a>
+<a name="ln124">      }</a>
+<a name="ln125">      txt += &quot;\n&quot;;</a>
+<a name="ln126">    }</a>
+<a name="ln127">  }</a>
+<a name="ln128">  return true;//means txt has been updated</a>
+<a name="ln129">}</a>
+<a name="ln130">}//namespace</a>
+<a name="ln131"> </a>
+<a name="ln132">//! \file format.cpp</a>
+<a name="ln133">//! \brief Base class OBFormat for file formats</a>
+
+</code></pre>
+<div class="balloon" rel="85"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v592/" target="_blank">V592</a> The expression was enclosed by parentheses twice: ((expression)). One pair of parentheses is unnecessary or misprint is present.</p></div>
+<div class="balloon" rel="91"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v592/" target="_blank">V592</a> The expression was enclosed by parentheses twice: ((expression)). One pair of parentheses is unnecessary or misprint is present.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

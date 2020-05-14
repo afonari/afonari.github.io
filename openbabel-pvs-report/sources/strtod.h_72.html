@@ -1,0 +1,315 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>strtod.h</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">// Tencent is pleased to support the open source community by making RapidJSON available.</a>
+<a name="ln2">// </a>
+<a name="ln3">// Copyright (C) 2015 THL A29 Limited, a Tencent company, and Milo Yip. All rights reserved.</a>
+<a name="ln4">//</a>
+<a name="ln5">// Licensed under the MIT License (the &quot;License&quot;); you may not use this file except</a>
+<a name="ln6">// in compliance with the License. You may obtain a copy of the License at</a>
+<a name="ln7">//</a>
+<a name="ln8">// http://opensource.org/licenses/MIT</a>
+<a name="ln9">//</a>
+<a name="ln10">// Unless required by applicable law or agreed to in writing, software distributed </a>
+<a name="ln11">// under the License is distributed on an &quot;AS IS&quot; BASIS, WITHOUT WARRANTIES OR </a>
+<a name="ln12">// CONDITIONS OF ANY KIND, either express or implied. See the License for the </a>
+<a name="ln13">// specific language governing permissions and limitations under the License.</a>
+<a name="ln14"> </a>
+<a name="ln15">#ifndef RAPIDJSON_STRTOD_</a>
+<a name="ln16">#define RAPIDJSON_STRTOD_</a>
+<a name="ln17"> </a>
+<a name="ln18">#include &quot;ieee754.h&quot;</a>
+<a name="ln19">#include &quot;biginteger.h&quot;</a>
+<a name="ln20">#include &quot;diyfp.h&quot;</a>
+<a name="ln21">#include &quot;pow10.h&quot;</a>
+<a name="ln22"> </a>
+<a name="ln23">RAPIDJSON_NAMESPACE_BEGIN</a>
+<a name="ln24">namespace internal {</a>
+<a name="ln25"> </a>
+<a name="ln26">inline double FastPath(double significand, int exp) {</a>
+<a name="ln27">    if (exp &lt; -308)</a>
+<a name="ln28">        return 0.0;</a>
+<a name="ln29">    else if (exp &gt;= 0)</a>
+<a name="ln30">        return significand * internal::Pow10(exp);</a>
+<a name="ln31">    else</a>
+<a name="ln32">        return significand / internal::Pow10(-exp);</a>
+<a name="ln33">}</a>
+<a name="ln34"> </a>
+<a name="ln35">inline double StrtodNormalPrecision(double d, int p) {</a>
+<a name="ln36">    if (p &lt; -308) {</a>
+<a name="ln37">        // Prevent expSum &lt; -308, making Pow10(p) = 0</a>
+<a name="ln38">        d = FastPath(d, -308);</a>
+<a name="ln39">        d = FastPath(d, p + 308);</a>
+<a name="ln40">    }</a>
+<a name="ln41">    else</a>
+<a name="ln42">        d = FastPath(d, p);</a>
+<a name="ln43">    return d;</a>
+<a name="ln44">}</a>
+<a name="ln45"> </a>
+<a name="ln46">template &lt;typename T&gt;</a>
+<a name="ln47">inline T Min3(T a, T b, T c) {</a>
+<a name="ln48">    T m = a;</a>
+<a name="ln49">    if (m &gt; b) m = b;</a>
+<a name="ln50">    if (m &gt; c) m = c;</a>
+<a name="ln51">    return m;</a>
+<a name="ln52">}</a>
+<a name="ln53"> </a>
+<a name="ln54">inline int CheckWithinHalfULP(double b, const BigInteger&amp; d, int dExp) {</a>
+<a name="ln55">    const Double db(b);</a>
+<a name="ln56">    const uint64_t bInt = db.IntegerSignificand();</a>
+<a name="ln57">    const int bExp = db.IntegerExponent();</a>
+<a name="ln58">    const int hExp = bExp - 1;</a>
+<a name="ln59"> </a>
+<a name="ln60">    int dS_Exp2 = 0, dS_Exp5 = 0, bS_Exp2 = 0, bS_Exp5 = 0, hS_Exp2 = 0, hS_Exp5 = 0;</a>
+<a name="ln61"> </a>
+<a name="ln62">    // Adjust for decimal exponent</a>
+<a name="ln63">    if (dExp &gt;= 0) {</a>
+<a name="ln64">        dS_Exp2 += dExp;</a>
+<a name="ln65">        dS_Exp5 += dExp;</a>
+<a name="ln66">    }</a>
+<a name="ln67">    else {</a>
+<a name="ln68">        bS_Exp2 -= dExp;</a>
+<a name="ln69">        bS_Exp5 -= dExp;</a>
+<a name="ln70">        hS_Exp2 -= dExp;</a>
+<a name="ln71">        hS_Exp5 -= dExp;</a>
+<a name="ln72">    }</a>
+<a name="ln73"> </a>
+<a name="ln74">    // Adjust for binary exponent</a>
+<a name="ln75">    if (bExp &gt;= 0)</a>
+<a name="ln76">        bS_Exp2 += bExp;</a>
+<a name="ln77">    else {</a>
+<a name="ln78">        dS_Exp2 -= bExp;</a>
+<a name="ln79">        hS_Exp2 -= bExp;</a>
+<a name="ln80">    }</a>
+<a name="ln81"> </a>
+<a name="ln82">    // Adjust for half ulp exponent</a>
+<a name="ln83">    if (hExp &gt;= 0)</a>
+<a name="ln84">        hS_Exp2 += hExp;</a>
+<a name="ln85">    else {</a>
+<a name="ln86">        dS_Exp2 -= hExp;</a>
+<a name="ln87">        bS_Exp2 -= hExp;</a>
+<a name="ln88">    }</a>
+<a name="ln89"> </a>
+<a name="ln90">    // Remove common power of two factor from all three scaled values</a>
+<a name="ln91">    int common_Exp2 = Min3(dS_Exp2, bS_Exp2, hS_Exp2);</a>
+<a name="ln92">    dS_Exp2 -= common_Exp2;</a>
+<a name="ln93">    bS_Exp2 -= common_Exp2;</a>
+<a name="ln94">    hS_Exp2 -= common_Exp2;</a>
+<a name="ln95"> </a>
+<a name="ln96">    BigInteger dS = d;</a>
+<a name="ln97">    dS.MultiplyPow5(static_cast&lt;unsigned&gt;(dS_Exp5)) &lt;&lt;= static_cast&lt;unsigned&gt;(dS_Exp2);</a>
+<a name="ln98"> </a>
+<a name="ln99">    BigInteger bS(bInt);</a>
+<a name="ln100">    bS.MultiplyPow5(static_cast&lt;unsigned&gt;(bS_Exp5)) &lt;&lt;= static_cast&lt;unsigned&gt;(bS_Exp2);</a>
+<a name="ln101"> </a>
+<a name="ln102">    BigInteger hS(1);</a>
+<a name="ln103">    hS.MultiplyPow5(static_cast&lt;unsigned&gt;(hS_Exp5)) &lt;&lt;= static_cast&lt;unsigned&gt;(hS_Exp2);</a>
+<a name="ln104"> </a>
+<a name="ln105">    BigInteger delta(0);</a>
+<a name="ln106">    dS.Difference(bS, &amp;delta);</a>
+<a name="ln107"> </a>
+<a name="ln108">    return delta.Compare(hS);</a>
+<a name="ln109">}</a>
+<a name="ln110"> </a>
+<a name="ln111">inline bool StrtodFast(double d, int p, double* result) {</a>
+<a name="ln112">    // Use fast path for string-to-double conversion if possible</a>
+<a name="ln113">    // see http://www.exploringbinary.com/fast-path-decimal-to-floating-point-conversion/</a>
+<a name="ln114">    if (p &gt; 22  &amp;&amp; p &lt; 22 + 16) {</a>
+<a name="ln115">        // Fast Path Cases In Disguise</a>
+<a name="ln116">        d *= internal::Pow10(p - 22);</a>
+<a name="ln117">        p = 22;</a>
+<a name="ln118">    }</a>
+<a name="ln119"> </a>
+<a name="ln120">    if (p &gt;= -22 &amp;&amp; p &lt;= 22 &amp;&amp; d &lt;= 9007199254740991.0) { // 2^53 - 1</a>
+<a name="ln121">        *result = FastPath(d, p);</a>
+<a name="ln122">        return true;</a>
+<a name="ln123">    }</a>
+<a name="ln124">    else</a>
+<a name="ln125">        return false;</a>
+<a name="ln126">}</a>
+<a name="ln127"> </a>
+<a name="ln128">// Compute an approximation and see if it is within 1/2 ULP</a>
+<a name="ln129">inline bool StrtodDiyFp(const char* decimals, size_t length, size_t decimalPosition, int exp, double* result) {</a>
+<a name="ln130">    uint64_t significand = 0;</a>
+<a name="ln131">    size_t i = 0;   // 2^64 - 1 = 18446744073709551615, 1844674407370955161 = 0x1999999999999999    </a>
+<a name="ln132">    for (; i &lt; length; i++) {</a>
+<a name="ln133">        if (significand  &gt;  RAPIDJSON_UINT64_C2(0x19999999, 0x99999999) ||</a>
+<a name="ln134">            (significand == RAPIDJSON_UINT64_C2(0x19999999, 0x99999999) &amp;&amp; decimals[i] &gt; '5'))</a>
+<a name="ln135">            break;</a>
+<a name="ln136">        significand = significand * 10u + static_cast&lt;unsigned&gt;(decimals[i] - '0');</a>
+<a name="ln137">    }</a>
+<a name="ln138">    </a>
+<a name="ln139">    if (i &lt; length &amp;&amp; decimals[i] &gt;= '5') // Rounding</a>
+<a name="ln140">        significand++;</a>
+<a name="ln141"> </a>
+<a name="ln142">    size_t remaining = length - i;</a>
+<a name="ln143">    const unsigned kUlpShift = 3;</a>
+<a name="ln144">    const unsigned kUlp = 1 &lt;&lt; kUlpShift;</a>
+<a name="ln145">    int64_t error = (remaining == 0) ? 0 : kUlp / 2;</a>
+<a name="ln146"> </a>
+<a name="ln147">    DiyFp v(significand, 0);</a>
+<a name="ln148">    v = v.Normalize();</a>
+<a name="ln149">    error &lt;&lt;= -v.e;</a>
+<a name="ln150"> </a>
+<a name="ln151">    const int dExp = static_cast&lt;int&gt;(decimalPosition) - static_cast&lt;int&gt;(i) + exp;</a>
+<a name="ln152"> </a>
+<a name="ln153">    int actualExp;</a>
+<a name="ln154">    DiyFp cachedPower = GetCachedPower10(dExp, &amp;actualExp);</a>
+<a name="ln155">    if (actualExp != dExp) {</a>
+<a name="ln156">        static const DiyFp kPow10[] = {</a>
+<a name="ln157">            DiyFp(RAPIDJSON_UINT64_C2(0xa0000000, 00000000), -60),  // 10^1</a>
+<a name="ln158">            DiyFp(RAPIDJSON_UINT64_C2(0xc8000000, 00000000), -57),  // 10^2</a>
+<a name="ln159">            DiyFp(RAPIDJSON_UINT64_C2(0xfa000000, 00000000), -54),  // 10^3</a>
+<a name="ln160">            DiyFp(RAPIDJSON_UINT64_C2(0x9c400000, 00000000), -50),  // 10^4</a>
+<a name="ln161">            DiyFp(RAPIDJSON_UINT64_C2(0xc3500000, 00000000), -47),  // 10^5</a>
+<a name="ln162">            DiyFp(RAPIDJSON_UINT64_C2(0xf4240000, 00000000), -44),  // 10^6</a>
+<a name="ln163">            DiyFp(RAPIDJSON_UINT64_C2(0x98968000, 00000000), -40)   // 10^7</a>
+<a name="ln164">        };</a>
+<a name="ln165">        int  adjustment = dExp - actualExp - 1;</a>
+<a name="ln166">        RAPIDJSON_ASSERT(adjustment &gt;= 0 &amp;&amp; adjustment &lt; 7);</a>
+<a name="ln167">        v = v * kPow10[adjustment];</a>
+<a name="ln168">        if (length + static_cast&lt;unsigned&gt;(adjustment)&gt; 19u) // has more digits than decimal digits in 64-bit</a>
+<a name="ln169">            error += kUlp / 2;</a>
+<a name="ln170">    }</a>
+<a name="ln171"> </a>
+<a name="ln172">    v = v * cachedPower;</a>
+<a name="ln173"> </a>
+<a name="ln174">    error += kUlp + (error == 0 ? 0 : 1);</a>
+<a name="ln175"> </a>
+<a name="ln176">    const int oldExp = v.e;</a>
+<a name="ln177">    v = v.Normalize();</a>
+<a name="ln178">    error &lt;&lt;= oldExp - v.e;</a>
+<a name="ln179"> </a>
+<a name="ln180">    const unsigned effectiveSignificandSize = Double::EffectiveSignificandSize(64 + v.e);</a>
+<a name="ln181">    unsigned precisionSize = 64 - effectiveSignificandSize;</a>
+<a name="ln182">    if (precisionSize + kUlpShift &gt;= 64) {</a>
+<a name="ln183">        unsigned scaleExp = (precisionSize + kUlpShift) - 63;</a>
+<a name="ln184">        v.f &gt;&gt;= scaleExp;</a>
+<a name="ln185">        v.e += scaleExp; </a>
+<a name="ln186">        error = (error &gt;&gt; scaleExp) + 1 + static_cast&lt;int&gt;(kUlp);</a>
+<a name="ln187">        precisionSize -= scaleExp;</a>
+<a name="ln188">    }</a>
+<a name="ln189"> </a>
+<a name="ln190">    DiyFp rounded(v.f &gt;&gt; precisionSize, v.e + static_cast&lt;int&gt;(precisionSize));</a>
+<a name="ln191">    const uint64_t precisionBits = (v.f &amp; ((uint64_t(1) &lt;&lt; precisionSize) - 1)) * kUlp;</a>
+<a name="ln192">    const uint64_t halfWay = (uint64_t(1) &lt;&lt; (precisionSize - 1)) * kUlp;</a>
+<a name="ln193">    if (precisionBits &gt;= halfWay + static_cast&lt;unsigned&gt;(error)) {</a>
+<a name="ln194">        rounded.f++;</a>
+<a name="ln195">        if (rounded.f &amp; (DiyFp::kDpHiddenBit &lt;&lt; 1)) { // rounding overflows mantissa (issue #340)</a>
+<a name="ln196">            rounded.f &gt;&gt;= 1;</a>
+<a name="ln197">            rounded.e++;</a>
+<a name="ln198">        }</a>
+<a name="ln199">    }</a>
+<a name="ln200"> </a>
+<a name="ln201">    *result = rounded.ToDouble();</a>
+<a name="ln202"> </a>
+<a name="ln203">    return halfWay - static_cast&lt;unsigned&gt;(error) &gt;= precisionBits || precisionBits &gt;= halfWay + static_cast&lt;unsigned&gt;(error);</a>
+<a name="ln204">}</a>
+<a name="ln205"> </a>
+<a name="ln206">inline double StrtodBigInteger(double approx, const char* decimals, size_t length, size_t decimalPosition, int exp) {</a>
+<a name="ln207">    const BigInteger dInt(decimals, length);</a>
+<a name="ln208">    const int dExp = static_cast&lt;int&gt;(decimalPosition) - static_cast&lt;int&gt;(length) + exp;</a>
+<a name="ln209">    Double a(approx);</a>
+<a name="ln210">    int cmp = CheckWithinHalfULP(a.Value(), dInt, dExp);</a>
+<a name="ln211">    if (cmp &lt; 0)</a>
+<a name="ln212">        return a.Value();  // within half ULP</a>
+<a name="ln213">    else if (cmp == 0) {</a>
+<a name="ln214">        // Round towards even</a>
+<a name="ln215">        if (a.Significand() &amp; 1)</a>
+<a name="ln216">            return a.NextPositiveDouble();</a>
+<a name="ln217">        else</a>
+<a name="ln218">            return a.Value();</a>
+<a name="ln219">    }</a>
+<a name="ln220">    else // adjustment</a>
+<a name="ln221">        return a.NextPositiveDouble();</a>
+<a name="ln222">}</a>
+<a name="ln223"> </a>
+<a name="ln224">inline double StrtodFullPrecision(double d, int p, const char* decimals, size_t length, size_t decimalPosition, int exp) {</a>
+<a name="ln225">    RAPIDJSON_ASSERT(d &gt;= 0.0);</a>
+<a name="ln226">    RAPIDJSON_ASSERT(length &gt;= 1);</a>
+<a name="ln227"> </a>
+<a name="ln228">    double result;</a>
+<a name="ln229">    if (StrtodFast(d, p, &amp;result))</a>
+<a name="ln230">        return result;</a>
+<a name="ln231"> </a>
+<a name="ln232">    // Trim leading zeros</a>
+<a name="ln233">    while (*decimals == '0' &amp;&amp; length &gt; 1) {</a>
+<a name="ln234">        length--;</a>
+<a name="ln235">        decimals++;</a>
+<a name="ln236">        decimalPosition--;</a>
+<a name="ln237">    }</a>
+<a name="ln238"> </a>
+<a name="ln239">    // Trim trailing zeros</a>
+<a name="ln240">    while (decimals[length - 1] == '0' &amp;&amp; length &gt; 1) {</a>
+<a name="ln241">        length--;</a>
+<a name="ln242">        decimalPosition--;</a>
+<a name="ln243">        exp++;</a>
+<a name="ln244">    }</a>
+<a name="ln245"> </a>
+<a name="ln246">    // Trim right-most digits</a>
+<a name="ln247">    const int kMaxDecimalDigit = 780;</a>
+<a name="ln248">    if (static_cast&lt;int&gt;(length) &gt; kMaxDecimalDigit) {</a>
+<a name="ln249">        int delta = (static_cast&lt;int&gt;(length) - kMaxDecimalDigit);</a>
+<a name="ln250">        exp += delta;</a>
+<a name="ln251">        decimalPosition -= static_cast&lt;unsigned&gt;(delta);</a>
+<a name="ln252">        length = kMaxDecimalDigit;</a>
+<a name="ln253">    }</a>
+<a name="ln254"> </a>
+<a name="ln255">    // If too small, underflow to zero</a>
+<a name="ln256">    if (int(length) + exp &lt; -324)</a>
+<a name="ln257">        return 0.0;</a>
+<a name="ln258"> </a>
+<a name="ln259">    if (StrtodDiyFp(decimals, length, decimalPosition, exp, &amp;result))</a>
+<a name="ln260">        return result;</a>
+<a name="ln261"> </a>
+<a name="ln262">    // Use approximation from StrtodDiyFp and make adjustment with BigInteger comparison</a>
+<a name="ln263">    return StrtodBigInteger(result, decimals, length, decimalPosition, exp);</a>
+<a name="ln264">}</a>
+<a name="ln265"> </a>
+<a name="ln266">} // namespace internal</a>
+<a name="ln267">RAPIDJSON_NAMESPACE_END</a>
+<a name="ln268"> </a>
+<a name="ln269">#endif // RAPIDJSON_STRTOD_</a>
+
+</code></pre>
+<div class="balloon" rel="240"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v781/" target="_blank">V781</a> The value of the 'length' index is checked after it was used. Perhaps there is a mistake in program logic.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

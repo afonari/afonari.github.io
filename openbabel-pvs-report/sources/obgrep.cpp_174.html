@@ -1,0 +1,404 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>obgrep.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">obgrep - Open Babel molecule grep using SMARTS.</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 2003 Fabien Fontaine</a>
+<a name="ln5">Some portions Copyright (C) 2004-2005 Geoffrey R. Hutchison</a>
+<a name="ln6"> </a>
+<a name="ln7">This file is part of the Open Babel project.</a>
+<a name="ln8">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln11">it under the terms of the GNU General Public License as published by</a>
+<a name="ln12">the Free Software Foundation version 2 of the License.</a>
+<a name="ln13"> </a>
+<a name="ln14">This program is distributed in the hope that it will be useful,</a>
+<a name="ln15">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln16">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln17">GNU General Public License for more details.</a>
+<a name="ln18">***********************************************************************/</a>
+<a name="ln19"> </a>
+<a name="ln20">// used to set import/export for Cygwin DLLs</a>
+<a name="ln21">#ifdef WIN32</a>
+<a name="ln22">#define USING_OBDLL</a>
+<a name="ln23">#endif</a>
+<a name="ln24">#include &lt;cstdlib&gt;</a>
+<a name="ln25">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln26"> </a>
+<a name="ln27">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln28">#include &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln29">#include &lt;openbabel/parsmart.h&gt;</a>
+<a name="ln30"> </a>
+<a name="ln31">#ifdef _MSC_VER</a>
+<a name="ln32">	typedef char TCHAR;</a>
+<a name="ln33">	#include &quot;getopt.h&quot;</a>
+<a name="ln34">#else</a>
+<a name="ln35">	#include &lt;unistd.h&gt;</a>
+<a name="ln36">#endif</a>
+<a name="ln37"> </a>
+<a name="ln38">using namespace std;</a>
+<a name="ln39">using namespace OpenBabel;</a>
+<a name="ln40"> </a>
+<a name="ln41">///////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln42">//! \brief Find the molecule(s) with or without a given SMART pattern</a>
+<a name="ln43">int main(int argc,char **argv)</a>
+<a name="ln44">{</a>
+<a name="ln45">  char c;</a>
+<a name="ln46">  unsigned int ntimes=0; // number of times SMARTS matches in a molecule</a>
+<a name="ln47">  unsigned int numMatching = 0; // number of matching molecules (for -c flag)</a>
+<a name="ln48">  bool pattern_matched=false, ntimes_matched=true;</a>
+<a name="ln49">  bool count=false, invert=false, full=false, name_only=false;</a>
+<a name="ln50">  char *FileIn = nullptr, *Pattern = nullptr;</a>
+<a name="ln51">  char *program_name = argv[0];</a>
+<a name="ln52">  char *iext;</a>
+<a name="ln53">  bool useInFile = true;</a>
+<a name="ln54"> </a>
+<a name="ln55">  OBConversion conv(&amp;cin,&amp;cout);</a>
+<a name="ln56">  OBFormat *pFormat = conv.FindFormat(&quot;smi&quot;); // default format is SMILES</a>
+<a name="ln57">    </a>
+<a name="ln58">  // Parse options</a>
+<a name="ln59">  while ((c = getopt(argc, argv, &quot;t:nvcfi:-&quot;)) != -1)</a>
+<a name="ln60">    {</a>
+<a name="ln61">#ifdef _WIN32</a>
+<a name="ln62">	    char optopt = c;</a>
+<a name="ln63">#endif</a>
+<a name="ln64">      switch (c)</a>
+<a name="ln65">        {</a>
+<a name="ln66">        case 't': // request ntimes unique matches</a>
+<a name="ln67"> </a>
+<a name="ln68">          c = sscanf(optarg, &quot;%d&quot;, &amp;ntimes);</a>
+<a name="ln69">          if (c != 1 )</a>
+<a name="ln70">            {</a>
+<a name="ln71">              cerr &lt;&lt; program_name &lt;&lt; &quot;: unable to parse -t option&quot; &lt;&lt; endl;</a>
+<a name="ln72">              exit (-1);</a>
+<a name="ln73">            }</a>
+<a name="ln74">          break;</a>
+<a name="ln75"> </a>
+<a name="ln76">        case 'i':</a>
+<a name="ln77">          iext = optarg;</a>
+<a name="ln78"> </a>
+<a name="ln79">          //The ID provided by the OBFormat class is used as </a>
+<a name="ln80">          // the identifying file extension. This is a slight</a>
+<a name="ln81">          // reduction in flexibility (which is not currently used)</a>
+<a name="ln82">          pFormat = conv.FindFormat(iext);</a>
+<a name="ln83">            </a>
+<a name="ln84">          if (pFormat == nullptr)</a>
+<a name="ln85">            {</a>
+<a name="ln86">              cerr &lt;&lt; program_name &lt;&lt; &quot;: cannot read input format!&quot; &lt;&lt; endl;</a>
+<a name="ln87">              exit(-1);</a>
+<a name="ln88">            }</a>
+<a name="ln89"> </a>
+<a name="ln90">          break;</a>
+<a name="ln91">        case 'n': // print the molecule name only</a>
+<a name="ln92">          name_only = true;</a>
+<a name="ln93">          break;</a>
+<a name="ln94">        case 'c': // count the number of match</a>
+<a name="ln95">          count = true;</a>
+<a name="ln96">          break;</a>
+<a name="ln97">        case 'v': // match only the molecules without the pattern</a>
+<a name="ln98">          invert = true;</a>
+<a name="ln99">          break;</a>
+<a name="ln100"> </a>
+<a name="ln101">        case 'f':</a>
+<a name="ln102">          full = true;</a>
+<a name="ln103">          break;</a>
+<a name="ln104"> </a>
+<a name="ln105">        case '-':</a>
+<a name="ln106">          useInFile = false;</a>
+<a name="ln107">          break;</a>
+<a name="ln108"> </a>
+<a name="ln109">        case '?':</a>
+<a name="ln110">          if (isprint (optopt))</a>
+<a name="ln111">            fprintf (stderr, &quot;Unknown option `-%c'.\n&quot;, optopt);</a>
+<a name="ln112">          else</a>
+<a name="ln113">            fprintf (stderr,</a>
+<a name="ln114">                     &quot;Unknown option character `\\x%x'.\n&quot;,</a>
+<a name="ln115">                     optopt);</a>
+<a name="ln116">          return 1;</a>
+<a name="ln117">        }</a>
+<a name="ln118">    }</a>
+<a name="ln119">  int index = optind;</a>
+<a name="ln120"> </a>
+<a name="ln121">  if (argc-index != 2 &amp;&amp; argc-index != 1)</a>
+<a name="ln122">    {</a>
+<a name="ln123">      string err = &quot;Usage: &quot;;</a>
+<a name="ln124">      err += program_name;</a>
+<a name="ln125">      err += &quot; [options] \&quot;PATTERN\&quot; &lt;filename&gt;\n&quot;;</a>
+<a name="ln126">      err += &quot;If no filename is supplied, then obgrep will use stdin instead.\n&quot;;</a>
+<a name="ln127">      err += &quot;Options:\n&quot;;</a>
+<a name="ln128">      err += &quot;   -v      Invert the matching, print non-matching molecules\n&quot;;</a>
+<a name="ln129">      err += &quot;   -c      Print the number of matched molecules\n&quot;;</a>
+<a name="ln130">      err += &quot;   -i &lt;format&gt; Specify the input and output format\n&quot;;</a>
+<a name="ln131">      err += &quot;   -f      Full match, print matching-molecules when the number\n&quot;;</a>
+<a name="ln132">      err += &quot;           of heavy atoms is equal to the number of PATTERN atoms\n&quot;;</a>
+<a name="ln133">      err += &quot;   -n      Only print the name of the molecules\n&quot;;</a>
+<a name="ln134">      err += &quot;   -t NUM  Print a molecule only if the PATTERN occurs NUM times inside the molecule\n&quot;;</a>
+<a name="ln135">      cerr &lt;&lt; err &lt;&lt; ends;</a>
+<a name="ln136">      exit(-1);</a>
+<a name="ln137">    }</a>
+<a name="ln138">  else</a>
+<a name="ln139">    {</a>
+<a name="ln140">      Pattern = argv[index++];</a>
+<a name="ln141">      if (argc - index == 1)</a>
+<a name="ln142">        FileIn  = argv[index];</a>
+<a name="ln143">    }</a>
+<a name="ln144"> </a>
+<a name="ln145">  ifstream ifs;</a>
+<a name="ln146">  if (useInFile &amp;&amp; FileIn != nullptr)</a>
+<a name="ln147">    {</a>
+<a name="ln148">      // Read the file</a>
+<a name="ln149">      ifs.open(FileIn);</a>
+<a name="ln150">      if (!ifs)</a>
+<a name="ln151">        {</a>
+<a name="ln152">          cerr &lt;&lt; program_name &lt;&lt; &quot;: cannot read input file!&quot; &lt;&lt; endl;</a>
+<a name="ln153">          exit (-1);</a>
+<a name="ln154">        }</a>
+<a name="ln155">      conv.SetInStream(&amp;ifs);</a>
+<a name="ln156">	</a>
+<a name="ln157">	</a>
+<a name="ln158">      // Find Input filetype</a>
+<a name="ln159">      if (pFormat == nullptr) {</a>
+<a name="ln160">          pFormat = conv.FormatFromExt(FileIn);</a>
+<a name="ln161">          if (pFormat == nullptr)</a>
+<a name="ln162">            {</a>
+<a name="ln163">              cerr &lt;&lt; program_name &lt;&lt; &quot;: cannot read input format!&quot; &lt;&lt; endl;</a>
+<a name="ln164">              return (-1);</a>
+<a name="ln165">            }</a>
+<a name="ln166">      }</a>
+<a name="ln167">    }</a>
+<a name="ln168"> </a>
+<a name="ln169">  if (! conv.SetInAndOutFormats(pFormat, pFormat))</a>
+<a name="ln170">    {</a>
+<a name="ln171">      cerr &lt;&lt; program_name &lt;&lt; &quot;: cannot read or write to this file format&quot; &lt;&lt; endl;</a>
+<a name="ln172">      return (-1);</a>
+<a name="ln173">    }</a>
+<a name="ln174"> </a>
+<a name="ln175">  // Match the SMART</a>
+<a name="ln176">  OBSmartsPattern sp;</a>
+<a name="ln177">  vector&lt; vector &lt;int&gt; &gt; maplist;      // list of matched atoms</a>
+<a name="ln178">  sp.Init(Pattern);</a>
+<a name="ln179"> </a>
+<a name="ln180">  OBMol mol;</a>
+<a name="ln181"> </a>
+<a name="ln182">  bool impossible_match;</a>
+<a name="ln183"> </a>
+<a name="ln184">  // Search for pattern</a>
+<a name="ln185">  for (c=0;;)</a>
+<a name="ln186">    {</a>
+<a name="ln187">      mol.Clear();</a>
+<a name="ln188">      conv.Read(&amp;mol);</a>
+<a name="ln189">      if (mol.Empty())</a>
+<a name="ln190">        break;</a>
+<a name="ln191"> </a>
+<a name="ln192"> </a>
+<a name="ln193">      ////////////////////////////////////////////////////////////////</a>
+<a name="ln194">      // Do not loose time trying to match the pattern if the matching</a>
+<a name="ln195">      // is impossible.</a>
+<a name="ln196">      // It is impossible to make a full match if the number of atoms is</a>
+<a name="ln197">      // different</a>
+<a name="ln198">      if (full )</a>
+<a name="ln199">        impossible_match = (sp.NumAtoms() == mol.NumHvyAtoms()) ? false : true;</a>
+<a name="ln200">      else</a>
+<a name="ln201">        impossible_match = false;</a>
+<a name="ln202"> </a>
+<a name="ln203">      if (impossible_match)</a>
+<a name="ln204">        { // -&gt; avoid useless SMART matching attempt</a>
+<a name="ln205">          if (invert)</a>
+<a name="ln206">            {</a>
+<a name="ln207">              if (!count)</a>
+<a name="ln208">                {</a>
+<a name="ln209">                  if ( name_only )</a>
+<a name="ln210">                    cout &lt;&lt; mol.GetTitle() &lt;&lt; endl;</a>
+<a name="ln211">                  else</a>
+<a name="ln212">                    conv.Write(&amp;mol, &amp;cout);</a>
+<a name="ln213">                }</a>
+<a name="ln214">              numMatching++;</a>
+<a name="ln215">            }</a>
+<a name="ln216">          continue;</a>
+<a name="ln217">        }</a>
+<a name="ln218"> </a>
+<a name="ln219"> </a>
+<a name="ln220">      ////////////////////////////////////////////////////////////////</a>
+<a name="ln221">      // perform SMART matching</a>
+<a name="ln222"> </a>
+<a name="ln223">      pattern_matched = sp.Match(mol);</a>
+<a name="ln224"> </a>
+<a name="ln225">      // the number of times the match occurred may matter</a>
+<a name="ln226">      if ( ntimes )</a>
+<a name="ln227">        { // ntimes is a positive integer of requested matches</a>
+<a name="ln228">          // Here, a match mean a unique match (same set of atoms)</a>
+<a name="ln229">          // so we need to get the unique match list size</a>
+<a name="ln230"> </a>
+<a name="ln231">          maplist = sp.GetUMapList();</a>
+<a name="ln232"> </a>
+<a name="ln233">          if( maplist.size() == ntimes )</a>
+<a name="ln234">            ntimes_matched = true;</a>
+<a name="ln235">          else</a>
+<a name="ln236">            ntimes_matched = false;</a>
+<a name="ln237">        }</a>
+<a name="ln238">      else</a>
+<a name="ln239">        {  // ntimes == 0, we don't care about the number of matches</a>
+<a name="ln240">          ntimes_matched = true;</a>
+<a name="ln241">        }</a>
+<a name="ln242"> </a>
+<a name="ln243"> </a>
+<a name="ln244">      ////////////////////////////////////////////////////////////////</a>
+<a name="ln245">      // perform a set of tests to guess what to print out</a>
+<a name="ln246"> </a>
+<a name="ln247">      if ( pattern_matched == true &amp;&amp; ntimes_matched == true)</a>
+<a name="ln248">        {</a>
+<a name="ln249">          if (!invert)</a>
+<a name="ln250">            {      // do something only when invert flag is off</a>
+<a name="ln251">              if (!count)</a>
+<a name="ln252">                {</a>
+<a name="ln253">                  if ( name_only )</a>
+<a name="ln254">                    cout &lt;&lt; mol.GetTitle() &lt;&lt; endl;</a>
+<a name="ln255">                  else</a>
+<a name="ln256">                    conv.Write(&amp;mol, &amp;cout);</a>
+<a name="ln257">                }</a>
+<a name="ln258">              numMatching++;</a>
+<a name="ln259">            }</a>
+<a name="ln260"> </a>
+<a name="ln261">        }</a>
+<a name="ln262"> </a>
+<a name="ln263">      else</a>
+<a name="ln264">        { // The SMART pattern do not occur as many times as requested</a>
+<a name="ln265">          if (invert)</a>
+<a name="ln266">            {       // do something only if invert flag is on</a>
+<a name="ln267">              if (!count)</a>
+<a name="ln268">                {</a>
+<a name="ln269">                  if ( name_only )</a>
+<a name="ln270">                    cout &lt;&lt; mol.GetTitle() &lt;&lt; endl;</a>
+<a name="ln271">                  else</a>
+<a name="ln272">                    conv.Write(&amp;mol, &amp;cout);</a>
+<a name="ln273">                }</a>
+<a name="ln274">              numMatching++;</a>
+<a name="ln275">            }</a>
+<a name="ln276">        }</a>
+<a name="ln277">    } // end for loop</a>
+<a name="ln278"> </a>
+<a name="ln279"> </a>
+<a name="ln280">  ////////////////////////////////////////////////////////////////</a>
+<a name="ln281">  // Only print the number of matched molecules as requested</a>
+<a name="ln282">  if (count)</a>
+<a name="ln283">    {</a>
+<a name="ln284">      cout &lt;&lt; numMatching &lt;&lt; endl;</a>
+<a name="ln285">    }</a>
+<a name="ln286"> </a>
+<a name="ln287">  return(0);</a>
+<a name="ln288">}</a>
+<a name="ln289"> </a>
+<a name="ln290"> </a>
+<a name="ln291">/* obgrep man page*/</a>
+<a name="ln292">/** \page obgrep an advanced SMARTS grep program</a>
+<a name="ln293">*</a>
+<a name="ln294">* \n</a>
+<a name="ln295">* \par SYNOPSIS</a>
+<a name="ln296">*</a>
+<a name="ln297">* \b obgrep [options] '&lt;SMARTS-pattern&gt;' \&lt;filename\&gt;</a>
+<a name="ln298">*</a>
+<a name="ln299">* \par DESCRIPTION</a>
+<a name="ln300">*</a>
+<a name="ln301">* The obgrep tool can be used to search for molecules inside multi-molecule</a>
+<a name="ln302">* database files (e.g., SMILES, SDF, etc.).</a>
+<a name="ln303">*</a>
+<a name="ln304">* \par OPTIONS</a>
+<a name="ln305">*</a>
+<a name="ln306">* If only a filename is given, obgrep will attempt to guess</a>
+<a name="ln307">* the file type from the filename extension. \n\n</a>
+<a name="ln308">*</a>
+<a name="ln309">* \b -c:</a>
+<a name="ln310">*     Print the number of matches \n\n</a>
+<a name="ln311">* \b -f:</a>
+<a name="ln312">*     Full match, print matching-molecules only when the number</a>
+<a name="ln313">*     of heavy atoms is also equal to the number of atoms in the </a>
+<a name="ln314">*     SMARTS pattern \n\n</a>
+<a name="ln315">* \b -i \&lt;format\&gt;:</a>
+<a name="ln316">*     Specifies input and output format, see &quot;babel&quot; for available formats \n\n</a>
+<a name="ln317">* \b -n:</a>
+<a name="ln318">*     Only print the name of the molecules\n\n</a>
+<a name="ln319">* \b -t \&lt;NUM\&gt;:</a>
+<a name="ln320">*     Print a molecule only if the pattern occurs NUM times inside the molecule\n\n</a>
+<a name="ln321">* \b -v:</a>
+<a name="ln322">*     Invert the matching, print non-matching molecules \n\n</a>
+<a name="ln323">*</a>
+<a name="ln324">* \par EXAMPLES</a>
+<a name="ln325">*  - Print all the molecules with a methylamine group: \n</a>
+<a name="ln326">*   obgrep &quot;CN&quot; database.smi</a>
+<a name="ln327">*  - Print all the molecules without a methylamine group: \n</a>
+<a name="ln328">*   obgrep -v &quot;CN&quot; database.smi</a>
+<a name="ln329">*  - Print the number of molecules without a methylamine group: \n</a>
+<a name="ln330">*   obgrep -v -c &quot;CN&quot; database.smi</a>
+<a name="ln331">*  - Print methylamine (if it exists in the file): \n</a>
+<a name="ln332">*   obgrep -f &quot;CN&quot; database.smi</a>
+<a name="ln333">*  - Print methylamine and/or methanol (if they exist): \n</a>
+<a name="ln334">*   obgrep -f &quot;C[N,O]&quot; database.smi</a>
+<a name="ln335">*</a>
+<a name="ln336">* \par AUTHORS</a>
+<a name="ln337">*</a>
+<a name="ln338">* The obgrep program was contributed by \b Fabien \b Fontaine.</a>
+<a name="ln339">*</a>
+<a name="ln340">* Open Babel is currently maintained by \b Geoff \b Hutchison, \b Chris \b Morley and \b Michael \b Banck.</a>
+<a name="ln341">*</a>
+<a name="ln342">* For more contributors to Open Babel, see http://openbabel.org/THANKS.shtml</a>
+<a name="ln343">*</a>
+<a name="ln344">* \par COPYRIGHT</a>
+<a name="ln345">*  Copyright (C) 1998-2001 by OpenEye Scientific Software, Inc.</a>
+<a name="ln346">*  Some portions Copyright (C) 2001-2005 by Geoffrey R. Hutchison \n \n</a>
+<a name="ln347">*  This program is free software; you can redistribute it and/or modify</a>
+<a name="ln348">*  it under the terms of the GNU General Public License as published by</a>
+<a name="ln349">*  the Free Software Foundation version 2 of the License.\n \n</a>
+<a name="ln350">*  This program is distributed in the hope that it will be useful,</a>
+<a name="ln351">*  but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln352">*  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln353">*  GNU General Public License for more details.</a>
+<a name="ln354">*</a>
+<a name="ln355">* \par SEE ALSO</a>
+<a name="ln356">*   The web pages for Open Babel can be found at: http://openbabel.org/ \n</a>
+<a name="ln357">*   A guide for constructing SMARTS patterns can be found at: http://www.daylight.com/dayhtml/doc/theory/theory.smarts.html</a>
+<a name="ln358">**/</a>
+
+</code></pre>
+<div class="balloon" rel="68"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v576/" target="_blank">V576</a> Incorrect format. Consider checking the third actual argument of the 'sscanf' function. A pointer to the signed int type is expected.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,1622 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>generic.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">generic.cpp - Handle OBGenericData classes.</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 1998-2001 by OpenEye Scientific Software, Inc.</a>
+<a name="ln5">Some portions Copyright (C) 2001-2006 by Geoffrey R. Hutchison</a>
+<a name="ln6">Some portions Copyright (C) 2010 by David Lonie</a>
+<a name="ln7"> </a>
+<a name="ln8">This file is part of the Open Babel project.</a>
+<a name="ln9">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln10"> </a>
+<a name="ln11">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln12">it under the terms of the GNU General Public License as published by</a>
+<a name="ln13">the Free Software Foundation version 2 of the License.</a>
+<a name="ln14"> </a>
+<a name="ln15">This program is distributed in the hope that it will be useful,</a>
+<a name="ln16">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln17">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln18">GNU General Public License for more details.</a>
+<a name="ln19">***********************************************************************/</a>
+<a name="ln20">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln21"> </a>
+<a name="ln22">#include &lt;string&gt;</a>
+<a name="ln23">#include &lt;set&gt;</a>
+<a name="ln24"> </a>
+<a name="ln25">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln26">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln27">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln28">#include &lt;openbabel/ring.h&gt;</a>
+<a name="ln29">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln30">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln31">#include &lt;openbabel/math/matrix3x3.h&gt;</a>
+<a name="ln32">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln33"> </a>
+<a name="ln34">// needed for msvc to have at least one reference to AtomClass, AliasData in openbabel library</a>
+<a name="ln35">#include &lt;openbabel/alias.h&gt;</a>
+<a name="ln36"> </a>
+<a name="ln37">using namespace std;</a>
+<a name="ln38"> </a>
+<a name="ln39">namespace OpenBabel</a>
+<a name="ln40">{</a>
+<a name="ln41"> </a>
+<a name="ln42">  /** \class OBGenericData generic.h &lt;openbabel/generic.h&gt;</a>
+<a name="ln43"> </a>
+<a name="ln44">      OBGenericData is an abstract base class which defines an interface for</a>
+<a name="ln45">      storage, retrieval, and indexing of arbitrary generic data.</a>
+<a name="ln46">      Subclasses of OBGenericData can be used to store custom data</a>
+<a name="ln47">      on a per-atom, per-bond, per-molecule, or per-residue basis.</a>
+<a name="ln48">      Open Babel currently supports a small subset of chemical functionality</a>
+<a name="ln49">      as OBGenericData types, which will expand over time to support additional</a>
+<a name="ln50">      interconversion (e.g., spectroscopy, dynamics, surfaces...)</a>
+<a name="ln51"> </a>
+<a name="ln52">      For more information on currently supported types, please see</a>
+<a name="ln53">      the developer wiki:</a>
+<a name="ln54">      http://openbabel.org/wiki/Generic_Data</a>
+<a name="ln55"> </a>
+<a name="ln56">      For your own custom data, either define a custom subclass using</a>
+<a name="ln57">      an id from the OBGenericDataType::CustomData0 to</a>
+<a name="ln58">      OBGenericDataType::CustomData15 slots,</a>
+<a name="ln59">      or store your data as a string and use OBPairData for key/value access.</a>
+<a name="ln60">      The latter is &lt;strong&gt;highly&lt;/strong&gt; recommended for various text</a>
+<a name="ln61">      descriptors</a>
+<a name="ln62">      e.g., in QSAR, atom or bond labels, or other textual data.</a>
+<a name="ln63"> </a>
+<a name="ln64">      &lt;strong&gt;New in Open Babel, version 2.1&lt;/strong&gt;</a>
+<a name="ln65">      is the template-based OBPairTemplate,</a>
+<a name="ln66">      which can be used to store arbitrary data types. There are predefined</a>
+<a name="ln67">      types OBPairInteger and OBPairFloatingPoint for storing integers and</a>
+<a name="ln68">      floating-point values without converting to a string representation.</a>
+<a name="ln69"> </a>
+<a name="ln70">      Also &lt;strong&gt;new&lt;/strong&gt; is the &quot;source&quot; or &quot;origin&quot; of a data</a>
+<a name="ln71">      entry, enumerated by DataOrigin. This can be accessed by</a>
+<a name="ln72">      SetOrigin() and GetOrigin(), as well as via &quot;filtering&quot; methods</a>
+<a name="ln73">      in OBBase, allowing you to separate data read in from a file,</a>
+<a name="ln74">      added by a user, or assigned by Open Babel internally.</a>
+<a name="ln75"> </a>
+<a name="ln76">      While the library and import routines will set DataOrigin correctly,</a>
+<a name="ln77">      you should try to annotate data added by your code. Typically this would</a>
+<a name="ln78">      either be userAdded or external. The former refers to something the</a>
+<a name="ln79">      user requested as an annotation, while the latter refers to annotations</a>
+<a name="ln80">      your code adds automatically.</a>
+<a name="ln81"> </a>
+<a name="ln82">      Example code using OBGenericData:</a>
+<a name="ln83"> </a>
+<a name="ln84">      @code</a>
+<a name="ln85">      if (mol.HasData(OBGenericDataType::UnitCell))</a>
+<a name="ln86">      {</a>
+<a name="ln87">         uc = (OBUnitCell*)mol.GetData(OBGenericDataType::UnitCell);</a>
+<a name="ln88">         sprintf(buffer,</a>
+<a name="ln89">            &quot;%10.5f%10.5f%10.5f%10.5f%10.5f%10.5f&quot;,</a>
+<a name="ln90">            uc-&gt;GetA(), uc-&gt;GetB(), uc-&gt;GetC(),</a>
+<a name="ln91">            uc-&gt;GetAlpha() , uc-&gt;GetBeta(), uc-&gt;GetGamma());</a>
+<a name="ln92">         ofs &lt;&lt; buffer &lt;&lt; endl;</a>
+<a name="ln93">      }</a>
+<a name="ln94"> </a>
+<a name="ln95">      ...</a>
+<a name="ln96"> </a>
+<a name="ln97">      vector&lt;OBGenericData*&gt;::iterator k;</a>
+<a name="ln98">      vector&lt;OBGenericData*&gt; vdata = mol.GetData();</a>
+<a name="ln99">      for (k = vdata.begin();k != vdata.end();++k)</a>
+<a name="ln100">         if ((*k)-&gt;GetDataType() == OBGenericDataType::PairData)</a>
+<a name="ln101">         {</a>
+<a name="ln102">            ofs &lt;&lt; &quot;&gt;  &lt;&quot; &lt;&lt; (*k)-&gt;GetAttribute() &lt;&lt; &quot;&gt;&quot; &lt;&lt; endl;</a>
+<a name="ln103">            ofs &lt;&lt; ((OBPairData*)(*k))-&gt;GetValue() &lt;&lt; endl &lt;&lt; endl;</a>
+<a name="ln104">         }</a>
+<a name="ln105">      @endcode</a>
+<a name="ln106"> </a>
+<a name="ln107">      Similar code also works for OBGenericData stored in an OBAtom or</a>
+<a name="ln108">      OBBond or OBResidue. These examples show use of DataOrigin outside</a>
+<a name="ln109">      of the Open Babel library.</a>
+<a name="ln110"> </a>
+<a name="ln111">      @code</a>
+<a name="ln112">      string atomLabel; // e.g., from the user adding annotation to an atom</a>
+<a name="ln113">      if (!atom.HasData(&quot;UserLabel&quot;)) // stored textual data as an OBPairData</a>
+<a name="ln114">      {</a>
+<a name="ln115">         OBPairData *label = new OBPairData;</a>
+<a name="ln116">         label-&gt;SetAttribute(&quot;UserLabel&quot;);</a>
+<a name="ln117">         label-&gt;SetValue(atomLabel);</a>
+<a name="ln118">         label-&gt;SetOrigin(userInput); // set by user, not by Open Babel</a>
+<a name="ln119"> </a>
+<a name="ln120">         atom.SetData(label);</a>
+<a name="ln121">      }</a>
+<a name="ln122"> </a>
+<a name="ln123">      ...</a>
+<a name="ln124"> </a>
+<a name="ln125">      if (bond.HasData(&quot;DisplayType&quot;)) // e.g. in a visualization tool</a>
+<a name="ln126">      {</a>
+<a name="ln127">         OBPairData *display = dynamic_cast&lt;OBPairData *&gt; bond.GetData(&quot;DisplayType&quot;);</a>
+<a name="ln128">         if (display-&gt;GetValue() == &quot;wireframe&quot;)</a>
+<a name="ln129">         {</a>
+<a name="ln130">            ... // display a wireframe view</a>
+<a name="ln131">         }</a>
+<a name="ln132">      }</a>
+<a name="ln133">      @endcode</a>
+<a name="ln134"> </a>
+<a name="ln135">      When designing a class derived from OBGenericData you must add a</a>
+<a name="ln136">      Clone() function. For classes used with OBMol this is used when</a>
+<a name="ln137">      an OBMol object is copied. If your class member variables contain</a>
+<a name="ln138">      pointers to atoms or bonds then it will be necessary to ensure</a>
+<a name="ln139">      that these are updated in Clone() to refer to the new molecule. Without</a>
+<a name="ln140">      these and similar pointers it is more likely that the very simple</a>
+<a name="ln141">      clone function</a>
+<a name="ln142">      @code</a>
+<a name="ln143">      virtual OBGenericData* Clone(OBBase* parent) const</a>
+<a name="ln144">         {return new MyNewClass(*this);}</a>
+<a name="ln145">      @endcode</a>
+<a name="ln146">      and the compiler generated copy constructor would be sufficient.</a>
+<a name="ln147"> </a>
+<a name="ln148">      It is recommended that, if possible, OBGenericData classes do not</a>
+<a name="ln149">      store atom and bond pointers. Using atom and bond indices instead</a>
+<a name="ln150">      would allow the simple version of Clone() above. See</a>
+<a name="ln151">      OBRotameterData::Clone for an example of a more complicated version.</a>
+<a name="ln152">      For classes which are not intended to support copying, Clone() can</a>
+<a name="ln153">      return nullptr</a>
+<a name="ln154">      @code</a>
+<a name="ln155">      virtual OBGenericData* Clone(OBBase* parent) const</a>
+<a name="ln156">         {return nullptr;}</a>
+<a name="ln157">      @endcode</a>
+<a name="ln158">      Clone() is a pure virtual function so that you need to decide what</a>
+<a name="ln159">      kind of function you need and include it explicitly.</a>
+<a name="ln160">  **/</a>
+<a name="ln161"> </a>
+<a name="ln162">  //</a>
+<a name="ln163">  //member functions for OBGenericData class</a>
+<a name="ln164">  //</a>
+<a name="ln165"> </a>
+<a name="ln166">  OBGenericData::OBGenericData(const std::string attr, const unsigned int type,</a>
+<a name="ln167">                               const DataOrigin  source):</a>
+<a name="ln168">    _attr(attr), _type(type), _source(source)</a>
+<a name="ln169">  { }</a>
+<a name="ln170"> </a>
+<a name="ln171">  /* Use default copy constructor and assignment operators</a>
+<a name="ln172">     OBGenericData::OBGenericData(const OBGenericData &amp;src)</a>
+<a name="ln173">     {</a>
+<a name="ln174">     _type = src.GetDataType();</a>
+<a name="ln175">     _attr = src.GetAttribute();</a>
+<a name="ln176">     }</a>
+<a name="ln177"> </a>
+<a name="ln178"> </a>
+<a name="ln179">     OBGenericData&amp; OBGenericData::operator = (const OBGenericData &amp;src)</a>
+<a name="ln180">     {</a>
+<a name="ln181">     if(this == &amp;src)</a>
+<a name="ln182">     return(*this);</a>
+<a name="ln183"> </a>
+<a name="ln184">     _type = src._type;</a>
+<a name="ln185">     _attr = src._attr;</a>
+<a name="ln186"> </a>
+<a name="ln187">     return(*this);</a>
+<a name="ln188">     }</a>
+<a name="ln189">  */</a>
+<a name="ln190"> </a>
+<a name="ln191">  //</a>
+<a name="ln192">  //member functions for OBCommentData class</a>
+<a name="ln193">  //</a>
+<a name="ln194"> </a>
+<a name="ln195">  OBCommentData::OBCommentData():</a>
+<a name="ln196">    OBGenericData(&quot;Comment&quot;, OBGenericDataType::CommentData)</a>
+<a name="ln197">  { }</a>
+<a name="ln198"> </a>
+<a name="ln199">  OBCommentData::OBCommentData(const OBCommentData &amp;src) :</a>
+<a name="ln200">    OBGenericData(src), _data(src._data)</a>
+<a name="ln201">  {  }</a>
+<a name="ln202"> </a>
+<a name="ln203">  //</a>
+<a name="ln204">  //member functions for OBExternalBond class</a>
+<a name="ln205">  //</a>
+<a name="ln206">  OBExternalBond::OBExternalBond(OBAtom *atom,OBBond *bond,int idx):</a>
+<a name="ln207">    _idx(idx), _atom(atom), _bond(bond)</a>
+<a name="ln208">  {  }</a>
+<a name="ln209"> </a>
+<a name="ln210">  OBExternalBond::OBExternalBond(const OBExternalBond &amp;src):</a>
+<a name="ln211">    _idx(src._idx), _atom(src._atom), _bond(src._bond)</a>
+<a name="ln212">  { }</a>
+<a name="ln213"> </a>
+<a name="ln214">  //</a>
+<a name="ln215">  //member functions for OBExternalBondData class</a>
+<a name="ln216">  //</a>
+<a name="ln217"> </a>
+<a name="ln218">  OBExternalBondData::OBExternalBondData():</a>
+<a name="ln219">    OBGenericData(&quot;ExternalBondData&quot;, OBGenericDataType::ExternalBondData,</a>
+<a name="ln220">                  perceived)</a>
+<a name="ln221">  { }</a>
+<a name="ln222"> </a>
+<a name="ln223">  void OBExternalBondData::SetData(OBAtom *atom,OBBond *bond,int idx)</a>
+<a name="ln224">  {</a>
+<a name="ln225">    OBExternalBond xb(atom,bond,idx);</a>
+<a name="ln226">    _vexbnd.push_back(xb);</a>
+<a name="ln227">  }</a>
+<a name="ln228"> </a>
+<a name="ln229">  //</a>
+<a name="ln230">  //member functions for OBPairData class</a>
+<a name="ln231">  //</a>
+<a name="ln232"> </a>
+<a name="ln233">  OBPairData::OBPairData() :</a>
+<a name="ln234">    OBGenericData(&quot;PairData&quot;, OBGenericDataType::PairData)</a>
+<a name="ln235">  { }</a>
+<a name="ln236"> </a>
+<a name="ln237">  //</a>
+<a name="ln238">  //member functions for OBVirtualBond class</a>
+<a name="ln239">  //</a>
+<a name="ln240"> </a>
+<a name="ln241">  OBVirtualBond::OBVirtualBond():</a>
+<a name="ln242">    OBGenericData(&quot;VirtualBondData&quot;, OBGenericDataType::VirtualBondData, perceived),</a>
+<a name="ln243">    _bgn(0), _end(0), _ord(0), _stereo(0)</a>
+<a name="ln244">  {  }</a>
+<a name="ln245"> </a>
+<a name="ln246">  OBVirtualBond::OBVirtualBond(unsigned int bgn, unsigned int end, unsigned int ord, int stereo):</a>
+<a name="ln247">    OBGenericData(&quot;VirtualBondData&quot;, OBGenericDataType::VirtualBondData, perceived),</a>
+<a name="ln248">    _bgn(bgn), _end(end), _ord(ord), _stereo(stereo)</a>
+<a name="ln249">  {  }</a>
+<a name="ln250"> </a>
+<a name="ln251">  //</a>
+<a name="ln252">  // member functions for OBUnitCell class</a>
+<a name="ln253">  //</a>
+<a name="ln254">  OBUnitCell::OBUnitCell():</a>
+<a name="ln255">    OBGenericData(&quot;UnitCell&quot;, OBGenericDataType::UnitCell),</a>
+<a name="ln256">    _mOrtho(matrix3x3()),</a>
+<a name="ln257">    _mOrient(matrix3x3()),</a>
+<a name="ln258">    _offset(vector3()),</a>
+<a name="ln259">    _spaceGroupName(&quot;&quot;), _spaceGroup(nullptr),</a>
+<a name="ln260">    _lattice(Undefined)</a>
+<a name="ln261">  {  }</a>
+<a name="ln262"> </a>
+<a name="ln263">  OBUnitCell::OBUnitCell(const OBUnitCell &amp;src) :</a>
+<a name="ln264">    OBGenericData(&quot;UnitCell&quot;, OBGenericDataType::UnitCell),</a>
+<a name="ln265">    _mOrtho(src._mOrtho),</a>
+<a name="ln266">    _mOrient(src._mOrient),</a>
+<a name="ln267">    _offset(src._offset),</a>
+<a name="ln268">    _spaceGroupName(src._spaceGroupName), _spaceGroup(src._spaceGroup),</a>
+<a name="ln269">    _lattice(src._lattice)</a>
+<a name="ln270">  {  }</a>
+<a name="ln271"> </a>
+<a name="ln272">  OBUnitCell &amp; OBUnitCell::operator=(const OBUnitCell &amp;src)</a>
+<a name="ln273">  {</a>
+<a name="ln274">    if(this == &amp;src)</a>
+<a name="ln275">      return(*this);</a>
+<a name="ln276"> </a>
+<a name="ln277">    _mOrtho = src._mOrtho;</a>
+<a name="ln278">    _mOrient = src._mOrient;</a>
+<a name="ln279">    _offset = src._offset;</a>
+<a name="ln280"> </a>
+<a name="ln281">    _spaceGroup = src._spaceGroup;</a>
+<a name="ln282">    _spaceGroupName = src._spaceGroupName;</a>
+<a name="ln283">    _lattice = src._lattice;</a>
+<a name="ln284"> </a>
+<a name="ln285">    return(*this);</a>
+<a name="ln286">  }</a>
+<a name="ln287"> </a>
+<a name="ln288">  //! Implements &lt;a href=&quot;http://qsar.sourceforge.net/dicts/blue-obelisk/index.xhtml#calculateOrthogonalisationMatrix&quot;&gt;blue-obelisk:calculateOrthogonalisationMatrix&lt;/a&gt;</a>
+<a name="ln289">  void OBUnitCell::SetData(const double a, const double b, const double c,</a>
+<a name="ln290">                           const double alpha, const double beta, const double gamma)</a>
+<a name="ln291">  {</a>
+<a name="ln292">    _mOrtho.FillOrth(alpha, beta, gamma, a, b, c);</a>
+<a name="ln293">    _mOrient = matrix3x3(1);</a>
+<a name="ln294">    _spaceGroup = nullptr;</a>
+<a name="ln295">    _spaceGroupName = &quot;&quot;;</a>
+<a name="ln296">    _lattice = OBUnitCell::Undefined;</a>
+<a name="ln297">  }</a>
+<a name="ln298"> </a>
+<a name="ln299">  //! Implements &lt;a href=&quot;http://qsar.sourceforge.net/dicts/blue-obelisk/index.xhtml#calculateOrthogonalisationMatrix&quot;&gt;blue-obelisk:calculateOrthogonalisationMatrix&lt;/a&gt;</a>
+<a name="ln300">  void OBUnitCell::SetData(const vector3 v1, const vector3 v2, const vector3 v3)</a>
+<a name="ln301">  {</a>
+<a name="ln302">    matrix3x3 m (v1, v2, v3);</a>
+<a name="ln303">    _mOrtho.FillOrth(vectorAngle(v2,v3), // alpha</a>
+<a name="ln304">                     vectorAngle(v1,v3), // beta</a>
+<a name="ln305">                     vectorAngle(v1,v2), // gamma</a>
+<a name="ln306">                     v1.length(),        // a</a>
+<a name="ln307">                     v2.length(),        // b</a>
+<a name="ln308">                     v3.length());       // c</a>
+<a name="ln309">    _mOrient = m.transpose() * _mOrtho.inverse();</a>
+<a name="ln310">    _spaceGroup = nullptr;</a>
+<a name="ln311">    _spaceGroupName = &quot;&quot;;</a>
+<a name="ln312">    _lattice = OBUnitCell::Undefined;</a>
+<a name="ln313">  }</a>
+<a name="ln314"> </a>
+<a name="ln315">  //! Implements &lt;a href=&quot;http://qsar.sourceforge.net/dicts/blue-obelisk/index.xhtml#calculateOrthogonalisationMatrix&quot;&gt;blue-obelisk:calculateOrthogonalisationMatrix&lt;/a&gt;</a>
+<a name="ln316">  void OBUnitCell::SetData(const matrix3x3 m)</a>
+<a name="ln317">  {</a>
+<a name="ln318">    SetData(m.GetRow(0), m.GetRow(1), m.GetRow(2));</a>
+<a name="ln319">  }</a>
+<a name="ln320"> </a>
+<a name="ln321">  void OBUnitCell::SetOffset(const vector3 v1)</a>
+<a name="ln322">  {</a>
+<a name="ln323">    _offset = v1;</a>
+<a name="ln324">  }</a>
+<a name="ln325"> </a>
+<a name="ln326">  //! Implements &lt;a href=&quot;http://qsar.sourceforge.net/dicts/blue-obelisk/index.xhtml#convertNotionalIntoCartesianCoordinates&quot;&gt;blue-obelisk:convertNotionalIntoCartesianCoordinates&lt;/a&gt;</a>
+<a name="ln327">  vector&lt;vector3&gt; OBUnitCell::GetCellVectors() const</a>
+<a name="ln328">  {</a>
+<a name="ln329">    vector&lt;vector3&gt; v;</a>
+<a name="ln330">    v.reserve(3);</a>
+<a name="ln331"> </a>
+<a name="ln332">    matrix3x3 m = GetCellMatrix();</a>
+<a name="ln333"> </a>
+<a name="ln334">    v.push_back(m.GetRow(0));</a>
+<a name="ln335">    v.push_back(m.GetRow(1));</a>
+<a name="ln336">    v.push_back(m.GetRow(2));</a>
+<a name="ln337"> </a>
+<a name="ln338">    return v;</a>
+<a name="ln339">  }</a>
+<a name="ln340"> </a>
+<a name="ln341">  matrix3x3 OBUnitCell::GetCellMatrix() const</a>
+<a name="ln342">  {</a>
+<a name="ln343">    return (_mOrient * _mOrtho).transpose();</a>
+<a name="ln344">  }</a>
+<a name="ln345"> </a>
+<a name="ln346">  matrix3x3 OBUnitCell::GetOrthoMatrix() const</a>
+<a name="ln347">  {</a>
+<a name="ln348">    return _mOrtho;</a>
+<a name="ln349">  }</a>
+<a name="ln350"> </a>
+<a name="ln351">  matrix3x3 OBUnitCell::GetOrientationMatrix() const</a>
+<a name="ln352">  {</a>
+<a name="ln353">    return _mOrient;</a>
+<a name="ln354">  }</a>
+<a name="ln355"> </a>
+<a name="ln356">  matrix3x3 OBUnitCell::GetFractionalMatrix() const</a>
+<a name="ln357">  {</a>
+<a name="ln358">    return _mOrtho.inverse();</a>
+<a name="ln359">  }</a>
+<a name="ln360"> </a>
+<a name="ln361">  vector3 OBUnitCell::FractionalToCartesian(vector3 frac) const</a>
+<a name="ln362">  {</a>
+<a name="ln363">    return _mOrient * _mOrtho * frac + _offset;</a>
+<a name="ln364">  }</a>
+<a name="ln365"> </a>
+<a name="ln366">  vector3 OBUnitCell::CartesianToFractional(vector3 cart) const</a>
+<a name="ln367">  {</a>
+<a name="ln368">    return _mOrtho.inverse() * _mOrient.inverse() * (cart - _offset);</a>
+<a name="ln369">  }</a>
+<a name="ln370"> </a>
+<a name="ln371">  vector3 OBUnitCell::WrapCartesianCoordinate(vector3 cart) const</a>
+<a name="ln372">  {</a>
+<a name="ln373">    vector3 v = CartesianToFractional(cart);</a>
+<a name="ln374">    v = WrapFractionalCoordinate(v);</a>
+<a name="ln375">    return FractionalToCartesian(v);</a>
+<a name="ln376">  }</a>
+<a name="ln377"> </a>
+<a name="ln378">  vector3 OBUnitCell::WrapFractionalCoordinate(vector3 frac) const</a>
+<a name="ln379">  {</a>
+<a name="ln380">    double x = fmod(frac.x(), 1);</a>
+<a name="ln381">    double y = fmod(frac.y(), 1);</a>
+<a name="ln382">    double z = fmod(frac.z(), 1);</a>
+<a name="ln383">    if (x &lt; 0) x += 1;</a>
+<a name="ln384">    if (y &lt; 0) y += 1;</a>
+<a name="ln385">    if (z &lt; 0) z += 1;</a>
+<a name="ln386"> </a>
+<a name="ln387">#define LIMIT 0.999999</a>
+<a name="ln388">    if (x &gt; LIMIT)</a>
+<a name="ln389">      x -= 1;</a>
+<a name="ln390">    if (y &gt; LIMIT)</a>
+<a name="ln391">      y -= 1;</a>
+<a name="ln392">    if (z &gt; LIMIT)</a>
+<a name="ln393">      z -= 1;</a>
+<a name="ln394">#undef LIMIT</a>
+<a name="ln395"> </a>
+<a name="ln396">    // Fuzzy logic from Francois-Xavier</a>
+<a name="ln397">#define EPSILON 1.0e-6</a>
+<a name="ln398">    if (x &gt; 1 - EPSILON || x &lt; EPSILON)</a>
+<a name="ln399">      x = 0.0;</a>
+<a name="ln400">    if (y &gt; 1 - EPSILON || y &lt; EPSILON)</a>
+<a name="ln401">      y = 0.0;</a>
+<a name="ln402">    if (z &gt; 1 - EPSILON || z &lt; EPSILON)</a>
+<a name="ln403">      z = 0.0;</a>
+<a name="ln404">#undef EPSILON</a>
+<a name="ln405"> </a>
+<a name="ln406">    return vector3(x, y, z);</a>
+<a name="ln407">  }</a>
+<a name="ln408"> </a>
+<a name="ln409">  vector3 OBUnitCell::UnwrapCartesianNear(vector3 new_loc, vector3 ref_loc) const</a>
+<a name="ln410">  {</a>
+<a name="ln411">    vector3 bond_dir = MinimumImageCartesian(new_loc - ref_loc);</a>
+<a name="ln412">    return ref_loc + bond_dir;</a>
+<a name="ln413">  }</a>
+<a name="ln414"> </a>
+<a name="ln415">  vector3 OBUnitCell::UnwrapFractionalNear(vector3 new_loc, vector3 ref_loc) const</a>
+<a name="ln416">  {</a>
+<a name="ln417">    vector3 bond_dir = MinimumImageFractional(new_loc - ref_loc);</a>
+<a name="ln418">    return ref_loc + bond_dir;</a>
+<a name="ln419">  }</a>
+<a name="ln420"> </a>
+<a name="ln421">  vector3 OBUnitCell::MinimumImageCartesian(vector3 cart) const</a>
+<a name="ln422">  {</a>
+<a name="ln423">    vector3 frac = CartesianToFractional(cart);</a>
+<a name="ln424">    frac = MinimumImageFractional(frac);</a>
+<a name="ln425">    return FractionalToCartesian(frac);</a>
+<a name="ln426">  }</a>
+<a name="ln427"> </a>
+<a name="ln428">  vector3 OBUnitCell::MinimumImageFractional(vector3 frac) const</a>
+<a name="ln429">  {</a>
+<a name="ln430">    double x = frac.x() - round(frac.x());</a>
+<a name="ln431">    double y = frac.y() - round(frac.y());</a>
+<a name="ln432">    double z = frac.z() - round(frac.z());</a>
+<a name="ln433">    return vector3(x, y, z);</a>
+<a name="ln434">  }</a>
+<a name="ln435"> </a>
+<a name="ln436">  OBUnitCell::LatticeType OBUnitCell::GetLatticeType( int spacegroup ) const</a>
+<a name="ln437">  {</a>
+<a name="ln438">    //	1-2 	Triclinic</a>
+<a name="ln439">    //	3-15 	Monoclinic</a>
+<a name="ln440">    //	16-74	Orthorhombic</a>
+<a name="ln441">    //	75-142 	Tetragonal</a>
+<a name="ln442">    //	143-167 Rhombohedral</a>
+<a name="ln443">    //	168-194 Hexagonal</a>
+<a name="ln444">    //	195-230 Cubic</a>
+<a name="ln445"> </a>
+<a name="ln446">    if ( spacegroup == 0  &amp;&amp; _spaceGroup)</a>
+<a name="ln447">      spacegroup = _spaceGroup-&gt;GetId();</a>
+<a name="ln448"> </a>
+<a name="ln449">    if ( spacegroup &lt;= 0 )</a>
+<a name="ln450">      return OBUnitCell::Undefined;</a>
+<a name="ln451"> </a>
+<a name="ln452">    else if ( spacegroup == 1 ||</a>
+<a name="ln453">              spacegroup == 2 )</a>
+<a name="ln454">      return OBUnitCell::Triclinic;</a>
+<a name="ln455"> </a>
+<a name="ln456">    else if ( spacegroup &gt;= 3 &amp;&amp;</a>
+<a name="ln457">              spacegroup &lt;= 15 )</a>
+<a name="ln458">      return OBUnitCell::Monoclinic;</a>
+<a name="ln459"> </a>
+<a name="ln460">    else if ( spacegroup &gt;= 16 &amp;&amp;</a>
+<a name="ln461">              spacegroup &lt;= 74 )</a>
+<a name="ln462">      return OBUnitCell::Orthorhombic;</a>
+<a name="ln463"> </a>
+<a name="ln464">    else if ( spacegroup &gt;= 75 &amp;&amp;</a>
+<a name="ln465">              spacegroup &lt;= 142 )</a>
+<a name="ln466">      return OBUnitCell::Tetragonal;</a>
+<a name="ln467"> </a>
+<a name="ln468">    else if ( spacegroup &gt;= 143 &amp;&amp;</a>
+<a name="ln469">              spacegroup &lt;= 167 )</a>
+<a name="ln470">      return OBUnitCell::Rhombohedral;</a>
+<a name="ln471"> </a>
+<a name="ln472">    else if ( spacegroup &gt;= 168 &amp;&amp;</a>
+<a name="ln473">              spacegroup &lt;= 194 )</a>
+<a name="ln474">      return OBUnitCell::Hexagonal;</a>
+<a name="ln475"> </a>
+<a name="ln476">    else if ( spacegroup &gt;= 195 &amp;&amp;</a>
+<a name="ln477">              spacegroup &lt;= 230 )</a>
+<a name="ln478">      return OBUnitCell::Cubic;</a>
+<a name="ln479"> </a>
+<a name="ln480">    //just to be extra sure</a>
+<a name="ln481">    else // ( spacegroup &gt; 230 )</a>
+<a name="ln482">      return OBUnitCell::Undefined;</a>
+<a name="ln483">  }</a>
+<a name="ln484"> </a>
+<a name="ln485">  OBUnitCell::LatticeType OBUnitCell::GetLatticeType() const</a>
+<a name="ln486">  {</a>
+<a name="ln487">    if (_lattice != Undefined)</a>
+<a name="ln488">      return _lattice;</a>
+<a name="ln489">    else if (_spaceGroup != nullptr)</a>
+<a name="ln490">      return GetLatticeType(_spaceGroup-&gt;GetId());</a>
+<a name="ln491"> </a>
+<a name="ln492">    double a = GetA();</a>
+<a name="ln493">    double b = GetB();</a>
+<a name="ln494">    double c = GetC();</a>
+<a name="ln495">    double alpha = GetAlpha();</a>
+<a name="ln496">    double beta  = GetBeta();</a>
+<a name="ln497">    double gamma = GetGamma();</a>
+<a name="ln498"> </a>
+<a name="ln499">    unsigned int rightAngles = 0;</a>
+<a name="ln500">    if (IsApprox(alpha, 90.0, 1.0e-3)) rightAngles++;</a>
+<a name="ln501">    if (IsApprox(beta,  90.0, 1.0e-3)) rightAngles++;</a>
+<a name="ln502">    if (IsApprox(gamma, 90.0, 1.0e-3)) rightAngles++;</a>
+<a name="ln503"> </a>
+<a name="ln504">    // recast cache member &quot;_lattice&quot; as mutable</a>
+<a name="ln505">    OBUnitCell::LatticeType *lattice =</a>
+<a name="ln506">      const_cast&lt;OBUnitCell::LatticeType*&gt;(&amp;_lattice);</a>
+<a name="ln507"> </a>
+<a name="ln508">    switch (rightAngles)</a>
+<a name="ln509">      {</a>
+<a name="ln510">      case 3:</a>
+<a name="ln511">        if (IsApprox(a, b, 1.0e-4) &amp;&amp; IsApprox(b, c, 1.0e-4))</a>
+<a name="ln512">          *lattice = Cubic;</a>
+<a name="ln513">        else if (IsApprox(a, b, 1.0e-4) || IsApprox(b, c, 1.0e-4))</a>
+<a name="ln514">          *lattice = Tetragonal;</a>
+<a name="ln515">        else</a>
+<a name="ln516">          *lattice = Orthorhombic;</a>
+<a name="ln517">        break;</a>
+<a name="ln518">      case 2:</a>
+<a name="ln519">        if ( (IsApprox(alpha, 120.0, 1.0e-3)</a>
+<a name="ln520">              || IsApprox(beta, 120.0, 1.0e-3)</a>
+<a name="ln521">              || IsApprox(gamma, 120.0f, 1.0e-3))</a>
+<a name="ln522">             &amp;&amp; (IsApprox(a, b, 1.0e-4) || IsApprox(b, c, 1.0e-4)) )</a>
+<a name="ln523">          *lattice = Hexagonal;</a>
+<a name="ln524">        else</a>
+<a name="ln525">          *lattice = Monoclinic;</a>
+<a name="ln526">        break;</a>
+<a name="ln527">      default:</a>
+<a name="ln528">        if (IsApprox(a, b, 1.0e-4) &amp;&amp; IsApprox(b, c, 1.0e-4))</a>
+<a name="ln529">          *lattice = Rhombohedral;</a>
+<a name="ln530">        else</a>
+<a name="ln531">          *lattice = Triclinic;</a>
+<a name="ln532">      }</a>
+<a name="ln533"> </a>
+<a name="ln534">    return *lattice;</a>
+<a name="ln535">  }</a>
+<a name="ln536"> </a>
+<a name="ln537">  int OBUnitCell::GetSpaceGroupNumber( std::string name) const</a>
+<a name="ln538">  {</a>
+<a name="ln539">    static const char * const spacegroups[] = {</a>
+<a name="ln540">      &quot;P1&quot;, &quot;P-1&quot;, &quot;P2&quot;, &quot;P2(1)&quot;, &quot;C2&quot;, &quot;Pm&quot;, &quot;Pc&quot;, &quot;Cm&quot;, &quot;Cc&quot;, &quot;P2/m&quot;,</a>
+<a name="ln541">      &quot;P2(1)/m&quot;, &quot;C2/m&quot;, &quot;P2/c&quot;, &quot;P2(1)/c&quot;, &quot;C2/c&quot;, &quot;P222&quot;, &quot;P222(1)&quot;,</a>
+<a name="ln542">      &quot;P2(1)2(1)2&quot;, &quot;P2(1)2(1)2(1)&quot;, &quot;C222(1)&quot;, &quot;C222&quot;, &quot;F222&quot;, &quot;I222&quot;,</a>
+<a name="ln543">      &quot;I2(1)2(1)2(1)&quot;, &quot;Pmm2&quot;, &quot;Pmc2(1)&quot;, &quot;Pcc2&quot;, &quot;Pma2&quot;, &quot;Pca2(1)&quot;, &quot;Pnc2&quot;,</a>
+<a name="ln544">      &quot;Pmn2(1)&quot;, &quot;Pba2&quot;, &quot;Pna2(1)&quot;, &quot;Pnn2&quot;, &quot;Cmm2&quot;, &quot;Cmc2(1)&quot;, &quot;Ccc2&quot;, &quot;Amm2&quot;,</a>
+<a name="ln545">      &quot;Abm2&quot;, &quot;Ama2&quot;, &quot;Aba2&quot;, &quot;Fmm2&quot;, &quot;Fdd2&quot;, &quot;Imm2&quot;, &quot;Iba2&quot;, &quot;Ima2&quot;, &quot;Pmmm&quot;,</a>
+<a name="ln546">      &quot;Pnnn&quot;, &quot;Pccm&quot;, &quot;Pban&quot;, &quot;Pmma&quot;, &quot;Pnna&quot;, &quot;Pmna&quot;, &quot;Pcca&quot;, &quot;Pbam&quot;, &quot;Pccn&quot;,</a>
+<a name="ln547">      &quot;Pbcm&quot;, &quot;Pnnm&quot;, &quot;Pmmn&quot;, &quot;Pbcn&quot;, &quot;Pbca&quot;, &quot;Pnma&quot;, &quot;Cmcm&quot;, &quot;Cmca&quot;, &quot;Cmmm&quot;,</a>
+<a name="ln548">      &quot;Cccm&quot;, &quot;Cmma&quot;, &quot;Ccca&quot;, &quot;Fmmm&quot;, &quot;Fddd&quot;, &quot;Immm&quot;, &quot;Ibam&quot;, &quot;Ibca&quot;, &quot;Imma&quot;,</a>
+<a name="ln549">      &quot;P4&quot;, &quot;P4(1)&quot;, &quot;P4(2)&quot;, &quot;P4(3)&quot;, &quot;I4&quot;, &quot;I4(1)&quot;, &quot;P-4&quot;, &quot;I-4&quot;, &quot;P4/m&quot;,</a>
+<a name="ln550">      &quot;P4(2)/m&quot;, &quot;P4/n&quot;, &quot;P4(2)/n&quot;, &quot;I4/m&quot;, &quot;I4(1)/a&quot;, &quot;P422&quot;, &quot;P42(1)2&quot;,</a>
+<a name="ln551">      &quot;P4(1)22&quot;, &quot;P4(1)2(1)2&quot;, &quot;P4(2)22&quot;, &quot;P4(2)2(1)2&quot;, &quot;P4(3)22&quot;, &quot;P4(3)2(1)2&quot;,</a>
+<a name="ln552">      &quot;I422&quot;, &quot;I4(1)22&quot;, &quot;P4mm&quot;, &quot;P4bm&quot;, &quot;P4(2)cm&quot;, &quot;P4(2)nm&quot;, &quot;P4cc&quot;, &quot;P4nc&quot;,</a>
+<a name="ln553">      &quot;P4(2)mc&quot;, &quot;P4(2)bc&quot;, &quot;I4mm&quot;, &quot;I4cm&quot;, &quot;I4(1)md&quot;, &quot;I4(1)cd&quot;, &quot;P-42m&quot;,</a>
+<a name="ln554">      &quot;P-42c&quot;, &quot;P-42(1)m&quot;, &quot;P-42(1)c&quot;, &quot;P-4m2&quot;, &quot;P-4c2&quot;, &quot;P-4b2&quot;, &quot;P-4n2&quot;,</a>
+<a name="ln555">      &quot;I-4m2&quot;, &quot;I-4c2&quot;, &quot;I-42m&quot;, &quot;I-42d&quot;, &quot;P4/mmm&quot;, &quot;P4/mcc&quot;, &quot;P4/nbm&quot;,</a>
+<a name="ln556">      &quot;P4/nnc&quot;, &quot;P4/mbm&quot;, &quot;P4/mnc&quot;, &quot;P4/nmm&quot;, &quot;P4/ncc&quot;, &quot;P4(2)/mmc&quot;,</a>
+<a name="ln557">      &quot;P4(2)/mcm&quot;, &quot;P4(2)/nbc&quot;, &quot;P4(2)/nnm&quot;, &quot;P4(2)/mbc&quot;, &quot;P4(2)/mnm&quot;,</a>
+<a name="ln558">      &quot;P4(2)/nmc&quot;, &quot;P4(2)/ncm&quot;, &quot;I4/mmm&quot;, &quot;I4/mcm&quot;, &quot;I4(1)/amd&quot;, &quot;I4(1)/acd&quot;,</a>
+<a name="ln559">      &quot;P3&quot;, &quot;P3(1)&quot;, &quot;P3(2)&quot;, &quot;R3&quot;, &quot;P-3&quot;, &quot;R-3&quot;, &quot;P312&quot;, &quot;P321&quot;, &quot;P3(1)12&quot;,</a>
+<a name="ln560">      &quot;P3(1)21&quot;, &quot;P3(2)12&quot;, &quot;P3(2)21&quot;, &quot;R32&quot;, &quot;P3m1&quot;, &quot;P31m&quot;, &quot;P3c1&quot;, &quot;P31c&quot;,</a>
+<a name="ln561">      &quot;R3m&quot;, &quot;R3c&quot;, &quot;P-31m&quot;, &quot;P-31c&quot;, &quot;P-3m1&quot;, &quot;P-3c1&quot;, &quot;R-3m&quot;, &quot;R-3c&quot;, &quot;P6&quot;,</a>
+<a name="ln562">      &quot;P6(1)&quot;, &quot;P6(5)&quot;, &quot;P6(2)&quot;, &quot;P6(4)&quot;, &quot;P6(3)&quot;, &quot;P-6&quot;, &quot;P6/m&quot;, &quot;P6(3)/m&quot;,</a>
+<a name="ln563">      &quot;P622&quot;, &quot;P6(1)22&quot;, &quot;P6(5)22&quot;, &quot;P6(2)22&quot;, &quot;P6(4)22&quot;, &quot;P6(3)22&quot;, &quot;P6mm&quot;,</a>
+<a name="ln564">      &quot;P6cc&quot;, &quot;P6(3)cm&quot;, &quot;P6(3)mc&quot;, &quot;P-6m2&quot;, &quot;P-6c2&quot;, &quot;P-62m&quot;, &quot;P-62c&quot;,</a>
+<a name="ln565">      &quot;P6/mmm&quot;, &quot;P6/mcc&quot;, &quot;P6(3)/mcm&quot;, &quot;P6(3)/mmc&quot;, &quot;P23&quot;, &quot;F23&quot;, &quot;I23&quot;,</a>
+<a name="ln566">      &quot;P2(1)3&quot;, &quot;I2(1)3&quot;, &quot;Pm-3&quot;, &quot;Pn-3&quot;, &quot;Fm-3&quot;, &quot;Fd-3&quot;, &quot;Im-3&quot;, &quot;Pa-3&quot;,</a>
+<a name="ln567">      &quot;Ia-3&quot;, &quot;P432&quot;, &quot;P4(2)32&quot;, &quot;F432&quot;, &quot;F4(1)32&quot;, &quot;I432&quot;, &quot;P4(3)32&quot;,</a>
+<a name="ln568">      &quot;P4(1)32&quot;, &quot;I4(1)32&quot;, &quot;P-43m&quot;, &quot;F4-3m&quot;, &quot;I-43m&quot;, &quot;P-43n&quot;, &quot;F-43c&quot;,</a>
+<a name="ln569">      &quot;I-43d&quot;, &quot;Pm-3m&quot;, &quot;Pn-3n&quot;, &quot;Pm-3n&quot;, &quot;Pn-3m&quot;, &quot;Fm-3m&quot;, &quot;Fm-3c&quot;,</a>
+<a name="ln570">      &quot;Fd-3m&quot;, &quot;Fd-3c&quot;, &quot;Im-3m&quot;, &quot;Ia-3d&quot;</a>
+<a name="ln571">    };</a>
+<a name="ln572"> </a>
+<a name="ln573">    if (name.length () == 0)</a>
+<a name="ln574">      {</a>
+<a name="ln575">        if (_spaceGroup != nullptr)</a>
+<a name="ln576">          return _spaceGroup-&gt;GetId();</a>
+<a name="ln577">        else</a>
+<a name="ln578">          name = _spaceGroupName;</a>
+<a name="ln579">      }</a>
+<a name="ln580">    static const int numStrings = sizeof( spacegroups ) / sizeof( spacegroups[0] );</a>
+<a name="ln581">    for ( int i = 0; i &lt; numStrings; ++i ) {</a>
+<a name="ln582">      if (name == spacegroups[i] ) {</a>
+<a name="ln583">        return i+1;</a>
+<a name="ln584">      }</a>
+<a name="ln585">    }</a>
+<a name="ln586">    return 0; //presumably never reached</a>
+<a name="ln587">  }</a>
+<a name="ln588"> </a>
+<a name="ln589">  // Whether two points (given in fractional coordinates) are close enough</a>
+<a name="ln590">  // to be considered duplicates.</a>
+<a name="ln591">  bool areDuplicateAtoms (vector3 v1, vector3 v2)</a>
+<a name="ln592">  {</a>
+<a name="ln593">    vector3 dr = v2 - v1;</a>
+<a name="ln594">    if (dr.x() &lt; -0.5)</a>
+<a name="ln595">      dr.SetX(dr.x() + 1);</a>
+<a name="ln596">    if (dr.x() &gt; 0.5)</a>
+<a name="ln597">      dr.SetX(dr.x() - 1);</a>
+<a name="ln598">    if (dr.y() &lt; -0.5)</a>
+<a name="ln599">      dr.SetY(dr.y() + 1);</a>
+<a name="ln600">    if (dr.y() &gt; 0.5)</a>
+<a name="ln601">      dr.SetY(dr.y() - 1);</a>
+<a name="ln602">    if (dr.z() &lt; -0.5)</a>
+<a name="ln603">      dr.SetZ(dr.z() + 1);</a>
+<a name="ln604">    if (dr.z() &gt; 0.5)</a>
+<a name="ln605">      dr.SetZ(dr.z() - 1);</a>
+<a name="ln606"> </a>
+<a name="ln607">    return (dr.length_2() &lt; 1e-6);</a>
+<a name="ln608">  }</a>
+<a name="ln609"> </a>
+<a name="ln610">  void OBUnitCell::FillUnitCell(OBMol *mol)</a>
+<a name="ln611">  {</a>
+<a name="ln612">    const SpaceGroup *sg = GetSpaceGroup(); // the actual space group and transformations for this unit cell</a>
+<a name="ln613"> </a>
+<a name="ln614">    if (sg == nullptr)</a>
+<a name="ln615">      return ;</a>
+<a name="ln616"> </a>
+<a name="ln617">    // For each atom, we loop through: convert the coords back to inverse space, apply the transformations and create new atoms</a>
+<a name="ln618">    vector3 baseV, uniqueV, updatedCoordinate;</a>
+<a name="ln619">    list&lt;vector3&gt; transformedVectors; // list of symmetry-defined copies of the atom</a>
+<a name="ln620">    list&lt;vector3&gt;::iterator transformIter;</a>
+<a name="ln621">    list&lt;OBAtom*&gt;::iterator deleteIter, atomIter;</a>
+<a name="ln622">    OBAtom *newAtom;</a>
+<a name="ln623">    list&lt;OBAtom*&gt; atoms, atomsToDelete;</a>
+<a name="ln624">    char hash[22];</a>
+<a name="ln625">    set&lt;string&gt; coordinateSet;</a>
+<a name="ln626"> </a>
+<a name="ln627">    // Check original mol for duplicates</a>
+<a name="ln628">    FOR_ATOMS_OF_MOL(atom, *mol) {</a>
+<a name="ln629">      baseV = atom-&gt;GetVector();</a>
+<a name="ln630">      baseV = CartesianToFractional(baseV);</a>
+<a name="ln631">      baseV = WrapFractionalCoordinate(baseV);</a>
+<a name="ln632">      snprintf(hash, 22, &quot;%03d,%.3f,%.3f,%.3f&quot;, atom-&gt;GetAtomicNum(), baseV.x(), baseV.y(), baseV.z());</a>
+<a name="ln633">      if (coordinateSet.insert(hash).second) { // True if new entry</a>
+<a name="ln634">        atoms.push_back(&amp;(*atom));</a>
+<a name="ln635">      } else {</a>
+<a name="ln636">        atomsToDelete.push_back(&amp;(*atom));</a>
+<a name="ln637">      }</a>
+<a name="ln638">    }</a>
+<a name="ln639">    for (deleteIter = atomsToDelete.begin(); deleteIter != atomsToDelete.end(); ++deleteIter) {</a>
+<a name="ln640">      mol-&gt;DeleteAtom(*deleteIter);</a>
+<a name="ln641">    }</a>
+<a name="ln642"> </a>
+<a name="ln643">    // Cross-check all transformations for duplicity</a>
+<a name="ln644">    for (atomIter = atoms.begin(); atomIter != atoms.end(); ++atomIter) {</a>
+<a name="ln645">      uniqueV = (*atomIter)-&gt;GetVector();</a>
+<a name="ln646">      uniqueV = CartesianToFractional(uniqueV);</a>
+<a name="ln647">      uniqueV = WrapFractionalCoordinate(uniqueV);</a>
+<a name="ln648"> </a>
+<a name="ln649">      transformedVectors = sg-&gt;Transform(uniqueV);</a>
+<a name="ln650">      for (transformIter = transformedVectors.begin();</a>
+<a name="ln651">        transformIter != transformedVectors.end(); ++transformIter) {</a>
+<a name="ln652">        updatedCoordinate = WrapFractionalCoordinate(*transformIter);</a>
+<a name="ln653"> </a>
+<a name="ln654">        // Check if the transformed coordinate is a duplicate of an atom</a>
+<a name="ln655">        snprintf(hash, 22, &quot;%03d,%.3f,%.3f,%.3f&quot;, (*atomIter)-&gt;GetAtomicNum(), updatedCoordinate.x(),</a>
+<a name="ln656">                 updatedCoordinate.y(), updatedCoordinate.z());</a>
+<a name="ln657">        if (coordinateSet.insert(hash).second) {</a>
+<a name="ln658">          newAtom = mol-&gt;NewAtom();</a>
+<a name="ln659">          newAtom-&gt;Duplicate(*atomIter);</a>
+<a name="ln660">          newAtom-&gt;SetVector(FractionalToCartesian(updatedCoordinate));</a>
+<a name="ln661">        }</a>
+<a name="ln662">      } // end loop of transformed atoms</a>
+<a name="ln663">    } // end loop of atoms</a>
+<a name="ln664">    SetSpaceGroup(1); // We've now applied the symmetry, so we should act like a P1 unit cell</a>
+<a name="ln665">  }</a>
+<a name="ln666"> </a>
+<a name="ln667">  /// @todo Remove nonconst overloads in OBUnitCell on next version bump.</a>
+<a name="ln668">#define OBUNITCELL_CALL_CONST_OVERLOAD(_type, _name) \</a>
+<a name="ln669">  _type OBUnitCell::_name() \</a>
+<a name="ln670">  { \</a>
+<a name="ln671">    return const_cast&lt;const OBUnitCell*&gt;(this)-&gt;_name(); \</a>
+<a name="ln672">  }</a>
+<a name="ln673">#define OBUNITCELL_CALL_CONST_OVERLOAD_ARG(_type, _name, _argsig) \</a>
+<a name="ln674">  _type OBUnitCell::_name( _argsig arg1 ) \</a>
+<a name="ln675">  { \</a>
+<a name="ln676">    return const_cast&lt;const OBUnitCell*&gt;(this)-&gt;_name(arg1); \</a>
+<a name="ln677">  }</a>
+<a name="ln678">  OBUNITCELL_CALL_CONST_OVERLOAD(double, GetA);</a>
+<a name="ln679">  OBUNITCELL_CALL_CONST_OVERLOAD(double, GetB);</a>
+<a name="ln680">  OBUNITCELL_CALL_CONST_OVERLOAD(double, GetC);</a>
+<a name="ln681">  OBUNITCELL_CALL_CONST_OVERLOAD(double, GetAlpha);</a>
+<a name="ln682">  OBUNITCELL_CALL_CONST_OVERLOAD(double, GetBeta);</a>
+<a name="ln683">  OBUNITCELL_CALL_CONST_OVERLOAD(double, GetGamma);</a>
+<a name="ln684">  OBUNITCELL_CALL_CONST_OVERLOAD(vector3, GetOffset);</a>
+<a name="ln685">  OBUNITCELL_CALL_CONST_OVERLOAD_ARG(OBUnitCell::LatticeType,</a>
+<a name="ln686">                                     GetLatticeType, int);</a>
+<a name="ln687">  OBUNITCELL_CALL_CONST_OVERLOAD(OBUnitCell::LatticeType, GetLatticeType);</a>
+<a name="ln688">  OBUNITCELL_CALL_CONST_OVERLOAD(std::vector&lt;vector3&gt;, GetCellVectors);</a>
+<a name="ln689">  OBUNITCELL_CALL_CONST_OVERLOAD(matrix3x3, GetCellMatrix );</a>
+<a name="ln690">  OBUNITCELL_CALL_CONST_OVERLOAD(matrix3x3, GetOrthoMatrix );</a>
+<a name="ln691">  OBUNITCELL_CALL_CONST_OVERLOAD(matrix3x3, GetOrientationMatrix );</a>
+<a name="ln692">  OBUNITCELL_CALL_CONST_OVERLOAD(matrix3x3, GetFractionalMatrix );</a>
+<a name="ln693">  OBUNITCELL_CALL_CONST_OVERLOAD_ARG(vector3, FractionalToCartesian, vector3);</a>
+<a name="ln694">  OBUNITCELL_CALL_CONST_OVERLOAD_ARG(vector3, CartesianToFractional, vector3);</a>
+<a name="ln695">  OBUNITCELL_CALL_CONST_OVERLOAD_ARG(vector3, WrapCartesianCoordinate, vector3);</a>
+<a name="ln696">  OBUNITCELL_CALL_CONST_OVERLOAD_ARG(vector3, WrapFractionalCoordinate, vector3);</a>
+<a name="ln697">  OBUNITCELL_CALL_CONST_OVERLOAD_ARG(vector3, MinimumImageCartesian, vector3);</a>
+<a name="ln698">  OBUNITCELL_CALL_CONST_OVERLOAD_ARG(vector3, MinimumImageFractional, vector3);</a>
+<a name="ln699">  OBUNITCELL_CALL_CONST_OVERLOAD_ARG(int, GetSpaceGroupNumber, std::string);</a>
+<a name="ln700">  OBUNITCELL_CALL_CONST_OVERLOAD(double, GetCellVolume);</a>
+<a name="ln701">  // Based on OBUNITCELL_CALL_CONST_OVERLOAD_ARG above</a>
+<a name="ln702">#define OBUNITCELL_CALL_CONST_OVERLOAD_ARG2(_type, _name, _argsig, _argsig2) \</a>
+<a name="ln703">  _type OBUnitCell::_name( _argsig arg1, _argsig2 arg2 ) \</a>
+<a name="ln704">  { \</a>
+<a name="ln705">    return const_cast&lt;const OBUnitCell*&gt;(this)-&gt;_name(arg1, arg2); \</a>
+<a name="ln706">  }</a>
+<a name="ln707">  OBUNITCELL_CALL_CONST_OVERLOAD_ARG2(vector3, UnwrapCartesianNear, vector3, vector3);</a>
+<a name="ln708">  OBUNITCELL_CALL_CONST_OVERLOAD_ARG2(vector3, UnwrapFractionalNear, vector3, vector3);</a>
+<a name="ln709"> </a>
+<a name="ln710">  double OBUnitCell::GetA() const</a>
+<a name="ln711">  {</a>
+<a name="ln712">    return _mOrtho.GetColumn(0).length();</a>
+<a name="ln713">  }</a>
+<a name="ln714"> </a>
+<a name="ln715">  double OBUnitCell::GetB() const</a>
+<a name="ln716">  {</a>
+<a name="ln717">    return _mOrtho.GetColumn(1).length();</a>
+<a name="ln718">  }</a>
+<a name="ln719"> </a>
+<a name="ln720">  double OBUnitCell::GetC() const</a>
+<a name="ln721">  {</a>
+<a name="ln722">    return _mOrtho.GetColumn(2).length();</a>
+<a name="ln723">  }</a>
+<a name="ln724"> </a>
+<a name="ln725">  double OBUnitCell::GetAlpha() const</a>
+<a name="ln726">  {</a>
+<a name="ln727">    return vectorAngle(_mOrtho.GetColumn(1), _mOrtho.GetColumn(2));</a>
+<a name="ln728">  }</a>
+<a name="ln729"> </a>
+<a name="ln730">  double OBUnitCell::GetBeta() const</a>
+<a name="ln731">  {</a>
+<a name="ln732">    return vectorAngle(_mOrtho.GetColumn(0), _mOrtho.GetColumn(2));</a>
+<a name="ln733">  }</a>
+<a name="ln734"> </a>
+<a name="ln735">  double OBUnitCell::GetGamma() const</a>
+<a name="ln736">  {</a>
+<a name="ln737">    return vectorAngle(_mOrtho.GetColumn(0), _mOrtho.GetColumn(1));</a>
+<a name="ln738">  }</a>
+<a name="ln739"> </a>
+<a name="ln740">  vector3 OBUnitCell::GetOffset() const</a>
+<a name="ln741">  {</a>
+<a name="ln742">    return _offset;</a>
+<a name="ln743">  }</a>
+<a name="ln744"> </a>
+<a name="ln745">  double OBUnitCell::GetCellVolume() const</a>
+<a name="ln746">  {</a>
+<a name="ln747">    return fabs(GetCellMatrix().determinant());</a>
+<a name="ln748">  }</a>
+<a name="ln749"> </a>
+<a name="ln750">  //</a>
+<a name="ln751">  // member functions for OBSymmetryData class</a>
+<a name="ln752">  //</a>
+<a name="ln753">  OBSymmetryData::OBSymmetryData():</a>
+<a name="ln754">    OBGenericData(&quot;Symmetry&quot;, OBGenericDataType::SymmetryData)</a>
+<a name="ln755">  { }</a>
+<a name="ln756"> </a>
+<a name="ln757">  OBSymmetryData::OBSymmetryData(const OBSymmetryData &amp;src) :</a>
+<a name="ln758">    OBGenericData(src._attr, src._type, src._source),</a>
+<a name="ln759">    _spaceGroup(src._spaceGroup),</a>
+<a name="ln760">    _pointGroup(src._pointGroup)</a>
+<a name="ln761">  {  }</a>
+<a name="ln762"> </a>
+<a name="ln763">  OBSymmetryData &amp; OBSymmetryData::operator=(const OBSymmetryData &amp;src)</a>
+<a name="ln764">  {</a>
+<a name="ln765">    if(this == &amp;src)</a>
+<a name="ln766">      return(*this);</a>
+<a name="ln767"> </a>
+<a name="ln768">    _pointGroup = src._pointGroup;</a>
+<a name="ln769">    _spaceGroup = src._spaceGroup;</a>
+<a name="ln770">    _source = src._source;</a>
+<a name="ln771"> </a>
+<a name="ln772">    return(*this);</a>
+<a name="ln773">  }</a>
+<a name="ln774"> </a>
+<a name="ln775">  OBConformerData::OBConformerData() :</a>
+<a name="ln776">    OBGenericData(&quot;Conformers&quot;, OBGenericDataType::ConformerData)</a>
+<a name="ln777">  {  }</a>
+<a name="ln778"> </a>
+<a name="ln779">  OBConformerData::OBConformerData(const OBConformerData &amp;src) :</a>
+<a name="ln780">    OBGenericData(&quot;Conformers&quot;, OBGenericDataType::ConformerData),</a>
+<a name="ln781">    _vDimension(src._vDimension),</a>
+<a name="ln782">    _vEnergies(src._vEnergies), _vForces(src._vForces),</a>
+<a name="ln783">    _vVelocity(src._vVelocity), _vDisplace(src._vDisplace),</a>
+<a name="ln784">    _vData(src._vData)</a>
+<a name="ln785">  {  }</a>
+<a name="ln786"> </a>
+<a name="ln787">  OBConformerData &amp; OBConformerData::operator=(const OBConformerData &amp;src)</a>
+<a name="ln788">  {</a>
+<a name="ln789">    if(this == &amp;src)</a>
+<a name="ln790">      return(*this);</a>
+<a name="ln791"> </a>
+<a name="ln792">    _source = src._source;</a>
+<a name="ln793"> </a>
+<a name="ln794">    _vDimension = src._vDimension;</a>
+<a name="ln795">    _vEnergies = src._vEnergies;</a>
+<a name="ln796">    _vForces = src._vForces;</a>
+<a name="ln797">    _vVelocity = src._vVelocity;</a>
+<a name="ln798">    _vDisplace = src._vDisplace;</a>
+<a name="ln799">    _vData = src._vData;</a>
+<a name="ln800"> </a>
+<a name="ln801">    return(*this);</a>
+<a name="ln802">  }</a>
+<a name="ln803"> </a>
+<a name="ln804">  //</a>
+<a name="ln805">  //member functions for OBRingData class</a>
+<a name="ln806">  //</a>
+<a name="ln807"> </a>
+<a name="ln808">  OBRingData::OBRingData() :</a>
+<a name="ln809">    OBGenericData(&quot;RingData&quot;, OBGenericDataType::RingData)</a>
+<a name="ln810">  {</a>
+<a name="ln811">    _vr.clear();</a>
+<a name="ln812">  }</a>
+<a name="ln813"> </a>
+<a name="ln814">  /*!</a>
+<a name="ln815">  **\brief OBRingData copy constructor</a>
+<a name="ln816">  **\param src reference to original OBRingData object (rhs)</a>
+<a name="ln817">  */</a>
+<a name="ln818">  OBRingData::OBRingData(const OBRingData &amp;src)</a>
+<a name="ln819">    :	OBGenericData(src),	//chain to base class</a>
+<a name="ln820">      _vr(src._vr)				//chain to member classes</a>
+<a name="ln821">  {</a>
+<a name="ln822">    //no other memeber data</a>
+<a name="ln823">    //memory management</a>
+<a name="ln824"> </a>
+<a name="ln825">    vector&lt;OBRing*&gt;::iterator ring;</a>
+<a name="ln826"> </a>
+<a name="ln827">    for(ring = _vr.begin();ring != _vr.end();++ring)</a>
+<a name="ln828">      {</a>
+<a name="ln829">        OBRing *newring = new OBRing;</a>
+<a name="ln830">        (*newring) = (**ring);	//copy data to new object</a>
+<a name="ln831">        (*ring)    = newring;	//repoint new pointer to new copy of data</a>
+<a name="ln832">      }</a>
+<a name="ln833">  }</a>
+<a name="ln834"> </a>
+<a name="ln835">  OBRingData::~OBRingData()</a>
+<a name="ln836">  {</a>
+<a name="ln837">    vector&lt;OBRing*&gt;::iterator ring;</a>
+<a name="ln838">    for (ring = _vr.begin();ring != _vr.end();++ring)</a>
+<a name="ln839">      {</a>
+<a name="ln840">        delete *ring;</a>
+<a name="ln841">      }</a>
+<a name="ln842">  }</a>
+<a name="ln843"> </a>
+<a name="ln844">  /*!</a>
+<a name="ln845">  **\brief OBRingData assignment operator</a>
+<a name="ln846">  **\param src reference to original OBRingData object (rhs)</a>
+<a name="ln847">  **\return reference to changed OBRingData object (lhs)</a>
+<a name="ln848">  */</a>
+<a name="ln849">  OBRingData&amp; OBRingData::operator =(const OBRingData &amp;src)</a>
+<a name="ln850">  {</a>
+<a name="ln851">    //on identity, return</a>
+<a name="ln852">    if(this == &amp;src)</a>
+<a name="ln853">      return(*this);</a>
+<a name="ln854"> </a>
+<a name="ln855">    //chain to base class</a>
+<a name="ln856">    OBGenericData::operator =(src);</a>
+<a name="ln857"> </a>
+<a name="ln858">    //member data</a>
+<a name="ln859"> </a>
+<a name="ln860">    //memory management</a>
+<a name="ln861">    vector&lt;OBRing*&gt;::iterator ring;</a>
+<a name="ln862">    for(ring = _vr.begin();ring != _vr.end();++ring)</a>
+<a name="ln863">      {</a>
+<a name="ln864">        delete &amp;*ring;	//deallocate old rings to prevent memory leak</a>
+<a name="ln865">      }</a>
+<a name="ln866"> </a>
+<a name="ln867">    _vr.clear();</a>
+<a name="ln868">    _vr = src._vr;	//copy vector properties</a>
+<a name="ln869"> </a>
+<a name="ln870">    for(ring = _vr.begin();ring != _vr.end();++ring)</a>
+<a name="ln871">      {</a>
+<a name="ln872">        if(*ring == 0)</a>
+<a name="ln873">          continue;</a>
+<a name="ln874"> </a>
+<a name="ln875">        //allocate and copy ring data</a>
+<a name="ln876">        OBRing *newring = new OBRing;</a>
+<a name="ln877">        (*newring) = (**ring);</a>
+<a name="ln878">        (*ring) = newring;	//redirect pointer</a>
+<a name="ln879">      }</a>
+<a name="ln880">    return(*this);</a>
+<a name="ln881">  }</a>
+<a name="ln882"> </a>
+<a name="ln883">  OBRing *OBRingData::BeginRing(std::vector&lt;OBRing*&gt;::iterator &amp;i)</a>
+<a name="ln884">  {</a>
+<a name="ln885">    i = _vr.begin();</a>
+<a name="ln886">    return i == _vr.end() ? nullptr : (OBRing*)*i;</a>
+<a name="ln887">  }</a>
+<a name="ln888"> </a>
+<a name="ln889">  OBRing *OBRingData::NextRing(std::vector&lt;OBRing*&gt;::iterator &amp;i)</a>
+<a name="ln890">  {</a>
+<a name="ln891">    ++i;</a>
+<a name="ln892">    return i == _vr.end() ? nullptr : (OBRing*)*i;</a>
+<a name="ln893">  }</a>
+<a name="ln894"> </a>
+<a name="ln895">  //</a>
+<a name="ln896">  //member functions for OBAngle class - stores all angles</a>
+<a name="ln897">  //</a>
+<a name="ln898"> </a>
+<a name="ln899">  /*!</a>
+<a name="ln900">  **\brief Angle default constructor</a>
+<a name="ln901">  */</a>
+<a name="ln902">  OBAngle::OBAngle():</a>
+<a name="ln903">    _vertex(nullptr), _termini(nullptr, nullptr), _radians(0.0)</a>
+<a name="ln904">  {  }</a>
+<a name="ln905"> </a>
+<a name="ln906">  /*!</a>
+<a name="ln907">  **\brief Angle constructor</a>
+<a name="ln908">  */</a>
+<a name="ln909">  OBAngle::OBAngle(OBAtom *vertex,OBAtom *a,OBAtom *b):</a>
+<a name="ln910">    _vertex(vertex), _termini(a, b)</a>
+<a name="ln911">  {</a>
+<a name="ln912">    SortByIndex();</a>
+<a name="ln913">  }</a>
+<a name="ln914"> </a>
+<a name="ln915">  /*!</a>
+<a name="ln916">  **\brief OBAngle copy constructor</a>
+<a name="ln917">  */</a>
+<a name="ln918">  OBAngle::OBAngle(const OBAngle &amp;src):</a>
+<a name="ln919">    _vertex(src._vertex), _termini(src._termini), _radians(src._radians)</a>
+<a name="ln920">  {  }</a>
+<a name="ln921"> </a>
+<a name="ln922">  /*!</a>
+<a name="ln923">  **\brief OBAngle assignment operator</a>
+<a name="ln924">  */</a>
+<a name="ln925">  OBAngle&amp; OBAngle::operator = (const OBAngle &amp;src)</a>
+<a name="ln926">  {</a>
+<a name="ln927">    if (this == &amp;src)</a>
+<a name="ln928">      return(*this);</a>
+<a name="ln929"> </a>
+<a name="ln930">    _vertex         = src._vertex;</a>
+<a name="ln931">    _termini.first  = src._termini.first;</a>
+<a name="ln932">    _termini.second = src._termini.second;</a>
+<a name="ln933">    _radians        = src._radians;</a>
+<a name="ln934"> </a>
+<a name="ln935">    return(*this);</a>
+<a name="ln936">  }</a>
+<a name="ln937"> </a>
+<a name="ln938">  /*!</a>
+<a name="ln939">  **\brief Return OBAngle to its original state</a>
+<a name="ln940">  */</a>
+<a name="ln941">  void OBAngle::Clear()</a>
+<a name="ln942">  {</a>
+<a name="ln943">    _vertex         = nullptr;</a>
+<a name="ln944">    _termini.first  = 0;</a>
+<a name="ln945">    _termini.second = 0;</a>
+<a name="ln946">    _radians        = 0.0;</a>
+<a name="ln947">    return;</a>
+<a name="ln948">  }</a>
+<a name="ln949"> </a>
+<a name="ln950">  /*!</a>
+<a name="ln951">  **\brief Sets the 3 atoms in the angle</a>
+<a name="ln952">  ** Parameters are pointers to each OBAtom</a>
+<a name="ln953">  */</a>
+<a name="ln954">  void OBAngle::SetAtoms(OBAtom *vertex,OBAtom *a,OBAtom *b)</a>
+<a name="ln955">  {</a>
+<a name="ln956">    _vertex         = vertex;</a>
+<a name="ln957">    _termini.first  = a;</a>
+<a name="ln958">    _termini.second = b;</a>
+<a name="ln959">    SortByIndex();</a>
+<a name="ln960">    return;</a>
+<a name="ln961">  }</a>
+<a name="ln962"> </a>
+<a name="ln963">  /*!</a>
+<a name="ln964">  **\brief Sets the 3 atoms in the angle</a>
+<a name="ln965">  **\param atoms a triple of OBAtom pointers, the first must be the vertex</a>
+<a name="ln966">  */</a>
+<a name="ln967">  void OBAngle::SetAtoms(triple&lt;OBAtom*,OBAtom*,OBAtom*&gt; &amp;atoms)</a>
+<a name="ln968">  {</a>
+<a name="ln969">    _vertex         = atoms.first;</a>
+<a name="ln970">    _termini.first  = atoms.second;</a>
+<a name="ln971">    _termini.second = atoms.third;</a>
+<a name="ln972">    SortByIndex();</a>
+<a name="ln973">    return;</a>
+<a name="ln974">  }</a>
+<a name="ln975"> </a>
+<a name="ln976">  /*!</a>
+<a name="ln977">  **\brief Retrieves the 3 atom pointer for the angle (vertex first)</a>
+<a name="ln978">  **\return triple of OBAtom pointers</a>
+<a name="ln979">  */</a>
+<a name="ln980">  triple&lt;OBAtom*,OBAtom*,OBAtom*&gt; OBAngle::GetAtoms()</a>
+<a name="ln981">  {</a>
+<a name="ln982">    triple&lt;OBAtom*,OBAtom*,OBAtom*&gt; atoms;</a>
+<a name="ln983">    atoms.first  = _vertex;</a>
+<a name="ln984">    atoms.second = _termini.first;</a>
+<a name="ln985">    atoms.third  = _termini.second;</a>
+<a name="ln986">    return(atoms);</a>
+<a name="ln987">  }</a>
+<a name="ln988"> </a>
+<a name="ln989">  /*!</a>
+<a name="ln990">  **\brief sorts atoms in angle by order of indices</a>
+<a name="ln991">  */</a>
+<a name="ln992">  void OBAngle::SortByIndex()</a>
+<a name="ln993">  {</a>
+<a name="ln994">    OBAtom *tmp;</a>
+<a name="ln995"> </a>
+<a name="ln996">    if(_termini.first-&gt;GetIdx() &gt; _termini.second-&gt;GetIdx())</a>
+<a name="ln997">      {</a>
+<a name="ln998">        tmp             = _termini.first;</a>
+<a name="ln999">        _termini.first  = _termini.second;</a>
+<a name="ln1000">        _termini.second = tmp;</a>
+<a name="ln1001">      }</a>
+<a name="ln1002">  }</a>
+<a name="ln1003"> </a>
+<a name="ln1004">  /*!</a>
+<a name="ln1005">  **\brief OBAngle equality operator, is same angle, NOT same value</a>
+<a name="ln1006">  **\return boolean equality</a>
+<a name="ln1007">  */</a>
+<a name="ln1008">  bool OBAngle::operator ==(const OBAngle &amp;other)</a>
+<a name="ln1009">  {</a>
+<a name="ln1010">    return ((_vertex         == other._vertex)        &amp;&amp;</a>
+<a name="ln1011">            (_termini.first  == other._termini.first) &amp;&amp;</a>
+<a name="ln1012">            (_termini.second == other._termini.second));</a>
+<a name="ln1013">  }</a>
+<a name="ln1014"> </a>
+<a name="ln1015">  //</a>
+<a name="ln1016">  //member functions for OBAngleData class - stores OBAngle set</a>
+<a name="ln1017">  //</a>
+<a name="ln1018"> </a>
+<a name="ln1019">  /*!</a>
+<a name="ln1020">  **\brief OBAngleData constructor</a>
+<a name="ln1021">  */</a>
+<a name="ln1022">  OBAngleData::OBAngleData()</a>
+<a name="ln1023">    :	OBGenericData(&quot;AngleData&quot;, OBGenericDataType::AngleData)</a>
+<a name="ln1024">  {  }</a>
+<a name="ln1025"> </a>
+<a name="ln1026">  /*!</a>
+<a name="ln1027">  **\brief OBAngleData copy constructor</a>
+<a name="ln1028">  */</a>
+<a name="ln1029">  OBAngleData::OBAngleData(const OBAngleData &amp;src)</a>
+<a name="ln1030">    :	OBGenericData(src), _angles(src._angles)</a>
+<a name="ln1031">  {  }</a>
+<a name="ln1032"> </a>
+<a name="ln1033">  /*!</a>
+<a name="ln1034">  **\brief OBAngleData assignment operator</a>
+<a name="ln1035">  */</a>
+<a name="ln1036">  OBAngleData&amp; OBAngleData::operator =(const OBAngleData &amp;src)</a>
+<a name="ln1037">  {</a>
+<a name="ln1038">    if (this == &amp;src)</a>
+<a name="ln1039">      return(*this);</a>
+<a name="ln1040"> </a>
+<a name="ln1041">    _source = src._source;</a>
+<a name="ln1042">    _angles = src._angles;</a>
+<a name="ln1043"> </a>
+<a name="ln1044">    return(*this);</a>
+<a name="ln1045">  }</a>
+<a name="ln1046"> </a>
+<a name="ln1047">  /*!</a>
+<a name="ln1048">  **\brief sets OBAngleData to its original state</a>
+<a name="ln1049">  */</a>
+<a name="ln1050">  void OBAngleData::Clear()</a>
+<a name="ln1051">  {</a>
+<a name="ln1052">    _angles.clear();</a>
+<a name="ln1053">    return;</a>
+<a name="ln1054">  }</a>
+<a name="ln1055"> </a>
+<a name="ln1056">  /*!</a>
+<a name="ln1057">  **\brief Adds a new angle to OBAngleData</a>
+<a name="ln1058">  */</a>
+<a name="ln1059">  void OBAngleData::SetData(OBAngle &amp;angle)</a>
+<a name="ln1060">  {</a>
+<a name="ln1061">    _angles.push_back(angle);</a>
+<a name="ln1062">    return;</a>
+<a name="ln1063">  }</a>
+<a name="ln1064"> </a>
+<a name="ln1065">  /*!</a>
+<a name="ln1066">  **\brief Fills an array with the indices of the atoms in the angle (vertex first)</a>
+<a name="ln1067">  **\param angles pointer to the pointer to an array of angles atom indices</a>
+<a name="ln1068">  **\return True if successful</a>
+<a name="ln1069">  */</a>
+<a name="ln1070">  bool OBAngleData::FillAngleArray(std::vector&lt;std::vector&lt;unsigned int&gt; &gt; &amp;angles)</a>
+<a name="ln1071">  {</a>
+<a name="ln1072">    if(_angles.empty())</a>
+<a name="ln1073">      return(false);</a>
+<a name="ln1074"> </a>
+<a name="ln1075">    vector&lt;OBAngle&gt;::iterator angle;</a>
+<a name="ln1076"> </a>
+<a name="ln1077">    angles.clear();</a>
+<a name="ln1078">    angles.resize(_angles.size());</a>
+<a name="ln1079"> </a>
+<a name="ln1080">    unsigned int ct = 0;</a>
+<a name="ln1081"> </a>
+<a name="ln1082">    for( angle=_angles.begin(); angle!=_angles.end(); ++angle,ct++)</a>
+<a name="ln1083">      {</a>
+<a name="ln1084">        angles[ct].resize(3);</a>
+<a name="ln1085">        angles[ct][0] = angle-&gt;_vertex-&gt;GetIdx() - 1;</a>
+<a name="ln1086">        angles[ct][1] = angle-&gt;_termini.first-&gt;GetIdx() - 1;</a>
+<a name="ln1087">        angles[ct][2] = angle-&gt;_termini.second-&gt;GetIdx() - 1;</a>
+<a name="ln1088">      }</a>
+<a name="ln1089"> </a>
+<a name="ln1090">    return(true);</a>
+<a name="ln1091">  }</a>
+<a name="ln1092"> </a>
+<a name="ln1093">  /*!</a>
+<a name="ln1094">  **\brief Fills an array with the indices of the atoms in the angle (vertex first)</a>
+<a name="ln1095">  **\param angles pointer to the pointer to an array of angles atom indices</a>
+<a name="ln1096">  **\param size the current number of rows in the array</a>
+<a name="ln1097">  **\return int The number of angles</a>
+<a name="ln1098">  */</a>
+<a name="ln1099">  unsigned int OBAngleData::FillAngleArray(int **angles, unsigned int &amp;size)</a>
+<a name="ln1100">  {</a>
+<a name="ln1101">    if(_angles.size() &gt; size)</a>
+<a name="ln1102">      {</a>
+<a name="ln1103">        delete [] *angles;</a>
+<a name="ln1104">        *angles = new int[_angles.size()*3];</a>
+<a name="ln1105">        size    = (unsigned int)_angles.size();</a>
+<a name="ln1106">      }</a>
+<a name="ln1107"> </a>
+<a name="ln1108">    vector&lt;OBAngle&gt;::iterator angle;</a>
+<a name="ln1109">    int angleIdx = 0;</a>
+<a name="ln1110">    for( angle=_angles.begin(); angle!=_angles.end(); ++angle)</a>
+<a name="ln1111">      {</a>
+<a name="ln1112">        *angles[angleIdx++] = angle-&gt;_vertex-&gt;GetIdx();</a>
+<a name="ln1113">        *angles[angleIdx++] = angle-&gt;_termini.first-&gt;GetIdx();</a>
+<a name="ln1114">        *angles[angleIdx++] = angle-&gt;_termini.second-&gt;GetIdx();</a>
+<a name="ln1115">      }</a>
+<a name="ln1116">    return (unsigned int)_angles.size();</a>
+<a name="ln1117">  }</a>
+<a name="ln1118"> </a>
+<a name="ln1119">  //</a>
+<a name="ln1120">  //member functions for OBAngleData class - stores OBAngle set</a>
+<a name="ln1121">  //</a>
+<a name="ln1122"> </a>
+<a name="ln1123">  /*!</a>
+<a name="ln1124">  **\brief OBTorsion constructor</a>
+<a name="ln1125">  */</a>
+<a name="ln1126">  OBTorsion::OBTorsion(OBAtom *a,OBAtom *b, OBAtom *c,OBAtom *d)</a>
+<a name="ln1127">  {</a>
+<a name="ln1128">    triple&lt;OBAtom*,OBAtom*,double&gt; ad(a,d,0.0);</a>
+<a name="ln1129">    _ads.push_back(ad);</a>
+<a name="ln1130"> </a>
+<a name="ln1131">    _bc.first  = b;</a>
+<a name="ln1132">    _bc.second = c;</a>
+<a name="ln1133">  }</a>
+<a name="ln1134"> </a>
+<a name="ln1135">  /*!</a>
+<a name="ln1136">  **\brief OBTorsion copy constructor</a>
+<a name="ln1137">  */</a>
+<a name="ln1138">  OBTorsion::OBTorsion(const OBTorsion &amp;src)</a>
+<a name="ln1139">    :	_bc(src._bc), _ads(src._ads)</a>
+<a name="ln1140">  {}</a>
+<a name="ln1141"> </a>
+<a name="ln1142">  /*!</a>
+<a name="ln1143">  **\brief Returns all the 4 atom sets in OBTorsion</a>
+<a name="ln1144">  */</a>
+<a name="ln1145">  vector&lt;quad&lt;OBAtom*,OBAtom*,OBAtom*,OBAtom*&gt; &gt; OBTorsion::GetTorsions()</a>
+<a name="ln1146">  {</a>
+<a name="ln1147">    quad&lt;OBAtom*,OBAtom*,OBAtom*,OBAtom*&gt; abcd;</a>
+<a name="ln1148"> </a>
+<a name="ln1149">    abcd.second = _bc.first;</a>
+<a name="ln1150">    abcd.third  = _bc.second;</a>
+<a name="ln1151"> </a>
+<a name="ln1152">    vector&lt;quad&lt;OBAtom*,OBAtom*,OBAtom*,OBAtom*&gt; &gt; torsions;</a>
+<a name="ln1153">    vector&lt;triple&lt;OBAtom*,OBAtom*,double&gt; &gt;::iterator ad;</a>
+<a name="ln1154"> </a>
+<a name="ln1155">    for(ad = _ads.begin();ad != _ads.end();++ad)</a>
+<a name="ln1156">      {</a>
+<a name="ln1157">        abcd.first = ad-&gt;first;</a>
+<a name="ln1158">        abcd.fourth = ad-&gt;second;</a>
+<a name="ln1159">        torsions.push_back(abcd);</a>
+<a name="ln1160">      }</a>
+<a name="ln1161"> </a>
+<a name="ln1162">    return(torsions);</a>
+<a name="ln1163">  }</a>
+<a name="ln1164"> </a>
+<a name="ln1165">  /*!</a>
+<a name="ln1166">  **\brief OBTorsion assignment operator</a>
+<a name="ln1167">  */</a>
+<a name="ln1168">  OBTorsion&amp; OBTorsion::operator =(const OBTorsion &amp;src)</a>
+<a name="ln1169">  {</a>
+<a name="ln1170">    if (this == &amp;src)</a>
+<a name="ln1171">      return(*this);</a>
+<a name="ln1172"> </a>
+<a name="ln1173">    _bc  = src._bc;</a>
+<a name="ln1174">    _ads = src._ads;</a>
+<a name="ln1175"> </a>
+<a name="ln1176">    return(*this);</a>
+<a name="ln1177">  }</a>
+<a name="ln1178"> </a>
+<a name="ln1179">  /*!</a>
+<a name="ln1180">  **\brief Returns the OBTorsion to its original state</a>
+<a name="ln1181">  */</a>
+<a name="ln1182">  void OBTorsion::Clear()</a>
+<a name="ln1183">  {</a>
+<a name="ln1184">    _bc.first  = 0;</a>
+<a name="ln1185">    _bc.second = 0;</a>
+<a name="ln1186">    _ads.erase(_ads.begin(),_ads.end());</a>
+<a name="ln1187">  }</a>
+<a name="ln1188"> </a>
+<a name="ln1189">  /*!</a>
+<a name="ln1190">  **\brief Sets the angle of a torsion in OBTorsion</a>
+<a name="ln1191">  **\param radians the value to assign to the torsion</a>
+<a name="ln1192">  **\param index the index into the torsion of the OBTorsion</a>
+<a name="ln1193">  **\return boolean success</a>
+<a name="ln1194">  */</a>
+<a name="ln1195">  bool OBTorsion::SetAngle(double radians,unsigned int index)</a>
+<a name="ln1196">  {</a>
+<a name="ln1197">    if(index &gt;= _ads.size())</a>
+<a name="ln1198">      return(false);</a>
+<a name="ln1199"> </a>
+<a name="ln1200">    _ads[index].third = radians;</a>
+<a name="ln1201"> </a>
+<a name="ln1202">    return(true);</a>
+<a name="ln1203">  }</a>
+<a name="ln1204"> </a>
+<a name="ln1205">  /*!</a>
+<a name="ln1206">  **\brief Obtains the angle of a torsion in OBTorsion</a>
+<a name="ln1207">  **\param radians the value of the angle is set here</a>
+<a name="ln1208">  **\param index the index into the torsion of the OBTorsion</a>
+<a name="ln1209">  **\return boolean success</a>
+<a name="ln1210">  */</a>
+<a name="ln1211">  bool OBTorsion::GetAngle(double &amp;radians, unsigned int index)</a>
+<a name="ln1212">  {</a>
+<a name="ln1213">    if(index &gt;= _ads.size())</a>
+<a name="ln1214">      return false;</a>
+<a name="ln1215">    radians = _ads[index].third;</a>
+<a name="ln1216">    return true;</a>
+<a name="ln1217">  }</a>
+<a name="ln1218"> </a>
+<a name="ln1219">  unsigned int OBTorsion::GetBondIdx()</a>
+<a name="ln1220">  {</a>
+<a name="ln1221">    return(_bc.first-&gt;GetBond(_bc.second)-&gt;GetIdx());</a>
+<a name="ln1222">  }</a>
+<a name="ln1223"> </a>
+<a name="ln1224">  /*!</a>
+<a name="ln1225">  **\brief determines if torsion has only protons on either the a or d end</a>
+<a name="ln1226">  **\return boolean</a>
+<a name="ln1227">  */</a>
+<a name="ln1228">  bool OBTorsion::IsProtonRotor()</a>
+<a name="ln1229">  {</a>
+<a name="ln1230">    bool Aprotor = true;</a>
+<a name="ln1231">    bool Dprotor = true;</a>
+<a name="ln1232">    vector&lt;triple&lt;OBAtom*,OBAtom*,double&gt; &gt;::iterator ad;</a>
+<a name="ln1233">    for(ad = _ads.begin();ad != _ads.end() &amp;&amp; (Aprotor || Dprotor);++ad)</a>
+<a name="ln1234">      {</a>
+<a name="ln1235">        if (ad-&gt;first-&gt;GetAtomicNum() != OBElements::Hydrogen)</a>
+<a name="ln1236">          Aprotor = false;</a>
+<a name="ln1237">        if (ad-&gt;second-&gt;GetAtomicNum() != OBElements::Hydrogen)</a>
+<a name="ln1238">          Dprotor = false;</a>
+<a name="ln1239">      }</a>
+<a name="ln1240">    return (Aprotor || Dprotor);</a>
+<a name="ln1241">  }</a>
+<a name="ln1242"> </a>
+<a name="ln1243">  /*!</a>
+<a name="ln1244">  **\brief adds a new torsion to the OBTorsion object</a>
+<a name="ln1245">  */</a>
+<a name="ln1246">  bool OBTorsion::AddTorsion(OBAtom *a,OBAtom *b, OBAtom *c,OBAtom *d)</a>
+<a name="ln1247">  {</a>
+<a name="ln1248">    if(!Empty() &amp;&amp; (b != _bc.first || c != _bc.second))</a>
+<a name="ln1249">      return(false);</a>
+<a name="ln1250"> </a>
+<a name="ln1251">    if(Empty())</a>
+<a name="ln1252">      {</a>
+<a name="ln1253">        _bc.first  = b;</a>
+<a name="ln1254">        _bc.second = c;</a>
+<a name="ln1255">      }</a>
+<a name="ln1256"> </a>
+<a name="ln1257">    triple&lt;OBAtom*,OBAtom*,double&gt; ad(a,d,0.0);</a>
+<a name="ln1258">    _ads.push_back(ad);</a>
+<a name="ln1259"> </a>
+<a name="ln1260">    return(true);</a>
+<a name="ln1261">  }</a>
+<a name="ln1262"> </a>
+<a name="ln1263">  /*!</a>
+<a name="ln1264">  **\brief adds a new torsion to the OBTorsion object</a>
+<a name="ln1265">  */</a>
+<a name="ln1266">  bool OBTorsion::AddTorsion(quad&lt;OBAtom*,OBAtom*,OBAtom*,OBAtom*&gt; &amp;atoms)</a>
+<a name="ln1267">  {</a>
+<a name="ln1268">    if(!Empty() &amp;&amp; (atoms.second != _bc.first || atoms.third != _bc.second))</a>
+<a name="ln1269">      return(false);</a>
+<a name="ln1270"> </a>
+<a name="ln1271">    if(Empty())</a>
+<a name="ln1272">      {</a>
+<a name="ln1273">        _bc.first  = atoms.second;</a>
+<a name="ln1274">        _bc.second = atoms.third;</a>
+<a name="ln1275">      }</a>
+<a name="ln1276"> </a>
+<a name="ln1277">    triple&lt;OBAtom*,OBAtom*,double&gt; ad(atoms.first,atoms.fourth,0.0);</a>
+<a name="ln1278">    _ads.push_back(ad);</a>
+<a name="ln1279"> </a>
+<a name="ln1280">    return(true);</a>
+<a name="ln1281">  }</a>
+<a name="ln1282"> </a>
+<a name="ln1283">  //\!brief OBTorsionData ctor</a>
+<a name="ln1284">  OBTorsionData::OBTorsionData()</a>
+<a name="ln1285">    : OBGenericData(&quot;TorsionData&quot;, OBGenericDataType::TorsionData)</a>
+<a name="ln1286">  {  }</a>
+<a name="ln1287"> </a>
+<a name="ln1288">  //</a>
+<a name="ln1289">  //member functions for OBTorsionData class - stores OBTorsion set</a>
+<a name="ln1290">  //</a>
+<a name="ln1291">  OBTorsionData::OBTorsionData(const OBTorsionData &amp;src)</a>
+<a name="ln1292">    :	OBGenericData(src), _torsions(src._torsions)</a>
+<a name="ln1293">  {  }</a>
+<a name="ln1294"> </a>
+<a name="ln1295">  OBTorsionData&amp; OBTorsionData::operator =(const OBTorsionData &amp;src)</a>
+<a name="ln1296">  {</a>
+<a name="ln1297">    if (this == &amp;src)</a>
+<a name="ln1298">      return(*this);</a>
+<a name="ln1299"> </a>
+<a name="ln1300">    OBGenericData::operator =(src);</a>
+<a name="ln1301"> </a>
+<a name="ln1302">    _source = src._source;</a>
+<a name="ln1303">    _torsions = src._torsions;</a>
+<a name="ln1304"> </a>
+<a name="ln1305">    return(*this);</a>
+<a name="ln1306">  }</a>
+<a name="ln1307"> </a>
+<a name="ln1308">  void OBTorsionData::Clear()</a>
+<a name="ln1309">  {</a>
+<a name="ln1310">    _torsions.clear();</a>
+<a name="ln1311">  }</a>
+<a name="ln1312"> </a>
+<a name="ln1313">  void OBTorsionData::SetData(OBTorsion &amp;torsion)</a>
+<a name="ln1314">  {</a>
+<a name="ln1315">    _torsions.push_back(torsion);</a>
+<a name="ln1316">  }</a>
+<a name="ln1317"> </a>
+<a name="ln1318">  /*!</a>
+<a name="ln1319">  **\brief Fills a vector with the indices of the atoms in torsions (ordered abcd)</a>
+<a name="ln1320">  **\param torsions reference to the vector of abcd atom sets</a>
+<a name="ln1321">  **\return boolean success</a>
+<a name="ln1322">  */</a>
+<a name="ln1323">  bool OBTorsionData::FillTorsionArray(std::vector&lt;std::vector&lt;unsigned int&gt; &gt; &amp;torsions)</a>
+<a name="ln1324">  {</a>
+<a name="ln1325">    if(_torsions.empty())</a>
+<a name="ln1326">      return(false);</a>
+<a name="ln1327"> </a>
+<a name="ln1328">    vector&lt;quad&lt;OBAtom*,OBAtom*,OBAtom*,OBAtom*&gt; &gt; tmpquads,quads;</a>
+<a name="ln1329">    vector&lt;quad&lt;OBAtom*,OBAtom*,OBAtom*,OBAtom*&gt; &gt;::iterator thisQuad;</a>
+<a name="ln1330">    vector&lt;OBTorsion&gt;::iterator torsion;</a>
+<a name="ln1331"> </a>
+<a name="ln1332">    //generate set of all 4 atom abcd's from torsion structure</a>
+<a name="ln1333">    for (torsion = _torsions.begin();torsion != _torsions.end();++torsion)</a>
+<a name="ln1334">      {</a>
+<a name="ln1335">        tmpquads = torsion-&gt;GetTorsions();</a>
+<a name="ln1336">        for(thisQuad = tmpquads.begin();thisQuad != tmpquads.end();++thisQuad)</a>
+<a name="ln1337">          quads.push_back(*thisQuad);</a>
+<a name="ln1338">      }</a>
+<a name="ln1339"> </a>
+<a name="ln1340">    //fill array of torsion atoms</a>
+<a name="ln1341"> </a>
+<a name="ln1342">    torsions.clear();</a>
+<a name="ln1343">    torsions.resize(quads.size());</a>
+<a name="ln1344"> </a>
+<a name="ln1345">    unsigned int ct = 0;</a>
+<a name="ln1346"> </a>
+<a name="ln1347">    for (thisQuad = quads.begin();thisQuad != quads.end();++thisQuad,++ct)</a>
+<a name="ln1348">      {</a>
+<a name="ln1349">        torsions[ct].resize(4);</a>
+<a name="ln1350">        torsions[ct][0] = thisQuad-&gt;first-&gt;GetIdx()-1;</a>
+<a name="ln1351">        torsions[ct][1] = thisQuad-&gt;second-&gt;GetIdx()-1;</a>
+<a name="ln1352">        torsions[ct][2] = thisQuad-&gt;third-&gt;GetIdx()-1;</a>
+<a name="ln1353">        torsions[ct][3] = thisQuad-&gt;fourth-&gt;GetIdx()-1;</a>
+<a name="ln1354">      }</a>
+<a name="ln1355"> </a>
+<a name="ln1356">    return(true);</a>
+<a name="ln1357">  }</a>
+<a name="ln1358"> </a>
+<a name="ln1359"> </a>
+<a name="ln1360">//</a>
+<a name="ln1361">//member functions for OBDOSData class</a>
+<a name="ln1362">//</a>
+<a name="ln1363"> </a>
+<a name="ln1364">/*!</a>
+<a name="ln1365">**\brief Assign the data</a>
+<a name="ln1366">**\param fermi The Fermi energy in eV</a>
+<a name="ln1367">**\param vEnergies Energy levels in eV</a>
+<a name="ln1368">**\param vDensities Density of states in (number of states) / (unit cell)</a>
+<a name="ln1369">**\param vIntegration Integrated DOS</a>
+<a name="ln1370">*/</a>
+<a name="ln1371">void OBDOSData::SetData(double fermi,</a>
+<a name="ln1372">                        const std::vector&lt;double&gt; &amp; vEnergies,</a>
+<a name="ln1373">                        const std::vector&lt;double&gt; &amp; vDensities,</a>
+<a name="ln1374">                        const std::vector&lt;double&gt; &amp; vIntegration)</a>
+<a name="ln1375">{</a>
+<a name="ln1376">  this-&gt;_fermi = fermi;</a>
+<a name="ln1377">  this-&gt;_vEnergies = vEnergies;</a>
+<a name="ln1378">  this-&gt;_vIntegration = vIntegration;</a>
+<a name="ln1379">  this-&gt;_vDensities = vDensities;</a>
+<a name="ln1380">}</a>
+<a name="ln1381"> </a>
+<a name="ln1382">  // member functions for OBOrbitalData</a>
+<a name="ln1383"> </a>
+<a name="ln1384">  void OBOrbitalData::LoadClosedShellOrbitals(std::vector&lt;double&gt; energies, std::vector&lt;std::string&gt; symmetries, unsigned int alphaHOMO)</a>
+<a name="ln1385">  {</a>
+<a name="ln1386">    if (energies.size() &lt; symmetries.size())</a>
+<a name="ln1387">      return; // something is very weird -- it's OK to pass no symmetries (we'll assume &quot;A&quot;)</a>
+<a name="ln1388">    if (energies.size() == 0)</a>
+<a name="ln1389">      return;</a>
+<a name="ln1390">    if (alphaHOMO &gt; energies.size())</a>
+<a name="ln1391">      return;</a>
+<a name="ln1392"> </a>
+<a name="ln1393">    _alphaHOMO = alphaHOMO;</a>
+<a name="ln1394">    _alphaOrbitals.clear();</a>
+<a name="ln1395">    _betaHOMO = 0;</a>
+<a name="ln1396">    _betaOrbitals.clear();</a>
+<a name="ln1397">    _openShell = false;</a>
+<a name="ln1398"> </a>
+<a name="ln1399">    if (symmetries.size() &lt; energies.size()) // pad with &quot;A&quot; symmetry</a>
+<a name="ln1400">      for (unsigned int i = symmetries.size(); i &lt; energies.size(); ++i)</a>
+<a name="ln1401">        symmetries.push_back(&quot;A&quot;);</a>
+<a name="ln1402"> </a>
+<a name="ln1403">    OBOrbital currentOrbital;</a>
+<a name="ln1404">    for (unsigned int i = 0; i &lt; energies.size(); ++i)</a>
+<a name="ln1405">      {</a>
+<a name="ln1406">        if (i &lt; alphaHOMO)</a>
+<a name="ln1407">          currentOrbital.SetData(energies[i], 2.0, symmetries[i]);</a>
+<a name="ln1408">        else</a>
+<a name="ln1409">          currentOrbital.SetData(energies[i], 0.0, symmetries[i]);</a>
+<a name="ln1410"> </a>
+<a name="ln1411">        _alphaOrbitals.push_back(currentOrbital);</a>
+<a name="ln1412">      }</a>
+<a name="ln1413">  }</a>
+<a name="ln1414"> </a>
+<a name="ln1415">  void OBOrbitalData::LoadAlphaOrbitals(std::vector&lt;double&gt; energies, std::vector&lt;std::string&gt; symmetries, unsigned int alphaHOMO)</a>
+<a name="ln1416">  {</a>
+<a name="ln1417">    if (energies.size() &lt; symmetries.size())</a>
+<a name="ln1418">      return; // something is very weird -- it's OK to pass no symmetries (we'll assume &quot;A&quot;)</a>
+<a name="ln1419">    if (energies.size() == 0)</a>
+<a name="ln1420">      return;</a>
+<a name="ln1421">    if (alphaHOMO &gt; energies.size())</a>
+<a name="ln1422">      return;</a>
+<a name="ln1423"> </a>
+<a name="ln1424">    _alphaHOMO = alphaHOMO;</a>
+<a name="ln1425">    _alphaOrbitals.clear();</a>
+<a name="ln1426">    _openShell = true;</a>
+<a name="ln1427"> </a>
+<a name="ln1428">    if (symmetries.size() &lt; energies.size()) // pad with &quot;A&quot; symmetry</a>
+<a name="ln1429">      for (unsigned int i = symmetries.size(); i &lt; energies.size(); ++i)</a>
+<a name="ln1430">        symmetries.push_back(&quot;A&quot;);</a>
+<a name="ln1431"> </a>
+<a name="ln1432">    OBOrbital currentOrbital;</a>
+<a name="ln1433">    for (unsigned int i = 0; i &lt; energies.size(); ++i)</a>
+<a name="ln1434">      {</a>
+<a name="ln1435">        if (i &lt; alphaHOMO)</a>
+<a name="ln1436">          currentOrbital.SetData(energies[i], 2.0, symmetries[i]);</a>
+<a name="ln1437">        else</a>
+<a name="ln1438">          currentOrbital.SetData(energies[i], 0.0, symmetries[i]);</a>
+<a name="ln1439"> </a>
+<a name="ln1440">        _alphaOrbitals.push_back(currentOrbital);</a>
+<a name="ln1441">      }</a>
+<a name="ln1442">  }</a>
+<a name="ln1443"> </a>
+<a name="ln1444">  void OBOrbitalData::LoadBetaOrbitals(std::vector&lt;double&gt; energies, std::vector&lt;std::string&gt; symmetries, unsigned int betaHOMO)</a>
+<a name="ln1445">  {</a>
+<a name="ln1446">    if (energies.size() &lt; symmetries.size())</a>
+<a name="ln1447">      return; // something is very weird -- it's OK to pass no symmetries (we'll assume &quot;A&quot;)</a>
+<a name="ln1448">    if (energies.size() == 0)</a>
+<a name="ln1449">      return;</a>
+<a name="ln1450">    if (betaHOMO &gt; energies.size())</a>
+<a name="ln1451">      return;</a>
+<a name="ln1452"> </a>
+<a name="ln1453">    _betaHOMO = betaHOMO;</a>
+<a name="ln1454">    _betaOrbitals.clear();</a>
+<a name="ln1455">    _openShell = true;</a>
+<a name="ln1456"> </a>
+<a name="ln1457">    if (symmetries.size() &lt; energies.size()) // pad with &quot;A&quot; symmetry</a>
+<a name="ln1458">      for (unsigned int i = symmetries.size(); i &lt; energies.size(); ++i)</a>
+<a name="ln1459">        symmetries.push_back(&quot;A&quot;);</a>
+<a name="ln1460"> </a>
+<a name="ln1461">    OBOrbital currentOrbital;</a>
+<a name="ln1462">    for (unsigned int i = 0; i &lt; energies.size(); ++i)</a>
+<a name="ln1463">      {</a>
+<a name="ln1464">        if (i &lt; betaHOMO)</a>
+<a name="ln1465">          currentOrbital.SetData(energies[i], 2.0, symmetries[i]);</a>
+<a name="ln1466">        else</a>
+<a name="ln1467">          currentOrbital.SetData(energies[i], 0.0, symmetries[i]);</a>
+<a name="ln1468"> </a>
+<a name="ln1469">        _betaOrbitals.push_back(currentOrbital);</a>
+<a name="ln1470">      }</a>
+<a name="ln1471">  }</a>
+<a name="ln1472"> </a>
+<a name="ln1473">//</a>
+<a name="ln1474">//member functions for OBElectronicTransitionData class</a>
+<a name="ln1475">//</a>
+<a name="ln1476"> </a>
+<a name="ln1477">/*!</a>
+<a name="ln1478">**\brief Assign the basic excitation data</a>
+<a name="ln1479">**\param vWavelengths Wavelengths in nm</a>
+<a name="ln1480">**\param vForces Oscillator strengths</a>
+<a name="ln1481">*/</a>
+<a name="ln1482">void OBElectronicTransitionData::SetData(const std::vector&lt;double&gt; &amp; vWavelengths,</a>
+<a name="ln1483">                                  const std::vector&lt;double&gt; &amp; vForces)</a>
+<a name="ln1484">{</a>
+<a name="ln1485">  this-&gt;_vWavelengths = vWavelengths;</a>
+<a name="ln1486">  this-&gt;_vForces = vForces;</a>
+<a name="ln1487">}</a>
+<a name="ln1488"> </a>
+<a name="ln1489">/*!</a>
+<a name="ln1490">**\brief Assign the electronic dipole strengths</a>
+<a name="ln1491">**\param vEDipole Electronic dipole moment strength</a>
+<a name="ln1492">*/</a>
+<a name="ln1493">void OBElectronicTransitionData::SetEDipole(const std::vector&lt;double&gt; &amp; vEDipole)</a>
+<a name="ln1494">{</a>
+<a name="ln1495">  this-&gt;_vEDipole = vEDipole;</a>
+<a name="ln1496">}</a>
+<a name="ln1497"> </a>
+<a name="ln1498">/*!</a>
+<a name="ln1499">**\brief Assign the rotatory strengths (velocity)</a>
+<a name="ln1500">**\param vRotatoryStrengthsVelocity Vector containing the rotatory strengths</a>
+<a name="ln1501">*/</a>
+<a name="ln1502">void OBElectronicTransitionData::SetRotatoryStrengthsVelocity(const std::vector&lt;double&gt; &amp; vRotatoryStrengthsVelocity)</a>
+<a name="ln1503">{</a>
+<a name="ln1504">  this-&gt;_vRotatoryStrengthsVelocity = vRotatoryStrengthsVelocity;</a>
+<a name="ln1505">}</a>
+<a name="ln1506"> </a>
+<a name="ln1507">/*!</a>
+<a name="ln1508">**\brief Assign the rotatory strengths (length)</a>
+<a name="ln1509">**\param vRotatoryStrengthsLength Vector containing the rotatory strengths</a>
+<a name="ln1510">*/</a>
+<a name="ln1511">void OBElectronicTransitionData::SetRotatoryStrengthsLength(const std::vector&lt;double&gt; &amp; vRotatoryStrengthsLength)</a>
+<a name="ln1512">{</a>
+<a name="ln1513">  this-&gt;_vRotatoryStrengthsLength = vRotatoryStrengthsLength;</a>
+<a name="ln1514">}</a>
+<a name="ln1515"> </a>
+<a name="ln1516">//</a>
+<a name="ln1517">//member functions for OBVibrationData class</a>
+<a name="ln1518">//</a>
+<a name="ln1519"> </a>
+<a name="ln1520">/*!</a>
+<a name="ln1521">**\brief Assign the data</a>
+<a name="ln1522">**\param vLx Normal modes in 1/sqrt(a.u.)</a>
+<a name="ln1523">**\param vFrequencies Harmonic frequencies in inverse centimeters</a>
+<a name="ln1524">**\param vIntensities Infrared absorption intensities in KM/Mole</a>
+<a name="ln1525">*/</a>
+<a name="ln1526">void OBVibrationData::SetData(const std::vector&lt; std::vector&lt; vector3 &gt; &gt; &amp; vLx,</a>
+<a name="ln1527">                              const std::vector&lt;double&gt; &amp; vFrequencies,</a>
+<a name="ln1528">                              const std::vector&lt;double&gt; &amp; vIntensities)</a>
+<a name="ln1529">{</a>
+<a name="ln1530">  this-&gt;_vLx = vLx;</a>
+<a name="ln1531">  this-&gt;_vFrequencies = vFrequencies;</a>
+<a name="ln1532">  this-&gt;_vIntensities = vIntensities;</a>
+<a name="ln1533">}</a>
+<a name="ln1534"> </a>
+<a name="ln1535">/*!</a>
+<a name="ln1536">**\brief Assign the data</a>
+<a name="ln1537">**\param vLx Normal modes in 1/sqrt(a.u.)</a>
+<a name="ln1538">**\param vFrequencies Harmonic frequencies in inverse centimeters</a>
+<a name="ln1539">**\param vIntensities Infrared absorption intensities in KM/Mole</a>
+<a name="ln1540">**\param vRamanActivities Raman activities</a>
+<a name="ln1541">*/</a>
+<a name="ln1542">void OBVibrationData::SetData(const std::vector&lt; std::vector&lt; vector3 &gt; &gt; &amp; vLx,</a>
+<a name="ln1543">                              const std::vector&lt;double&gt; &amp; vFrequencies,</a>
+<a name="ln1544">                              const std::vector&lt;double&gt; &amp; vIntensities,</a>
+<a name="ln1545">                              const std::vector&lt;double&gt; &amp; vRamanActivities)</a>
+<a name="ln1546">{</a>
+<a name="ln1547">  this-&gt;_vLx = vLx;</a>
+<a name="ln1548">  this-&gt;_vFrequencies = vFrequencies;</a>
+<a name="ln1549">  this-&gt;_vIntensities = vIntensities;</a>
+<a name="ln1550">  this-&gt;_vRamanActivities = vRamanActivities;</a>
+<a name="ln1551">}</a>
+<a name="ln1552"> </a>
+<a name="ln1553"> </a>
+<a name="ln1554">/*!</a>
+<a name="ln1555">**\brief Get the number of frequencies</a>
+<a name="ln1556">*/</a>
+<a name="ln1557">unsigned int OBVibrationData::GetNumberOfFrequencies() const</a>
+<a name="ln1558">{</a>
+<a name="ln1559">  return this-&gt;_vFrequencies.size();</a>
+<a name="ln1560">}</a>
+<a name="ln1561"> </a>
+<a name="ln1562">void OBFreeGrid::Clear()</a>
+<a name="ln1563">{</a>
+<a name="ln1564">  _points.clear();</a>
+<a name="ln1565">}</a>
+<a name="ln1566"> </a>
+<a name="ln1567">} //end namespace OpenBabel</a>
+<a name="ln1568"> </a>
+<a name="ln1569">//! \file generic.cpp</a>
+<a name="ln1570">//! \brief Handle OBGenericData classes. Custom data for atoms, bonds, etc.</a>
+
+</code></pre>
+<div class="balloon" rel="456"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: spacegroup >= 3.</p></div>
+<div class="balloon" rel="460"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: spacegroup >= 16.</p></div>
+<div class="balloon" rel="464"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: spacegroup >= 75.</p></div>
+<div class="balloon" rel="468"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: spacegroup >= 143.</p></div>
+<div class="balloon" rel="472"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: spacegroup >= 168.</p></div>
+<div class="balloon" rel="476"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: spacegroup >= 195.</p></div>
+<div class="balloon" rel="909"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v730/" target="_blank">V730</a> It is possible that not all members of a class are initialized inside the constructor. Consider inspecting: _radians.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

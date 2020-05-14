@@ -1,0 +1,159 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>readconformers.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">read-conformers.cpp - A OBOp for combining conformers during conversion.</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 2010 by Chris Morley</a>
+<a name="ln5"> </a>
+<a name="ln6">This file is part of the Open Babel project.</a>
+<a name="ln7">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln10">it under the terms of the GNU General Public License as published by</a>
+<a name="ln11">the Free Software Foundation version 2 of the License.</a>
+<a name="ln12"> </a>
+<a name="ln13">This program is distributed in the hope that it will be useful,</a>
+<a name="ln14">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln15">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln16">GNU General Public License for more details.</a>
+<a name="ln17">***********************************************************************/</a>
+<a name="ln18">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/op.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln22">#include &quot;deferred.h&quot;</a>
+<a name="ln23">#include &lt;algorithm&gt;</a>
+<a name="ln24"> </a>
+<a name="ln25">namespace OpenBabel</a>
+<a name="ln26">{</a>
+<a name="ln27"> </a>
+<a name="ln28">class OpReadConformers : public OBOp</a>
+<a name="ln29">{</a>
+<a name="ln30">public:</a>
+<a name="ln31">  OpReadConformers(const char* ID) : OBOp(ID, false){};</a>
+<a name="ln32">  const char* Description(){ return</a>
+<a name="ln33">    &quot;Adjacent conformers combined into a single molecule\n&quot;</a>
+<a name="ln34">    &quot;If a molecule has the same structure as the preceding molecule, as determined\n&quot;</a>
+<a name="ln35">    &quot;from its SMILES, it is not output but its coordinates are added to the\n&quot;</a>
+<a name="ln36">    &quot;preceding molecule as an additional conformer. There can be multiple groups\n&quot;</a>
+<a name="ln37">    &quot;of conformers, but the molecules in each group must be adjacent.\n&quot;</a>
+<a name="ln38">    ; }</a>
+<a name="ln39"> </a>
+<a name="ln40">  virtual bool WorksWith(OBBase* pOb) const { return dynamic_cast&lt;OBMol*&gt;(pOb) != nullptr; }</a>
+<a name="ln41">  virtual bool Do(OBBase* pOb, const char* OptionText=nullptr, OpMap* pOptions=nullptr, OBConversion* pConv=nullptr);</a>
+<a name="ln42">  virtual bool ProcessVec(std::vector&lt;OBBase*&gt;&amp; vec);</a>
+<a name="ln43">};</a>
+<a name="ln44"> </a>
+<a name="ln45">/////////////////////////////////////////////////////////////////</a>
+<a name="ln46">OpReadConformers theOpReadConformers(&quot;readconformer&quot;); //Global instance</a>
+<a name="ln47"> </a>
+<a name="ln48">/////////////////////////////////////////////////////////////////</a>
+<a name="ln49">bool OpReadConformers::Do(OBBase* pOb, const char* OptionText, OpMap* pOptions, OBConversion* pConv)</a>
+<a name="ln50">{</a>
+<a name="ln51">  //Make a deferred format and divert the output to it</a>
+<a name="ln52">  if(pConv &amp;&amp; pConv-&gt;IsFirstInput())</a>
+<a name="ln53">    new DeferredFormat(pConv, this); //it will delete itself</a>
+<a name="ln54"> </a>
+<a name="ln55">  return true;</a>
+<a name="ln56">}</a>
+<a name="ln57"> </a>
+<a name="ln58">bool OpReadConformers::ProcessVec(std::vector&lt;OBBase*&gt;&amp; vec)</a>
+<a name="ln59">{</a>
+<a name="ln60">  // DeferredFormat collects all the molecules, they are processed here, and Deferred Format outputs them</a>
+<a name="ln61">  OBConversion smconv;</a>
+<a name="ln62">  smconv.AddOption(&quot;n&quot;);</a>
+<a name="ln63">  if(!smconv.SetOutFormat(&quot;smi&quot;))</a>
+<a name="ln64">  {</a>
+<a name="ln65">    obErrorLog.ThrowError(__FUNCTION__, &quot;SmilesFormat is not loaded&quot; , obError, onceOnly);</a>
+<a name="ln66">    return false;</a>
+<a name="ln67">  }</a>
+<a name="ln68"> </a>
+<a name="ln69">  std::string smiles, stored_smiles;</a>
+<a name="ln70">  OBMol* stored_pmol=nullptr;</a>
+<a name="ln71">  std::vector&lt;OBBase*&gt;::iterator iter;</a>
+<a name="ln72">  for(iter= vec.begin();iter!=vec.end();++iter)</a>
+<a name="ln73">  {</a>
+<a name="ln74">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(*iter);</a>
+<a name="ln75">    if(!pmol)</a>
+<a name="ln76">      continue;</a>
+<a name="ln77">    smiles = smconv.WriteString(pmol);</a>
+<a name="ln78">    Trim(smiles);</a>
+<a name="ln79"> </a>
+<a name="ln80">    if(stored_smiles==smiles)</a>
+<a name="ln81">    {</a>
+<a name="ln82">      //add the coordinates of the current mol to the stored one as a conformer, and delete current mol</a>
+<a name="ln83">      double *confCoord = new double [pmol-&gt;NumAtoms() * 3];</a>
+<a name="ln84">      memcpy((char*)confCoord,(char*)pmol-&gt;GetCoordinates(),sizeof(double)*3*pmol-&gt;NumAtoms());</a>
+<a name="ln85">      stored_pmol-&gt;AddConformer(confCoord);</a>
+<a name="ln86">      delete pmol;</a>
+<a name="ln87">      *iter = nullptr;</a>
+<a name="ln88">    }</a>
+<a name="ln89">    else</a>
+<a name="ln90">    {</a>
+<a name="ln91">      stored_pmol = pmol;</a>
+<a name="ln92">      stored_smiles = smiles;</a>
+<a name="ln93">    }</a>
+<a name="ln94">  }</a>
+<a name="ln95"> </a>
+<a name="ln96">  //erase the NULLS</a>
+<a name="ln97">  vec.erase(std::remove(vec.begin(), vec.end(), nullptr), vec.end());</a>
+<a name="ln98">  return true;</a>
+<a name="ln99">}</a>
+<a name="ln100"> </a>
+<a name="ln101">} //namespace</a>
+<a name="ln102"> </a>
+<a name="ln103">/*</a>
+<a name="ln104">    To use with OBConversion::Read(), etc.</a>
+<a name="ln105">    OBMol mol;</a>
+<a name="ln106">    vector&lt;OBBase*&gt; vec;</a>
+<a name="ln107">    while(pConv-&gt;Read(&amp;mol))</a>
+<a name="ln108">      vec.push_back(&amp;mol);</a>
+<a name="ln109">    OBOp* pOp = OBOp::FindType(&quot;readconformers&quot;);</a>
+<a name="ln110">    if(!pOp)</a>
+<a name="ln111">      pOp-&gt;ProcessVec(vec);</a>
+<a name="ln112">    vec now contains one or more molecules with multiple conformers</a>
+<a name="ln113">*/</a>
+
+</code></pre>
+<div class="balloon" rel="85"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v522/" target="_blank">V522</a> Dereferencing of the null pointer 'stored_pmol' might take place.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

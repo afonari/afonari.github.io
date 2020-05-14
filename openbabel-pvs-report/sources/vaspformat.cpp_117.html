@@ -1,0 +1,826 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>vaspformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Copyright (C) 2004 by Chris Morley for template</a>
+<a name="ln3">Copyright (C) 2009 by David C. Lonie for VASP</a>
+<a name="ln4"> </a>
+<a name="ln5">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln6">it under the terms of the GNU General Public License as published by</a>
+<a name="ln7">the Free Software Foundation version 2 of the License.</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is distributed in the hope that it will be useful,</a>
+<a name="ln10">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln11">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln12">GNU General Public License for more details.</a>
+<a name="ln13">***********************************************************************/</a>
+<a name="ln14"> </a>
+<a name="ln15">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln16">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln17">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln18">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln23"> </a>
+<a name="ln24"> </a>
+<a name="ln25">#include &lt;limits&gt;</a>
+<a name="ln26">#include &lt;locale&gt; // For isalpha(int)</a>
+<a name="ln27">#include &lt;functional&gt;</a>
+<a name="ln28">#include &lt;iostream&gt;</a>
+<a name="ln29">#include &lt;algorithm&gt;</a>
+<a name="ln30">#include &lt;cstdlib&gt;</a>
+<a name="ln31"> </a>
+<a name="ln32">#define EV_TO_KCAL_PER_MOL 23.060538</a>
+<a name="ln33"> </a>
+<a name="ln34">using namespace std;</a>
+<a name="ln35">namespace OpenBabel {</a>
+<a name="ln36">  class VASPFormat : public OBMoleculeFormat</a>
+<a name="ln37">  {</a>
+<a name="ln38">  protected:</a>
+<a name="ln39">    class compare_sort_items</a>
+<a name="ln40">    {</a>
+<a name="ln41">      std::vector&lt;int&gt; csm;</a>
+<a name="ln42">      bool num_sort;</a>
+<a name="ln43">    public:</a>
+<a name="ln44">      compare_sort_items(const std::vector&lt;int&gt; &amp;_custom_sort_nums, bool _num_sort):</a>
+<a name="ln45">                         csm(_custom_sort_nums), num_sort(_num_sort) {};</a>
+<a name="ln46">      bool operator()(const OBAtom *a, const OBAtom *b)</a>
+<a name="ln47">      {</a>
+<a name="ln48">        int a_num = a-&gt;GetAtomicNum();</a>
+<a name="ln49">        int b_num = b-&gt;GetAtomicNum();</a>
+<a name="ln50">        int dist = std::distance(std::find(csm.begin(), csm.end(), b_num),</a>
+<a name="ln51">                                 std::find(csm.begin(), csm.end(), a_num));</a>
+<a name="ln52">        </a>
+<a name="ln53">        if ( dist != 0)</a>
+<a name="ln54">          return dist &lt; 0;</a>
+<a name="ln55"> </a>
+<a name="ln56">        if( (num_sort) &amp;&amp; ( a_num - b_num != 0 ) )</a>
+<a name="ln57">          return a_num &lt; b_num;</a>
+<a name="ln58">        </a>
+<a name="ln59">        return false;</a>
+<a name="ln60">      }</a>
+<a name="ln61">    };</a>
+<a name="ln62">  public:</a>
+<a name="ln63"> </a>
+<a name="ln64">    VASPFormat()</a>
+<a name="ln65">    {</a>
+<a name="ln66">      // This will actually read the CONTCAR file:</a>
+<a name="ln67">      OBConversion::RegisterFormat(&quot;CONTCAR&quot;,this);</a>
+<a name="ln68">      OBConversion::RegisterFormat(&quot;POSCAR&quot;,this);</a>
+<a name="ln69">      OBConversion::RegisterFormat(&quot;VASP&quot;,this);</a>
+<a name="ln70">      OBConversion::RegisterOptionParam(&quot;s&quot;, this, 0, OBConversion::INOPTIONS);</a>
+<a name="ln71">      OBConversion::RegisterOptionParam(&quot;b&quot;, this, 0, OBConversion::INOPTIONS);</a>
+<a name="ln72">      OBConversion::RegisterOptionParam(&quot;w&quot;, this, 0, OBConversion::OUTOPTIONS);</a>
+<a name="ln73">      OBConversion::RegisterOptionParam(&quot;z&quot;, this, 0, OBConversion::OUTOPTIONS);</a>
+<a name="ln74">      OBConversion::RegisterOptionParam(&quot;4&quot;, this, 0, OBConversion::OUTOPTIONS);</a>
+<a name="ln75">    }</a>
+<a name="ln76"> </a>
+<a name="ln77">    virtual const char* Description()</a>
+<a name="ln78">    {</a>
+<a name="ln79">      return</a>
+<a name="ln80">        &quot;VASP format\n&quot;</a>
+<a name="ln81">        &quot;Reads in data from POSCAR and CONTCAR to obtain information from &quot;</a>
+<a name="ln82">        &quot;VASP calculations.\n\n&quot;</a>
+<a name="ln83"> </a>
+<a name="ln84">        &quot;Due to limitations in Open Babel's file handling, reading in VASP\n&quot;</a>
+<a name="ln85">        &quot;files can be a bit tricky; the client that is using Open Babel must\n&quot;</a>
+<a name="ln86">        &quot;use OBConversion::ReadFile() to begin the conversion. This change is\n&quot;</a>
+<a name="ln87">        &quot;usually trivial. Also, the complete path to the CONTCAR/POSCAR file\n&quot;</a>
+<a name="ln88">        &quot;must be provided, otherwise the other files needed will not be\n&quot;</a>
+<a name="ln89">        &quot;found.\n\n&quot;</a>
+<a name="ln90"> </a>
+<a name="ln91">        &quot;Both VASP 4.x and 5.x POSCAR formats are supported.\n\n&quot;</a>
+<a name="ln92"> </a>
+<a name="ln93">	&quot;By default, atoms are written out in the order they are present in the input\n&quot;</a>
+<a name="ln94">	&quot;molecule. To sort by atomic number specify ``-xw``. To specify the sort\n&quot;</a>
+<a name="ln95">	&quot;order, use the ``-xz`` option.\n\n&quot;</a>
+<a name="ln96"> </a>
+<a name="ln97">        &quot;Read Options e.g. -as\n&quot;</a>
+<a name="ln98">        &quot;  s Output single bonds only\n&quot;</a>
+<a name="ln99">        &quot;  b Disable bonding entirely\n\n&quot;</a>
+<a name="ln100"> </a>
+<a name="ln101">        &quot;Write Options e.g. -x4\n&quot;</a>
+<a name="ln102">        &quot; w  Sort atoms by atomic number\n&quot;</a>
+<a name="ln103">        &quot; z &lt;list of atoms&gt;  Specify the order to write out atoms\n&quot;</a>
+<a name="ln104">	&quot;       'atom1 atom2 ...': atom1 first, atom2 second, etc. The remaining\n&quot;</a>
+<a name="ln105">	&quot;       atoms are written in the default order or (if ``-xw`` is specified)\n&quot;</a>
+<a name="ln106">	&quot;       in order of atomic number.\n&quot;</a>
+<a name="ln107">        &quot;  4 Write a POSCAR using the VASP 4.x specification.\n&quot;</a>
+<a name="ln108">        &quot;    The default is to use the VASP 5.x specification.\n\n&quot;</a>
+<a name="ln109">        ;</a>
+<a name="ln110"> </a>
+<a name="ln111">    };</a>
+<a name="ln112"> </a>
+<a name="ln113">    virtual const char* SpecificationURL(){return &quot;http://cms.mpi.univie.ac.at/vasp/vasp/vasp.html&quot;;};</a>
+<a name="ln114"> </a>
+<a name="ln115">    /* Flags() can return be any of the following combined by |</a>
+<a name="ln116">       or be omitted if none apply</a>
+<a name="ln117">       NOTREADABLE  READONEONLY  NOTWRITABLE  WRITEONEONLY  DEFAULTFORMAT</a>
+<a name="ln118">       READBINARY  WRITEBINARY  READXML  ZEROATOMSOK */</a>
+<a name="ln119">    virtual unsigned int Flags()</a>
+<a name="ln120">    {</a>
+<a name="ln121">      return READONEONLY;</a>
+<a name="ln122">    };</a>
+<a name="ln123"> </a>
+<a name="ln124">    virtual int SkipObjects(int n, OBConversion* pConv)</a>
+<a name="ln125">    {</a>
+<a name="ln126">      return 0;</a>
+<a name="ln127">    };</a>
+<a name="ln128"> </a>
+<a name="ln129">    ////////////////////////////////////////////////////</a>
+<a name="ln130">    /// Declarations for the &quot;API&quot; interface functions. Definitions are below</a>
+<a name="ln131">    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln132">    virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln133"> </a>
+<a name="ln134">  private:</a>
+<a name="ln135">    /* Add declarations for any local function or member variables used.</a>
+<a name="ln136">       Generally only a single instance of a format class is used. Keep this in</a>
+<a name="ln137">       mind if you employ member variables. */</a>
+<a name="ln138">  };</a>
+<a name="ln139">  ////////////////////////////////////////////////////</a>
+<a name="ln140"> </a>
+<a name="ln141">  //Make an instance of the format class</a>
+<a name="ln142">  VASPFormat theVASPFormat;</a>
+<a name="ln143"> </a>
+<a name="ln144">  /////////////////////////////////////////////////////////////////</a>
+<a name="ln145"> </a>
+<a name="ln146">  bool VASPFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln147">  {</a>
+<a name="ln148">    OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln149">    if (pmol == nullptr)</a>
+<a name="ln150">      return false;</a>
+<a name="ln151"> </a>
+<a name="ln152">    // Move stream to EOF, some apps check ifs position to check for multimolecule files.</a>
+<a name="ln153">    // VASP does not support this, and this parser makes its own streams.</a>
+<a name="ln154">    istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln155">    ifs.seekg (0, ios::end);</a>
+<a name="ln156"> </a>
+<a name="ln157">    char buffer[BUFF_SIZE], tag[BUFF_SIZE];</a>
+<a name="ln158">    double x,y,z, scale;</a>
+<a name="ln159">    unsigned int totalAtoms=0, atomIndex=0, atomCount=0;</a>
+<a name="ln160">    OBAtom *atom;</a>
+<a name="ln161">    bool cartesian;</a>
+<a name="ln162">    string str, path;</a>
+<a name="ln163">    vector&lt;string&gt; vs;</a>
+<a name="ln164">    vector&lt;unsigned int&gt; numAtoms, atomTypes;</a>
+<a name="ln165">    bool selective;    // is selective dynamics used?</a>
+<a name="ln166">    string key, value; // store the info about constraints</a>
+<a name="ln167">    OBPairData *cp;    // in this PairData</a>
+<a name="ln168">    bool hasEnthalpy=false;</a>
+<a name="ln169">    bool hasVibrations=false;</a>
+<a name="ln170">    bool needSymbolsInGeometryFile = false;</a>
+<a name="ln171">    double enthalpy_eV, pv_eV;</a>
+<a name="ln172">    vector&lt;vector &lt;vector3&gt; &gt; Lx;</a>
+<a name="ln173">    vector&lt;double&gt; Frequencies;</a>
+<a name="ln174">    vector&lt;matrix3x3&gt; dipGrad;</a>
+<a name="ln175"> </a>
+<a name="ln176">    // Get path of CONTCAR/POSCAR:</a>
+<a name="ln177">    //    ifs_path.getline(buffer,BUFF_SIZE);</a>
+<a name="ln178">    //    path = buffer;</a>
+<a name="ln179">    path = pConv-&gt;GetInFilename();</a>
+<a name="ln180">    if (path.empty()) return false; // Should be using ReadFile, not Read!</a>
+<a name="ln181">    size_t found;</a>
+<a name="ln182">    found = path.rfind(&quot;/&quot;);</a>
+<a name="ln183">    path = path.substr(0, found);</a>
+<a name="ln184">    if (found == string::npos) path = &quot;./&quot;; // No &quot;/&quot; in path?</a>
+<a name="ln185"> </a>
+<a name="ln186">    // Open files</a>
+<a name="ln187">    string potcar_filename = path + &quot;/POTCAR&quot;;</a>
+<a name="ln188">    string outcar_filename = path + &quot;/OUTCAR&quot;;</a>
+<a name="ln189">    string doscar_filename = path + &quot;/DOSCAR&quot;;</a>
+<a name="ln190">    string contcar_filename = pConv-&gt;GetInFilename(); // POSCAR _OR_ CONTCAR</a>
+<a name="ln191">    ifstream ifs_pot (potcar_filename.c_str());</a>
+<a name="ln192">    ifstream ifs_out (outcar_filename.c_str());</a>
+<a name="ln193">    ifstream ifs_dos (doscar_filename.c_str());</a>
+<a name="ln194">    ifstream ifs_cont (contcar_filename.c_str());</a>
+<a name="ln195">    if (!ifs_pot) {</a>
+<a name="ln196">      needSymbolsInGeometryFile = true;</a>
+<a name="ln197">    }</a>
+<a name="ln198">    if (!ifs_cont) {</a>
+<a name="ln199">      return false; // No geometry file?</a>
+<a name="ln200">    }</a>
+<a name="ln201"> </a>
+<a name="ln202">    pmol-&gt;BeginModify();</a>
+<a name="ln203"> </a>
+<a name="ln204">    // Start working on CONTCAR:</a>
+<a name="ln205">    ifs_cont.getline(buffer,BUFF_SIZE); // Comment line</a>
+<a name="ln206">    pmol-&gt;SetTitle(buffer);</a>
+<a name="ln207">    ifs_cont.getline(buffer,BUFF_SIZE); // Scale</a>
+<a name="ln208">    scale = atof(buffer);</a>
+<a name="ln209"> </a>
+<a name="ln210">    ifs_cont.getline(buffer,BUFF_SIZE); // X_Vec vector</a>
+<a name="ln211">    tokenize(vs, buffer);</a>
+<a name="ln212">    x = atof(vs.at(0).c_str()) * scale;</a>
+<a name="ln213">    y = atof(vs.at(1).c_str()) * scale;</a>
+<a name="ln214">    z = atof(vs.at(2).c_str()) * scale;</a>
+<a name="ln215">    vector3 x_vec (x,y,z);</a>
+<a name="ln216"> </a>
+<a name="ln217">    ifs_cont.getline(buffer,BUFF_SIZE); // Y_Vec vector</a>
+<a name="ln218">    tokenize(vs, buffer);</a>
+<a name="ln219">    x = atof(vs.at(0).c_str()) * scale;</a>
+<a name="ln220">    y = atof(vs.at(1).c_str()) * scale;</a>
+<a name="ln221">    z = atof(vs.at(2).c_str()) * scale;</a>
+<a name="ln222">    vector3 y_vec (x,y,z);</a>
+<a name="ln223"> </a>
+<a name="ln224">    ifs_cont.getline(buffer,BUFF_SIZE); // Z_Vec vector</a>
+<a name="ln225">    tokenize(vs, buffer);</a>
+<a name="ln226">    x = atof(vs.at(0).c_str()) * scale;</a>
+<a name="ln227">    y = atof(vs.at(1).c_str()) * scale;</a>
+<a name="ln228">    z = atof(vs.at(2).c_str()) * scale;</a>
+<a name="ln229">    vector3 z_vec (x,y,z);</a>
+<a name="ln230"> </a>
+<a name="ln231">    // Build unit cell</a>
+<a name="ln232">    OBUnitCell *cell = new OBUnitCell;</a>
+<a name="ln233">    cell-&gt;SetData(x_vec, y_vec, z_vec);</a>
+<a name="ln234">    cell-&gt;SetSpaceGroup(1);</a>
+<a name="ln235">    pmol-&gt;SetData(cell);</a>
+<a name="ln236"> </a>
+<a name="ln237">    // Next comes either a list of numbers that represent the stoichiometry of</a>
+<a name="ln238">    // the cell. The numbers are the atom counts for each type, in the order</a>
+<a name="ln239">    // listed in the POTCAR file. Since VASP 5.2, a line with a list of atomic</a>
+<a name="ln240">    // element symbols may precede the atom counts. This will be used if the</a>
+<a name="ln241">    // POTCAR file is not present. If both are present, the data in the POSCAR</a>
+<a name="ln242">    // or CONTCAR file will be used.</a>
+<a name="ln243">    ifs_cont.getline(buffer,BUFF_SIZE);</a>
+<a name="ln244">    tokenize(vs, buffer);</a>
+<a name="ln245">    bool symbolsInGeometryFile = false;</a>
+<a name="ln246">    if (vs.size() != 0) {</a>
+<a name="ln247">      if (vs.at(0).size() != 0) {</a>
+<a name="ln248">        if (isalpha(static_cast&lt;int&gt;(vs.at(0).at(0))) != 0) {</a>
+<a name="ln249">          symbolsInGeometryFile = true;</a>
+<a name="ln250">        }</a>
+<a name="ln251">      }</a>
+<a name="ln252">    }</a>
+<a name="ln253"> </a>
+<a name="ln254">    // If no element data is present anywhere</a>
+<a name="ln255">    if (needSymbolsInGeometryFile &amp;&amp; !symbolsInGeometryFile &amp;&amp;</a>
+<a name="ln256">        // and there are atoms specified</a>
+<a name="ln257">        vs.size() != 0) {</a>
+<a name="ln258">      // Abort read</a>
+<a name="ln259">      pmol-&gt;EndModify();</a>
+<a name="ln260">      return false;</a>
+<a name="ln261">    }</a>
+<a name="ln262"> </a>
+<a name="ln263">    if (symbolsInGeometryFile) {</a>
+<a name="ln264">      atomTypes.clear();</a>
+<a name="ln265">      for (size_t i = 0; i &lt; vs.size(); ++i) {</a>
+<a name="ln266">        atomTypes.push_back(OpenBabel::OBElements::GetAtomicNum(vs.at(i).c_str()));</a>
+<a name="ln267">      }</a>
+<a name="ln268">      // Fetch next line to get stoichiometry</a>
+<a name="ln269">      ifs_cont.getline(buffer,BUFF_SIZE);</a>
+<a name="ln270">      tokenize(vs, buffer);</a>
+<a name="ln271">    }</a>
+<a name="ln272">    else if (ifs_pot) {</a>
+<a name="ln273">      // Get atom types from POTCAR</a>
+<a name="ln274">      while (ifs_pot.getline(buffer,BUFF_SIZE)) {</a>
+<a name="ln275">        if (strstr(buffer,&quot;VRHFIN&quot;)) {</a>
+<a name="ln276">          str = buffer;</a>
+<a name="ln277">          size_t start = str.find(&quot;=&quot;) + 1;</a>
+<a name="ln278">          size_t end = str.find(&quot;:&quot;);</a>
+<a name="ln279">          str = str.substr(start, end - start);</a>
+<a name="ln280">          // Clean up whitespace:</a>
+<a name="ln281">          for (unsigned int i = 0; i &lt; str.size(); i++)</a>
+<a name="ln282">            if (str.at(i) == ' ') {</a>
+<a name="ln283">              str.erase(i,1);</a>
+<a name="ln284">              --i;</a>
+<a name="ln285">            }</a>
+<a name="ln286">          atomTypes.push_back(OpenBabel::OBElements::GetAtomicNum(str.c_str()));</a>
+<a name="ln287">        }</a>
+<a name="ln288">      }</a>
+<a name="ln289">      ifs_pot.close();</a>
+<a name="ln290">    }</a>
+<a name="ln291"> </a>
+<a name="ln292">    // Extract and sum the atom counts. The sum is used to parse the atomic</a>
+<a name="ln293">    // coordinates</a>
+<a name="ln294">    totalAtoms = 0;</a>
+<a name="ln295">    for (unsigned int i = 0; i &lt; vs.size(); i++) {</a>
+<a name="ln296">      int currentCount = atoi(vs.at(i).c_str());</a>
+<a name="ln297">      numAtoms.push_back(currentCount);</a>
+<a name="ln298">      totalAtoms += currentCount;</a>
+<a name="ln299">    }</a>
+<a name="ln300"> </a>
+<a name="ln301">    // Do the number of atom types match the number of atom counts?</a>
+<a name="ln302">    if (numAtoms.size() != atomTypes.size()) {</a>
+<a name="ln303">      // If not, abort read</a>
+<a name="ln304">      pmol-&gt;EndModify();</a>
+<a name="ln305">      return false;</a>
+<a name="ln306">    }</a>
+<a name="ln307"> </a>
+<a name="ln308">    // Cartesian or fractional?</a>
+<a name="ln309">    ifs_cont.getline(buffer,BUFF_SIZE);</a>
+<a name="ln310">    selective = false;</a>
+<a name="ln311">    // Set the variable selective accordingly</a>
+<a name="ln312">    if (buffer[0] == 'S' || buffer[0] == 's') {</a>
+<a name="ln313">      selective = true;</a>
+<a name="ln314">      ifs_cont.getline(buffer,BUFF_SIZE);</a>
+<a name="ln315">    }</a>
+<a name="ln316">    // [C|c|K|k] indicates cartesian coordinates, anything else (including</a>
+<a name="ln317">    // an empty string, buffer[0] == 0) indicates fractional coordinates</a>
+<a name="ln318">    if ( buffer[0] == 'C' || buffer[0] == 'c' ||</a>
+<a name="ln319">         buffer[0] == 'K' || buffer[0] == 'k' ) {</a>
+<a name="ln320">      cartesian = true;</a>
+<a name="ln321">    }</a>
+<a name="ln322">    else {</a>
+<a name="ln323">      cartesian = false;</a>
+<a name="ln324">    }</a>
+<a name="ln325"> </a>
+<a name="ln326">    atomCount = 0;</a>
+<a name="ln327">    for (unsigned int i = 0; i &lt; totalAtoms; i++) {</a>
+<a name="ln328">      // Things get a little nasty here. VASP just prints all the coordinates with no</a>
+<a name="ln329">      // identifying information one after another here. So in the above sections we've</a>
+<a name="ln330">      // parsed out which atom types and how many of each are present in atomTypes and</a>
+<a name="ln331">      // numAtoms, respectively. The counters atomIndex and atomCount have the following</a>
+<a name="ln332">      // roles: atomIndex keeps track of where we are in atomTypes so that we know the</a>
+<a name="ln333">      // atomic species we're inserting. atomCount tracks how many of the current</a>
+<a name="ln334">      // atomTypes.at(atomIndex) species have been inserted, so that when we reach</a>
+<a name="ln335">      // (atomCount &gt;= numAtoms.at(atomIndex) ) we should stop. Phew.</a>
+<a name="ln336">      ifs_cont.getline(buffer,BUFF_SIZE); // atom location</a>
+<a name="ln337"> </a>
+<a name="ln338">      // Let's first figure out the atomic number we are dealing with:</a>
+<a name="ln339">      while (atomCount &gt;= numAtoms.at(atomIndex)) {</a>
+<a name="ln340">        atomIndex++;</a>
+<a name="ln341">        atomCount = 0;</a>
+<a name="ln342">      }</a>
+<a name="ln343"> </a>
+<a name="ln344">      // If we made it past that check, we have atomic number = atomTypes.at(atomIndex)</a>
+<a name="ln345">      // Parse the buffer now.</a>
+<a name="ln346">      tokenize(vs, buffer);</a>
+<a name="ln347">      atom = pmol-&gt;NewAtom();</a>
+<a name="ln348">      atom-&gt;SetAtomicNum(atomTypes.at(atomIndex));</a>
+<a name="ln349">      x = atof((char*)vs[0].c_str());</a>
+<a name="ln350">      y = atof((char*)vs[1].c_str());</a>
+<a name="ln351">      z = atof((char*)vs[2].c_str());</a>
+<a name="ln352">      vector3 coords (x,y,z);</a>
+<a name="ln353">      if (!cartesian)</a>
+<a name="ln354">        coords = cell-&gt;FractionalToCartesian( coords );</a>
+<a name="ln355">      // If we have Cartesian coordinates, we need to apply the scaling factor</a>
+<a name="ln356">      else coords *= scale;</a>
+<a name="ln357">      atom-&gt;SetVector(coords);</a>
+<a name="ln358">      //if the selective dynamics info is present then read it into OBPairData</a>
+<a name="ln359">      //this needs to be kept somehow to be able to write out the same as input</a>
+<a name="ln360">      //it's string so it wastes memory :(</a>
+<a name="ln361">      if (selective &amp;&amp; vs.size() &gt;= 6) {</a>
+<a name="ln362">        key = &quot;move&quot;;</a>
+<a name="ln363">        value  = &quot; &quot;; value += vs[3].c_str();</a>
+<a name="ln364">        value += &quot; &quot;; value += vs[4].c_str();</a>
+<a name="ln365">        value += &quot; &quot;; value += vs[5].c_str();</a>
+<a name="ln366">        cp = new OBPairData;</a>
+<a name="ln367">        cp-&gt;SetAttribute(key);</a>
+<a name="ln368">        cp-&gt;SetValue(value);</a>
+<a name="ln369">        cp-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln370">        atom-&gt;SetData(cp);</a>
+<a name="ln371">      }</a>
+<a name="ln372"> </a>
+<a name="ln373">      atomCount++;</a>
+<a name="ln374">    };</a>
+<a name="ln375"> </a>
+<a name="ln376">    // There is some trailing garbage, but AFAIK it's not useful for anything.</a>
+<a name="ln377">    ifs_cont.close();</a>
+<a name="ln378"> </a>
+<a name="ln379">    // Read density of states info from DOSCAR, if available</a>
+<a name="ln380">    if (ifs_dos) {</a>
+<a name="ln381">      // Create DOS object</a>
+<a name="ln382">      OBDOSData *dos = new OBDOSData();</a>
+<a name="ln383"> </a>
+<a name="ln384">      // skip header</a>
+<a name="ln385">      ifs_dos.getline(buffer,BUFF_SIZE); // Junk</a>
+<a name="ln386">      ifs_dos.getline(buffer,BUFF_SIZE); // Junk</a>
+<a name="ln387">      ifs_dos.getline(buffer,BUFF_SIZE); // Junk</a>
+<a name="ln388">      ifs_dos.getline(buffer,BUFF_SIZE); // Junk</a>
+<a name="ln389">      ifs_dos.getline(buffer,BUFF_SIZE); // Junk</a>
+<a name="ln390"> </a>
+<a name="ln391">      // Get fermi level</a>
+<a name="ln392">      double fermi;</a>
+<a name="ln393">      if (ifs_dos.getline(buffer,BUFF_SIZE)) { // startE endE res fermi ???</a>
+<a name="ln394">        tokenize(vs, buffer);</a>
+<a name="ln395">        fermi = atof(vs[3].c_str());</a>
+<a name="ln396">      }</a>
+<a name="ln397"> </a>
+<a name="ln398">      // Start pulling out energies and densities</a>
+<a name="ln399">      std::vector&lt;double&gt; energies;</a>
+<a name="ln400">      std::vector&lt;double&gt; densities;</a>
+<a name="ln401">      std::vector&lt;double&gt; integration;</a>
+<a name="ln402">      while (ifs_dos.getline(buffer,BUFF_SIZE)) {</a>
+<a name="ln403">        tokenize(vs, buffer);</a>
+<a name="ln404">        energies.push_back(atof(vs[0].c_str()));</a>
+<a name="ln405">        densities.push_back(atof(vs[1].c_str()));</a>
+<a name="ln406">        integration.push_back(atof(vs[2].c_str()));</a>
+<a name="ln407">      }</a>
+<a name="ln408"> </a>
+<a name="ln409">      if (energies.size() != 0) {</a>
+<a name="ln410">        dos-&gt;SetData(fermi, energies, densities, integration);</a>
+<a name="ln411">        pmol-&gt;SetData(dos);</a>
+<a name="ln412">      }</a>
+<a name="ln413">    }</a>
+<a name="ln414"> </a>
+<a name="ln415">    ifs_dos.close();</a>
+<a name="ln416"> </a>
+<a name="ln417">    // Vibration intensities</a>
+<a name="ln418">    vector3 prevDm;</a>
+<a name="ln419">    vector&lt;vector3&gt; prevXyz;</a>
+<a name="ln420">    vector3 currDm;</a>
+<a name="ln421">    vector&lt;vector3&gt; currXyz;</a>
+<a name="ln422"> </a>
+<a name="ln423">    // Read in optional information from outcar</a>
+<a name="ln424">    if (ifs_out) {</a>
+<a name="ln425">      while (ifs_out.getline(buffer,BUFF_SIZE)) {</a>
+<a name="ln426">        // Enthalphy</a>
+<a name="ln427">        if (strstr(buffer, &quot;enthalpy is&quot;)) {</a>
+<a name="ln428">          hasEnthalpy = true;</a>
+<a name="ln429">          tokenize(vs, buffer);</a>
+<a name="ln430">          enthalpy_eV = atof(vs[4].c_str());</a>
+<a name="ln431">          pv_eV = atof(vs[8].c_str());</a>
+<a name="ln432">        }</a>
+<a name="ln433"> </a>
+<a name="ln434">        // Free energy</a>
+<a name="ln435">        if (strstr(buffer, &quot;free  energy&quot;)) {</a>
+<a name="ln436">          tokenize(vs, buffer);</a>
+<a name="ln437">          pmol-&gt;SetEnergy(atof(vs[4].c_str()) * EV_TO_KCAL_PER_MOL);</a>
+<a name="ln438">        }</a>
+<a name="ln439"> </a>
+<a name="ln440">        // Frequencies</a>
+<a name="ln441">        if (strstr(buffer, &quot;Eigenvectors&quot;) &amp;&amp; Frequencies.size() == 0) {</a>
+<a name="ln442">          hasVibrations = true;</a>
+<a name="ln443">          double x, y, z;</a>
+<a name="ln444">          ifs_out.getline(buffer,BUFF_SIZE);  // dash line</a>
+<a name="ln445">          ifs_out.getline(buffer,BUFF_SIZE);  // blank line</a>
+<a name="ln446">          ifs_out.getline(buffer,BUFF_SIZE);  // blank line</a>
+<a name="ln447">          ifs_out.getline(buffer,BUFF_SIZE);  // first frequency line</a>
+<a name="ln448">          while (!strstr(buffer, &quot;Eigenvectors&quot;)) {</a>
+<a name="ln449">            vector&lt;vector3&gt; vib;</a>
+<a name="ln450">            tokenize(vs, buffer);</a>
+<a name="ln451">            int freqnum = atoi(vs[0].c_str());</a>
+<a name="ln452">            if (vs[1].size() == 1 and vs[1].compare(&quot;f&quot;) == 0) {</a>
+<a name="ln453">              // Real frequency</a>
+<a name="ln454">              Frequencies.push_back(atof(vs[7].c_str()));</a>
+<a name="ln455">            } else if (strstr(vs[1].c_str(), &quot;f/i=&quot;)) {</a>
+<a name="ln456">              // Imaginary frequency</a>
+<a name="ln457">              Frequencies.push_back(-atof(vs[6].c_str()));</a>
+<a name="ln458">            } else {</a>
+<a name="ln459">              // No more frequencies</a>
+<a name="ln460">              break;</a>
+<a name="ln461">            }</a>
+<a name="ln462">            ifs_out.getline(buffer,BUFF_SIZE);  // header line</a>
+<a name="ln463">            ifs_out.getline(buffer,BUFF_SIZE);  // first displacement line</a>
+<a name="ln464">            tokenize(vs, buffer);</a>
+<a name="ln465">            // normal modes</a>
+<a name="ln466">            while (vs.size() == 6) {</a>
+<a name="ln467">              x = atof(vs[3].c_str());</a>
+<a name="ln468">              y = atof(vs[4].c_str());</a>
+<a name="ln469">              z = atof(vs[5].c_str());</a>
+<a name="ln470">              vib.push_back(vector3(x, y, z));</a>
+<a name="ln471">              ifs_out.getline(buffer,BUFF_SIZE);  // next displacement line</a>
+<a name="ln472">              tokenize(vs, buffer);</a>
+<a name="ln473">            }</a>
+<a name="ln474">            Lx.push_back(vib);</a>
+<a name="ln475">            ifs_out.getline(buffer,BUFF_SIZE);  // next frequency line</a>
+<a name="ln476">          }</a>
+<a name="ln477">        }</a>
+<a name="ln478"> </a>
+<a name="ln479">        if (strstr(buffer, &quot;dipolmoment&quot;)) {</a>
+<a name="ln480">          tokenize(vs, buffer);</a>
+<a name="ln481">          x = atof(vs[1].c_str());</a>
+<a name="ln482">          y = atof(vs[2].c_str());</a>
+<a name="ln483">          z = atof(vs[3].c_str());</a>
+<a name="ln484">          currDm.Set(x, y, z);</a>
+<a name="ln485">        }</a>
+<a name="ln486">        if (strstr(buffer, &quot;TOTAL-FORCE&quot;)) {</a>
+<a name="ln487">          currXyz.clear();</a>
+<a name="ln488">          ifs_out.getline(buffer, BUFF_SIZE);  // header line</a>
+<a name="ln489">          ifs_out.getline(buffer, BUFF_SIZE);</a>
+<a name="ln490">          tokenize(vs, buffer);</a>
+<a name="ln491">          while (vs.size() == 6) {</a>
+<a name="ln492">            x = atof(vs[0].c_str());</a>
+<a name="ln493">            y = atof(vs[1].c_str());</a>
+<a name="ln494">            z = atof(vs[2].c_str());</a>
+<a name="ln495">            currXyz.push_back(vector3(x, y, z));</a>
+<a name="ln496">            ifs_out.getline(buffer, BUFF_SIZE);  // next line</a>
+<a name="ln497">            tokenize(vs, buffer);</a>
+<a name="ln498">          }</a>
+<a name="ln499">        }</a>
+<a name="ln500">        if (strstr(buffer, &quot;BORN EFFECTIVE CHARGES&quot;)) {</a>
+<a name="ln501">          // IBRION = 7; IBRION = 8</a>
+<a name="ln502">          dipGrad.clear();</a>
+<a name="ln503">          ifs_out.getline(buffer, BUFF_SIZE);  // header line</a>
+<a name="ln504">          ifs_out.getline(buffer, BUFF_SIZE);  // `ion    #`</a>
+<a name="ln505">          tokenize(vs, buffer);</a>
+<a name="ln506">          while (vs.size() == 2) {</a>
+<a name="ln507">            matrix3x3 dmudq;</a>
+<a name="ln508">            for (int row = 0; row &lt; 3; ++row) {</a>
+<a name="ln509">              ifs_out.getline(buffer, BUFF_SIZE);</a>
+<a name="ln510">              tokenize(vs, buffer);</a>
+<a name="ln511">              x = atof(vs[1].c_str());</a>
+<a name="ln512">              y = atof(vs[2].c_str());</a>
+<a name="ln513">              z = atof(vs[3].c_str());</a>
+<a name="ln514">              dmudq.SetRow(row, vector3(x, y, z));</a>
+<a name="ln515">            }</a>
+<a name="ln516">            dipGrad.push_back(dmudq);</a>
+<a name="ln517">            ifs_out.getline(buffer, BUFF_SIZE);  // next line</a>
+<a name="ln518">            tokenize(vs, buffer);</a>
+<a name="ln519">          }</a>
+<a name="ln520">        } else if (strstr(buffer, &quot;free  energy&quot;)) {</a>
+<a name="ln521">          // IBRION = 5</a>
+<a name="ln522">          // reached the end of an iteration, use the values</a>
+<a name="ln523">          if (dipGrad.empty()) {</a>
+<a name="ln524">            // first iteration: nondisplaced ions</a>
+<a name="ln525">            dipGrad.resize(pmol-&gt;NumAtoms());</a>
+<a name="ln526">          } else if (prevXyz.empty()) {</a>
+<a name="ln527">            // even iteration: store values</a>
+<a name="ln528">            prevXyz = currXyz;</a>
+<a name="ln529">            prevDm = currDm;</a>
+<a name="ln530">          } else {</a>
+<a name="ln531">            // odd iteration: compute dipGrad = dmu / dxyz for moved ion</a>
+<a name="ln532">            for (size_t natom = 0; natom &lt; pmol-&gt;NumAtoms(); ++natom) {</a>
+<a name="ln533">              const vector3 dxyz = currXyz[natom] - prevXyz[natom];</a>
+<a name="ln534">              vector3::const_iterator iter = std::find_if(dxyz.begin(), dxyz.end(),</a>
+<a name="ln535">                      std::bind2nd(std::not_equal_to&lt;double&gt;(), 0.0));</a>
+<a name="ln536">              if (iter != dxyz.end()) dipGrad[natom].SetRow(iter - dxyz.begin(),</a>
+<a name="ln537">                                                            (currDm - prevDm) / *iter);</a>
+<a name="ln538">            }</a>
+<a name="ln539">            prevXyz.clear();</a>
+<a name="ln540">          }</a>
+<a name="ln541">        }</a>
+<a name="ln542">      }</a>
+<a name="ln543">    }</a>
+<a name="ln544">    ifs_out.close();</a>
+<a name="ln545"> </a>
+<a name="ln546">    // Set enthalpy</a>
+<a name="ln547">    if (hasEnthalpy) {</a>
+<a name="ln548">      OBPairData *enthalpyPD = new OBPairData();</a>
+<a name="ln549">      OBPairData *enthalpyPD_pv = new OBPairData();</a>
+<a name="ln550">      OBPairData *enthalpyPD_eV = new OBPairData();</a>
+<a name="ln551">      OBPairData *enthalpyPD_pv_eV = new OBPairData();</a>
+<a name="ln552">      enthalpyPD-&gt;SetAttribute(&quot;Enthalpy (kcal/mol)&quot;);</a>
+<a name="ln553">      enthalpyPD_pv-&gt;SetAttribute(&quot;Enthalpy PV term (kcal/mol)&quot;);</a>
+<a name="ln554">      enthalpyPD_eV-&gt;SetAttribute(&quot;Enthalpy (eV)&quot;);</a>
+<a name="ln555">      enthalpyPD_pv_eV-&gt;SetAttribute(&quot;Enthalpy PV term (eV)&quot;);</a>
+<a name="ln556">      double en_kcal_per_mole = enthalpy_eV * EV_TO_KCAL_PER_MOL;</a>
+<a name="ln557">      double pv_kcal_per_mole = pv_eV * EV_TO_KCAL_PER_MOL;</a>
+<a name="ln558">      snprintf(tag, BUFF_SIZE, &quot;%f&quot;, en_kcal_per_mole);</a>
+<a name="ln559">      enthalpyPD-&gt;SetValue(tag);</a>
+<a name="ln560">      snprintf(tag, BUFF_SIZE, &quot;%f&quot;, pv_kcal_per_mole);</a>
+<a name="ln561">      enthalpyPD_pv-&gt;SetValue(tag);</a>
+<a name="ln562">      snprintf(tag, BUFF_SIZE, &quot;%f&quot;, enthalpy_eV);</a>
+<a name="ln563">      enthalpyPD_eV-&gt;SetValue(tag);</a>
+<a name="ln564">      snprintf(tag, BUFF_SIZE, &quot;%f&quot;, pv_eV);</a>
+<a name="ln565">      enthalpyPD_pv_eV-&gt;SetValue(tag);</a>
+<a name="ln566">      pmol-&gt;SetData(enthalpyPD);</a>
+<a name="ln567">      pmol-&gt;SetData(enthalpyPD_pv);</a>
+<a name="ln568">      pmol-&gt;SetData(enthalpyPD_eV);</a>
+<a name="ln569">      pmol-&gt;SetData(enthalpyPD_pv_eV);</a>
+<a name="ln570">    }</a>
+<a name="ln571"> </a>
+<a name="ln572">    // Set vibrations</a>
+<a name="ln573">    if (hasVibrations) {</a>
+<a name="ln574">      // compute dDip/dQ</a>
+<a name="ln575">      vector&lt;double&gt; Intensities;</a>
+<a name="ln576">      for (vector&lt;vector&lt;vector3&gt; &gt;::const_iterator</a>
+<a name="ln577">           lxIter = Lx.begin(); lxIter != Lx.end(); ++lxIter) {</a>
+<a name="ln578">        vector3 intensity;</a>
+<a name="ln579">        for (size_t natom = 0; natom &lt; dipGrad.size(); ++natom) {</a>
+<a name="ln580">          intensity += dipGrad[natom].transpose() * lxIter-&gt;at(natom)</a>
+<a name="ln581">              / sqrt(pmol-&gt;GetAtomById(natom)-&gt;GetAtomicMass());</a>
+<a name="ln582">        }</a>
+<a name="ln583">        Intensities.push_back(dot(intensity, intensity));</a>
+<a name="ln584">      }</a>
+<a name="ln585">      const double max = *max_element(Intensities.begin(), Intensities.end());</a>
+<a name="ln586">      if (max != 0.0) {</a>
+<a name="ln587">        // Normalize</a>
+<a name="ln588">        std::transform(Intensities.begin(), Intensities.end(), Intensities.begin(),</a>
+<a name="ln589">                       std::bind2nd(std::divides&lt;double&gt;(), max / 100.0));</a>
+<a name="ln590">      } else {</a>
+<a name="ln591">        Intensities.clear();</a>
+<a name="ln592">      }</a>
+<a name="ln593">      OBVibrationData* vd = new OBVibrationData;</a>
+<a name="ln594">      vd-&gt;SetData(Lx, Frequencies, Intensities);</a>
+<a name="ln595">      pmol-&gt;SetData(vd);</a>
+<a name="ln596">    }</a>
+<a name="ln597"> </a>
+<a name="ln598">    pmol-&gt;EndModify();</a>
+<a name="ln599"> </a>
+<a name="ln600">    const char *noBonding  = pConv-&gt;IsOption(&quot;b&quot;, OBConversion::INOPTIONS);</a>
+<a name="ln601">    const char *singleOnly = pConv-&gt;IsOption(&quot;s&quot;, OBConversion::INOPTIONS);</a>
+<a name="ln602"> </a>
+<a name="ln603">    if (noBonding == nullptr) {</a>
+<a name="ln604">      pmol-&gt;ConnectTheDots();</a>
+<a name="ln605">      if (singleOnly == nullptr) {</a>
+<a name="ln606">        pmol-&gt;PerceiveBondOrders();</a>
+<a name="ln607">      }</a>
+<a name="ln608">    }</a>
+<a name="ln609"> </a>
+<a name="ln610">    return true;</a>
+<a name="ln611">  }</a>
+<a name="ln612"> </a>
+<a name="ln613">  bool VASPFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln614">  {</a>
+<a name="ln615">    //No surprises in this routine, cartesian coordinates are written out</a>
+<a name="ln616">    //and if at least a single atom has information about constraints,</a>
+<a name="ln617">    //then selective dynamics is used and the info is written out.</a>
+<a name="ln618">    //The atoms are ordered according to their atomic number so that the</a>
+<a name="ln619">    //output looks nice, this can be reversed by using command line flag &quot;-xw&quot;.</a>
+<a name="ln620">    //</a>
+<a name="ln621">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln622">    if (pmol == nullptr) {</a>
+<a name="ln623">      return false;</a>
+<a name="ln624">    }</a>
+<a name="ln625"> </a>
+<a name="ln626">    ostream&amp; ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln627">    OBMol &amp;mol = *pmol;</a>
+<a name="ln628"> </a>
+<a name="ln629">    char buffer[BUFF_SIZE];</a>
+<a name="ln630">    OBUnitCell *uc = nullptr;</a>
+<a name="ln631">    vector&lt;vector3&gt; cell;</a>
+<a name="ln632"> </a>
+<a name="ln633">    const char * sortAtomsNum = pConv-&gt;IsOption(&quot;w&quot;, OBConversion::OUTOPTIONS);</a>
+<a name="ln634">    const char * sortAtomsCustom = pConv-&gt;IsOption(&quot;z&quot;, OBConversion::OUTOPTIONS);</a>
+<a name="ln635"> </a>
+<a name="ln636">    // Create a list of ids. These may be sorted by atomic number depending</a>
+<a name="ln637">    // on the value of keepOrder.</a>
+<a name="ln638">    std::vector&lt;OBAtom *&gt; atoms_sorted;</a>
+<a name="ln639">    atoms_sorted.reserve(mol.NumAtoms());</a>
+<a name="ln640"> </a>
+<a name="ln641">    FOR_ATOMS_OF_MOL(atom, mol) {</a>
+<a name="ln642">      atoms_sorted.push_back(&amp;(*atom));</a>
+<a name="ln643">    }</a>
+<a name="ln644"> </a>
+<a name="ln645">    std::vector&lt;int&gt; custom_sort_nums;</a>
+<a name="ln646">    </a>
+<a name="ln647">    if (sortAtomsCustom != nullptr)</a>
+<a name="ln648">    {</a>
+<a name="ln649">      vector&lt;string&gt; vs;</a>
+<a name="ln650">      tokenize(vs, sortAtomsCustom);</a>
+<a name="ln651">      for(size_t i = 0; i &lt; vs.size(); ++i)</a>
+<a name="ln652">        custom_sort_nums.push_back(OBElements::GetAtomicNum(vs[i].c_str()));</a>
+<a name="ln653">    }</a>
+<a name="ln654"> </a>
+<a name="ln655">    compare_sort_items csi(custom_sort_nums, sortAtomsNum != nullptr);</a>
+<a name="ln656">    std::stable_sort(atoms_sorted.begin(), atoms_sorted.end(), csi);</a>
+<a name="ln657"> </a>
+<a name="ln658">    // Use the atomicNums vector to determine the composition line.</a>
+<a name="ln659">    // atomicNumsCondensed and atomCounts contain the same data as atomicNums:</a>
+<a name="ln660">    // if:</a>
+<a name="ln661">    //   atoms_sorted[i]-&gt;GetAtomicNum() = [ 3 3 3 2 2 8 2 6 6 ]</a>
+<a name="ln662">    // then:</a>
+<a name="ln663">    //   atomicNums =  [(3 3) (2 2) (8 1) (2 1) (6 2)] </a>
+<a name="ln664">    </a>
+<a name="ln665">    std::vector&lt;std::pair&lt;int, int&gt; &gt; atomicNums;    </a>
+<a name="ln666">    </a>
+<a name="ln667">    int prev_anum = -20; //not a periodic table number</a>
+<a name="ln668">    for(int i = 0; i &lt; atoms_sorted.size(); i++)</a>
+<a name="ln669">    {</a>
+<a name="ln670">      const int anum = atoms_sorted[i]-&gt;GetAtomicNum();</a>
+<a name="ln671">      </a>
+<a name="ln672">      if( prev_anum != anum )</a>
+<a name="ln673">      {</a>
+<a name="ln674">        std::pair&lt;int, int&gt; x(anum, 1);</a>
+<a name="ln675">        atomicNums.push_back(x);</a>
+<a name="ln676">      }</a>
+<a name="ln677">      else</a>
+<a name="ln678">      {    </a>
+<a name="ln679">        if(atomicNums.size() &gt; 0)  </a>
+<a name="ln680">          atomicNums.rbegin()-&gt;second++;</a>
+<a name="ln681">      }  </a>
+<a name="ln682">      </a>
+<a name="ln683">      prev_anum = anum;</a>
+<a name="ln684">    }</a>
+<a name="ln685"> </a>
+<a name="ln686">    // write title</a>
+<a name="ln687">    ofs &lt;&lt; mol.GetTitle() &lt;&lt; endl;</a>
+<a name="ln688">    // write the multiplication factor, set this to one</a>
+<a name="ln689">    // and write the cell using the 3x3 cell matrix</a>
+<a name="ln690">    ofs &lt;&lt; &quot;1.000 &quot; &lt;&lt; endl;</a>
+<a name="ln691"> </a>
+<a name="ln692">    if (!mol.HasData(OBGenericDataType::UnitCell)) {</a>
+<a name="ln693">      // the unit cell has not been defined. Leave as all zeros so the user</a>
+<a name="ln694">      // can fill it in themselves</a>
+<a name="ln695">      for (int ii = 0; ii &lt; 3; ii++) {</a>
+<a name="ln696">        snprintf(buffer, BUFF_SIZE, &quot;0.0  0.0  0.0&quot;);</a>
+<a name="ln697">        ofs &lt;&lt; buffer &lt;&lt; endl;</a>
+<a name="ln698">      }</a>
+<a name="ln699">    }</a>
+<a name="ln700">    else</a>
+<a name="ln701">    {</a>
+<a name="ln702">      // there is a unit cell, write it out</a>
+<a name="ln703">      uc = static_cast&lt;OBUnitCell*&gt;(mol.GetData(OBGenericDataType::UnitCell));</a>
+<a name="ln704">      cell = uc-&gt;GetCellVectors();</a>
+<a name="ln705">      for (vector&lt;vector3&gt;::const_iterator i = cell.begin();</a>
+<a name="ln706">           i != cell.end(); ++i) {</a>
+<a name="ln707">        snprintf(buffer, BUFF_SIZE, &quot;%20.15f%20.15f%20.15f&quot;,</a>
+<a name="ln708">                 i-&gt;x(), i-&gt;y(), i-&gt;z());</a>
+<a name="ln709">        ofs &lt;&lt; buffer &lt;&lt; endl;</a>
+<a name="ln710">      }</a>
+<a name="ln711">    }</a>
+<a name="ln712"> </a>
+<a name="ln713">    // go through the atoms first to write out the element names if using</a>
+<a name="ln714">    // VASP 5 format</a>
+<a name="ln715">    const char *vasp4Format = pConv-&gt;IsOption(&quot;4&quot;, OBConversion::OUTOPTIONS);</a>
+<a name="ln716">    if (!vasp4Format) {</a>
+<a name="ln717">      for (vector&lt; std::pair&lt;int, int&gt; &gt;::const_iterator</a>
+<a name="ln718">           it = atomicNums.begin(),</a>
+<a name="ln719">           it_end = atomicNums.end(); it != it_end; ++it) {</a>
+<a name="ln720">        snprintf(buffer, BUFF_SIZE, &quot;%-3s &quot;, OBElements::GetSymbol(it-&gt;first));</a>
+<a name="ln721">        ofs &lt;&lt; buffer ;</a>
+<a name="ln722">      }</a>
+<a name="ln723">      ofs &lt;&lt; endl;</a>
+<a name="ln724">    }</a>
+<a name="ln725"> </a>
+<a name="ln726">    // then do the same to write out the number of ions of each element</a>
+<a name="ln727">    for (vector&lt; std::pair&lt;int, int&gt; &gt;::const_iterator</a>
+<a name="ln728">           it = atomicNums.begin(),</a>
+<a name="ln729">           it_end = atomicNums.end(); it != it_end; ++it) {</a>
+<a name="ln730">      snprintf(buffer, BUFF_SIZE, &quot;%-3u &quot;, it-&gt;second);</a>
+<a name="ln731">      ofs &lt;&lt; buffer ;</a>
+<a name="ln732">    }</a>
+<a name="ln733">    ofs &lt;&lt; endl;</a>
+<a name="ln734"> </a>
+<a name="ln735">    // assume that there are no constraints on the atoms</a>
+<a name="ln736">    bool selective = false;</a>
+<a name="ln737">    // and test if any of the atoms has constraints</a>
+<a name="ln738">    FOR_ATOMS_OF_MOL(atom, mol) {</a>
+<a name="ln739">      if (atom-&gt;HasData(&quot;move&quot;)){</a>
+<a name="ln740">        selective = true;</a>
+<a name="ln741">        break;</a>
+<a name="ln742">      }</a>
+<a name="ln743">    }</a>
+<a name="ln744">    if (selective) {</a>
+<a name="ln745">      ofs &lt;&lt; &quot;SelectiveDyn&quot; &lt;&lt; endl;</a>
+<a name="ln746">    }</a>
+<a name="ln747"> </a>
+<a name="ln748">    // print the atomic coordinates in \AA</a>
+<a name="ln749">    ofs &lt;&lt; &quot;Cartesian&quot; &lt;&lt; endl;</a>
+<a name="ln750"> </a>
+<a name="ln751">    for (std::vector&lt;OBAtom *&gt;::const_iterator it = atoms_sorted.begin();</a>
+<a name="ln752">         it != atoms_sorted.end(); ++it) </a>
+<a name="ln753">    {</a>
+<a name="ln754">      // Print coordinates</a>
+<a name="ln755">      snprintf(buffer,BUFF_SIZE, &quot;%26.19f %26.19f %26.19f&quot;,</a>
+<a name="ln756">               (*it)-&gt;GetX(), (*it)-&gt;GetY(), (*it)-&gt;GetZ());</a>
+<a name="ln757">      ofs &lt;&lt; buffer;</a>
+<a name="ln758"> </a>
+<a name="ln759">      // if at least one atom has info about constraints</a>
+<a name="ln760">      if (selective) {</a>
+<a name="ln761">        // if this guy has, write it out</a>
+<a name="ln762">        if ((*it)-&gt;HasData(&quot;move&quot;)) {</a>
+<a name="ln763">          OBPairData *cp = (OBPairData*)(*it)-&gt;GetData(&quot;move&quot;);</a>
+<a name="ln764">          // seemingly ridiculous number of digits is written out</a>
+<a name="ln765">          // but sometimes you just don't want to change them</a>
+<a name="ln766">          ofs &lt;&lt; &quot; &quot; &lt;&lt; cp-&gt;GetValue().c_str();</a>
+<a name="ln767">        }</a>
+<a name="ln768">        else {</a>
+<a name="ln769">          // the atom has been created and the info has not been copied</a>
+<a name="ln770">          ofs &lt;&lt; &quot;  T T T&quot;;</a>
+<a name="ln771">        }</a>
+<a name="ln772">      }</a>
+<a name="ln773">      ofs &lt;&lt; endl;</a>
+<a name="ln774">    }</a>
+<a name="ln775"> </a>
+<a name="ln776">    return true;</a>
+<a name="ln777">  }</a>
+<a name="ln778"> </a>
+<a name="ln779">} //namespace OpenBabel</a>
+<a name="ln780"> </a>
+
+</code></pre>
+<div class="balloon" rel="410"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v614/" target="_blank">V614</a> Potentially uninitialized variable 'fermi' used. Consider checking the first actual argument of the 'SetData' function.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

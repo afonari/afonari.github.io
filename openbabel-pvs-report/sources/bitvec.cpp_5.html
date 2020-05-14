@@ -1,0 +1,724 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>bitvec.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">bitvec.cpp - Fast and efficient bitstring class.</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 1998-2001 by OpenEye Scientific Software, Inc.</a>
+<a name="ln5">Some portions Copyright (C) 2001-2006 by Geoffrey R. Hutchison</a>
+<a name="ln6"> </a>
+<a name="ln7">This file is part of the Open Babel project.</a>
+<a name="ln8">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln11">it under the terms of the GNU General Public License as published by</a>
+<a name="ln12">the Free Software Foundation version 2 of the License.</a>
+<a name="ln13"> </a>
+<a name="ln14">This program is distributed in the hope that it will be useful,</a>
+<a name="ln15">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln16">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln17">GNU General Public License for more details.</a>
+<a name="ln18">***********************************************************************/</a>
+<a name="ln19">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln20"> </a>
+<a name="ln21">#include &lt;openbabel/bitvec.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/oberror.h&gt;</a>
+<a name="ln23">#include &lt;cstdlib&gt;</a>
+<a name="ln24"> </a>
+<a name="ln25">namespace OpenBabel</a>
+<a name="ln26">{</a>
+<a name="ln27"> </a>
+<a name="ln28">  OBERROR extern OBMessageHandler obErrorLog;</a>
+<a name="ln29"> </a>
+<a name="ln30">  /*! \class OBBitVec bitvec.h &lt;openbabel/bitvec.h&gt;</a>
+<a name="ln31">    \brief Fast and efficient bitstring class</a>
+<a name="ln32"> </a>
+<a name="ln33">    The OBBitVec class is a fast and efficient bitstring class that is</a>
+<a name="ln34">    handy to use as a truth table. Truth tables are an easy way to store</a>
+<a name="ln35">    whether a list of items has a particular property. Instances of</a>
+<a name="ln36">    OBBitVec can be dynamically resized, and have a number of overloaded</a>
+<a name="ln37">    operators that make code simple and readable. The following examples</a>
+<a name="ln38">    demonstrate uses of the OBBitVec class:</a>
+<a name="ln39">    \code</a>
+<a name="ln40">    OBBitVec bv1,bv2,bv3;</a>
+<a name="ln41">    bv1.SetBitOn(5);</a>
+<a name="ln42">    bv2.SetBitOff(200);</a>
+<a name="ln43">    bv1 |= bv2;</a>
+<a name="ln44">    bv1 = bv1 &amp; bv2;</a>
+<a name="ln45">    if (bv1.IsEmpty()) // IsEmpty() returns true if no bits are set on</a>
+<a name="ln46">    {</a>
+<a name="ln47">       std::cout &lt;&lt; &quot;bv1 = &quot; &lt;&lt; bv1 &lt;&lt; std::endl;</a>
+<a name="ln48">    }</a>
+<a name="ln49"> </a>
+<a name="ln50">    int bit;</a>
+<a name="ln51">    for (bit = bv1.NextBit(0);bit != bv1.EndBit();bit = bv1.NextBit(bit))</a>
+<a name="ln52">    {</a>
+<a name="ln53">       cout &lt;&lt; &quot;the next bit turned on is &quot; &lt;&lt; bit &lt;&lt; endl;</a>
+<a name="ln54">    }</a>
+<a name="ln55">    \endcode</a>
+<a name="ln56">  */</a>
+<a name="ln57"> </a>
+<a name="ln58">  static unsigned int bitsoff[SETWORD] =</a>
+<a name="ln59">    {</a>
+<a name="ln60">      0xFFFFFFFF,0xFFFFFFFE,0xFFFFFFFC,0xFFFFFFF8,0xFFFFFFF0,0xFFFFFFE0,0xFFFFFFC0,</a>
+<a name="ln61">      0xFFFFFF80,0xFFFFFF00,0xFFFFFE00,0xFFFFFC00,0xFFFFF800,0xFFFFF000,0xFFFFE000,</a>
+<a name="ln62">      0xFFFFC000,0xFFFF8000,0xFFFF0000,0xFFFE0000,0xFFFC0000,0xFFF80000,0xFFF00000,</a>
+<a name="ln63">      0xFFE00000,0xFFC00000,0xFF800000,0xFF000000,0xFE000000,0xFC000000,0xF8000000,</a>
+<a name="ln64">      0xF0000000,0xE0000000,0xC0000000,0x80000000</a>
+<a name="ln65">    };</a>
+<a name="ln66"> </a>
+<a name="ln67">#ifndef LowBit</a>
+<a name="ln68">#define LowBit(set, bit)                                        \</a>
+<a name="ln69">  {int m;                                                       \</a>
+<a name="ln70">    if (set != 0)                                               \</a>
+<a name="ln71">      {                                                         \</a>
+<a name="ln72">        bit = 31;                                               \</a>
+<a name="ln73">        if (set != 0x80000000) {                                \</a>
+<a name="ln74">          if ((m = (set &amp; 0x0000ffff))!=0) {set = m; bit -= 16;}   \</a>
+<a name="ln75">          if ((m = (set &amp; 0x00ff00ff))!=0) {set = m; bit -= 8;}    \</a>
+<a name="ln76">          if ((m = (set &amp; 0x0f0f0f0f))!=0) {set = m; bit -= 4;}    \</a>
+<a name="ln77">          if ((m = (set &amp; 0x33333333))!=0) {set = m; bit -= 2;}    \</a>
+<a name="ln78">          if ((m = (set &amp; 0x55555555))!=0) {set = m; bit -= 1;}}}  \</a>
+<a name="ln79">    else bit = -1;}</a>
+<a name="ln80">#endif</a>
+<a name="ln81"> </a>
+<a name="ln82">  /** Set the \p bit_offset 'th bit to 1</a>
+<a name="ln83">    Increases the size of this bit vector if necessary</a>
+<a name="ln84">    \param[in] bit_offset a zero based offset into the bit vector</a>
+<a name="ln85">  */</a>
+<a name="ln86">  void OBBitVec::SetBitOn(unsigned bit_offset)</a>
+<a name="ln87">  {</a>
+<a name="ln88">    unsigned word_offset = bit_offset &gt;&gt; WORDROLL;</a>
+<a name="ln89">    bit_offset &amp;= WORDMASK;</a>
+<a name="ln90"> </a>
+<a name="ln91">    if (word_offset &gt;= GetSize())</a>
+<a name="ln92">      ResizeWords(word_offset + 1);</a>
+<a name="ln93">    _set[word_offset] |= (1&lt;&lt;bit_offset);</a>
+<a name="ln94">  }</a>
+<a name="ln95"> </a>
+<a name="ln96">  /** Set the \p bit_offset 'th bit to 0</a>
+<a name="ln97">    \param[in] bit_offset a zero based offset into the bit vector</a>
+<a name="ln98">  */</a>
+<a name="ln99">  void OBBitVec::SetBitOff(unsigned bit_offset)</a>
+<a name="ln100">  {</a>
+<a name="ln101">    unsigned word_offset = bit_offset &gt;&gt; WORDROLL;</a>
+<a name="ln102">    bit_offset &amp;= WORDMASK;</a>
+<a name="ln103"> </a>
+<a name="ln104">    if (word_offset &lt; GetSize())</a>
+<a name="ln105">      _set[word_offset] &amp;= (~(1 &lt;&lt; bit_offset));</a>
+<a name="ln106">  }</a>
+<a name="ln107"> </a>
+<a name="ln108">  /** Set the range of bits from \p lo_bit_offset to \p hi_bit_offset to 1</a>
+<a name="ln109">    Increases the size of this bit vector if necessary</a>
+<a name="ln110">    \param[in] lo_bit_offset a zero based offset into the bit vector</a>
+<a name="ln111">    \param[in] hi_bit_offset a zero based offset into the bit vector</a>
+<a name="ln112">  */</a>
+<a name="ln113">  void OBBitVec::SetRangeOn(unsigned lo_bit_offset, unsigned hi_bit_offset)</a>
+<a name="ln114">  {</a>
+<a name="ln115">    if (lo_bit_offset &gt; hi_bit_offset)</a>
+<a name="ln116">      return;</a>
+<a name="ln117">    else if (lo_bit_offset == hi_bit_offset)</a>
+<a name="ln118">      SetBitOn(hi_bit_offset);</a>
+<a name="ln119">    else</a>
+<a name="ln120">      {</a>
+<a name="ln121">        unsigned lo_word_offset = lo_bit_offset &gt;&gt; WORDROLL;</a>
+<a name="ln122">        unsigned hi_word_offset = hi_bit_offset &gt;&gt; WORDROLL;</a>
+<a name="ln123">        lo_bit_offset &amp;= WORDMASK;</a>
+<a name="ln124">        hi_bit_offset &amp;= WORDMASK;</a>
+<a name="ln125"> </a>
+<a name="ln126">        if (hi_word_offset &gt;= GetSize())</a>
+<a name="ln127">          ResizeWords(hi_word_offset + 1);</a>
+<a name="ln128"> </a>
+<a name="ln129">        if (lo_word_offset == hi_word_offset)</a>
+<a name="ln130">          {</a>
+<a name="ln131">            for ( unsigned i = lo_bit_offset ; i &lt;= hi_bit_offset ; i++ )</a>
+<a name="ln132">              _set[lo_word_offset] |= (1&lt;&lt;i);</a>
+<a name="ln133">          }</a>
+<a name="ln134">        else</a>
+<a name="ln135">          {</a>
+<a name="ln136">            for ( unsigned i = lo_bit_offset ; i &lt; SETWORD ; ++ i )</a>
+<a name="ln137">              _set[lo_word_offset] |= (1&lt;&lt;i);</a>
+<a name="ln138">            for ( unsigned i = lo_word_offset + 1 ; i &lt; hi_word_offset ; ++ i )</a>
+<a name="ln139">              _set[i] = ~0;</a>
+<a name="ln140">            for ( unsigned i = 0 ; i &lt;= hi_bit_offset ; ++ i )</a>
+<a name="ln141">              _set[hi_word_offset] |= (1&lt;&lt;i);</a>
+<a name="ln142">          }</a>
+<a name="ln143">      }</a>
+<a name="ln144">  }</a>
+<a name="ln145"> </a>
+<a name="ln146">  /** Set the range of bits from \p lo_bit_offset to \p hi_bit_offset to 0</a>
+<a name="ln147">    \param[in] lo_bit_offset a zero based offset into the bit vector</a>
+<a name="ln148">    \param[in] hi_bit_offset a zero based offset into the bit vector</a>
+<a name="ln149">  */</a>
+<a name="ln150">  void OBBitVec::SetRangeOff(unsigned lo_bit_offset, unsigned hi_bit_offset)</a>
+<a name="ln151">  {</a>
+<a name="ln152">    if (lo_bit_offset &gt; hi_bit_offset)</a>
+<a name="ln153">      return;</a>
+<a name="ln154">    else if (lo_bit_offset == hi_bit_offset)</a>
+<a name="ln155">      SetBitOff(hi_bit_offset);</a>
+<a name="ln156">    else</a>
+<a name="ln157">      {</a>
+<a name="ln158">        unsigned lo_word_offset = lo_bit_offset &gt;&gt; WORDROLL;</a>
+<a name="ln159">        unsigned hi_word_offset = hi_bit_offset &gt;&gt; WORDROLL;</a>
+<a name="ln160">        lo_bit_offset &amp;= WORDMASK;</a>
+<a name="ln161">        hi_bit_offset &amp;= WORDMASK;</a>
+<a name="ln162"> </a>
+<a name="ln163">        if (lo_word_offset &gt;= GetSize())</a>
+<a name="ln164">          return;</a>
+<a name="ln165">        if (hi_word_offset &gt;= GetSize())</a>
+<a name="ln166">          {</a>
+<a name="ln167">            hi_word_offset = GetSize() - 1;</a>
+<a name="ln168">            hi_bit_offset = SETWORD - 1;</a>
+<a name="ln169">          }</a>
+<a name="ln170"> </a>
+<a name="ln171">        if (lo_word_offset == hi_word_offset)</a>
+<a name="ln172">          {</a>
+<a name="ln173">            for ( unsigned i = lo_bit_offset ; i &lt;= hi_bit_offset ; ++ i )</a>
+<a name="ln174">              _set[lo_word_offset] &amp;= (~(1&lt;&lt;i));</a>
+<a name="ln175">          }</a>
+<a name="ln176">        else</a>
+<a name="ln177">          {</a>
+<a name="ln178">            for ( unsigned i = lo_bit_offset ; i &lt; SETWORD ; ++ i )</a>
+<a name="ln179">              _set[lo_word_offset] &amp;= (~(1&lt;&lt;i));</a>
+<a name="ln180">            for ( unsigned i = lo_word_offset + 1 ; i &lt; hi_word_offset ; ++ i )</a>
+<a name="ln181">              _set[i] = 0x00000000;</a>
+<a name="ln182">            for ( unsigned i = 0 ; i &lt;= hi_bit_offset ; ++ i )</a>
+<a name="ln183">              _set[hi_word_offset] &amp;= (~(1&lt;&lt;i));</a>
+<a name="ln184">          }</a>
+<a name="ln185">      }</a>
+<a name="ln186">  }</a>
+<a name="ln187"> </a>
+<a name="ln188">  /** Reduce the size of the vector to \p new_bit_size</a>
+<a name="ln189">  by or-ing the excess bits over the start of the vector</a>
+<a name="ln190">  \param[in] new_bit_size the size of the resultant vector, in bits</a>
+<a name="ln191">  */</a>
+<a name="ln192">  void OBBitVec::Fold(unsigned new_bit_size)</a>
+<a name="ln193">  {</a>
+<a name="ln194">    unsigned new_word_size = new_bit_size &gt;&gt; WORDROLL;</a>
+<a name="ln195"> </a>
+<a name="ln196">    if (_size &lt; new_word_size)</a>
+<a name="ln197">      {</a>
+<a name="ln198">        ResizeWords(new_word_size);</a>
+<a name="ln199">        return;</a>
+<a name="ln200">      }</a>
+<a name="ln201"> </a>
+<a name="ln202">    for (unsigned i = 0, idx = new_word_size; idx &lt; _size; ++idx )</a>
+<a name="ln203">      {</a>
+<a name="ln204">        _set[i] |= _set[idx];</a>
+<a name="ln205">        if (i+1 &lt; new_word_size)</a>
+<a name="ln206">          ++i;</a>
+<a name="ln207">        else</a>
+<a name="ln208">          i = 0;</a>
+<a name="ln209">      }</a>
+<a name="ln210">    ResizeWords(new_word_size);</a>
+<a name="ln211">  }</a>
+<a name="ln212"> </a>
+<a name="ln213">  /** Searches the vector for the first true value, starting at the \p last_bit_offset 'th bit</a>
+<a name="ln214">      \param[in] last_bit_offset the bit before the first to consider</a>
+<a name="ln215">	    \return the bit offset of the first true bit after \p last_bit_offset, or -1 if there is none</a>
+<a name="ln216">  */</a>
+<a name="ln217">  int OBBitVec::NextBit(int last_bit_offset) const</a>
+<a name="ln218">  {</a>
+<a name="ln219">    unsigned s;</a>
+<a name="ln220">    int bit;</a>
+<a name="ln221">    unsigned wrdcnt;</a>
+<a name="ln222">    ++ last_bit_offset;</a>
+<a name="ln223"> </a>
+<a name="ln224">    wrdcnt = (unsigned)last_bit_offset &gt;&gt; WORDROLL;</a>
+<a name="ln225"> </a>
+<a name="ln226">    if (wrdcnt &gt;= GetSize())</a>
+<a name="ln227">      return(-1);</a>
+<a name="ln228"> </a>
+<a name="ln229">    if (_set[wrdcnt] != 0)</a>
+<a name="ln230">      {</a>
+<a name="ln231">        s = _set[wrdcnt] &amp; bitsoff[last_bit_offset &amp; WORDMASK];</a>
+<a name="ln232">        if (s)</a>
+<a name="ln233">          {</a>
+<a name="ln234">            LowBit(s,bit);</a>
+<a name="ln235">            if (bit != -1)</a>
+<a name="ln236">              return(bit + (wrdcnt &lt;&lt; WORDROLL));</a>
+<a name="ln237">          }</a>
+<a name="ln238">      }</a>
+<a name="ln239">    ++ wrdcnt;</a>
+<a name="ln240"> </a>
+<a name="ln241">    while(wrdcnt &lt; GetSize())</a>
+<a name="ln242">      {</a>
+<a name="ln243">        if (_set[wrdcnt] != 0)</a>
+<a name="ln244">          {</a>
+<a name="ln245">            s = _set[wrdcnt];</a>
+<a name="ln246">            LowBit(s, bit);</a>
+<a name="ln247"> </a>
+<a name="ln248">            if (bit != -1)</a>
+<a name="ln249">              return(bit + (wrdcnt &lt;&lt; WORDROLL));</a>
+<a name="ln250">          }</a>
+<a name="ln251">        ++ wrdcnt;</a>
+<a name="ln252">      }</a>
+<a name="ln253"> </a>
+<a name="ln254">    return(-1);</a>
+<a name="ln255">  }</a>
+<a name="ln256">  // Used by CountBits</a>
+<a name="ln257">  const unsigned nibble_bit_count[0x10] =</a>
+<a name="ln258">    {</a>
+<a name="ln259">      0, // 0000</a>
+<a name="ln260">      1, // 0001</a>
+<a name="ln261">      1, // 0010</a>
+<a name="ln262">      2, // 0011</a>
+<a name="ln263">      1, // 0100</a>
+<a name="ln264">      2, // 0101</a>
+<a name="ln265">      2, // 0110</a>
+<a name="ln266">      3, // 0111</a>
+<a name="ln267">      1, // 1000</a>
+<a name="ln268">      2, // 1001</a>
+<a name="ln269">      2, // 1010</a>
+<a name="ln270">      3, // 1011</a>
+<a name="ln271">      2, // 1100</a>
+<a name="ln272">      3, // 1101</a>
+<a name="ln273">      3, // 1110</a>
+<a name="ln274">      4  // 1111</a>
+<a name="ln275">    };</a>
+<a name="ln276">  /** Count the number of bits which are set in this vector</a>
+<a name="ln277">      \return the bit count</a>
+<a name="ln278">  */</a>
+<a name="ln279">  unsigned OBBitVec::CountBits() const</a>
+<a name="ln280">  {</a>
+<a name="ln281">    unsigned count = 0;</a>
+<a name="ln282">    for (word_vector::const_iterator sx = _set.begin(), sy = _set.end(); sx != sy; ++ sx)</a>
+<a name="ln283">      {</a>
+<a name="ln284">      uint32_t word = *sx;</a>
+<a name="ln285">      while (word)</a>
+<a name="ln286">        {</a>
+<a name="ln287">        count += nibble_bit_count[word &amp; 0xF];</a>
+<a name="ln288">        word &gt;&gt;= 4;</a>
+<a name="ln289">        }</a>
+<a name="ln290">      }</a>
+<a name="ln291">    return count;</a>
+<a name="ln292">  }</a>
+<a name="ln293"> </a>
+<a name="ln294">	/** Are there no bits set to 1 in this vector?</a>
+<a name="ln295">      \return true for &quot;is empty&quot;, false if not empty</a>
+<a name="ln296">  */</a>
+<a name="ln297">  bool OBBitVec::IsEmpty() const</a>
+<a name="ln298">  {</a>
+<a name="ln299">    for (word_vector::const_iterator sx = _set.begin(), sy = _set.end(); sx != sy; ++ sx)</a>
+<a name="ln300">      if (* sx)</a>
+<a name="ln301">        return(false);</a>
+<a name="ln302"> </a>
+<a name="ln303">    return(true);</a>
+<a name="ln304">  }</a>
+<a name="ln305"> </a>
+<a name="ln306">  /** Sets bits on, listed as bit offsets</a>
+<a name="ln307">     \param[in] bit_offsets A list of bit offsets</a>
+<a name="ln308">  */</a>
+<a name="ln309">  void OBBitVec::FromVecInt(const std::vector&lt;int&gt; &amp; bit_offsets)</a>
+<a name="ln310">  {</a>
+<a name="ln311">    for (std::vector&lt;int&gt;::const_iterator i = bit_offsets.begin(), j = bit_offsets.end(); i != j; ++i)</a>
+<a name="ln312">      SetBitOn(* i);</a>
+<a name="ln313">  }</a>
+<a name="ln314">  /** Sets bits on, listed as a string of character-represented integers</a>
+<a name="ln315">      This bit vector is first cleared.</a>
+<a name="ln316">      The format is &quot;[ n0 n1 n2 n3 ... ]&quot;.</a>
+<a name="ln317">      The square brackets are optional.</a>
+<a name="ln318">      The whitespace can be SPACE, NEWLINE or HTAB</a>
+<a name="ln319">      For example &quot;[ 1 5 6 9 ]&quot;</a>
+<a name="ln320">     \param[in] line A string containing positive integers</a>
+<a name="ln321">     \param[in] new_bit_size The size that the vector should become</a>
+<a name="ln322">  */</a>
+<a name="ln323">  void OBBitVec::FromString(const std::string &amp; line, int new_bit_size)</a>
+<a name="ln324">  {</a>
+<a name="ln325">    size_t startpos = 0, endpos = 0;</a>
+<a name="ln326">    std::vector&lt;std::string&gt; tokens;</a>
+<a name="ln327"> </a>
+<a name="ln328">    Clear();</a>
+<a name="ln329">    Resize(new_bit_size); // new bits are clear</a>
+<a name="ln330"> </a>
+<a name="ln331">    for (;;)</a>
+<a name="ln332">      {</a>
+<a name="ln333">        startpos = line.find_first_not_of(&quot; \t\r\n&quot;,startpos);</a>
+<a name="ln334">        endpos   = line.find_first_of(&quot; \t\r\n&quot;,startpos);</a>
+<a name="ln335">        if (endpos == std::string::npos)</a>
+<a name="ln336">          endpos = line.size();</a>
+<a name="ln337"> </a>
+<a name="ln338">        if (startpos &lt;= line.size())</a>
+<a name="ln339">          tokens.push_back(line.substr(startpos,endpos-startpos));</a>
+<a name="ln340">        else</a>
+<a name="ln341">          break;</a>
+<a name="ln342"> </a>
+<a name="ln343">        startpos = endpos + 1;</a>
+<a name="ln344">      }</a>
+<a name="ln345"> </a>
+<a name="ln346">    for (unsigned int i = 0 ; i &lt; tokens.size() ; i++ )</a>
+<a name="ln347">      {</a>
+<a name="ln348">        if ( tokens[i] == &quot;[&quot; )</a>
+<a name="ln349">          continue;</a>
+<a name="ln350">        else if ( tokens[i] == &quot;]&quot; )</a>
+<a name="ln351">          break;</a>
+<a name="ln352"> </a>
+<a name="ln353">        int bit = atoi(tokens[i].c_str());</a>
+<a name="ln354"> </a>
+<a name="ln355">        if (bit &gt;= 0)</a>
+<a name="ln356">          SetBitOn(bit);</a>
+<a name="ln357">        else</a>
+<a name="ln358">          {</a>
+<a name="ln359">            std::stringstream errorMsg;</a>
+<a name="ln360">            errorMsg &lt;&lt; &quot;Negative Bit: &quot; &lt;&lt; bit &lt;&lt; std::endl;</a>
+<a name="ln361">            obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obDebug);</a>
+<a name="ln362">          }</a>
+<a name="ln363">      }</a>
+<a name="ln364">  }</a>
+<a name="ln365"> </a>
+<a name="ln366">  /** Retrieve a list of bit offsets</a>
+<a name="ln367">     The \p bit_offsets vector is first cleared.</a>
+<a name="ln368">     \param[out] bit_offsets A list of bit offsets, in ascending order</a>
+<a name="ln369">  */</a>
+<a name="ln370">  void OBBitVec::ToVecInt(std::vector&lt;int&gt; &amp; bit_offsets) const</a>
+<a name="ln371">  {</a>
+<a name="ln372">    bit_offsets.clear();</a>
+<a name="ln373">    bit_offsets.reserve(CountBits());</a>
+<a name="ln374">    for (int i = NextBit(-1);i != -1;i = NextBit(i))</a>
+<a name="ln375">      bit_offsets.push_back(i);</a>
+<a name="ln376">  }</a>
+<a name="ln377"> </a>
+<a name="ln378">  /** Set all the bits in this vector to zero</a>
+<a name="ln379">      Does not currently change the size of the vector.</a>
+<a name="ln380">  */</a>
+<a name="ln381">  void OBBitVec::Clear()</a>
+<a name="ln382">  {</a>
+<a name="ln383">    for (word_vector::iterator wx = _set.begin(), wy = _set.end(); wx != wy; ++wx)</a>
+<a name="ln384">      * wx = 0;</a>
+<a name="ln385">  }</a>
+<a name="ln386"> </a>
+<a name="ln387">  /** Assign this vector to be a copy of \p bv</a>
+<a name="ln388">      \param[in] bv A bit vector</a>
+<a name="ln389">      \return A reference to this</a>
+<a name="ln390">  */</a>
+<a name="ln391">  OBBitVec &amp; OBBitVec::operator= (const OBBitVec &amp; bv)</a>
+<a name="ln392">  {</a>
+<a name="ln393">    _set = bv._set;</a>
+<a name="ln394">    _size = _set.size();</a>
+<a name="ln395">    return(*this);</a>
+<a name="ln396">  }</a>
+<a name="ln397"> </a>
+<a name="ln398">  /** Assign this vector to the result of And-ing it with \p bv</a>
+<a name="ln399">      \param[in] bv A bit vector</a>
+<a name="ln400">      \return A reference to this</a>
+<a name="ln401">  */</a>
+<a name="ln402">  OBBitVec &amp; OBBitVec::operator&amp;= (const OBBitVec &amp; bv)</a>
+<a name="ln403">  {</a>
+<a name="ln404">    unsigned min = (bv.GetSize() &lt; _size) ? bv.GetSize() : _size;</a>
+<a name="ln405">    unsigned i;</a>
+<a name="ln406"> </a>
+<a name="ln407">    for (i = 0;i &lt; min;++i)</a>
+<a name="ln408">      _set[i] &amp;= bv._set[i];</a>
+<a name="ln409">    for (;i &lt; _size;++i)</a>
+<a name="ln410">      _set[i] = 0;</a>
+<a name="ln411"> </a>
+<a name="ln412">    return(*this);</a>
+<a name="ln413">  }</a>
+<a name="ln414"> </a>
+<a name="ln415">  /** Assign this vector to the result of Or-ing it with \p bv</a>
+<a name="ln416">      \param[in] bv A bit vector</a>
+<a name="ln417">      \return A reference to this</a>
+<a name="ln418">  */</a>
+<a name="ln419">  OBBitVec &amp; OBBitVec::operator|= (const OBBitVec &amp; bv)</a>
+<a name="ln420">  {</a>
+<a name="ln421">    if (_size &lt; bv.GetSize())</a>
+<a name="ln422">      ResizeWords(bv.GetSize());</a>
+<a name="ln423"> </a>
+<a name="ln424">    for (unsigned i = 0;i &lt; bv.GetSize(); ++i)</a>
+<a name="ln425">      _set[i] |= bv._set[i];</a>
+<a name="ln426"> </a>
+<a name="ln427">    return(*this);</a>
+<a name="ln428">  }</a>
+<a name="ln429"> </a>
+<a name="ln430">  /** Assign this vector to the result of Exclusive-or-ing it with \p bv</a>
+<a name="ln431">      \param[in] bv A bit vector</a>
+<a name="ln432">      \return A reference to this</a>
+<a name="ln433">  */</a>
+<a name="ln434">  OBBitVec &amp; OBBitVec::operator^= (const OBBitVec &amp; bv)</a>
+<a name="ln435">  {</a>
+<a name="ln436">    if (_size &lt; bv.GetSize())</a>
+<a name="ln437">      ResizeWords(bv.GetSize());</a>
+<a name="ln438"> </a>
+<a name="ln439">    for (unsigned i = 0;i &lt; bv.GetSize(); ++i)</a>
+<a name="ln440">      _set[i] ^= bv._set[i];</a>
+<a name="ln441"> </a>
+<a name="ln442">    return(*this);</a>
+<a name="ln443">  }</a>
+<a name="ln444"> </a>
+<a name="ln445">  /** Unset bits in this vector which are set in \p bv</a>
+<a name="ln446">      \param[in] bv A bit vector</a>
+<a name="ln447">      \return A reference to this</a>
+<a name="ln448">  */</a>
+<a name="ln449">  OBBitVec &amp; OBBitVec::operator-= (const OBBitVec &amp; bv)</a>
+<a name="ln450">  {</a>
+<a name="ln451">    if (_size &lt; bv.GetSize())</a>
+<a name="ln452">      ResizeWords(bv.GetSize());</a>
+<a name="ln453"> </a>
+<a name="ln454">    OBBitVec tmp(*this);</a>
+<a name="ln455">    tmp ^= bv;</a>
+<a name="ln456">    *this &amp;= tmp;</a>
+<a name="ln457">    return(*this);</a>
+<a name="ln458">  }</a>
+<a name="ln459"> </a>
+<a name="ln460">  /** Append vector \p bv to the end if this vector</a>
+<a name="ln461">      \param[in] bv A bit vector</a>
+<a name="ln462">      \return A reference to this</a>
+<a name="ln463">  */</a>
+<a name="ln464">  OBBitVec &amp; OBBitVec::operator+= (const OBBitVec &amp; bv)</a>
+<a name="ln465">  {</a>
+<a name="ln466">    _set.insert(_set.end(), bv._set.begin(), bv._set.end());</a>
+<a name="ln467">    return(*this);</a>
+<a name="ln468">  }</a>
+<a name="ln469"> </a>
+<a name="ln470">  /** Return a bit vector of the results of Or-ing each bit in \p bv1 with the corresponding bit in \p bv2</a>
+<a name="ln471">      \param[in] bv1 A bit vector</a>
+<a name="ln472">      \param[in] bv2 Another bit vector</a>
+<a name="ln473">      \return A bit vector</a>
+<a name="ln474">  */</a>
+<a name="ln475">  OBBitVec operator| (const OBBitVec &amp; bv1, const OBBitVec &amp; bv2)</a>
+<a name="ln476">  {</a>
+<a name="ln477">    OBBitVec bv(bv1);</a>
+<a name="ln478">    bv |= bv2;</a>
+<a name="ln479">    return(bv);</a>
+<a name="ln480">  }</a>
+<a name="ln481"> </a>
+<a name="ln482">  /** Return a bit vector of the results of And-ing each bit in \p bv1 with the corresponding bit in \p bv2</a>
+<a name="ln483">      \param[in] bv1 A bit vector</a>
+<a name="ln484">      \param[in] bv2 Another bit vector</a>
+<a name="ln485">      \return A bit vector</a>
+<a name="ln486">  */</a>
+<a name="ln487">  OBBitVec operator&amp; (const OBBitVec &amp; bv1, const OBBitVec &amp; bv2)</a>
+<a name="ln488">  {</a>
+<a name="ln489">    OBBitVec bv(bv1);</a>
+<a name="ln490">    bv &amp;= bv2;</a>
+<a name="ln491">    return(bv);</a>
+<a name="ln492">  }</a>
+<a name="ln493"> </a>
+<a name="ln494">  /** Return a bit vector of the results of Exclusive-or-ing each bit in \p bv1 with the corresponding bit in \p bv2</a>
+<a name="ln495">      \param[in] bv1 A bit vector</a>
+<a name="ln496">      \param[in] bv2 Another bit vector</a>
+<a name="ln497">      \return A bit vector</a>
+<a name="ln498">  */</a>
+<a name="ln499">  OBBitVec operator^ (const OBBitVec &amp; bv1, const OBBitVec &amp; bv2)</a>
+<a name="ln500">  {</a>
+<a name="ln501">    OBBitVec bv(bv1);</a>
+<a name="ln502">    bv ^= bv2;</a>
+<a name="ln503">    return(bv);</a>
+<a name="ln504">  }</a>
+<a name="ln505"> </a>
+<a name="ln506">  /** Return a bit vector of the results of clearing each bit in \p bv1 which is set in \p bv2</a>
+<a name="ln507">      \param[in] bv1 A bit vector</a>
+<a name="ln508">      \param[in] bv2 Another bit vector</a>
+<a name="ln509">      \return A bit vector</a>
+<a name="ln510">  */</a>
+<a name="ln511">  OBBitVec operator- (const OBBitVec &amp; bv1, const OBBitVec &amp; bv2)</a>
+<a name="ln512">  {</a>
+<a name="ln513">    OBBitVec bv;</a>
+<a name="ln514">    bv = bv1 ^ bv2;</a>
+<a name="ln515">    bv &amp;= bv1;</a>
+<a name="ln516">    return(bv);</a>
+<a name="ln517">  }</a>
+<a name="ln518"> </a>
+<a name="ln519">  /** Return true if \p bv1 and \p bv2 are equivalent</a>
+<a name="ln520">      Not that they may be of different size, and still equivalent provided that the extra bits are all zero.</a>
+<a name="ln521">      \param[in] bv1 A bit vector</a>
+<a name="ln522">      \param[in] bv2 Another bit vector</a>
+<a name="ln523">      \return true if equal, false otherwise</a>
+<a name="ln524">  */</a>
+<a name="ln525">  bool operator== (const OBBitVec &amp; bv1, const OBBitVec &amp; bv2)</a>
+<a name="ln526">  {</a>
+<a name="ln527">    if (bv1.GetSize() &lt; bv2.GetSize())</a>
+<a name="ln528">      { // bv1 smaller than bv2</a>
+<a name="ln529">      unsigned i;</a>
+<a name="ln530">      for (i = 0; i &lt; bv1.GetSize(); ++ i)</a>
+<a name="ln531">        if (bv1._set[i] != bv2._set[i])</a>
+<a name="ln532">          return false;</a>
+<a name="ln533">      for (; i &lt; bv2.GetSize(); ++ i)</a>
+<a name="ln534">        if (bv2._set[i] != 0)</a>
+<a name="ln535">          return false;</a>
+<a name="ln536">      }</a>
+<a name="ln537">    else</a>
+<a name="ln538">      { // bv2 smaller or equal than bv1</a>
+<a name="ln539">      unsigned i;</a>
+<a name="ln540">      for (i = 0; i &lt; bv2.GetSize(); ++ i)</a>
+<a name="ln541">        if (bv1._set[i] != bv2._set[i])</a>
+<a name="ln542">          return false;</a>
+<a name="ln543">      for (; i &lt; bv1.GetSize(); ++ i)</a>
+<a name="ln544">        if (bv1._set[i] != 0)</a>
+<a name="ln545">          return false;</a>
+<a name="ln546">      }</a>
+<a name="ln547">    return true;</a>
+<a name="ln548">  }</a>
+<a name="ln549"> </a>
+<a name="ln550">  /** Return true if \p bv1 i less than \p bv2</a>
+<a name="ln551">      Lexicographical order, with bit vectors written LSB first.</a>
+<a name="ln552">      \param[in] bv1 A bit vector</a>
+<a name="ln553">      \param[in] bv2 Another bit vector</a>
+<a name="ln554">      \return true if equal, false otherwise</a>
+<a name="ln555">  */</a>
+<a name="ln556">  bool operator&lt; (const OBBitVec &amp; bv1, const OBBitVec &amp; bv2)</a>
+<a name="ln557">  {</a>
+<a name="ln558">    bool rtn = false;</a>
+<a name="ln559">    int next_bit_1 = bv1.NextBit(-1);</a>
+<a name="ln560">    int next_bit_2 = bv2.NextBit(-1);</a>
+<a name="ln561">    bool should_continue = true;</a>
+<a name="ln562">    while (should_continue)</a>
+<a name="ln563">      {</a>
+<a name="ln564">      should_continue = false;</a>
+<a name="ln565">      if (next_bit_1 == -1)</a>
+<a name="ln566">        rtn = (next_bit_2 == -1 ? false : true);</a>
+<a name="ln567">      else if (next_bit_2 == -1)</a>
+<a name="ln568">        rtn = false;</a>
+<a name="ln569">      else if (next_bit_2 &lt; next_bit_1)</a>
+<a name="ln570">        rtn = true;</a>
+<a name="ln571">      else if (next_bit_1 &lt; next_bit_2)</a>
+<a name="ln572">        rtn = false;</a>
+<a name="ln573">      else</a>
+<a name="ln574">        {</a>
+<a name="ln575">        next_bit_1 = bv1.NextBit(next_bit_1);</a>
+<a name="ln576">        next_bit_2 = bv2.NextBit(next_bit_2);</a>
+<a name="ln577">        should_continue = true;</a>
+<a name="ln578">        }</a>
+<a name="ln579">      }</a>
+<a name="ln580">    return rtn;</a>
+<a name="ln581">  }</a>
+<a name="ln582"> </a>
+<a name="ln583">  /** Sets bits on, listed as a string of character-represented integers in a stream</a>
+<a name="ln584">      Only reads one line of input</a>
+<a name="ln585">      The format is &quot;[ n0 n1 n2 n3 ... ]&quot;.</a>
+<a name="ln586">      The square brackets are optional.</a>
+<a name="ln587">      The whitespace can be SPACE or HTAB</a>
+<a name="ln588">      For example &quot;[ 1 5 6 9 ]&quot;</a>
+<a name="ln589">     \param[in,out] is The input stream</a>
+<a name="ln590">     \param[out] bv The bit vector to contain the result</a>
+<a name="ln591">  */</a>
+<a name="ln592">  std::istream &amp; operator&gt;&gt; ( std::istream &amp; is, OBBitVec &amp; bv )</a>
+<a name="ln593">  {</a>
+<a name="ln594">    size_t startpos = 0, endpos = 0;</a>
+<a name="ln595">    std::vector&lt;std::string&gt; tokens;</a>
+<a name="ln596">    std::string line;</a>
+<a name="ln597"> </a>
+<a name="ln598">    getline(is,line);</a>
+<a name="ln599"> </a>
+<a name="ln600">    for (;;)</a>
+<a name="ln601">      {</a>
+<a name="ln602">        startpos = line.find_first_not_of(&quot; \t\r\n&quot;,startpos);</a>
+<a name="ln603">        endpos   = line.find_first_of(&quot; \t\r\n&quot;,startpos);</a>
+<a name="ln604"> </a>
+<a name="ln605">        if (endpos &lt; line.size() &amp;&amp; startpos &lt;= line.size())</a>
+<a name="ln606">          tokens.push_back(line.substr(startpos,endpos-startpos));</a>
+<a name="ln607">        else</a>
+<a name="ln608">          break;</a>
+<a name="ln609"> </a>
+<a name="ln610">        startpos = endpos + 1;</a>
+<a name="ln611">      }</a>
+<a name="ln612"> </a>
+<a name="ln613">    for (unsigned int i = 0 ; i &lt; tokens.size() ; i++ )</a>
+<a name="ln614">      {</a>
+<a name="ln615">        if ( tokens[i] == &quot;[&quot; )</a>
+<a name="ln616">          continue;</a>
+<a name="ln617">        else if ( tokens[i] == &quot;]&quot; )</a>
+<a name="ln618">          break;</a>
+<a name="ln619"> </a>
+<a name="ln620">        int bit = atoi(tokens[i].c_str());</a>
+<a name="ln621"> </a>
+<a name="ln622">        if (bit &gt;= 0)</a>
+<a name="ln623">          bv.SetBitOn(bit);</a>
+<a name="ln624">        else</a>
+<a name="ln625">          {</a>
+<a name="ln626">            std::stringstream errorMsg;</a>
+<a name="ln627">            errorMsg &lt;&lt; &quot;Negative Bit: &quot; &lt;&lt; bit &lt;&lt; std::endl;</a>
+<a name="ln628">            obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obDebug);</a>
+<a name="ln629">          }</a>
+<a name="ln630">      }</a>
+<a name="ln631"> </a>
+<a name="ln632">    return is;</a>
+<a name="ln633">  }</a>
+<a name="ln634"> </a>
+<a name="ln635">  /** Output this bit vector to a stream</a>
+<a name="ln636">      The format is &quot;[ n0 n1 n2 n3 ... ]&quot;.</a>
+<a name="ln637">      The whitespace is SPACE</a>
+<a name="ln638">      For example &quot;[ 1 5 6 9 ]&quot;</a>
+<a name="ln639">     \param[out] os The output stream</a>
+<a name="ln640">     \param[in] bv The bit vector to be output</a>
+<a name="ln641">  */</a>
+<a name="ln642">  std::ostream &amp; operator&lt;&lt; ( std::ostream &amp; os, const OBBitVec &amp; bv)</a>
+<a name="ln643">  {</a>
+<a name="ln644">    os &lt;&lt; &quot;[ &quot; &lt;&lt; std::flush;</a>
+<a name="ln645"> </a>
+<a name="ln646">    for (unsigned i = 0;i &lt; bv._size;++i)</a>
+<a name="ln647">      for (unsigned j = 0;j &lt; SETWORD;++j)</a>
+<a name="ln648">        if (bv._set[i]&gt;&gt;(j%SETWORD)&amp;1)</a>
+<a name="ln649">          os &lt;&lt; (j+(i*SETWORD)) &lt;&lt; ' ' &lt;&lt; std::flush;</a>
+<a name="ln650"> </a>
+<a name="ln651">    os &lt;&lt; &quot;]&quot; &lt;&lt; std::flush;</a>
+<a name="ln652">    return(os);</a>
+<a name="ln653">  }</a>
+<a name="ln654"> </a>
+<a name="ln655">  /** The Tanimoto coefficient may be regarded as the proportion of the &quot;on-bits&quot; which are shared.</a>
+<a name="ln656">      \param[in] bv1 the first bit vector</a>
+<a name="ln657">      \param[in] bv2 the second bit vector</a>
+<a name="ln658">      \return the ratio of shared bits to bits which either vector has set.</a>
+<a name="ln659">  */</a>
+<a name="ln660">  double Tanimoto(const OBBitVec &amp; bv1, const OBBitVec &amp; bv2)</a>
+<a name="ln661">  {</a>
+<a name="ln662">    OBBitVec bvtmp;</a>
+<a name="ln663">    double andbits,orbits;</a>
+<a name="ln664"> </a>
+<a name="ln665">    bvtmp = bv1 &amp; bv2;</a>
+<a name="ln666">    andbits = (double)bvtmp.CountBits();</a>
+<a name="ln667">    bvtmp = bv1 | bv2;</a>
+<a name="ln668">    orbits  = (double)bvtmp.CountBits();</a>
+<a name="ln669"> </a>
+<a name="ln670">    return(andbits/orbits);</a>
+<a name="ln671">  }</a>
+<a name="ln672"> </a>
+<a name="ln673">} // end namespace OpenBabel</a>
+<a name="ln674"> </a>
+<a name="ln675">//! \file bitvec.cpp</a>
+<a name="ln676">//! \brief Fast and efficient bitstring class</a>
+<a name="ln677"> </a>
+
+</code></pre>
+<div class="balloon" rel="235"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'bit != - 1' is always true.</p></div>
+<div class="balloon" rel="248"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'bit != - 1' is always true.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

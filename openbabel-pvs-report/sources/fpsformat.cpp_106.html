@@ -1,0 +1,233 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>fpsformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Copyright (C) 2011 by Chris Morley</a>
+<a name="ln3"> </a>
+<a name="ln4">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln5">it under the terms of the GNU General Public License as published by</a>
+<a name="ln6">the Free Software Foundation version 2 of the License.</a>
+<a name="ln7"> </a>
+<a name="ln8">This program is distributed in the hope that it will be useful,</a>
+<a name="ln9">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln10">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln11">GNU General Public License for more details.</a>
+<a name="ln12">***********************************************************************/</a>
+<a name="ln13">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln14"> </a>
+<a name="ln15">#include &lt;vector&gt;</a>
+<a name="ln16">#include &lt;string&gt;</a>
+<a name="ln17">#include &lt;iomanip&gt;</a>
+<a name="ln18">#include &lt;ctime&gt;</a>
+<a name="ln19"> </a>
+<a name="ln20">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln24"> </a>
+<a name="ln25">#include &lt;openbabel/fingerprint.h&gt;</a>
+<a name="ln26">#include &lt;cstdlib&gt;</a>
+<a name="ln27"> </a>
+<a name="ln28">using namespace std;</a>
+<a name="ln29">namespace OpenBabel</a>
+<a name="ln30">{</a>
+<a name="ln31"> </a>
+<a name="ln32">  /// \brief Outputs collections of fingerprints</a>
+<a name="ln33">  class FPSFormat : public OBMoleculeFormat</a>
+<a name="ln34">  {</a>
+<a name="ln35">  public:</a>
+<a name="ln36">    //Register this format type ID</a>
+<a name="ln37">    FPSFormat() {OBConversion::RegisterFormat(&quot;fps&quot;,this);}</a>
+<a name="ln38"> </a>
+<a name="ln39">    virtual const char* Description() //required</a>
+<a name="ln40">    { return</a>
+<a name="ln41">    &quot;FPS text fingerprint format (Dalke)\n\n&quot;</a>
+<a name="ln42">    &quot;The FPS file format for fingerprints was developed by Andrew Dalke to\n&quot;</a>
+<a name="ln43">    &quot;define and promote common file formats for storing and exchanging\n&quot;</a>
+<a name="ln44">    &quot;cheminformatics fingerprint data sets, and to develop tools which\n&quot;</a>
+<a name="ln45">    &quot;work with that format. For more information, see\n&quot;</a>
+<a name="ln46">    &quot;http://chem-fingerprints.googlecode.com\n\n&quot;</a>
+<a name="ln47"> </a>
+<a name="ln48">      &quot;Any molecule without a title is given its index in the file as title.\n\n&quot;</a>
+<a name="ln49"> </a>
+<a name="ln50">&quot;A list of available fingerprint types can be obtained by::\n\n&quot;</a>
+<a name="ln51"> </a>
+<a name="ln52">&quot;  obabel -L fingerprints\n\n&quot;</a>
+<a name="ln53"> </a>
+<a name="ln54">      &quot;Write Options e.g. -xf FP3 -xN 128\n&quot;</a>
+<a name="ln55">      &quot; f&lt;id&gt; Fingerprint type\n&quot;</a>
+<a name="ln56">      &quot; N # Fold to specified number of bits, 32, 64, 128, etc.\n&quot;</a>
+<a name="ln57">      &quot; p Use full input path as source, not just filename\n&quot;</a>
+<a name="ln58">      &quot; t &lt;text&gt; Use &lt;text&gt; as source in header\n\n&quot;;</a>
+<a name="ln59">    }</a>
+<a name="ln60">  virtual const char* SpecificationURL()</a>
+<a name="ln61">  { return &quot;http://code.google.com/p/chem-fingerprints/wiki/FPS&quot;; }</a>
+<a name="ln62"> </a>
+<a name="ln63">    virtual unsigned int Flags(){return NOTREADABLE;};</a>
+<a name="ln64">    virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln65">  private:</a>
+<a name="ln66">    string getTimeStr();</a>
+<a name="ln67">  private:</a>
+<a name="ln68">    int _nbits;</a>
+<a name="ln69">    OBFingerprint* _pFP;</a>
+<a name="ln70">  };</a>
+<a name="ln71"> </a>
+<a name="ln72">  ////////////////////////////////////////////////////</a>
+<a name="ln73">  //Make an instance of the format class</a>
+<a name="ln74">  FPSFormat theFPSFormat;</a>
+<a name="ln75"> </a>
+<a name="ln76">//*******************************************************************</a>
+<a name="ln77">static inline unsigned short bswap_16(unsigned short x) {</a>
+<a name="ln78">  return (x&gt;&gt;8) | (x&lt;&lt;8);</a>
+<a name="ln79">}</a>
+<a name="ln80">static inline unsigned int bswap_32(unsigned int x) {</a>
+<a name="ln81">  return (bswap_16(x&amp;0xffff)&lt;&lt;16) | (bswap_16(x&gt;&gt;16));</a>
+<a name="ln82">}</a>
+<a name="ln83">/////////////////////////////////////////////////////////////////////</a>
+<a name="ln84"> </a>
+<a name="ln85">bool FPSFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln86">{</a>
+<a name="ln87">  ostream &amp;ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln88">  vector&lt;unsigned int&gt; fptvec;</a>
+<a name="ln89"> </a>
+<a name="ln90">  if(pConv-&gt;GetOutputIndex()==1)</a>
+<a name="ln91">  {</a>
+<a name="ln92">    string fpid;</a>
+<a name="ln93">    const char* p=pConv-&gt;IsOption(&quot;f&quot;);</a>
+<a name="ln94">    if(p)</a>
+<a name="ln95">    {</a>
+<a name="ln96">      fpid=p;</a>
+<a name="ln97">      fpid = fpid.substr(0,fpid.find('&quot;'));</a>
+<a name="ln98">    }</a>
+<a name="ln99"> </a>
+<a name="ln100">    _pFP = OBFingerprint::FindFingerprint(fpid.c_str());</a>
+<a name="ln101">    if(!_pFP)</a>
+<a name="ln102">    {</a>
+<a name="ln103">      stringstream errorMsg;</a>
+<a name="ln104">      errorMsg &lt;&lt; &quot;Fingerprint type '&quot; &lt;&lt; fpid &lt;&lt; &quot;' not available&quot; &lt;&lt; endl;</a>
+<a name="ln105">      obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obError);</a>
+<a name="ln106">      return false;</a>
+<a name="ln107">    }</a>
+<a name="ln108"> </a>
+<a name="ln109">    p=pConv-&gt;IsOption(&quot;N&quot;);</a>
+<a name="ln110">    _nbits=0;</a>
+<a name="ln111">    if(p)</a>
+<a name="ln112">      _nbits = atoi(p);</a>
+<a name="ln113">    if(_nbits&lt;0)</a>
+<a name="ln114">      obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln115">      &quot;The number of bits to fold to, in the-xN option, should be &gt;=0&quot;, obWarning);</a>
+<a name="ln116"> </a>
+<a name="ln117">    if(_nbits==0) //if not folded, use first number on second line of the description</a>
+<a name="ln118">    {</a>
+<a name="ln119">      // A quirk is that the fingerprint has to be used before the</a>
+<a name="ln120">      // desciption contains the number of bits and the version.</a>
+<a name="ln121">      _pFP-&gt;GetFingerprint(pOb, fptvec, _nbits);</a>
+<a name="ln122">      _nbits = atoi(strchr(_pFP-&gt;Description(),'\n')+1); </a>
+<a name="ln123">    }</a>
+<a name="ln124"> </a>
+<a name="ln125">    //Write metadata to header</a>
+<a name="ln126">    const char* txt = pConv-&gt;IsOption(&quot;t&quot;);</a>
+<a name="ln127">    string source = txt ? txt : pConv-&gt;GetInFilename();</a>
+<a name="ln128">    if(!pConv-&gt;IsOption(&quot;p&quot;))</a>
+<a name="ln129">    {</a>
+<a name="ln130">      string::size_type pos = source.find_last_of(&quot;/\\&quot;);</a>
+<a name="ln131">      if(pos!=string::npos)</a>
+<a name="ln132">        source.erase(0,pos+1);</a>
+<a name="ln133">    }</a>
+<a name="ln134">    ofs &lt;&lt; &quot;#FPS1\n&quot;</a>
+<a name="ln135">        &lt;&lt; &quot;#num_bits=&quot; &lt;&lt; _nbits &lt;&lt; '\n'</a>
+<a name="ln136">        &lt;&lt; &quot;#type=OpenBabel-&quot; &lt;&lt; _pFP-&gt;GetID() &lt;&lt; &quot;/1&quot; &lt;&lt; '\n'</a>
+<a name="ln137">        &lt;&lt; &quot;#software=OpenBabel/&quot; &lt;&lt; BABEL_VERSION &lt;&lt; '\n'</a>
+<a name="ln138">        &lt;&lt; &quot;#source=&quot; &lt;&lt; source &lt;&lt; '\n'</a>
+<a name="ln139">        &lt;&lt; &quot;#date=&quot; &lt;&lt; getTimeStr() &lt;&lt; endl;</a>
+<a name="ln140">  }</a>
+<a name="ln141"> </a>
+<a name="ln142">  stringstream molID;</a>
+<a name="ln143">  if(strlen(pOb-&gt;GetTitle())==0)</a>
+<a name="ln144">    molID &lt;&lt; '#' &lt;&lt; pConv-&gt;GetOutputIndex();</a>
+<a name="ln145">  else</a>
+<a name="ln146">    molID &lt;&lt; pOb-&gt;GetTitle();</a>
+<a name="ln147"> </a>
+<a name="ln148">  if(!_pFP-&gt;GetFingerprint(pOb, fptvec, _nbits))</a>
+<a name="ln149">    return false;</a>
+<a name="ln150"> </a>
+<a name="ln151">  stringstream ss;</a>
+<a name="ln152">  for(unsigned i=0;i&lt;(_nbits+31)/32;++i)</a>
+<a name="ln153">  {</a>
+<a name="ln154">    ss &lt;&lt; hex &lt;&lt; setw(8) &lt;&lt; setfill('0');</a>
+<a name="ln155">#ifdef WORDS_BIGENDIAN</a>
+<a name="ln156">    ss &lt;&lt;fptvec[i];</a>
+<a name="ln157">#else</a>
+<a name="ln158">    ss &lt;&lt; bswap_32(fptvec[i]);</a>
+<a name="ln159">#endif</a>
+<a name="ln160">  }</a>
+<a name="ln161">  // truncate to hex from whole number of bytes (seems to be the way fps does it)</a>
+<a name="ln162">  ofs &lt;&lt; dec &lt;&lt; ss.str().erase(2*((_nbits+7)/8));</a>
+<a name="ln163">  ofs &lt;&lt; '\t' &lt;&lt; molID.str() &lt;&lt; endl;</a>
+<a name="ln164"> </a>
+<a name="ln165">  return true;</a>
+<a name="ln166">}</a>
+<a name="ln167"> </a>
+<a name="ln168">/////////////////////////////////////</a>
+<a name="ln169">string FPSFormat::getTimeStr()</a>
+<a name="ln170">{</a>
+<a name="ln171">  //e.g. 2011-09-25T09:56:19</a>
+<a name="ln172">  const int TIME_STR_SIZE = 64;</a>
+<a name="ln173">  time_t akttime;                              /* Systemtime                        */</a>
+<a name="ln174">  char timestr[TIME_STR_SIZE + 1] = &quot;&quot;;        /* Timestring                        */</a>
+<a name="ln175">  size_t time_res;                             /* Result of strftime                */</a>
+<a name="ln176"> </a>
+<a name="ln177">  /* ---- Get the system-time ---- */</a>
+<a name="ln178">  akttime = time((time_t *) nullptr);</a>
+<a name="ln179">  time_res = strftime(timestr,</a>
+<a name="ln180">                      TIME_STR_SIZE,</a>
+<a name="ln181">                      &quot;%Y-%m-%dT%H:%M:%S&quot;,</a>
+<a name="ln182">                      gmtime((time_t *) &amp;akttime)</a>
+<a name="ln183">                      );</a>
+<a name="ln184">  return string(timestr);</a>
+<a name="ln185">}</a>
+<a name="ln186">}//namespace</a>
+<a name="ln187"> </a>
+
+</code></pre>
+<div class="balloon" rel="179"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1001/" target="_blank">V1001</a> The 'time_res' variable is assigned but is not used by the end of the function.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

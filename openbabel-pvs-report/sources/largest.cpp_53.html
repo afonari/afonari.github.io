@@ -1,0 +1,278 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>largest.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">largest.cpp - An OBOp to select N molecules by descriptor value. </a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright(C) 2011 by Chris Morley</a>
+<a name="ln5"> </a>
+<a name="ln6">This file is part of the Open Babel project.</a>
+<a name="ln7">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln10">it under the terms of the GNU General Public License as published by</a>
+<a name="ln11">the Free Software Foundation version 2 of the License.</a>
+<a name="ln12"> </a>
+<a name="ln13">This program is distributed in the hope that it will be useful,</a>
+<a name="ln14">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln15">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln16">GNU General Public License for more details.</a>
+<a name="ln17">***********************************************************************/</a>
+<a name="ln18">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/op.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/descriptor.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln23">#include &quot;deferred.h&quot;</a>
+<a name="ln24">#include &lt;sstream&gt;</a>
+<a name="ln25">#include &lt;algorithm&gt;</a>
+<a name="ln26"> </a>
+<a name="ln27">using namespace std;</a>
+<a name="ln28"> </a>
+<a name="ln29">namespace OpenBabel</a>
+<a name="ln30">{</a>
+<a name="ln31"> </a>
+<a name="ln32">class OpLargest : public OBOp</a>
+<a name="ln33">{</a>
+<a name="ln34">public:</a>
+<a name="ln35">  OpLargest(const char* ID) : OBOp(ID, false){};</a>
+<a name="ln36">  const char* Description()</a>
+<a name="ln37">  {</a>
+<a name="ln38">    //Need to use a member variable so that const char* is valid when it is returned</a>
+<a name="ln39">    description = (strcmp(GetID(),&quot;largest&quot;)!=0) ?</a>
+<a name="ln40">     &quot;# &lt;descr&gt; Output # mols with smallest values of descriptor(not displayed in GUI)\n&quot;</a>
+<a name="ln41">     &quot;    obabel infile.xxx -Ooutfile.yyy --smallest 5 MW\n&quot;</a>
+<a name="ln42">     &quot;will convert only the molecules with the 5 smallest molecular weights.\n&quot; :</a>
+<a name="ln43">     &quot;# &lt;descr&gt; Output # mols with largest values\n&quot;</a>
+<a name="ln44">     &quot;of a descriptor &lt;descr&gt;. For example:\n&quot;</a>
+<a name="ln45">     &quot;    obabel infile.xxx -Ooutfile.yyy --largest 5 MW\n&quot;</a>
+<a name="ln46">     &quot;will convert only the molecules with the 5 largest molecular weights.\n&quot;;</a>
+<a name="ln47">    description +=</a>
+<a name="ln48">     &quot;A property (OBPairData) can be used instead of a descriptor, but\n&quot;</a>
+<a name="ln49">     &quot;must be present in the first molecule. If the number is omitted,\n&quot;</a>
+<a name="ln50">     &quot;1 is assumed.\n&quot;</a>
+<a name="ln51">     &quot;The parameters can be in either order.\n&quot;</a>
+<a name="ln52">     &quot;Preceding the descriptor by ~ inverts the comparison. (Use this form in the GUI.)\n&quot;</a>
+<a name="ln53">     &quot;If a + follows the descriptor, e.g. MW+ , the value will be added to the title.\n&quot;;</a>
+<a name="ln54">    return description.c_str();</a>
+<a name="ln55">  }</a>
+<a name="ln56"> </a>
+<a name="ln57">  virtual bool WorksWith(OBBase* pOb) const { return dynamic_cast&lt;OBMol*&gt;(pOb) != nullptr; }</a>
+<a name="ln58">  virtual bool Do(OBBase* pOb, const char* OptionText=nullptr, OpMap* pOptions=nullptr, OBConversion* pConv=nullptr);</a>
+<a name="ln59">  virtual bool ProcessVec(vector&lt;OBBase*&gt;&amp; vec);</a>
+<a name="ln60">  static bool MatchPairData(OBBase* pOb, std::string&amp; s); //Copy of protected OBDescriptor function</a>
+<a name="ln61"> </a>
+<a name="ln62">private:</a>
+<a name="ln63">  std::string description;</a>
+<a name="ln64">  std::multimap&lt;double, OBBase*&gt; _selmap;</a>
+<a name="ln65">  OBDescriptor* _pDesc;</a>
+<a name="ln66">  std::string _param;</a>
+<a name="ln67">  std::string _prop;</a>
+<a name="ln68">  bool _addDescToTitle;</a>
+<a name="ln69">  bool _rev;</a>
+<a name="ln70">  unsigned _nmols;</a>
+<a name="ln71">  OBConversion* _pConv;</a>
+<a name="ln72">};</a>
+<a name="ln73"> </a>
+<a name="ln74">/////////////////////////////////////////////////////////////////</a>
+<a name="ln75">OpLargest theOpLargest(&quot;largest&quot;); //Global instances</a>
+<a name="ln76">OpLargest theOpSmallest(&quot;smallest&quot;); </a>
+<a name="ln77">/////////////////////////////////////////////////////////////////</a>
+<a name="ln78">bool OpLargest::Do(OBBase* pOb, const char* OptionText, OpMap* pOptions, OBConversion* pConv)</a>
+<a name="ln79">{</a>
+<a name="ln80">  if(!strcmp(OptionText, &quot;inactive&quot;))</a>
+<a name="ln81">    return true;</a>
+<a name="ln82"> </a>
+<a name="ln83">  OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln84">  if(!pmol)</a>
+<a name="ln85">    return false;</a>
+<a name="ln86">  if(pConv-&gt;IsFirstInput())</a>
+<a name="ln87">  {</a>
+<a name="ln88">    _pConv = pConv;</a>
+<a name="ln89">    _selmap.clear();</a>
+<a name="ln90">    _rev = strcmp(GetID(),&quot;largest&quot;)!=0; //_rev is initially true for --smallest</a>
+<a name="ln91">    std::vector&lt;string&gt; vec;</a>
+<a name="ln92">    tokenize(vec, OptionText);</a>
+<a name="ln93">    if(vec.size()&gt;1 &amp;&amp; isdigit(vec[1][0]))</a>
+<a name="ln94">      swap(vec[0], vec[1]); //ensure n desc or desc </a>
+<a name="ln95"> </a>
+<a name="ln96">    unsigned idesc = vec.size()&gt;1 ? 1 : 0;</a>
+<a name="ln97"> </a>
+<a name="ln98">    if(vec[idesc][0]=='~')</a>
+<a name="ln99">    {</a>
+<a name="ln100">      _rev = !_rev;</a>
+<a name="ln101">      vec[idesc].erase(0,1);</a>
+<a name="ln102">    }</a>
+<a name="ln103">    //If + is last char of descriptor the val is to be added to title on output</a>
+<a name="ln104">    string::iterator it = vec[idesc].end() -1;</a>
+<a name="ln105">    _addDescToTitle = (*it=='+');</a>
+<a name="ln106">    if(_addDescToTitle)</a>
+<a name="ln107">      vec[idesc].erase(it);</a>
+<a name="ln108"> </a>
+<a name="ln109">    //If the first molecule has matching OBPairData, use that and set _pDesc to NULL</a>
+<a name="ln110">    if(!vec.empty() &amp;&amp; MatchPairData(pOb, vec[idesc]))</a>
+<a name="ln111">    {</a>
+<a name="ln112">      _pDesc = nullptr;</a>
+<a name="ln113">      _prop = vec[idesc];</a>
+<a name="ln114">    }</a>
+<a name="ln115">    else</a>
+<a name="ln116">    {</a>
+<a name="ln117">      //Read  a descriptor name and parameter </a>
+<a name="ln118">      istringstream ss;</a>
+<a name="ln119">      ss.str(vec[idesc]);</a>
+<a name="ln120">      pair&lt;string,string&gt; spair = OBDescriptor::GetIdentifier(ss);</a>
+<a name="ln121">      if(vec.empty() || !(_pDesc = OBDescriptor::FindType(spair.first.c_str())))</a>
+<a name="ln122">      {</a>
+<a name="ln123">        obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln124">          &quot;Property or descriptor was not recognized.\n&quot;, obError, onceOnly);</a>
+<a name="ln125">        pConv-&gt;SetOneObjectOnly(); //stop all conversion</a>
+<a name="ln126">        return false;</a>
+<a name="ln127">      }</a>
+<a name="ln128">      _param = spair.second.empty() ? &quot;&quot; : spair.second;</a>
+<a name="ln129">    }</a>
+<a name="ln130">    </a>
+<a name="ln131">    _nmols=1;</a>
+<a name="ln132">    if(vec.size()&gt;1)</a>
+<a name="ln133">      _nmols = atoi(vec[0].c_str());</a>
+<a name="ln134">    if(_nmols==0)</a>
+<a name="ln135">      _nmols=1;</a>
+<a name="ln136"> </a>
+<a name="ln137">    //It is necessary for this op to act *after* all the other options. They</a>
+<a name="ln138">    //might filter out molecules and the user will expect this op to select</a>
+<a name="ln139">    //from the molecules that are left. By default, ops act on an object</a>
+<a name="ln140">    // *before*, for example, --filter, so that the following trick is used. </a>
+<a name="ln141">    //This op is removed so that it is not called again normally. A Deferred</a>
+<a name="ln142">    //output format is made, which, because of the true CallDo parameter in the</a>
+<a name="ln143">    //constructor, will immediately call this function,when it receives objects.</a>
+<a name="ln144">    //The handling of the selected molecules is all done here and returning</a>
+<a name="ln145">    //false means that DeferredFormat stores nothing. At the end it calls </a>
+<a name="ln146">    //this op's ProcessVec() function.</a>
+<a name="ln147"> </a>
+<a name="ln148">    pConv-&gt;AddOption(GetID(),OBConversion::GENOPTIONS,&quot;inactive&quot;);//removing messes up DoOps()</a>
+<a name="ln149">    new DeferredFormat(pConv, this, true); //it will delete itself</a>
+<a name="ln150">    //pConv-&gt;AddOption(&quot;OutputAtEnd&quot;,OBConversion::GENOPTIONS);</a>
+<a name="ln151">    return true;</a>
+<a name="ln152">  }</a>
+<a name="ln153"> </a>
+<a name="ln154">  // All molecules (called from DeferredFormat)</a>
+<a name="ln155">  </a>
+<a name="ln156">  //Save in map if descriptor val is better</a>
+<a name="ln157">  // than the current selection or otherwise delete</a>
+<a name="ln158">  double val;</a>
+<a name="ln159">  if(_pDesc)</a>
+<a name="ln160">    val = _pDesc-&gt;Predict(pOb, &amp;_param);</a>
+<a name="ln161">  else</a>
+<a name="ln162">  {</a>
+<a name="ln163">    stringstream ss(pOb-&gt;GetData(_prop)-&gt;GetValue());</a>
+<a name="ln164">    ss &gt;&gt; val;</a>
+<a name="ln165">  }</a>
+<a name="ln166"> </a>
+<a name="ln167">  if(_selmap.size()&lt;_nmols)</a>
+<a name="ln168">    //populate map of selected mols up to desired number</a>
+<a name="ln169">    _selmap.insert(make_pair(val, pOb));</a>
+<a name="ln170">  else</a>
+<a name="ln171">  {</a>
+<a name="ln172">    //replace mols in selection if new mol is better candidate</a>
+<a name="ln173">    multimap&lt;double, OBBase*&gt;::iterator leastwanted = </a>
+<a name="ln174">      _rev ? --_selmap.end() : _selmap.begin();</a>
+<a name="ln175">    if((!_rev &amp;&amp; val&gt;leastwanted-&gt;first) || (_rev &amp;&amp; val&lt;leastwanted-&gt;first))</a>
+<a name="ln176">    {</a>
+<a name="ln177">      //have a better candidate</a>
+<a name="ln178">      delete leastwanted-&gt;second; // delete the worst molecule</a>
+<a name="ln179">      _selmap.erase(leastwanted); // remove it from the map</a>
+<a name="ln180">      _selmap.insert(make_pair(val, pOb)); //add new candidate</a>
+<a name="ln181">    }</a>
+<a name="ln182">    else</a>
+<a name="ln183">      delete pOb; // discard  a mol that did not make selection</a>
+<a name="ln184">  }</a>
+<a name="ln185">  return false; //do not save in DeferredFormat </a>
+<a name="ln186">}</a>
+<a name="ln187"> </a>
+<a name="ln188">bool OpLargest::ProcessVec(vector&lt;OBBase*&gt;&amp; vec)</a>
+<a name="ln189">{</a>
+<a name="ln190">  //Called at the end.</a>
+<a name="ln191">  //Add the selected mols to the vec for Deferred format to output</a>
+<a name="ln192">  vec.clear();</a>
+<a name="ln193">  vec.reserve(_selmap.size());</a>
+<a name="ln194">  multimap&lt;double, OBBase*&gt;::reverse_iterator iter;</a>
+<a name="ln195">  for(iter=_selmap.rbegin(); iter!=_selmap.rend(); ++iter)</a>
+<a name="ln196">  {</a>
+<a name="ln197">    if(_addDescToTitle)</a>
+<a name="ln198">    {</a>
+<a name="ln199">      std::stringstream ss;</a>
+<a name="ln200">      ss &lt;&lt; iter-&gt;second-&gt;GetTitle() &lt;&lt; ' ' &lt;&lt; iter-&gt;first;</a>
+<a name="ln201">      iter-&gt;second-&gt;SetTitle(ss.str().c_str());</a>
+<a name="ln202">    }</a>
+<a name="ln203">    vec.push_back(iter-&gt;second);</a>
+<a name="ln204">  }</a>
+<a name="ln205">  if(_rev) //it's difficult to find an elegant and efficient way of doing this</a>
+<a name="ln206">    reverse(vec.begin(),vec.end());</a>
+<a name="ln207">  return true;</a>
+<a name="ln208">}</a>
+<a name="ln209"> </a>
+<a name="ln210">bool OpLargest::MatchPairData(OBBase* pOb, string&amp; s)</a>
+<a name="ln211">{</a>
+<a name="ln212">  //If s matches a PairData attribute return true</a>
+<a name="ln213">  //else if s with all '_' replaced by spaces matches return true and s is now the form with spaces</a>
+<a name="ln214">  //else return false.</a>
+<a name="ln215">  if(pOb-&gt;HasData(s))</a>
+<a name="ln216">    return true;</a>
+<a name="ln217">  if(s.find('_')==string::npos)</a>
+<a name="ln218">    return false;</a>
+<a name="ln219">  string temp(s);</a>
+<a name="ln220">  string::size_type pos = string::npos;</a>
+<a name="ln221">  //replace all underscores by spaces</a>
+<a name="ln222">  while((pos=temp.find('_', ++pos))!=string::npos)</a>
+<a name="ln223">    temp[pos]=' ';</a>
+<a name="ln224">  if(pOb-&gt;HasData(temp))</a>
+<a name="ln225">  {</a>
+<a name="ln226">    s = temp;</a>
+<a name="ln227">    return true;</a>
+<a name="ln228">  }</a>
+<a name="ln229">  return false;</a>
+<a name="ln230">}</a>
+<a name="ln231"> </a>
+<a name="ln232">}//namespace</a>
+
+</code></pre>
+<div class="balloon" rel="35"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v730/" target="_blank">V730</a> Not all members of a class are initialized inside the constructor. Consider inspecting: _pDesc, _addDescToTitle, _rev, _nmols, _pConv.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

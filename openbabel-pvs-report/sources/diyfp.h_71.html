@@ -1,0 +1,304 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>diyfp.h</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">// Tencent is pleased to support the open source community by making RapidJSON available.</a>
+<a name="ln2">// </a>
+<a name="ln3">// Copyright (C) 2015 THL A29 Limited, a Tencent company, and Milo Yip. All rights reserved.</a>
+<a name="ln4">//</a>
+<a name="ln5">// Licensed under the MIT License (the &quot;License&quot;); you may not use this file except</a>
+<a name="ln6">// in compliance with the License. You may obtain a copy of the License at</a>
+<a name="ln7">//</a>
+<a name="ln8">// http://opensource.org/licenses/MIT</a>
+<a name="ln9">//</a>
+<a name="ln10">// Unless required by applicable law or agreed to in writing, software distributed </a>
+<a name="ln11">// under the License is distributed on an &quot;AS IS&quot; BASIS, WITHOUT WARRANTIES OR </a>
+<a name="ln12">// CONDITIONS OF ANY KIND, either express or implied. See the License for the </a>
+<a name="ln13">// specific language governing permissions and limitations under the License.</a>
+<a name="ln14"> </a>
+<a name="ln15">// This is a C++ header-only implementation of Grisu2 algorithm from the publication:</a>
+<a name="ln16">// Loitsch, Florian. &quot;Printing floating-point numbers quickly and accurately with</a>
+<a name="ln17">// integers.&quot; ACM Sigplan Notices 45.6 (2010): 233-243.</a>
+<a name="ln18"> </a>
+<a name="ln19">#ifndef RAPIDJSON_DIYFP_H_</a>
+<a name="ln20">#define RAPIDJSON_DIYFP_H_</a>
+<a name="ln21"> </a>
+<a name="ln22">#include &quot;../rapidjson.h&quot;</a>
+<a name="ln23"> </a>
+<a name="ln24">#if defined(_MSC_VER) &amp;&amp; defined(_M_AMD64)</a>
+<a name="ln25">#include &lt;intrin.h&gt;</a>
+<a name="ln26">#pragma intrinsic(_BitScanReverse64)</a>
+<a name="ln27">#pragma intrinsic(_umul128)</a>
+<a name="ln28">#endif</a>
+<a name="ln29"> </a>
+<a name="ln30">RAPIDJSON_NAMESPACE_BEGIN</a>
+<a name="ln31">namespace internal {</a>
+<a name="ln32"> </a>
+<a name="ln33">#ifdef __GNUC__</a>
+<a name="ln34">RAPIDJSON_DIAG_PUSH</a>
+<a name="ln35">RAPIDJSON_DIAG_OFF(effc++)</a>
+<a name="ln36">#endif</a>
+<a name="ln37"> </a>
+<a name="ln38">#ifdef __clang__</a>
+<a name="ln39">RAPIDJSON_DIAG_PUSH</a>
+<a name="ln40">RAPIDJSON_DIAG_OFF(padded)</a>
+<a name="ln41">#endif</a>
+<a name="ln42"> </a>
+<a name="ln43">struct DiyFp {</a>
+<a name="ln44">    DiyFp() : f(), e() {}</a>
+<a name="ln45"> </a>
+<a name="ln46">    DiyFp(uint64_t fp, int exp) : f(fp), e(exp) {}</a>
+<a name="ln47"> </a>
+<a name="ln48">    explicit DiyFp(double d) {</a>
+<a name="ln49">        union {</a>
+<a name="ln50">            double d;</a>
+<a name="ln51">            uint64_t u64;</a>
+<a name="ln52">        } u = { d };</a>
+<a name="ln53"> </a>
+<a name="ln54">        int biased_e = static_cast&lt;int&gt;((u.u64 &amp; kDpExponentMask) &gt;&gt; kDpSignificandSize);</a>
+<a name="ln55">        uint64_t significand = (u.u64 &amp; kDpSignificandMask);</a>
+<a name="ln56">        if (biased_e != 0) {</a>
+<a name="ln57">            f = significand + kDpHiddenBit;</a>
+<a name="ln58">            e = biased_e - kDpExponentBias;</a>
+<a name="ln59">        } </a>
+<a name="ln60">        else {</a>
+<a name="ln61">            f = significand;</a>
+<a name="ln62">            e = kDpMinExponent + 1;</a>
+<a name="ln63">        }</a>
+<a name="ln64">    }</a>
+<a name="ln65"> </a>
+<a name="ln66">    DiyFp operator-(const DiyFp&amp; rhs) const {</a>
+<a name="ln67">        return DiyFp(f - rhs.f, e);</a>
+<a name="ln68">    }</a>
+<a name="ln69"> </a>
+<a name="ln70">    DiyFp operator*(const DiyFp&amp; rhs) const {</a>
+<a name="ln71">#if defined(_MSC_VER) &amp;&amp; defined(_M_AMD64)</a>
+<a name="ln72">        uint64_t h;</a>
+<a name="ln73">        uint64_t l = _umul128(f, rhs.f, &amp;h);</a>
+<a name="ln74">        if (l &amp; (uint64_t(1) &lt;&lt; 63)) // rounding</a>
+<a name="ln75">            h++;</a>
+<a name="ln76">        return DiyFp(h, e + rhs.e + 64);</a>
+<a name="ln77">#elif (__GNUC__ &gt; 4 || (__GNUC__ == 4 &amp;&amp; __GNUC_MINOR__ &gt;= 6)) &amp;&amp; defined(__x86_64__)</a>
+<a name="ln78">        __extension__ typedef unsigned __int128 uint128;</a>
+<a name="ln79">        uint128 p = static_cast&lt;uint128&gt;(f) * static_cast&lt;uint128&gt;(rhs.f);</a>
+<a name="ln80">        uint64_t h = static_cast&lt;uint64_t&gt;(p &gt;&gt; 64);</a>
+<a name="ln81">        uint64_t l = static_cast&lt;uint64_t&gt;(p);</a>
+<a name="ln82">        if (l &amp; (uint64_t(1) &lt;&lt; 63)) // rounding</a>
+<a name="ln83">            h++;</a>
+<a name="ln84">        return DiyFp(h, e + rhs.e + 64);</a>
+<a name="ln85">#else</a>
+<a name="ln86">        const uint64_t M32 = 0xFFFFFFFF;</a>
+<a name="ln87">        const uint64_t a = f &gt;&gt; 32;</a>
+<a name="ln88">        const uint64_t b = f &amp; M32;</a>
+<a name="ln89">        const uint64_t c = rhs.f &gt;&gt; 32;</a>
+<a name="ln90">        const uint64_t d = rhs.f &amp; M32;</a>
+<a name="ln91">        const uint64_t ac = a * c;</a>
+<a name="ln92">        const uint64_t bc = b * c;</a>
+<a name="ln93">        const uint64_t ad = a * d;</a>
+<a name="ln94">        const uint64_t bd = b * d;</a>
+<a name="ln95">        uint64_t tmp = (bd &gt;&gt; 32) + (ad &amp; M32) + (bc &amp; M32);</a>
+<a name="ln96">        tmp += 1U &lt;&lt; 31;  /// mult_round</a>
+<a name="ln97">        return DiyFp(ac + (ad &gt;&gt; 32) + (bc &gt;&gt; 32) + (tmp &gt;&gt; 32), e + rhs.e + 64);</a>
+<a name="ln98">#endif</a>
+<a name="ln99">    }</a>
+<a name="ln100"> </a>
+<a name="ln101">    DiyFp Normalize() const {</a>
+<a name="ln102">#if defined(_MSC_VER) &amp;&amp; defined(_M_AMD64)</a>
+<a name="ln103">        unsigned long index;</a>
+<a name="ln104">        _BitScanReverse64(&amp;index, f);</a>
+<a name="ln105">        return DiyFp(f &lt;&lt; (63 - index), e - (63 - index));</a>
+<a name="ln106">#elif defined(__GNUC__) &amp;&amp; __GNUC__ &gt;= 4</a>
+<a name="ln107">        int s = __builtin_clzll(f);</a>
+<a name="ln108">        return DiyFp(f &lt;&lt; s, e - s);</a>
+<a name="ln109">#else</a>
+<a name="ln110">        DiyFp res = *this;</a>
+<a name="ln111">        while (!(res.f &amp; (static_cast&lt;uint64_t&gt;(1) &lt;&lt; 63))) {</a>
+<a name="ln112">            res.f &lt;&lt;= 1;</a>
+<a name="ln113">            res.e--;</a>
+<a name="ln114">        }</a>
+<a name="ln115">        return res;</a>
+<a name="ln116">#endif</a>
+<a name="ln117">    }</a>
+<a name="ln118"> </a>
+<a name="ln119">    DiyFp NormalizeBoundary() const {</a>
+<a name="ln120">        DiyFp res = *this;</a>
+<a name="ln121">        while (!(res.f &amp; (kDpHiddenBit &lt;&lt; 1))) {</a>
+<a name="ln122">            res.f &lt;&lt;= 1;</a>
+<a name="ln123">            res.e--;</a>
+<a name="ln124">        }</a>
+<a name="ln125">        res.f &lt;&lt;= (kDiySignificandSize - kDpSignificandSize - 2);</a>
+<a name="ln126">        res.e = res.e - (kDiySignificandSize - kDpSignificandSize - 2);</a>
+<a name="ln127">        return res;</a>
+<a name="ln128">    }</a>
+<a name="ln129"> </a>
+<a name="ln130">    void NormalizedBoundaries(DiyFp* minus, DiyFp* plus) const {</a>
+<a name="ln131">        DiyFp pl = DiyFp((f &lt;&lt; 1) + 1, e - 1).NormalizeBoundary();</a>
+<a name="ln132">        DiyFp mi = (f == kDpHiddenBit) ? DiyFp((f &lt;&lt; 2) - 1, e - 2) : DiyFp((f &lt;&lt; 1) - 1, e - 1);</a>
+<a name="ln133">        mi.f &lt;&lt;= mi.e - pl.e;</a>
+<a name="ln134">        mi.e = pl.e;</a>
+<a name="ln135">        *plus = pl;</a>
+<a name="ln136">        *minus = mi;</a>
+<a name="ln137">    }</a>
+<a name="ln138"> </a>
+<a name="ln139">    double ToDouble() const {</a>
+<a name="ln140">        union {</a>
+<a name="ln141">            double d;</a>
+<a name="ln142">            uint64_t u64;</a>
+<a name="ln143">        }u;</a>
+<a name="ln144">        const uint64_t be = (e == kDpDenormalExponent &amp;&amp; (f &amp; kDpHiddenBit) == 0) ? 0 : </a>
+<a name="ln145">            static_cast&lt;uint64_t&gt;(e + kDpExponentBias);</a>
+<a name="ln146">        u.u64 = (f &amp; kDpSignificandMask) | (be &lt;&lt; kDpSignificandSize);</a>
+<a name="ln147">        return u.d;</a>
+<a name="ln148">    }</a>
+<a name="ln149"> </a>
+<a name="ln150">    static const int kDiySignificandSize = 64;</a>
+<a name="ln151">    static const int kDpSignificandSize = 52;</a>
+<a name="ln152">    static const int kDpExponentBias = 0x3FF + kDpSignificandSize;</a>
+<a name="ln153">    static const int kDpMaxExponent = 0x7FF - kDpExponentBias;</a>
+<a name="ln154">    static const int kDpMinExponent = -kDpExponentBias;</a>
+<a name="ln155">    static const int kDpDenormalExponent = -kDpExponentBias + 1;</a>
+<a name="ln156">    static const uint64_t kDpExponentMask = RAPIDJSON_UINT64_C2(0x7FF00000, 0x00000000);</a>
+<a name="ln157">    static const uint64_t kDpSignificandMask = RAPIDJSON_UINT64_C2(0x000FFFFF, 0xFFFFFFFF);</a>
+<a name="ln158">    static const uint64_t kDpHiddenBit = RAPIDJSON_UINT64_C2(0x00100000, 0x00000000);</a>
+<a name="ln159"> </a>
+<a name="ln160">    uint64_t f;</a>
+<a name="ln161">    int e;</a>
+<a name="ln162">};</a>
+<a name="ln163"> </a>
+<a name="ln164">inline DiyFp GetCachedPowerByIndex(size_t index) {</a>
+<a name="ln165">    // 10^-348, 10^-340, ..., 10^340</a>
+<a name="ln166">    static const uint64_t kCachedPowers_F[] = {</a>
+<a name="ln167">        RAPIDJSON_UINT64_C2(0xfa8fd5a0, 0x081c0288), RAPIDJSON_UINT64_C2(0xbaaee17f, 0xa23ebf76),</a>
+<a name="ln168">        RAPIDJSON_UINT64_C2(0x8b16fb20, 0x3055ac76), RAPIDJSON_UINT64_C2(0xcf42894a, 0x5dce35ea),</a>
+<a name="ln169">        RAPIDJSON_UINT64_C2(0x9a6bb0aa, 0x55653b2d), RAPIDJSON_UINT64_C2(0xe61acf03, 0x3d1a45df),</a>
+<a name="ln170">        RAPIDJSON_UINT64_C2(0xab70fe17, 0xc79ac6ca), RAPIDJSON_UINT64_C2(0xff77b1fc, 0xbebcdc4f),</a>
+<a name="ln171">        RAPIDJSON_UINT64_C2(0xbe5691ef, 0x416bd60c), RAPIDJSON_UINT64_C2(0x8dd01fad, 0x907ffc3c),</a>
+<a name="ln172">        RAPIDJSON_UINT64_C2(0xd3515c28, 0x31559a83), RAPIDJSON_UINT64_C2(0x9d71ac8f, 0xada6c9b5),</a>
+<a name="ln173">        RAPIDJSON_UINT64_C2(0xea9c2277, 0x23ee8bcb), RAPIDJSON_UINT64_C2(0xaecc4991, 0x4078536d),</a>
+<a name="ln174">        RAPIDJSON_UINT64_C2(0x823c1279, 0x5db6ce57), RAPIDJSON_UINT64_C2(0xc2109436, 0x4dfb5637),</a>
+<a name="ln175">        RAPIDJSON_UINT64_C2(0x9096ea6f, 0x3848984f), RAPIDJSON_UINT64_C2(0xd77485cb, 0x25823ac7),</a>
+<a name="ln176">        RAPIDJSON_UINT64_C2(0xa086cfcd, 0x97bf97f4), RAPIDJSON_UINT64_C2(0xef340a98, 0x172aace5),</a>
+<a name="ln177">        RAPIDJSON_UINT64_C2(0xb23867fb, 0x2a35b28e), RAPIDJSON_UINT64_C2(0x84c8d4df, 0xd2c63f3b),</a>
+<a name="ln178">        RAPIDJSON_UINT64_C2(0xc5dd4427, 0x1ad3cdba), RAPIDJSON_UINT64_C2(0x936b9fce, 0xbb25c996),</a>
+<a name="ln179">        RAPIDJSON_UINT64_C2(0xdbac6c24, 0x7d62a584), RAPIDJSON_UINT64_C2(0xa3ab6658, 0x0d5fdaf6),</a>
+<a name="ln180">        RAPIDJSON_UINT64_C2(0xf3e2f893, 0xdec3f126), RAPIDJSON_UINT64_C2(0xb5b5ada8, 0xaaff80b8),</a>
+<a name="ln181">        RAPIDJSON_UINT64_C2(0x87625f05, 0x6c7c4a8b), RAPIDJSON_UINT64_C2(0xc9bcff60, 0x34c13053),</a>
+<a name="ln182">        RAPIDJSON_UINT64_C2(0x964e858c, 0x91ba2655), RAPIDJSON_UINT64_C2(0xdff97724, 0x70297ebd),</a>
+<a name="ln183">        RAPIDJSON_UINT64_C2(0xa6dfbd9f, 0xb8e5b88f), RAPIDJSON_UINT64_C2(0xf8a95fcf, 0x88747d94),</a>
+<a name="ln184">        RAPIDJSON_UINT64_C2(0xb9447093, 0x8fa89bcf), RAPIDJSON_UINT64_C2(0x8a08f0f8, 0xbf0f156b),</a>
+<a name="ln185">        RAPIDJSON_UINT64_C2(0xcdb02555, 0x653131b6), RAPIDJSON_UINT64_C2(0x993fe2c6, 0xd07b7fac),</a>
+<a name="ln186">        RAPIDJSON_UINT64_C2(0xe45c10c4, 0x2a2b3b06), RAPIDJSON_UINT64_C2(0xaa242499, 0x697392d3),</a>
+<a name="ln187">        RAPIDJSON_UINT64_C2(0xfd87b5f2, 0x8300ca0e), RAPIDJSON_UINT64_C2(0xbce50864, 0x92111aeb),</a>
+<a name="ln188">        RAPIDJSON_UINT64_C2(0x8cbccc09, 0x6f5088cc), RAPIDJSON_UINT64_C2(0xd1b71758, 0xe219652c),</a>
+<a name="ln189">        RAPIDJSON_UINT64_C2(0x9c400000, 0x00000000), RAPIDJSON_UINT64_C2(0xe8d4a510, 0x00000000),</a>
+<a name="ln190">        RAPIDJSON_UINT64_C2(0xad78ebc5, 0xac620000), RAPIDJSON_UINT64_C2(0x813f3978, 0xf8940984),</a>
+<a name="ln191">        RAPIDJSON_UINT64_C2(0xc097ce7b, 0xc90715b3), RAPIDJSON_UINT64_C2(0x8f7e32ce, 0x7bea5c70),</a>
+<a name="ln192">        RAPIDJSON_UINT64_C2(0xd5d238a4, 0xabe98068), RAPIDJSON_UINT64_C2(0x9f4f2726, 0x179a2245),</a>
+<a name="ln193">        RAPIDJSON_UINT64_C2(0xed63a231, 0xd4c4fb27), RAPIDJSON_UINT64_C2(0xb0de6538, 0x8cc8ada8),</a>
+<a name="ln194">        RAPIDJSON_UINT64_C2(0x83c7088e, 0x1aab65db), RAPIDJSON_UINT64_C2(0xc45d1df9, 0x42711d9a),</a>
+<a name="ln195">        RAPIDJSON_UINT64_C2(0x924d692c, 0xa61be758), RAPIDJSON_UINT64_C2(0xda01ee64, 0x1a708dea),</a>
+<a name="ln196">        RAPIDJSON_UINT64_C2(0xa26da399, 0x9aef774a), RAPIDJSON_UINT64_C2(0xf209787b, 0xb47d6b85),</a>
+<a name="ln197">        RAPIDJSON_UINT64_C2(0xb454e4a1, 0x79dd1877), RAPIDJSON_UINT64_C2(0x865b8692, 0x5b9bc5c2),</a>
+<a name="ln198">        RAPIDJSON_UINT64_C2(0xc83553c5, 0xc8965d3d), RAPIDJSON_UINT64_C2(0x952ab45c, 0xfa97a0b3),</a>
+<a name="ln199">        RAPIDJSON_UINT64_C2(0xde469fbd, 0x99a05fe3), RAPIDJSON_UINT64_C2(0xa59bc234, 0xdb398c25),</a>
+<a name="ln200">        RAPIDJSON_UINT64_C2(0xf6c69a72, 0xa3989f5c), RAPIDJSON_UINT64_C2(0xb7dcbf53, 0x54e9bece),</a>
+<a name="ln201">        RAPIDJSON_UINT64_C2(0x88fcf317, 0xf22241e2), RAPIDJSON_UINT64_C2(0xcc20ce9b, 0xd35c78a5),</a>
+<a name="ln202">        RAPIDJSON_UINT64_C2(0x98165af3, 0x7b2153df), RAPIDJSON_UINT64_C2(0xe2a0b5dc, 0x971f303a),</a>
+<a name="ln203">        RAPIDJSON_UINT64_C2(0xa8d9d153, 0x5ce3b396), RAPIDJSON_UINT64_C2(0xfb9b7cd9, 0xa4a7443c),</a>
+<a name="ln204">        RAPIDJSON_UINT64_C2(0xbb764c4c, 0xa7a44410), RAPIDJSON_UINT64_C2(0x8bab8eef, 0xb6409c1a),</a>
+<a name="ln205">        RAPIDJSON_UINT64_C2(0xd01fef10, 0xa657842c), RAPIDJSON_UINT64_C2(0x9b10a4e5, 0xe9913129),</a>
+<a name="ln206">        RAPIDJSON_UINT64_C2(0xe7109bfb, 0xa19c0c9d), RAPIDJSON_UINT64_C2(0xac2820d9, 0x623bf429),</a>
+<a name="ln207">        RAPIDJSON_UINT64_C2(0x80444b5e, 0x7aa7cf85), RAPIDJSON_UINT64_C2(0xbf21e440, 0x03acdd2d),</a>
+<a name="ln208">        RAPIDJSON_UINT64_C2(0x8e679c2f, 0x5e44ff8f), RAPIDJSON_UINT64_C2(0xd433179d, 0x9c8cb841),</a>
+<a name="ln209">        RAPIDJSON_UINT64_C2(0x9e19db92, 0xb4e31ba9), RAPIDJSON_UINT64_C2(0xeb96bf6e, 0xbadf77d9),</a>
+<a name="ln210">        RAPIDJSON_UINT64_C2(0xaf87023b, 0x9bf0ee6b)</a>
+<a name="ln211">    };</a>
+<a name="ln212">    static const int16_t kCachedPowers_E[] = {</a>
+<a name="ln213">        -1220, -1193, -1166, -1140, -1113, -1087, -1060, -1034, -1007,  -980,</a>
+<a name="ln214">        -954,  -927,  -901,  -874,  -847,  -821,  -794,  -768,  -741,  -715,</a>
+<a name="ln215">        -688,  -661,  -635,  -608,  -582,  -555,  -529,  -502,  -475,  -449,</a>
+<a name="ln216">        -422,  -396,  -369,  -343,  -316,  -289,  -263,  -236,  -210,  -183,</a>
+<a name="ln217">        -157,  -130,  -103,   -77,   -50,   -24,     3,    30,    56,    83,</a>
+<a name="ln218">        109,   136,   162,   189,   216,   242,   269,   295,   322,   348,</a>
+<a name="ln219">        375,   402,   428,   455,   481,   508,   534,   561,   588,   614,</a>
+<a name="ln220">        641,   667,   694,   720,   747,   774,   800,   827,   853,   880,</a>
+<a name="ln221">        907,   933,   960,   986,  1013,  1039,  1066</a>
+<a name="ln222">    };</a>
+<a name="ln223">    return DiyFp(kCachedPowers_F[index], kCachedPowers_E[index]);</a>
+<a name="ln224">}</a>
+<a name="ln225">    </a>
+<a name="ln226">inline DiyFp GetCachedPower(int e, int* K) {</a>
+<a name="ln227"> </a>
+<a name="ln228">    //int k = static_cast&lt;int&gt;(ceil((-61 - e) * 0.30102999566398114)) + 374;</a>
+<a name="ln229">    double dk = (-61 - e) * 0.30102999566398114 + 347;  // dk must be positive, so can do ceiling in positive</a>
+<a name="ln230">    int k = static_cast&lt;int&gt;(dk);</a>
+<a name="ln231">    if (dk - k &gt; 0.0)</a>
+<a name="ln232">        k++;</a>
+<a name="ln233"> </a>
+<a name="ln234">    unsigned index = static_cast&lt;unsigned&gt;((k &gt;&gt; 3) + 1);</a>
+<a name="ln235">    *K = -(-348 + static_cast&lt;int&gt;(index &lt;&lt; 3));    // decimal exponent no need lookup table</a>
+<a name="ln236"> </a>
+<a name="ln237">    return GetCachedPowerByIndex(index);</a>
+<a name="ln238">}</a>
+<a name="ln239"> </a>
+<a name="ln240">inline DiyFp GetCachedPower10(int exp, int *outExp) {</a>
+<a name="ln241">     unsigned index = (static_cast&lt;unsigned&gt;(exp) + 348u) / 8u;</a>
+<a name="ln242">     *outExp = -348 + static_cast&lt;int&gt;(index) * 8;</a>
+<a name="ln243">     return GetCachedPowerByIndex(index);</a>
+<a name="ln244"> }</a>
+<a name="ln245"> </a>
+<a name="ln246">#ifdef __GNUC__</a>
+<a name="ln247">RAPIDJSON_DIAG_POP</a>
+<a name="ln248">#endif</a>
+<a name="ln249"> </a>
+<a name="ln250">#ifdef __clang__</a>
+<a name="ln251">RAPIDJSON_DIAG_POP</a>
+<a name="ln252">RAPIDJSON_DIAG_OFF(padded)</a>
+<a name="ln253">#endif</a>
+<a name="ln254"> </a>
+<a name="ln255">} // namespace internal</a>
+<a name="ln256">RAPIDJSON_NAMESPACE_END</a>
+<a name="ln257"> </a>
+<a name="ln258">#endif // RAPIDJSON_DIYFP_H_</a>
+
+</code></pre>
+<div class="balloon" rel="145"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1028/" target="_blank">V1028</a> Possible overflow. Consider casting operands, not the result.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

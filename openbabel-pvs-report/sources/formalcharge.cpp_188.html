@@ -1,0 +1,210 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>formalcharge.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">formalcharge.cpp - Test molecular formal charge perception</a>
+<a name="ln3"> </a>
+<a name="ln4">This file is part of the Open Babel project.</a>
+<a name="ln5">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln6"> </a>
+<a name="ln7">Some portions Copyright (C) 2005-2006 Geoffrey R. Hutchison</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln10">it under the terms of the GNU General Public License as published by</a>
+<a name="ln11">the Free Software Foundation version 2 of the License.</a>
+<a name="ln12"> </a>
+<a name="ln13">This program is distributed in the hope that it will be useful,</a>
+<a name="ln14">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln15">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln16">GNU General Public License for more details.</a>
+<a name="ln17">***********************************************************************/</a>
+<a name="ln18"> </a>
+<a name="ln19">// used to set import/export for Cygwin DLLs</a>
+<a name="ln20">#ifdef WIN32</a>
+<a name="ln21">#define USING_OBDLL</a>
+<a name="ln22">#endif</a>
+<a name="ln23"> </a>
+<a name="ln24">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln25"> </a>
+<a name="ln26">#include &lt;fstream&gt;</a>
+<a name="ln27">#include &lt;cstdlib&gt;</a>
+<a name="ln28">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln29">#include &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln30">#include &lt;openbabel/obutil.h&gt;</a>
+<a name="ln31">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln32">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln33"> </a>
+<a name="ln34">using namespace std;</a>
+<a name="ln35">using namespace OpenBabel;</a>
+<a name="ln36"> </a>
+<a name="ln37">#ifdef TESTDATADIR</a>
+<a name="ln38">  string ftestdatadir = TESTDATADIR;</a>
+<a name="ln39">  string fresults_file = ftestdatadir + &quot;formalchargeresults.txt&quot;;</a>
+<a name="ln40">  string fsmilestypes_file = ftestdatadir + &quot;attype.00.smi&quot;;</a>
+<a name="ln41">#else</a>
+<a name="ln42">  string fresults_file = &quot;files/formalchargeresults.txt&quot;;</a>
+<a name="ln43">  string fsmilestypes_file = &quot;files/attype.00.smi&quot;;</a>
+<a name="ln44">#endif</a>
+<a name="ln45"> </a>
+<a name="ln46">void GenerateFormalChargeReference();</a>
+<a name="ln47"> </a>
+<a name="ln48">int formalcharge(int argc, char* argv[])</a>
+<a name="ln49">{</a>
+<a name="ln50">  int defaultchoice = 1;</a>
+<a name="ln51">  </a>
+<a name="ln52">  int choice = defaultchoice;</a>
+<a name="ln53"> </a>
+<a name="ln54">  if (argc &gt; 1) {</a>
+<a name="ln55">    if(sscanf(argv[1], &quot;%d&quot;, &amp;choice) != 1) {</a>
+<a name="ln56">      printf(&quot;Couldn't parse that input as a number\n&quot;);</a>
+<a name="ln57">      return -1;</a>
+<a name="ln58">    }</a>
+<a name="ln59">  }</a>
+<a name="ln60"> </a>
+<a name="ln61">  // Define location of file formats for testing</a>
+<a name="ln62">  #ifdef FORMATDIR</a>
+<a name="ln63">    char env[BUFF_SIZE];</a>
+<a name="ln64">    snprintf(env, BUFF_SIZE, &quot;BABEL_LIBDIR=%s&quot;, FORMATDIR);</a>
+<a name="ln65">    putenv(env);</a>
+<a name="ln66">  #endif</a>
+<a name="ln67"> </a>
+<a name="ln68">  if (choice == 99)</a>
+<a name="ln69">    {</a>
+<a name="ln70">      GenerateFormalChargeReference();</a>
+<a name="ln71">      return 0;</a>
+<a name="ln72">    }</a>
+<a name="ln73"> </a>
+<a name="ln74">  cout &lt;&lt; &quot;# Testing molecular formal charges...&quot; &lt;&lt; endl;</a>
+<a name="ln75"> </a>
+<a name="ln76">  std::ifstream mifs;</a>
+<a name="ln77">  if (!SafeOpen(mifs, fsmilestypes_file.c_str()))</a>
+<a name="ln78">    {</a>
+<a name="ln79">      cout &lt;&lt; &quot;Bail out! Cannot read file &quot; &lt;&lt; fsmilestypes_file &lt;&lt; endl;</a>
+<a name="ln80">      return -1; // test failed</a>
+<a name="ln81">    }</a>
+<a name="ln82"> </a>
+<a name="ln83">  std::ifstream rifs;</a>
+<a name="ln84">  if (!SafeOpen(rifs, fresults_file.c_str()))</a>
+<a name="ln85">    {</a>
+<a name="ln86">      cout &lt;&lt; &quot;Bail out! Cannot read file &quot; &lt;&lt; fresults_file &lt;&lt; endl;</a>
+<a name="ln87">      return -1; // test failed</a>
+<a name="ln88">    }</a>
+<a name="ln89"> </a>
+<a name="ln90">  char buffer[BUFF_SIZE];</a>
+<a name="ln91">  vector&lt;string&gt; vs;</a>
+<a name="ln92">  OBMol mol;</a>
+<a name="ln93">  OBConversion conv(&amp;mifs, &amp;cout);</a>
+<a name="ln94">  unsigned int currentTest = 1;</a>
+<a name="ln95"> </a>
+<a name="ln96">  if(! conv.SetInAndOutFormats(&quot;SMI&quot;,&quot;SMI&quot;))</a>
+<a name="ln97">    {</a>
+<a name="ln98">      cout &lt;&lt; &quot;Bail out! SMILES format is not loaded&quot; &lt;&lt; endl;</a>
+<a name="ln99">      return -1;</a>
+<a name="ln100">    }</a>
+<a name="ln101"> </a>
+<a name="ln102">  for (;mifs;)</a>
+<a name="ln103">    {</a>
+<a name="ln104">      mol.Clear();</a>
+<a name="ln105">      conv.Read(&amp;mol);</a>
+<a name="ln106">      if (mol.Empty())</a>
+<a name="ln107">        continue;</a>
+<a name="ln108">      if (!rifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln109">        {</a>
+<a name="ln110">          cout &lt;&lt; &quot;Bail out! error reading reference data&quot; &lt;&lt; endl;</a>
+<a name="ln111">          return -1; // test failed</a>
+<a name="ln112">        }</a>
+<a name="ln113"> </a>
+<a name="ln114">      tokenize(vs,buffer);</a>
+<a name="ln115">      // check charges</a>
+<a name="ln116">    }</a>
+<a name="ln117"> </a>
+<a name="ln118">  cout &lt;&lt; &quot;ok 1\n&quot;;</a>
+<a name="ln119"> </a>
+<a name="ln120">  // return number of tests run</a>
+<a name="ln121">  cout &lt;&lt; &quot;1..&quot; &lt;&lt; currentTest &lt;&lt; endl;</a>
+<a name="ln122"> </a>
+<a name="ln123">  // Passed tests</a>
+<a name="ln124">  return 0;</a>
+<a name="ln125">}</a>
+<a name="ln126"> </a>
+<a name="ln127">void GenerateFormalChargeReference()</a>
+<a name="ln128">{</a>
+<a name="ln129">  std::ifstream ifs;</a>
+<a name="ln130">  if (!SafeOpen(ifs, fsmilestypes_file.c_str()))</a>
+<a name="ln131">    return;</a>
+<a name="ln132"> </a>
+<a name="ln133">  std::ofstream ofs;</a>
+<a name="ln134">  if (!SafeOpen(ofs, fresults_file.c_str()))</a>
+<a name="ln135">    return;</a>
+<a name="ln136"> </a>
+<a name="ln137">  OBMol mol;</a>
+<a name="ln138">  OBConversion conv(&amp;ifs, &amp;cout);</a>
+<a name="ln139"> </a>
+<a name="ln140">  if(! conv.SetInAndOutFormats(&quot;SMI&quot;,&quot;SMI&quot;))</a>
+<a name="ln141">    {</a>
+<a name="ln142">      cerr &lt;&lt; &quot;SMILES format is not loaded&quot; &lt;&lt; endl;</a>
+<a name="ln143">      return;</a>
+<a name="ln144">    }</a>
+<a name="ln145"> </a>
+<a name="ln146">  for (;ifs;)</a>
+<a name="ln147">    {</a>
+<a name="ln148">      mol.Clear();</a>
+<a name="ln149">      conv.Read(&amp;mol);</a>
+<a name="ln150">      if (mol.Empty())</a>
+<a name="ln151">        continue;</a>
+<a name="ln152"> </a>
+<a name="ln153">      ofs &lt;&lt; mol.GetTotalCharge();</a>
+<a name="ln154">      FOR_ATOMS_OF_MOL(atom, mol)</a>
+<a name="ln155">        {</a>
+<a name="ln156">          ofs &lt;&lt; &quot; &quot; &lt;&lt; atom-&gt;GetFormalCharge();</a>
+<a name="ln157">        }</a>
+<a name="ln158">      ofs &lt;&lt; endl;</a>
+<a name="ln159">    }</a>
+<a name="ln160"> </a>
+<a name="ln161">	cerr &lt;&lt; &quot; Formal charge results written successfully&quot; &lt;&lt; endl;</a>
+<a name="ln162">  return;</a>
+<a name="ln163">}</a>
+<a name="ln164"> </a>
+
+</code></pre>
+<div class="balloon" rel="146"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1044/" target="_blank">V1044</a> Loop break conditions do not depend on the number of iterations.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

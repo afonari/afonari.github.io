@@ -1,0 +1,1244 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>ichirvr5.c</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/*</a>
+<a name="ln2"> * International Chemical Identifier (InChI)</a>
+<a name="ln3"> * Version 1</a>
+<a name="ln4"> * Software version 1.04</a>
+<a name="ln5"> * September 9, 2011</a>
+<a name="ln6"> *</a>
+<a name="ln7"> * The InChI library and programs are free software developed under the</a>
+<a name="ln8"> * auspices of the International Union of Pure and Applied Chemistry (IUPAC).</a>
+<a name="ln9"> * Originally developed at NIST. Modifications and additions by IUPAC </a>
+<a name="ln10"> * and the InChI Trust.</a>
+<a name="ln11"> *</a>
+<a name="ln12"> * IUPAC/InChI-Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln13"> * Software version 1.0.</a>
+<a name="ln14"> * Copyright (C) IUPAC and InChI Trust Limited</a>
+<a name="ln15"> * </a>
+<a name="ln16"> * This library is free software; you can redistribute it and/or modify it under the </a>
+<a name="ln17"> * terms of the IUPAC/InChI Trust Licence for the International Chemical Identifier </a>
+<a name="ln18"> * (InChI) Software version 1.0; either version 1.0 of the License, or </a>
+<a name="ln19"> * (at your option) any later version.</a>
+<a name="ln20"> * </a>
+<a name="ln21"> * This library is distributed in the hope that it will be useful, </a>
+<a name="ln22"> * but WITHOUT ANY WARRANTY; without even the implied warranty of </a>
+<a name="ln23"> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  </a>
+<a name="ln24"> * See the IUPAC/InChI Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln25"> * Software version 1.0 for more details.</a>
+<a name="ln26"> * </a>
+<a name="ln27"> * You should have received a copy of the IUPAC/InChI Trust Licence for the </a>
+<a name="ln28"> * International Chemical Identifier (InChI) Software version 1.0 along with </a>
+<a name="ln29"> * this library; if not, write to:</a>
+<a name="ln30"> * </a>
+<a name="ln31"> * The InChI Trust</a>
+<a name="ln32"> * c/o FIZ CHEMIE Berlin</a>
+<a name="ln33"> * Franklinstrasse 11</a>
+<a name="ln34"> * 10587 Berlin</a>
+<a name="ln35"> * GERMANY</a>
+<a name="ln36"> * </a>
+<a name="ln37"> */</a>
+<a name="ln38"> </a>
+<a name="ln39"> </a>
+<a name="ln40">#include &lt;stdio.h&gt;</a>
+<a name="ln41">#include &lt;stdlib.h&gt;</a>
+<a name="ln42">#include &lt;string.h&gt;</a>
+<a name="ln43"> </a>
+<a name="ln44">/*#define CHECK_WIN32_VC_HEAP*/</a>
+<a name="ln45">#include &quot;mode.h&quot;</a>
+<a name="ln46"> </a>
+<a name="ln47">#if ( READ_INCHI_STRING == 1 )</a>
+<a name="ln48"> </a>
+<a name="ln49">#include &quot;ichi.h&quot;</a>
+<a name="ln50">#include &quot;ichitime.h&quot;</a>
+<a name="ln51"> </a>
+<a name="ln52">#include &quot;inpdef.h&quot;</a>
+<a name="ln53">#include &quot;ichimain.h&quot;</a>
+<a name="ln54">#include &quot;ichierr.h&quot;</a>
+<a name="ln55">#include &quot;incomdef.h&quot;</a>
+<a name="ln56">#include &quot;ichiring.h&quot;</a>
+<a name="ln57">#include &quot;extr_ct.h&quot;</a>
+<a name="ln58">#include &quot;ichitaut.h&quot;</a>
+<a name="ln59">#include &quot;ichinorm.h&quot;</a>
+<a name="ln60">#include &quot;util.h&quot;</a>
+<a name="ln61"> </a>
+<a name="ln62">#include &quot;ichicomp.h&quot;</a>
+<a name="ln63">#include &quot;ichister.h&quot;</a>
+<a name="ln64"> </a>
+<a name="ln65">#include &quot;ichi_bns.h&quot;</a>
+<a name="ln66"> </a>
+<a name="ln67">#include &quot;strutil.h&quot;</a>
+<a name="ln68"> </a>
+<a name="ln69">#include &quot;ichirvrs.h&quot;</a>
+<a name="ln70"> </a>
+<a name="ln71"> </a>
+<a name="ln72">#define INC_ADD_EDGE 64</a>
+<a name="ln73">/***********************************************************************************************/</a>
+<a name="ln74">int GetPlusMinusVertex( BN_STRUCT *pBNS, ALL_TC_GROUPS *pTCGroups, int bCheckForbiddenPlus, int bCheckForbiddenMinus )</a>
+<a name="ln75">{</a>
+<a name="ln76">    int k, ePlusSuper, eMinusSuper, vPlusSuper, vMinusSuper, vPlusMinus1 = NO_VERTEX, vPlusMinus2 = NO_VERTEX;</a>
+<a name="ln77">    BNS_EDGE *pEdge;</a>
+<a name="ln78">    if ( (k          = pTCGroups-&gt;nGroup[TCG_Plus]) &gt;= 0 &amp;&amp;</a>
+<a name="ln79">         (ePlusSuper = pTCGroups-&gt;pTCG[k].nForwardEdge) &gt; 0 &amp;&amp;</a>
+<a name="ln80">         (vPlusSuper = pTCGroups-&gt;pTCG[k].nVertexNumber) &gt;= pBNS-&gt;num_atoms &amp;&amp;</a>
+<a name="ln81">         !((pEdge=pBNS-&gt;edge + ePlusSuper)-&gt;forbidden &amp;&amp; bCheckForbiddenPlus) ) {</a>
+<a name="ln82"> </a>
+<a name="ln83">        vPlusMinus1 = pEdge-&gt;neighbor12 ^ vPlusSuper;</a>
+<a name="ln84">    }</a>
+<a name="ln85">    if ( (k          = pTCGroups-&gt;nGroup[TCG_Minus]) &gt;= 0 &amp;&amp;</a>
+<a name="ln86">         (eMinusSuper = pTCGroups-&gt;pTCG[k].nForwardEdge) &gt; 0 &amp;&amp;</a>
+<a name="ln87">         (vMinusSuper = pTCGroups-&gt;pTCG[k].nVertexNumber) &gt;= pBNS-&gt;num_atoms &amp;&amp;</a>
+<a name="ln88">         !((pEdge=pBNS-&gt;edge + eMinusSuper)-&gt;forbidden &amp;&amp; bCheckForbiddenMinus) ) {</a>
+<a name="ln89"> </a>
+<a name="ln90">        vPlusMinus2 = pEdge-&gt;neighbor12 ^ eMinusSuper;</a>
+<a name="ln91">    }</a>
+<a name="ln92">    if ( (bCheckForbiddenPlus  &amp;&amp; NO_VERTEX == vPlusMinus1) ||</a>
+<a name="ln93">         (bCheckForbiddenMinus &amp;&amp; NO_VERTEX == vPlusMinus2) ) {</a>
+<a name="ln94">        return NO_VERTEX;</a>
+<a name="ln95">    }</a>
+<a name="ln96">    return (NO_VERTEX != vPlusMinus1)? vPlusMinus1 : vPlusMinus2;</a>
+<a name="ln97">}</a>
+<a name="ln98">/***********************************************************************************************/</a>
+<a name="ln99">int bIsUnsatCarbonInASmallRing( inp_ATOM *at2, VAL_AT *pVA, int iat, BFS_Q *pbfsq, int min_ring_size )</a>
+<a name="ln100">{</a>
+<a name="ln101">    int j, nCurRingSize, nMinRingSize;</a>
+<a name="ln102">    if ( min_ring_size &lt; 5 ) {</a>
+<a name="ln103">         /* =C= in a small ring  */</a>
+<a name="ln104">        if ( at2[iat].valence == 2 &amp;&amp;</a>
+<a name="ln105">             pVA[iat].cMinRingSize &lt;= 5 &amp;&amp;</a>
+<a name="ln106">             at2[iat].chem_bonds_valence == 4 ) {</a>
+<a name="ln107">            return 1;</a>
+<a name="ln108">        }</a>
+<a name="ln109">    } else {</a>
+<a name="ln110">        if ( at2[iat].valence == 2 &amp;&amp;</a>
+<a name="ln111">             pVA[iat].cMinRingSize &amp;&amp;</a>
+<a name="ln112">             pVA[iat].cMinRingSize &lt;= min_ring_size &amp;&amp;</a>
+<a name="ln113">             at2[iat].chem_bonds_valence == 3 ) {</a>
+<a name="ln114">            return 1;</a>
+<a name="ln115">        }</a>
+<a name="ln116">        nCurRingSize = nMinRingSize = min_ring_size+1;</a>
+<a name="ln117">        if ( (at2[iat].valence == 2 || at2[iat].valence == 3) &amp;&amp;</a>
+<a name="ln118">             at2[iat].chem_bonds_valence == at2[iat].valence+1 ) {</a>
+<a name="ln119">            for ( j = 0; j &lt; at2[iat].valence; j ++ ) {</a>
+<a name="ln120">                nCurRingSize = is_bond_in_Nmax_memb_ring( at2, iat, j, pbfsq-&gt;q,</a>
+<a name="ln121">                                             pbfsq-&gt;nAtomLevel,</a>
+<a name="ln122">                                             pbfsq-&gt;cSource, (AT_RANK)nMinRingSize /* max ring size */ );</a>
+<a name="ln123">                if ( 0 &lt; nCurRingSize &amp;&amp; nCurRingSize &lt; nMinRingSize ) {</a>
+<a name="ln124">                    nMinRingSize = nCurRingSize;</a>
+<a name="ln125">                }</a>
+<a name="ln126">            }</a>
+<a name="ln127">            return (0 &lt;= nCurRingSize)? (nMinRingSize &lt;= min_ring_size) : nCurRingSize;</a>
+<a name="ln128">        }</a>
+<a name="ln129">    }</a>
+<a name="ln130">    return 0;</a>
+<a name="ln131">}</a>
+<a name="ln132">/***********************************************************************************************/</a>
+<a name="ln133">int FixMobileHRestoredStructure(ICHICONST INPUT_PARMS *ip, STRUCT_DATA *sd, BN_STRUCT *pBNS, BN_DATA *pBD,</a>
+<a name="ln134">                        StrFromINChI *pStruct, inp_ATOM *at, inp_ATOM *at2, inp_ATOM *at3, VAL_AT *pVA,</a>
+<a name="ln135">                        ALL_TC_GROUPS *pTCGroups, T_GROUP_INFO **ppt_group_info, inp_ATOM **ppat_norm,</a>
+<a name="ln136">                        inp_ATOM **ppat_prep, INChI *pInChI[], long num_inp, int bHasSomeFixedH,</a>
+<a name="ln137">                        int *pnNumRunBNS, int *pnTotalDelta, int forbidden_edge_mask, int forbidden_stereo_edge_mask)</a>
+<a name="ln138">{</a>
+<a name="ln139">    /*--------- process extra or missing Fixed-H on non-tautomeric atoms ------*/</a>
+<a name="ln140">    /* at2 should be the most recently restored atom, Fixed-H */</a>
+<a name="ln141">    int i, j, k, iat, delta, tot_succes, cur_success, ret = 0;</a>
+<a name="ln142">    CMP2MHINCHI c2i;</a>
+<a name="ln143">    CMP2MHINCHI *pc2i = &amp;c2i;</a>
+<a name="ln144"> </a>
+<a name="ln145">    EDGE_LIST AllChargeEdges, CurrEdges, CurrEdges2, CurrEdges3, TautEdges, NFlowerEdges, OtherNFlowerEdges, FixedLargeRingStereoEdges;</a>
+<a name="ln146">    EDGE_LIST  *pEdgeList = NULL;</a>
+<a name="ln147">    </a>
+<a name="ln148">    EdgeIndex e;</a>
+<a name="ln149">    BNS_EDGE  *pe;</a>
+<a name="ln150">    Vertex v1, v2, vPlusMinus;</a>
+<a name="ln151">    BNS_VERTEX *pv1, *pv2;</a>
+<a name="ln152"> </a>
+<a name="ln153">    Vertex     vPathStart, vPathEnd;</a>
+<a name="ln154">    int        nPathLen, nDeltaH, nDeltaCharge, nNumVisitedAtoms;</a>
+<a name="ln155"> </a>
+<a name="ln156">    int        nNumRunBNS = 0, forbidden_edge_mask_inv = ~forbidden_edge_mask;</a>
+<a name="ln157"> </a>
+<a name="ln158">    INCHI_HEAPCHK</a>
+<a name="ln159"> </a>
+<a name="ln160">    AllocEdgeList( &amp;AllChargeEdges, EDGE_LIST_CLEAR );</a>
+<a name="ln161">    AllocEdgeList( &amp;CurrEdges, EDGE_LIST_CLEAR );</a>
+<a name="ln162">    AllocEdgeList( &amp;NFlowerEdges, EDGE_LIST_CLEAR );</a>
+<a name="ln163">    AllocEdgeList( &amp;CurrEdges2, EDGE_LIST_CLEAR );</a>
+<a name="ln164">    AllocEdgeList( &amp;CurrEdges3, EDGE_LIST_CLEAR );</a>
+<a name="ln165">    AllocEdgeList( &amp;OtherNFlowerEdges, EDGE_LIST_CLEAR );</a>
+<a name="ln166">    AllocEdgeList( &amp;FixedLargeRingStereoEdges, EDGE_LIST_CLEAR );</a>
+<a name="ln167">    AllocEdgeList( &amp;TautEdges, EDGE_LIST_CLEAR );</a>
+<a name="ln168"> </a>
+<a name="ln169">    tot_succes = 0;</a>
+<a name="ln170">    </a>
+<a name="ln171">    if ( !pInChI[0]-&gt;nNum_H_fixed &amp;&amp; !pStruct-&gt;pOneINChI[0]-&gt;nNum_H_fixed ) {</a>
+<a name="ln172">        goto exit_function;  /* no fixed-H found */</a>
+<a name="ln173">    }</a>
+<a name="ln174">    /* taut group edges */</a>
+<a name="ln175">    for ( i = 0; i &lt; pTCGroups-&gt;num_tgroups; i ++ ) {</a>
+<a name="ln176">        pv1  = pBNS-&gt;vert + (v1=pTCGroups-&gt;pTCG[i].nVertexNumber); /* t-group vertex */</a>
+<a name="ln177">        for ( j = 0; j &lt; pv1-&gt;num_adj_edges; j ++ ) {</a>
+<a name="ln178">            /* e, pe - tautomeric atom edge; pv2 - endpoint vertex */</a>
+<a name="ln179">            /* Note: pe, pv2, v1 are not used here; they are to show how to traverse t-group */</a>
+<a name="ln180">            pv2 = pBNS-&gt;vert + (pe = pBNS-&gt;edge + (e=pv1-&gt;iedge[j]))-&gt;neighbor1;</a>
+<a name="ln181">            if ( (ret = AddToEdgeList( &amp;TautEdges, e, INC_ADD_EDGE )) ) {</a>
+<a name="ln182">                goto exit_function;</a>
+<a name="ln183">            }</a>
+<a name="ln184">        }</a>
+<a name="ln185">    }</a>
+<a name="ln186">    /* charge and flower edges */</a>
+<a name="ln187">    for ( i = 0; i &lt; pStruct-&gt;num_atoms; i ++ ) {</a>
+<a name="ln188">        if ( (e=pVA[i].nCMinusGroupEdge-1) &gt;= 0 &amp;&amp; !pBNS-&gt;edge[e].forbidden &amp;&amp;</a>
+<a name="ln189">             (ret = AddToEdgeList( &amp;AllChargeEdges, e, INC_ADD_EDGE )) ) {</a>
+<a name="ln190">            goto exit_function;</a>
+<a name="ln191">        }</a>
+<a name="ln192">        if ( (e=pVA[i].nCPlusGroupEdge-1) &gt;= 0 &amp;&amp; !pBNS-&gt;edge[e].forbidden ) {</a>
+<a name="ln193">            if ( (ret = AddToEdgeList( &amp;AllChargeEdges, e, INC_ADD_EDGE )) ) {</a>
+<a name="ln194">                goto exit_function;</a>
+<a name="ln195">            }</a>
+<a name="ln196"> </a>
+<a name="ln197">            /* in addition, disallow N(V) creation by forbidding charge flower edge that has flow=1 */</a>
+<a name="ln198">            if ( pVA[i].cNumValenceElectrons == 5 &amp;&amp; !pVA[i].cMetal &amp;&amp; /* N, P, As */</a>
+<a name="ln199">                 NO_VERTEX != (j = GetChargeFlowerUpperEdge( pBNS, pVA, e ))) {</a>
+<a name="ln200"> </a>
+<a name="ln201">                if ( !pBNS-&gt;edge[j].forbidden &amp;&amp; pBNS-&gt;edge[j].flow ) {</a>
+<a name="ln202">                    if ( (ret = AddToEdgeList( &amp;AllChargeEdges, j, INC_ADD_EDGE )) ) {</a>
+<a name="ln203">                        goto exit_function;</a>
+<a name="ln204">                    }</a>
+<a name="ln205">                    if ( (ret = AddToEdgeList( &amp;NFlowerEdges, j, INC_ADD_EDGE )) ) {</a>
+<a name="ln206">                        goto exit_function;</a>
+<a name="ln207">                    }</a>
+<a name="ln208">                } else {</a>
+<a name="ln209">                    if ( (ret = AddToEdgeList( &amp;OtherNFlowerEdges, j, INC_ADD_EDGE )) ) {</a>
+<a name="ln210">                        goto exit_function;</a>
+<a name="ln211">                    }</a>
+<a name="ln212">                }</a>
+<a name="ln213">            }</a>
+<a name="ln214"> </a>
+<a name="ln215">        }</a>
+<a name="ln216">    }</a>
+<a name="ln217">    if ( forbidden_stereo_edge_mask ) {</a>
+<a name="ln218">        for ( i = 0; i &lt; pStruct-&gt;num_atoms; i ++ ) {</a>
+<a name="ln219">            for ( j = 0; j &lt; at2[i].valence; j ++ ) {</a>
+<a name="ln220">                if ( pBNS-&gt;edge[k = pBNS-&gt;vert[i].iedge[j]].forbidden == forbidden_stereo_edge_mask ) {</a>
+<a name="ln221">                    int nMinRingSize = is_bond_in_Nmax_memb_ring( at2, i, j, pStruct-&gt;pbfsq-&gt;q,</a>
+<a name="ln222">                                                             pStruct-&gt;pbfsq-&gt;nAtomLevel,</a>
+<a name="ln223">                                                             pStruct-&gt;pbfsq-&gt;cSource, 99 /* max ring size */ );</a>
+<a name="ln224">                    if ( 0 &lt; nMinRingSize &amp;&amp; (ret = AddToEdgeList( &amp;FixedLargeRingStereoEdges, k, INC_ADD_EDGE ))) {</a>
+<a name="ln225">                        goto exit_function;</a>
+<a name="ln226">                    }</a>
+<a name="ln227">                }</a>
+<a name="ln228">            }</a>
+<a name="ln229">        }</a>
+<a name="ln230">    }</a>
+<a name="ln231"> </a>
+<a name="ln232">    INCHI_HEAPCHK</a>
+<a name="ln233"> </a>
+<a name="ln234">    if ( (ret = FillOutExtraFixedHDataRestr( pStruct )) ) {</a>
+<a name="ln235">        goto exit_function;</a>
+<a name="ln236">    }</a>
+<a name="ln237">    INCHI_HEAPCHK</a>
+<a name="ln238">    if ( (ret = FillOutCMP2MHINCHI( pStruct, pTCGroups, at2, pVA, pInChI, pc2i )) ) {</a>
+<a name="ln239">        goto exit_function;</a>
+<a name="ln240">    }</a>
+<a name="ln241"> </a>
+<a name="ln242">    INCHI_HEAPCHK</a>
+<a name="ln243"> </a>
+<a name="ln244"> </a>
+<a name="ln245"> </a>
+<a name="ln246"> </a>
+<a name="ln247">    if ( pc2i-&gt;nNumTgInChI == 1 &amp;&amp; ( pc2i-&gt;nNumEndpRevrs &lt; pc2i-&gt;nNumEndpInChI || pc2i-&gt;nNumTgRevrs &gt; 1 ) &amp;&amp;</a>
+<a name="ln248">        pc2i-&gt;nNumTgDBNMinusRevrs + pc2i-&gt;nNumTgNHMinusRevrs == 0 &amp;&amp; pc2i-&gt;nNumTgOMinusInChI &amp;&amp;</a>
+<a name="ln249">        !(pTCGroups-&gt;pTCG[0].tg_RestoreFlags &amp; TGRF_MINUS_FIRST) ) {</a>
+<a name="ln250">        /*----------------------------------------------------*/</a>
+<a name="ln251">        /* case 01: restored has -O(-) and does not have N(-) */</a>
+<a name="ln252">        /*          endpoints defined by the original InChI   */</a>
+<a name="ln253">        /*          restored has single taut. group or more   */</a>
+<a name="ln254">        /*          tautomeric endpoints.                     */</a>
+<a name="ln255">        /* Solution: move (-) from endp. -O(-) to endpoints N */</a>
+<a name="ln256">        /*----------------------------------------------------*/</a>
+<a name="ln257">        pTCGroups-&gt;pTCG[0].tg_RestoreFlags |= TGRF_MINUS_FIRST;</a>
+<a name="ln258">        /* recalculate InChI from the structure */</a>
+<a name="ln259">        if ( 0 &gt; (ret = MakeOneInChIOutOfStrFromINChI2( ip, sd, pBNS, pStruct, at, at2, at3, pVA, pTCGroups,</a>
+<a name="ln260">                                                        ppt_group_info, ppat_norm, ppat_prep ) ) ) {</a>
+<a name="ln261">            goto exit_function;</a>
+<a name="ln262">        }</a>
+<a name="ln263">        if ( (ret = FillOutExtraFixedHDataRestr( pStruct )) ) {</a>
+<a name="ln264">            goto exit_function;</a>
+<a name="ln265">        }</a>
+<a name="ln266">        if ( !pInChI[0]-&gt;nNum_H_fixed &amp;&amp; !pStruct-&gt;pOneINChI[0]-&gt;nNum_H_fixed ) {</a>
+<a name="ln267">            goto exit_function;  /* no fixed-H found */</a>
+<a name="ln268">        }</a>
+<a name="ln269">        if ( (ret = FillOutCMP2MHINCHI( pStruct, pTCGroups, at2, pVA, pInChI, pc2i )) ) {</a>
+<a name="ln270">            goto exit_function;</a>
+<a name="ln271">        }</a>
+<a name="ln272">        if ( !pc2i-&gt;bHasDifference ) {</a>
+<a name="ln273">            goto exit_function; /* nothing to do */</a>
+<a name="ln274">        }</a>
+<a name="ln275">    }</a>
+<a name="ln276">    if ( pc2i-&gt;nNumTgInChI == 1 &amp;&amp; ( pc2i-&gt;nNumEndpRevrs &lt; pc2i-&gt;nNumEndpInChI || pc2i-&gt;nNumTgRevrs &gt; 1 ) &amp;&amp;</a>
+<a name="ln277">         pc2i-&gt;nNumTgDBNMinusRevrs + pc2i-&gt;nNumTgNHMinusRevrs == 0 &amp;&amp; pc2i-&gt;nNumTgOMinusInChI == 0 ) {</a>
+<a name="ln278">        /*-------------------------------------------------------*/</a>
+<a name="ln279">        /* case 02: restored has no -O(-) and does not have N(-) */</a>
+<a name="ln280">        /*          restored has single taut. group or more      */</a>
+<a name="ln281">        /*          tautomeric endpoints.                        */</a>
+<a name="ln282">        /* Solution: &gt;N-AB=N-  =&gt; &gt;N(+)=AB-NH- (add H(+))        */</a>
+<a name="ln283">        /* Solution: &gt;N-AB=NH  =&gt; &gt;N(+)=AB-NH2 (add H(+))        */</a>
+<a name="ln284">        /*      SB_N_III  DB_N_III                               */</a>
+<a name="ln285">        /*-------------------------------------------------------*/</a>
+<a name="ln286">        int iat_SB_N_III[MAX_DIFF_MOBH], iat_DB_N_III[MAX_DIFF_MOBH];</a>
+<a name="ln287">        int num_SB_N_III = 0, num_DB_N_III = 0, k1, k2;</a>
+<a name="ln288">        CurrEdges.num_edges = 0;</a>
+<a name="ln289">        cur_success         = 0;</a>
+<a name="ln290">        for ( i = 0; i &lt; pStruct-&gt;num_atoms; i ++ ) {</a>
+<a name="ln291">            iat = i;</a>
+<a name="ln292">            if ( pVA[iat].cNumValenceElectrons == 5 &amp;&amp; pVA[i].cPeriodicRowNumber == 1 &amp;&amp;</a>
+<a name="ln293">                 !at2[iat].endpoint &amp;&amp; !at2[iat].charge &amp;&amp; !at2[iat].radical ) {</a>
+<a name="ln294">                if ( num_DB_N_III &lt; MAX_DIFF_MOBH &amp;&amp;  !at2[iat].num_H &amp;&amp;</a>
+<a name="ln295">                     at2[iat].valence == 2 &amp;&amp;</a>
+<a name="ln296">                     at2[iat].chem_bonds_valence == 3 &amp;&amp;</a>
+<a name="ln297">                     !at2[iat].sb_parity[0] &amp;&amp;  /* do not eliminate stereobonds */</a>
+<a name="ln298">                     (e=pVA[iat].nCMinusGroupEdge-1) &gt;= 0 &amp;&amp; !pBNS-&gt;edge[e].forbidden &amp;&amp;</a>
+<a name="ln299">                     pBNS-&gt;edge[e].cap &amp;&amp; !pBNS-&gt;edge[e].flow ) {</a>
+<a name="ln300">                    /* -N= */</a>
+<a name="ln301">                    iat_DB_N_III[ num_DB_N_III ++ ] = iat;</a>
+<a name="ln302">                } else</a>
+<a name="ln303">                if ( num_DB_N_III &lt; MAX_DIFF_MOBH &amp;&amp; 1 == at2[iat].num_H &amp;&amp;</a>
+<a name="ln304">                     at2[iat].valence == 1 &amp;&amp;</a>
+<a name="ln305">                     at2[iat].chem_bonds_valence == 2 &amp;&amp;</a>
+<a name="ln306">                     !at2[iat].sb_parity[0] &amp;&amp;  /* do not eliminate stereobonds */</a>
+<a name="ln307">                     (e=pVA[iat].nCMinusGroupEdge-1) &gt;= 0 &amp;&amp; !pBNS-&gt;edge[e].forbidden &amp;&amp;</a>
+<a name="ln308">                     pBNS-&gt;edge[e].cap &amp;&amp; !pBNS-&gt;edge[e].flow ) {</a>
+<a name="ln309">                    /* -N= */</a>
+<a name="ln310">                    iat_DB_N_III[ num_DB_N_III ++ ] = iat;</a>
+<a name="ln311">                } else</a>
+<a name="ln312">                if ( num_SB_N_III &lt; MAX_DIFF_MOBH &amp;&amp; !at2[iat].num_H &amp;&amp;</a>
+<a name="ln313">                     at2[iat].valence == 3 &amp;&amp;</a>
+<a name="ln314">                     at2[iat].chem_bonds_valence == 3 &amp;&amp;</a>
+<a name="ln315">                     (e=pVA[iat].nCPlusGroupEdge-1) &gt;= 0 &amp;&amp; !pBNS-&gt;edge[e].forbidden &amp;&amp;</a>
+<a name="ln316">                     pBNS-&gt;edge[e].cap &amp;&amp; pBNS-&gt;edge[e].flow) {</a>
+<a name="ln317">                    /* -N&lt; */</a>
+<a name="ln318">                    iat_SB_N_III[ num_SB_N_III ++ ] = iat;</a>
+<a name="ln319">                    if ( (ret = AddToEdgeList( &amp;CurrEdges, e, INC_ADD_EDGE )) ) {</a>
+<a name="ln320">                        goto exit_function;</a>
+<a name="ln321">                    }</a>
+<a name="ln322">                }</a>
+<a name="ln323">            }</a>
+<a name="ln324">        }</a>
+<a name="ln325">        if ( num_DB_N_III &amp;&amp; num_SB_N_III ) {</a>
+<a name="ln326">            EdgeIndex ieMinus;</a>
+<a name="ln327">            BNS_EDGE  *peMinus;</a>
+<a name="ln328">            SetForbiddenEdgeMask( pBNS, &amp;AllChargeEdges, forbidden_edge_mask );</a>
+<a name="ln329">            RemoveForbiddenEdgeMask( pBNS, &amp;CurrEdges, forbidden_edge_mask  );</a>
+<a name="ln330">            for ( i = 0; i &lt; num_DB_N_III &amp;&amp; !cur_success; i ++ ) {</a>
+<a name="ln331">                iat = iat_DB_N_III[ i ]; </a>
+<a name="ln332">                e  = pBNS-&gt;edge[k1=pBNS-&gt;vert[iat].iedge[0]].flow? k1 :</a>
+<a name="ln333">                     pBNS-&gt;edge[k2=pBNS-&gt;vert[iat].iedge[1]].flow? k2 : NO_VERTEX;</a>
+<a name="ln334">                if ( e == NO_VERTEX ) {</a>
+<a name="ln335">                    continue; /* should not happen */</a>
+<a name="ln336">                }</a>
+<a name="ln337">                ieMinus = pVA[iat].nCMinusGroupEdge-1;</a>
+<a name="ln338">                peMinus = pBNS-&gt;edge + ieMinus;</a>
+<a name="ln339">                pe      = pBNS-&gt;edge + e;</a>
+<a name="ln340">                if ( !pe-&gt;flow )</a>
+<a name="ln341">                    continue;</a>
+<a name="ln342">                pv1 = pBNS-&gt;vert + (v1 = pe-&gt;neighbor1);</a>
+<a name="ln343">                pv2 = pBNS-&gt;vert + (v2 = pe-&gt;neighbor12 ^ v1);</a>
+<a name="ln344"> </a>
+<a name="ln345">                pe-&gt;forbidden      |= forbidden_edge_mask;     /* fix double bond */</a>
+<a name="ln346">                peMinus-&gt;forbidden &amp;= forbidden_edge_mask_inv; /* allow negative charge */</a>
+<a name="ln347">                delta = 1;</a>
+<a name="ln348">                pe-&gt;flow -= delta; /* remove (-) from AB-O(-) */</a>
+<a name="ln349">                pv1-&gt;st_edge.flow -= delta;</a>
+<a name="ln350">                pv2-&gt;st_edge.flow -= delta;</a>
+<a name="ln351">                pBNS-&gt;tot_st_flow -= 2*delta;</a>
+<a name="ln352"> </a>
+<a name="ln353">                ret = RunBnsTestOnce( pBNS, pBD, pVA, &amp;vPathStart, &amp;vPathEnd, &amp;nPathLen,</a>
+<a name="ln354">                                      &amp;nDeltaH, &amp;nDeltaCharge, &amp;nNumVisitedAtoms );</a>
+<a name="ln355"> </a>
+<a name="ln356">                if ( ret == 1 &amp;&amp; ((vPathEnd == v1 &amp;&amp; vPathStart == v2) ||</a>
+<a name="ln357">                                  (vPathEnd == v2 &amp;&amp; vPathStart == v1)) &amp;&amp; nDeltaCharge == 2 ) {</a>
+<a name="ln358">                    /* Added (-)charge -N= and (+) to -N&lt; =&gt; nDeltaCharge == 2 */</a>
+<a name="ln359">                    ret = RunBnsRestoreOnce( pBNS, pBD, pVA, pTCGroups );</a>
+<a name="ln360">                    if ( ret &gt; 0 ) {</a>
+<a name="ln361">                        nNumRunBNS ++;</a>
+<a name="ln362">                        cur_success ++; /* 01 */</a>
+<a name="ln363"> </a>
+<a name="ln364">                        /* eliminate (-) charge and add H */</a>
+<a name="ln365">                        pv1 = pBNS-&gt;vert + (v1 = peMinus-&gt;neighbor1);      /* atom */</a>
+<a name="ln366">                        pv2 = pBNS-&gt;vert + (v2 = peMinus-&gt;neighbor12 ^ v1);/* (=) vertex */</a>
+<a name="ln367">                        /* effectively eliminate (-) edge by setting its cap=flow= 0 */</a>
+<a name="ln368">                        peMinus-&gt;cap  --;</a>
+<a name="ln369">                        peMinus-&gt;flow --;</a>
+<a name="ln370">                        pv1-&gt;st_edge.cap  --;</a>
+<a name="ln371">                        pv1-&gt;st_edge.flow --;</a>
+<a name="ln372">                        pv2-&gt;st_edge.cap  --;</a>
+<a name="ln373">                        pv2-&gt;st_edge.flow --;</a>
+<a name="ln374">                        pBNS-&gt;tot_st_flow -= 2;</a>
+<a name="ln375">                        pBNS-&gt;tot_st_cap  -= 2;</a>
+<a name="ln376">                        /* add H */</a>
+<a name="ln377">                        pStruct-&gt;at[iat].num_H  ++;</a>
+<a name="ln378">                        /* register total charge increase */</a>
+<a name="ln379">                        pTCGroups-&gt;total_charge ++;</a>
+<a name="ln380">                        pStruct-&gt;nNumRemovedProtonsByRevrs -= 1;</a>
+<a name="ln381">                    }</a>
+<a name="ln382">                } else {</a>
+<a name="ln383">                    pe-&gt;forbidden      &amp;= forbidden_edge_mask_inv;</a>
+<a name="ln384">                    peMinus-&gt;forbidden |= forbidden_edge_mask;</a>
+<a name="ln385">                    pe-&gt;flow += delta;</a>
+<a name="ln386">                    pv1-&gt;st_edge.flow += delta;</a>
+<a name="ln387">                    pv2-&gt;st_edge.flow += delta;</a>
+<a name="ln388">                    pBNS-&gt;tot_st_flow += 2*delta;</a>
+<a name="ln389">                }</a>
+<a name="ln390">            }</a>
+<a name="ln391">            RemoveForbiddenEdgeMask( pBNS, &amp;AllChargeEdges, forbidden_edge_mask  );</a>
+<a name="ln392">            CurrEdges.num_edges = 0; /* clear current edge list */</a>
+<a name="ln393"> </a>
+<a name="ln394">            if ( cur_success ) {</a>
+<a name="ln395">                tot_succes += cur_success;</a>
+<a name="ln396">                /* recalculate InChI from the structure */</a>
+<a name="ln397">                /* recalculate InChI from the structure */</a>
+<a name="ln398">                if ( 0 &gt; (ret = MakeOneInChIOutOfStrFromINChI2( ip, sd, pBNS, pStruct, at, at2, at3, pVA, pTCGroups,</a>
+<a name="ln399">                                                                ppt_group_info, ppat_norm, ppat_prep ) ) ) {</a>
+<a name="ln400">                    goto exit_function;</a>
+<a name="ln401">                }</a>
+<a name="ln402">                if ( (ret = FillOutExtraFixedHDataRestr( pStruct )) ) {</a>
+<a name="ln403">                    goto exit_function;</a>
+<a name="ln404">                }</a>
+<a name="ln405">                if ( (ret = FillOutCMP2MHINCHI( pStruct, pTCGroups, at2, pVA, pInChI, pc2i )) ) {</a>
+<a name="ln406">                    goto exit_function;</a>
+<a name="ln407">                }</a>
+<a name="ln408">                if ( !pc2i-&gt;bHasDifference ) {</a>
+<a name="ln409">                    goto exit_function; /* nothing to do */</a>
+<a name="ln410">                }</a>
+<a name="ln411">            }</a>
+<a name="ln412">        }</a>
+<a name="ln413">    }</a>
+<a name="ln414">    if ( pc2i-&gt;nNumTgInChI == 1 &amp;&amp; ( pc2i-&gt;nNumEndpRevrs &lt; pc2i-&gt;nNumEndpInChI || pc2i-&gt;nNumTgRevrs &gt; 1 ) &amp;&amp; /* ADP */</a>
+<a name="ln415">        pc2i-&gt;nNumTgMInChI == 0 &amp;&amp; pc2i-&gt;nNumTgNInChI &amp;&amp; pc2i-&gt;nNumTgOInChI ) {</a>
+<a name="ln416">        /*-------------------------------------------------------*/</a>
+<a name="ln417">        /* case 03: restored has N and O endpoints, no (-) endp  */</a>
+<a name="ln418">        /* case 04: original has single taut. group or more      */</a>
+<a name="ln419">        /*          tautomeric endpoints.                        */</a>
+<a name="ln420">        /* Solution: 1. Move taut attachment from O to N         */</a>
+<a name="ln421">        /* Solution: 2. Replace the attachment with (-)          */</a>
+<a name="ln422">        /*      SB_N_III  DB_N_III                               */</a>
+<a name="ln423">        /*-------------------------------------------------------*/</a>
+<a name="ln424">        /*</a>
+<a name="ln425">          int iat_SB_N_III[MAX_DIFF_MOBH], iat_DB_N_III[MAX_DIFF_MOBH];</a>
+<a name="ln426">          int num_SB_N_III = 0, num_DB_N_III = 0, k1, k2,</a>
+<a name="ln427">        */</a>
+<a name="ln428">        int itg, j1, j2, bAction = 0;</a>
+<a name="ln429">        BNS_VERTEX *pTg, *pvEndp, *pvEndp2, *pvCent;</a>
+<a name="ln430">        Vertex     vEndp, vEndp2, vCent;</a>
+<a name="ln431">        BNS_EDGE   *peTg, *peTg2, *peCent1, *peCent2;</a>
+<a name="ln432">        EdgeIndex  eTg, eTg2;</a>
+<a name="ln433"> </a>
+<a name="ln434">        CurrEdges.num_edges  = 0;</a>
+<a name="ln435">        CurrEdges2.num_edges = 0;</a>
+<a name="ln436">        cur_success          = 0;</a>
+<a name="ln437"> </a>
+<a name="ln438">        /* 1st attempt: -NH-=O =&gt; -N(-)-=O  or -N=-OH =&gt; -N(-)-=O */</a>
+<a name="ln439">        for ( itg = 0; itg &lt; pTCGroups-&gt;num_tgroups &amp;&amp; !cur_success; itg ++ ) {</a>
+<a name="ln440">            pTg  = pBNS-&gt;vert + pTCGroups-&gt;pTCG[itg].nVertexNumber;</a>
+<a name="ln441">            for ( i = 0; i &lt; pTg-&gt;num_adj_edges &amp;&amp; !cur_success; i ++ ) {</a>
+<a name="ln442">                pvEndp = pBNS-&gt;vert + (vEndp = (peTg = pBNS-&gt;edge + (eTg=pTg-&gt;iedge[i]))-&gt;neighbor1);</a>
+<a name="ln443">                eTg2 = -1;</a>
+<a name="ln444">                if ( pVA[vEndp].cNumValenceElectrons == 6 &amp;&amp; peTg-&gt;cap ) {</a>
+<a name="ln445">                    /* endpoint -OH or =O found; search for a possible centerpoint */</a>
+<a name="ln446">                    for ( j1 = 0; j1 &lt; at2[vEndp].valence &amp;&amp; eTg2 &lt; 0; j1 ++ ) {</a>
+<a name="ln447">                        peCent1 = pBNS-&gt;edge + pvEndp-&gt;iedge[j1]; /* edge from O to a centerpoint */</a>
+<a name="ln448">                        pvCent = pBNS-&gt;vert + (vCent = peCent1-&gt;neighbor12 ^ vEndp); /* centerpoint */</a>
+<a name="ln449">                        if ( at2[vCent].endpoint || !peCent1-&gt;cap ||</a>
+<a name="ln450">                             peCent1-&gt;flow + (peTg-&gt;cap == peTg-&gt;flow) != 1 ) {</a>
+<a name="ln451">                            continue;</a>
+<a name="ln452">                        }</a>
+<a name="ln453">                        /* search for another endpoint, N, around vCent */</a>
+<a name="ln454">                        for ( j2 = 0; j2 &lt; at2[vCent].valence; j2 ++ ) {</a>
+<a name="ln455">                            peCent2 = pBNS-&gt;edge + pvCent-&gt;iedge[j2];</a>
+<a name="ln456">                            pvEndp2 = pBNS-&gt;vert + (vEndp2 = peCent2-&gt;neighbor12 ^ vCent);</a>
+<a name="ln457">                            if ( !peCent2-&gt;cap || peCent2-&gt;flow+peCent1-&gt;flow != 1 ||</a>
+<a name="ln458">                                 at2[vEndp2].endpoint != itg+1 ||</a>
+<a name="ln459">                                 pVA[vEndp2].cNumValenceElectrons != 5 ||</a>
+<a name="ln460">                                 0 &gt; (j=pVA[vEndp2].nTautGroupEdge-1) || </a>
+<a name="ln461">                                 (peTg2 = pBNS-&gt;edge + j)-&gt;forbidden ||</a>
+<a name="ln462">                                 peCent2-&gt;flow + (peTg2-&gt;cap == peTg2-&gt;flow) != 1 ) {</a>
+<a name="ln463">                                continue;</a>
+<a name="ln464">                            }</a>
+<a name="ln465">                            eTg2 = j;</a>
+<a name="ln466">                            break; /* found OH-C=N- or O=C-NH- */</a>
+<a name="ln467">                        }</a>
+<a name="ln468">                    }</a>
+<a name="ln469">                }</a>
+<a name="ln470">                if ( eTg2 &gt;= 0 ) {</a>
+<a name="ln471">                    /*--------------------------------------------</a>
+<a name="ln472">                                   tg                        tg</a>
+<a name="ln473">                              eTg //\ eTg2              eTg / \\eTg2</a>
+<a name="ln474">                                 //  \                     /   \\</a>
+<a name="ln475">                         vEndp HO--C==N vEndp2 --&gt;  vEndp O==C--NH vEndp2</a>
+<a name="ln476">                                 ^ ^ ^                     ^ ^ ^</a>
+<a name="ln477">                            eCent1 | eCent2           eCent1 | eCent2</a>
+<a name="ln478">                                   vCent                     vCent</a>
+<a name="ln479"> </a>
+<a name="ln480">                      additional action: -OH-C=N- =&gt; O=C-NH-</a>
+<a name="ln481">                     -------------------------------------------*/</a>
+<a name="ln482">                    if ( 0 == peTg-&gt;cap - peTg-&gt;flow &amp;&amp; 1 == peTg2-&gt;cap - peTg2-&gt;flow &amp;&amp;</a>
+<a name="ln483">                         0 == peCent1-&gt;flow &amp;&amp; 1 == peCent2-&gt;flow ) {</a>
+<a name="ln484">                        peTg-&gt;flow --;          /* 03 prepare */</a>
+<a name="ln485">                        peTg2-&gt;flow ++;</a>
+<a name="ln486">                        peCent2-&gt;flow --;</a>
+<a name="ln487">                        peCent1-&gt;flow ++;</a>
+<a name="ln488">                        bAction |= 1; /* switched H position */</a>
+<a name="ln489">                    }</a>
+<a name="ln490">                    if ( 1 == peTg-&gt;cap - peTg-&gt;flow &amp;&amp; 0 == peTg2-&gt;cap - peTg2-&gt;flow &amp;&amp;</a>
+<a name="ln491">                         1 == peCent1-&gt;flow &amp;&amp; 0 == peCent2-&gt;flow ) {</a>
+<a name="ln492">                        /* replace -NH- with -N(-)- */</a>
+<a name="ln493">                        pTCGroups-&gt;pTCG[itg].tg_num_H --;</a>
+<a name="ln494">                        pTCGroups-&gt;pTCG[itg].tg_num_Minus ++;</a>
+<a name="ln495">                        pTCGroups-&gt;pTCG[itg].tg_RestoreFlags |= TGRF_MINUS_FIRST;</a>
+<a name="ln496">                        pTCGroups-&gt;pTCG[itg].tg_set_Minus = vEndp2+1;</a>
+<a name="ln497">                        pStruct-&gt;ti.t_group[itg].num[1] ++; /* increment number of (-), keep number of taut attachments */</a>
+<a name="ln498">                        pTCGroups-&gt;total_charge --;</a>
+<a name="ln499">                        pTCGroups-&gt;tgroup_charge --;</a>
+<a name="ln500">                        pStruct-&gt;nNumRemovedProtonsByRevrs += 1;</a>
+<a name="ln501">                        bAction |= 2; /* single NH (at2[vEndp2]) replaced with N(-) */</a>
+<a name="ln502">                        cur_success ++; /* 03/04 */</a>
+<a name="ln503">                    }</a>
+<a name="ln504">                }</a>
+<a name="ln505">            }</a>
+<a name="ln506">        }</a>
+<a name="ln507"> </a>
+<a name="ln508">        if ( 0 == pc2i-&gt;nNumTgNHInChI+ pc2i-&gt;nNumTgNH2InChI &amp;&amp; pc2i-&gt;nNumTgOHInChI &amp;&amp; !cur_success ) {</a>
+<a name="ln509">            /* transfer an attachement to N */</a>
+<a name="ln510">            for ( itg = 0; itg &lt; pTCGroups-&gt;num_tgroups; itg ++ ) {</a>
+<a name="ln511">                pTg  = pBNS-&gt;vert + pTCGroups-&gt;pTCG[itg].nVertexNumber;</a>
+<a name="ln512">                for ( i = 0; i &lt; pTg-&gt;num_adj_edges; i ++ ) {</a>
+<a name="ln513">                    pvEndp = pBNS-&gt;vert + (vEndp = (peTg = pBNS-&gt;edge + (eTg=pTg-&gt;iedge[i]))-&gt;neighbor1);</a>
+<a name="ln514">                    if ( pVA[vEndp].cNumValenceElectrons == 6 &amp;&amp;</a>
+<a name="ln515">                         at2[vEndp].valence == at2[vEndp].chem_bonds_valence &amp;&amp;</a>
+<a name="ln516">                         peTg-&gt;flow &amp;&amp; peTg-&gt;flow == peTg-&gt;cap ) {</a>
+<a name="ln517">                        /* endpoint -OH found; save the tautomeric group edge */</a>
+<a name="ln518">                        if ( (ret = AddToEdgeList( &amp;CurrEdges, eTg, INC_ADD_EDGE )) ) {</a>
+<a name="ln519">                            goto exit_function;</a>
+<a name="ln520">                        }</a>
+<a name="ln521">                    } else</a>
+<a name="ln522">                    if ( pVA[vEndp].cNumValenceElectrons == 5 &amp;&amp;</a>
+<a name="ln523">                         pVA[vEndp].cPeriodicRowNumber   == 1 &amp;&amp;</a>
+<a name="ln524">                         at2[vEndp].valence + 1 == at2[vEndp].chem_bonds_valence &amp;&amp;</a>
+<a name="ln525">                         peTg-&gt;cap &amp;&amp; peTg-&gt;flow + 1 == peTg-&gt;cap ) {</a>
+<a name="ln526">                        /* endpoint -N= or =NH found, check for -N=-OH */</a>
+<a name="ln527">                        e = -1;</a>
+<a name="ln528">                        for ( j1 = 0; j1 &lt; at2[vEndp].valence &amp;&amp; e &lt; 0; j1 ++ ) {</a>
+<a name="ln529">                            peCent1 = pBNS-&gt;edge + pvEndp-&gt;iedge[j1];</a>
+<a name="ln530">                            if ( peCent1-&gt;flow == 1 ) {</a>
+<a name="ln531">                                /* double bond */</a>
+<a name="ln532">                                pvCent = pBNS-&gt;vert + (vCent = peCent1-&gt;neighbor12 ^ vEndp);</a>
+<a name="ln533">                                if ( at2[vCent].endpoint )</a>
+<a name="ln534">                                    continue;</a>
+<a name="ln535">                                for ( j2 = 0; j2 &lt; at2[vCent].valence; j2 ++ ) {</a>
+<a name="ln536">                                    peCent2 = pBNS-&gt;edge + pvCent-&gt;iedge[j2];</a>
+<a name="ln537">                                    pvEndp2 = pBNS-&gt;vert + (vEndp2 = peCent2-&gt;neighbor12 ^ vCent);</a>
+<a name="ln538">                                    if ( peCent2-&gt;flow || at2[vEndp2].endpoint != itg+1 ||</a>
+<a name="ln539">                                         pVA[vEndp2].cNumValenceElectrons != 6 ||</a>
+<a name="ln540">                                         0 &gt;= (e=pVA[vEndp2].nTautGroupEdge-1) || </a>
+<a name="ln541">                                         pBNS-&gt;edge[e].forbidden || !pBNS-&gt;edge[e].flow ) {</a>
+<a name="ln542">                                        e = -1;</a>
+<a name="ln543">                                        continue;</a>
+<a name="ln544">                                    }</a>
+<a name="ln545">                                    /*********************/</a>
+<a name="ln546">                                    /* found -N=X-OH     */</a>
+<a name="ln547">                                    /*    vEndp ^ vEndp2 */</a>
+<a name="ln548">                                    /*          vCent    */</a>
+<a name="ln549">                                    /*********************/</a>
+<a name="ln550">                                    /* save this -OH taut edge */</a>
+<a name="ln551">                                    if ( (ret = AddToEdgeList( &amp;CurrEdges2, e, INC_ADD_EDGE )) ) {</a>
+<a name="ln552">                                        goto exit_function;</a>
+<a name="ln553">                                    }</a>
+<a name="ln554">                                    break;</a>
+<a name="ln555">                                }</a>
+<a name="ln556">                            }</a>
+<a name="ln557">                        }</a>
+<a name="ln558">                        if ( e &lt; 0 &amp;&amp; (ret = AddToEdgeList( &amp;CurrEdges, eTg, INC_ADD_EDGE )) ) {</a>
+<a name="ln559">                            goto exit_function;</a>
+<a name="ln560">                        }</a>
+<a name="ln561">                    }</a>
+<a name="ln562">                }</a>
+<a name="ln563">            }</a>
+<a name="ln564">            /* rearrange the flows */</a>
+<a name="ln565">            SetForbiddenEdgeMask( pBNS, &amp;AllChargeEdges, forbidden_edge_mask );</a>
+<a name="ln566">            SetForbiddenEdgeMask( pBNS, &amp;CurrEdges, forbidden_edge_mask  );</a>
+<a name="ln567">            SetForbiddenEdgeMask( pBNS, &amp;CurrEdges2, forbidden_edge_mask  );</a>
+<a name="ln568">            pEdgeList = CurrEdges2.num_edges? &amp;CurrEdges2 : CurrEdges.num_edges? &amp;CurrEdges : NULL;</a>
+<a name="ln569"> </a>
+<a name="ln570">            for ( i = 0; pEdgeList &amp;&amp; i &lt; pEdgeList-&gt;num_edges &amp;&amp; !cur_success; i ++ ) {</a>
+<a name="ln571">                pe = pBNS-&gt;edge + pEdgeList-&gt;pnEdges[i]; /* pe-&gt;flow = 1 &lt;=&gt; -OH */</a>
+<a name="ln572">                if ( !pe-&gt;flow )</a>
+<a name="ln573">                    continue;</a>
+<a name="ln574">                pv1 = pBNS-&gt;vert + (v1 = pe-&gt;neighbor1);       /* -OH atom */</a>
+<a name="ln575">                pv2 = pBNS-&gt;vert + (v2 = pe-&gt;neighbor12 ^ v1); /* t-group vertex */</a>
+<a name="ln576">                /* locate the t-group */</a>
+<a name="ln577">                for ( itg = 0; itg &lt; pTCGroups-&gt;num_tgroups; itg ++ ) {</a>
+<a name="ln578">                    if ( v2 == pTCGroups-&gt;pTCG[itg].nVertexNumber ) {</a>
+<a name="ln579">                        break;</a>
+<a name="ln580">                    }</a>
+<a name="ln581">                }</a>
+<a name="ln582">                if ( itg == pTCGroups-&gt;num_tgroups ) {</a>
+<a name="ln583">                    /* tgroup not found -- should not happen */</a>
+<a name="ln584">                    continue;</a>
+<a name="ln585">                }</a>
+<a name="ln586">                </a>
+<a name="ln587">                delta = 1;</a>
+<a name="ln588">                pe-&gt;flow -= delta; /* add one attachment to  */</a>
+<a name="ln589">                pv1-&gt;st_edge.flow -= delta;</a>
+<a name="ln590">                pv2-&gt;st_edge.flow -= delta;</a>
+<a name="ln591">                pBNS-&gt;tot_st_flow -= 2*delta;</a>
+<a name="ln592"> </a>
+<a name="ln593">                ret = RunBnsTestOnce( pBNS, pBD, pVA, &amp;vPathStart, &amp;vPathEnd, &amp;nPathLen,</a>
+<a name="ln594">                                      &amp;nDeltaH, &amp;nDeltaCharge, &amp;nNumVisitedAtoms );</a>
+<a name="ln595"> </a>
+<a name="ln596">                if ( ret == 1 &amp;&amp; ((vPathEnd == v1 &amp;&amp; vPathStart == v2) ||</a>
+<a name="ln597">                                  (vPathEnd == v2 &amp;&amp; vPathStart == v1)) &amp;&amp; nDeltaCharge == 2 ) {</a>
+<a name="ln598">                    /* Added (-)charge -N= and (+) to -N&lt; =&gt; nDeltaCharge == 2 */</a>
+<a name="ln599">                    ret = RunBnsRestoreOnce( pBNS, pBD, pVA, pTCGroups );</a>
+<a name="ln600">                    if ( ret &gt; 0 ) {</a>
+<a name="ln601">                        nNumRunBNS ++;</a>
+<a name="ln602">                        cur_success ++; /* 03 */</a>
+<a name="ln603">                        /* replace -NH- with -N(-)- */</a>
+<a name="ln604">                        pTCGroups-&gt;pTCG[itg].tg_num_H --;</a>
+<a name="ln605">                        pTCGroups-&gt;pTCG[itg].tg_num_Minus ++;</a>
+<a name="ln606">                        pTCGroups-&gt;pTCG[itg].tg_RestoreFlags |= TGRF_MINUS_FIRST;</a>
+<a name="ln607">                        pStruct-&gt;ti.t_group[itg].num[1] ++;</a>
+<a name="ln608">                        pTCGroups-&gt;total_charge --;</a>
+<a name="ln609">                        pTCGroups-&gt;tgroup_charge --;</a>
+<a name="ln610">                        pStruct-&gt;nNumRemovedProtonsByRevrs += 1;</a>
+<a name="ln611">                        bAction |= 4; /* H in the 1st available NH was replaced with (-) */</a>
+<a name="ln612">                    }</a>
+<a name="ln613">                } else {</a>
+<a name="ln614">                    pe-&gt;flow += delta;</a>
+<a name="ln615">                    pv1-&gt;st_edge.flow += delta;</a>
+<a name="ln616">                    pv2-&gt;st_edge.flow += delta;</a>
+<a name="ln617">                    pBNS-&gt;tot_st_flow += 2*delta;</a>
+<a name="ln618">                }</a>
+<a name="ln619">            }</a>
+<a name="ln620">            RemoveForbiddenEdgeMask( pBNS, &amp;AllChargeEdges, forbidden_edge_mask );</a>
+<a name="ln621">            RemoveForbiddenEdgeMask( pBNS, &amp;CurrEdges, forbidden_edge_mask  );</a>
+<a name="ln622">            RemoveForbiddenEdgeMask( pBNS, &amp;CurrEdges, forbidden_edge_mask  );</a>
+<a name="ln623">        } else</a>
+<a name="ln624">        if ( pc2i-&gt;nNumTgNHInChI+ pc2i-&gt;nNumTgNH2InChI &amp;&amp; pc2i-&gt;nNumTgOInChI &amp;&amp; !cur_success ) {</a>
+<a name="ln625">            /* change an attachement to N from H to (-) */</a>
+<a name="ln626">            for ( itg = 0; itg &lt; pTCGroups-&gt;num_tgroups &amp;&amp; !cur_success; itg ++ ) {</a>
+<a name="ln627">                pTg  = pBNS-&gt;vert + pTCGroups-&gt;pTCG[itg].nVertexNumber;</a>
+<a name="ln628">                for ( i = 0; i &lt; pTg-&gt;num_adj_edges &amp;&amp; !cur_success; i ++ ) {</a>
+<a name="ln629">                    pvEndp2 = pBNS-&gt;vert + (vEndp2 = (peTg = pBNS-&gt;edge + pTg-&gt;iedge[i])-&gt;neighbor1);</a>
+<a name="ln630">                    if ( pVA[vEndp2].cNumValenceElectrons == 5 &amp;&amp; pVA[vEndp2].cPeriodicRowNumber == 1 &amp;&amp;</a>
+<a name="ln631">                         at2[vEndp2].valence == at2[vEndp2].chem_bonds_valence &amp;&amp;</a>
+<a name="ln632">                         peTg-&gt;flow &amp;&amp; peTg-&gt;flow == peTg-&gt;cap ) {</a>
+<a name="ln633">                        /* endpoint -NHn found; change its charge */</a>
+<a name="ln634">                        cur_success ++; /* 04 */</a>
+<a name="ln635">                        /* replace -NH- with -N(-)- */</a>
+<a name="ln636">                        pTCGroups-&gt;pTCG[itg].tg_num_H --;</a>
+<a name="ln637">                        pTCGroups-&gt;pTCG[itg].tg_num_Minus ++;</a>
+<a name="ln638">                        pTCGroups-&gt;pTCG[itg].tg_RestoreFlags |= TGRF_MINUS_FIRST;</a>
+<a name="ln639">                        pTCGroups-&gt;pTCG[itg].tg_set_Minus = vEndp2 + 1;</a>
+<a name="ln640">                        pStruct-&gt;ti.t_group[itg].num[1] ++;</a>
+<a name="ln641">                        pTCGroups-&gt;total_charge --;</a>
+<a name="ln642">                        pTCGroups-&gt;tgroup_charge --;</a>
+<a name="ln643">                        pStruct-&gt;nNumRemovedProtonsByRevrs += 1;</a>
+<a name="ln644">                        bAction |= 8; /* manually set (-) charge to NH atom, vEndp2 */</a>
+<a name="ln645">                    }</a>
+<a name="ln646">                }</a>
+<a name="ln647">            }</a>
+<a name="ln648">        }</a>
+<a name="ln649">        if ( cur_success ) {</a>
+<a name="ln650">            tot_succes += cur_success;</a>
+<a name="ln651">            /* recalculate InChI from the structure */</a>
+<a name="ln652">            if ( 0 &gt; (ret = MakeOneInChIOutOfStrFromINChI2( ip, sd, pBNS, pStruct, at, at2, at3, pVA, pTCGroups,</a>
+<a name="ln653">                                                            ppt_group_info, ppat_norm, ppat_prep ) ) ) {</a>
+<a name="ln654">                goto exit_function;</a>
+<a name="ln655">            }</a>
+<a name="ln656">            if ( (ret = FillOutExtraFixedHDataRestr( pStruct )) ) {</a>
+<a name="ln657">                goto exit_function;</a>
+<a name="ln658">            }</a>
+<a name="ln659">            if ( (ret = FillOutCMP2MHINCHI( pStruct, pTCGroups, at2, pVA, pInChI, pc2i )) ) {</a>
+<a name="ln660">                goto exit_function;</a>
+<a name="ln661">            }</a>
+<a name="ln662">            if ( pStruct-&gt;One_ti.num_t_groups == 1 &amp;&amp; pStruct-&gt;One_ti.t_group[0].num[1] ) {</a>
+<a name="ln663">                /* this method did not work: no alt path from N(-) to =O */</a>
+<a name="ln664">                itg = 0;</a>
+<a name="ln665">                if ( bAction &amp; (8 | 2 ) ) {</a>
+<a name="ln666">                    /* roll back NH -&gt; N(-) replacement; H move from OH to N is not undone */</a>
+<a name="ln667">                    pTCGroups-&gt;pTCG[itg].tg_num_H ++;</a>
+<a name="ln668">                    pTCGroups-&gt;pTCG[itg].tg_num_Minus --;</a>
+<a name="ln669">                    pTCGroups-&gt;pTCG[itg].tg_RestoreFlags &amp;= ~TGRF_MINUS_FIRST;</a>
+<a name="ln670">                    pTCGroups-&gt;pTCG[itg].tg_set_Minus = 0;</a>
+<a name="ln671">                    pStruct-&gt;ti.t_group[itg].num[1] --;</a>
+<a name="ln672">                    pTCGroups-&gt;total_charge ++;</a>
+<a name="ln673">                    pTCGroups-&gt;tgroup_charge ++;</a>
+<a name="ln674">                    pStruct-&gt;nNumRemovedProtonsByRevrs -= 1;</a>
+<a name="ln675">                    cur_success --; </a>
+<a name="ln676">                } else</a>
+<a name="ln677">                if ( bAction &amp; 4 ) {</a>
+<a name="ln678">                    pTCGroups-&gt;pTCG[itg].tg_num_H ++;</a>
+<a name="ln679">                    pTCGroups-&gt;pTCG[itg].tg_num_Minus --;</a>
+<a name="ln680">                    pTCGroups-&gt;pTCG[itg].tg_RestoreFlags &amp;= ~TGRF_MINUS_FIRST;</a>
+<a name="ln681">                    pStruct-&gt;ti.t_group[itg].num[1] --;</a>
+<a name="ln682">                    pTCGroups-&gt;total_charge ++;</a>
+<a name="ln683">                    pTCGroups-&gt;tgroup_charge ++;</a>
+<a name="ln684">                    pStruct-&gt;nNumRemovedProtonsByRevrs -= 1;</a>
+<a name="ln685">                    cur_success --;</a>
+<a name="ln686">                } else {</a>
+<a name="ln687">                    ret = RI_ERR_PROGR;</a>
+<a name="ln688">                    goto exit_function;</a>
+<a name="ln689">                }</a>
+<a name="ln690">                /* recalculate InChI from the structure */</a>
+<a name="ln691">                if ( 0 &gt; (ret = MakeOneInChIOutOfStrFromINChI2( ip, sd, pBNS, pStruct, at, at2, at3, pVA, pTCGroups,</a>
+<a name="ln692">                                                                ppt_group_info, ppat_norm, ppat_prep ) ) ) {</a>
+<a name="ln693">                    goto exit_function;</a>
+<a name="ln694">                }</a>
+<a name="ln695">                if ( (ret = FillOutExtraFixedHDataRestr( pStruct )) ) {</a>
+<a name="ln696">                    goto exit_function;</a>
+<a name="ln697">                }</a>
+<a name="ln698">                if ( (ret = FillOutCMP2MHINCHI( pStruct, pTCGroups, at2, pVA, pInChI, pc2i )) ) {</a>
+<a name="ln699">                    goto exit_function;</a>
+<a name="ln700">                }</a>
+<a name="ln701">            }</a>
+<a name="ln702">            if ( !pc2i-&gt;bHasDifference ) {</a>
+<a name="ln703">                goto exit_function; /* nothing to do */</a>
+<a name="ln704">            }</a>
+<a name="ln705">        }</a>
+<a name="ln706">    }</a>
+<a name="ln707"> </a>
+<a name="ln708">    if ( pc2i-&gt;nNumTgInChI == 1 &amp;&amp; ( pc2i-&gt;nNumEndpRevrs &lt; pc2i-&gt;nNumEndpInChI || pc2i-&gt;nNumTgRevrs &gt; 1 ) &amp;&amp; /* ADP */</a>
+<a name="ln709">        pc2i-&gt;nNumTgMInChI == 0 &amp;&amp; (pc2i-&gt;nNumTgNInChI || pc2i-&gt;nNumTgOInChI) &amp;&amp;</a>
+<a name="ln710">        NO_VERTEX != (vPlusMinus = GetPlusMinusVertex( pBNS, pTCGroups, 1, 1 )) ) {</a>
+<a name="ln711">        /*---------------------------------------------------------------------------*/</a>
+<a name="ln712">        /* case 05: restored has N endpoints, no (-) endpoints                       */</a>
+<a name="ln713">        /*          original has single taut. group or more                          */</a>
+<a name="ln714">        /*          tautomeric endpoints.                                            */</a>
+<a name="ln715">        /* Solution: Find -N&lt; and allow (+) charge change                            */</a>
+<a name="ln716">        /*           Fix all charges and taut attachments exept                      */</a>
+<a name="ln717">        /*           =N- and =O (taut. endpoints)                                    */</a>
+<a name="ln718">        /*           Increment st_edge.cap on (+/-) vertex =&gt; add (+) charge to -N&lt;  */</a>
+<a name="ln719">        /*           Increment tot. charge in other places                           */</a>
+<a name="ln720">        /*           Increment t-group st_edge.cap                                   */</a>
+<a name="ln721">        /*           Run BNS                                                         */</a>
+<a name="ln722">        /*                                                                           */</a>
+<a name="ln723">        /*      (+/-)*               (+/-)           Result:                         */</a>
+<a name="ln724">        /*        |                    ||                                            */</a>
+<a name="ln725">        /*        |                    ||            - Added (+) to -N&lt;              */</a>
+<a name="ln726">        /*       (+)super             (+)super       - Added attachment point to O   */</a>
+<a name="ln727">        /*        ||                   |                                             */</a>
+<a name="ln728">        /*        ||          =&gt;       |             To make this attachment H,      */</a>
+<a name="ln729">        /*       (Y)                  (Y)            increment                       */</a>
+<a name="ln730">        /*        |                    ||            pTCGroups-&gt;pTCG[itg].tg_num_H   */</a>
+<a name="ln731">        /*        |                    ||                                            */</a>
+<a name="ln732">        /*       (+)hetero            (+)hetero      Technical details:              */</a>
+<a name="ln733">        /*         \\                   \            increase capacities of          */</a>
+<a name="ln734">        /*           N                    N(+)       edges to (+/-) otherwise        */</a>
+<a name="ln735">        /*           |                    ||         flow may not be able to         */</a>
+<a name="ln736">        /*   *(t)--O=R.            (t)==O-R.         increase                        */</a>
+<a name="ln737">        /*                                                                           */</a>
+<a name="ln738">        /*                                                                           */</a>
+<a name="ln739">        /*---------------------------------------------------------------------------*/</a>
+<a name="ln740">        int itg;</a>
+<a name="ln741">        BNS_VERTEX *pTg, *pvEndp;</a>
+<a name="ln742">        Vertex     vEndp, vTg;</a>
+<a name="ln743">        BNS_EDGE   *peTg;</a>
+<a name="ln744">        EdgeIndex  eTg;</a>
+<a name="ln745">        AT_NUMB  *nCanon2AtnoRevrs = pStruct-&gt;nCanon2Atno[0];</a>
+<a name="ln746"> </a>
+<a name="ln747">        CurrEdges.num_edges  = 0;</a>
+<a name="ln748">        CurrEdges2.num_edges = 0;</a>
+<a name="ln749">        cur_success          = 0;</a>
+<a name="ln750">        /* find -N&lt; and non-taut =N- or =O */</a>
+<a name="ln751">        for ( i = 0; i &lt; pStruct-&gt;num_atoms; i ++ ) {</a>
+<a name="ln752">            iat = nCanon2AtnoRevrs[i];</a>
+<a name="ln753">            /* -N&lt; */</a>
+<a name="ln754">            if ( !at2[iat].endpoint &amp;&amp; !at2[iat].charge &amp;&amp; !at2[iat].radical &amp;&amp; !at2[iat].num_H &amp;&amp;</a>
+<a name="ln755">                 pVA[i].cNumValenceElectrons == 5 &amp;&amp; pVA[i].cPeriodicRowNumber == 1 &amp;&amp;</a>
+<a name="ln756">                 0 &lt;= (e=pVA[iat].nCPlusGroupEdge-1) &amp;&amp; pBNS-&gt;edge[e].flow &amp;&amp; !pBNS-&gt;edge[e].forbidden) {</a>
+<a name="ln757"> </a>
+<a name="ln758">                if ( (ret = AddToEdgeList( &amp;CurrEdges, e, INC_ADD_EDGE )) ) {</a>
+<a name="ln759">                    goto exit_function;</a>
+<a name="ln760">                }</a>
+<a name="ln761">            }</a>
+<a name="ln762">        }</a>
+<a name="ln763">        if ( !CurrEdges.num_edges ) {</a>
+<a name="ln764">            goto exit_case_05;</a>
+<a name="ln765">        }</a>
+<a name="ln766">        /* find taut -N= and =O */</a>
+<a name="ln767">        for ( itg = 0; itg &lt; pTCGroups-&gt;num_tgroups &amp;&amp; !cur_success; itg ++ ) {</a>
+<a name="ln768">            CurrEdges2.num_edges = 0;</a>
+<a name="ln769">            pTg  = pBNS-&gt;vert + (vTg = pTCGroups-&gt;pTCG[itg].nVertexNumber);</a>
+<a name="ln770">            for ( i = 0; i &lt; pTg-&gt;num_adj_edges; i ++ ) {</a>
+<a name="ln771">                pvEndp = pBNS-&gt;vert + (vEndp = (peTg = pBNS-&gt;edge + (eTg=pTg-&gt;iedge[i]))-&gt;neighbor1);</a>
+<a name="ln772">                if ( at2[vEndp].charge || at2[vEndp].radical || peTg-&gt;cap - peTg-&gt;flow != 1 ) {</a>
+<a name="ln773">                    continue;</a>
+<a name="ln774">                }</a>
+<a name="ln775">                /* t-group edges to -N= and =O */</a>
+<a name="ln776">                if ( (ret = AddToEdgeList( &amp;CurrEdges2, eTg, INC_ADD_EDGE )) ) {</a>
+<a name="ln777">                    goto exit_function;</a>
+<a name="ln778">                }</a>
+<a name="ln779">            }</a>
+<a name="ln780">            if ( !CurrEdges2.num_edges ) {</a>
+<a name="ln781">                goto exit_case_05;</a>
+<a name="ln782">            }</a>
+<a name="ln783">            /* fix all charge edges except -N&lt; and all taut. edges except =O and =N- */ </a>
+<a name="ln784">            SetForbiddenEdgeMask( pBNS, &amp;AllChargeEdges, forbidden_edge_mask );</a>
+<a name="ln785">            SetForbiddenEdgeMask( pBNS, &amp;TautEdges, forbidden_edge_mask  );</a>
+<a name="ln786">            RemoveForbiddenEdgeMask( pBNS, &amp;CurrEdges, forbidden_edge_mask  );</a>
+<a name="ln787">            RemoveForbiddenEdgeMask( pBNS, &amp;CurrEdges2, forbidden_edge_mask  );</a>
+<a name="ln788">            delta = 1;</a>
+<a name="ln789">            /* Increment st_edge.cap on (+/-) vertex */</a>
+<a name="ln790">            pBNS-&gt;vert[vPlusMinus].st_edge.cap += delta;</a>
+<a name="ln791">            /* Increment st_edge.cap on t-group */</a>
+<a name="ln792">            pTg-&gt;st_edge.cap                   += delta;</a>
+<a name="ln793">            /* total cap count */</a>
+<a name="ln794">            pBNS-&gt;tot_st_cap                   += 2*delta;</a>
+<a name="ln795"> </a>
+<a name="ln796">            v1 = vPlusMinus;</a>
+<a name="ln797">            v2 = vTg;</a>
+<a name="ln798"> </a>
+<a name="ln799">            /* increase capacities of edges to Y  */</a>
+<a name="ln800">            for ( i = 0; i &lt; pBNS-&gt;vert[vPlusMinus].num_adj_edges; i ++ ) {</a>
+<a name="ln801">                j = pBNS-&gt;edge[pBNS-&gt;vert[vPlusMinus].iedge[i]].neighbor12 ^ vPlusMinus;</a>
+<a name="ln802">                for ( k = 0; k &lt; pBNS-&gt;vert[j].num_adj_edges; k ++ ) {</a>
+<a name="ln803">                    pBNS-&gt;edge[pBNS-&gt;vert[j].iedge[k]].cap += delta;</a>
+<a name="ln804">                }</a>
+<a name="ln805">            }</a>
+<a name="ln806"> </a>
+<a name="ln807">            ret = RunBnsTestOnce( pBNS, pBD, pVA, &amp;vPathStart, &amp;vPathEnd, &amp;nPathLen,</a>
+<a name="ln808">                                  &amp;nDeltaH, &amp;nDeltaCharge, &amp;nNumVisitedAtoms );</a>
+<a name="ln809"> </a>
+<a name="ln810">            if ( ret == 1 &amp;&amp; ((vPathEnd == v1 &amp;&amp; vPathStart == v2) ||</a>
+<a name="ln811">                              (vPathEnd == v2 &amp;&amp; vPathStart == v1)) &amp;&amp; nDeltaCharge == 1 ) {</a>
+<a name="ln812">                /* Added (+)charge to -N&lt; =&gt; nDeltaCharge == 1 */</a>
+<a name="ln813">                /* Flow change on pe (-)charge edge (atom B-O(-)) is not known to RunBnsTestOnce()) */</a>
+<a name="ln814">                ret = RunBnsRestoreOnce( pBNS, pBD, pVA, pTCGroups );</a>
+<a name="ln815">                if ( ret &gt; 0 ) {</a>
+<a name="ln816">                    nNumRunBNS ++;</a>
+<a name="ln817">                    cur_success ++; /* 01 */</a>
+<a name="ln818">                    /* update bookkeeping */</a>
+<a name="ln819">                    pTCGroups-&gt;total_charge            += delta;</a>
+<a name="ln820">                    pTCGroups-&gt;pTCG[itg].edges_cap     += delta;</a>
+<a name="ln821">                    pTCGroups-&gt;pTCG[itg].tg_num_H      += delta;</a>
+<a name="ln822">                    pStruct-&gt;nNumRemovedProtonsByRevrs -= delta;</a>
+<a name="ln823">                }</a>
+<a name="ln824">            } else {</a>
+<a name="ln825">                pBNS-&gt;vert[vPlusMinus].st_edge.cap -= delta;</a>
+<a name="ln826">                pTg-&gt;st_edge.cap                   -= delta;</a>
+<a name="ln827">                /*pTCGroups-&gt;pTCG[itg].edges_cap     -= delta;*/ /* ???bug??? - commented out 2006-03-22 */</a>
+<a name="ln828">                pBNS-&gt;tot_st_cap                   -= 2*delta;</a>
+<a name="ln829">                /* decrease capacities of edges to Y  */</a>
+<a name="ln830">                for ( i = 0; i &lt; pBNS-&gt;vert[vPlusMinus].num_adj_edges; i ++ ) {</a>
+<a name="ln831">                    j = pBNS-&gt;edge[pBNS-&gt;vert[vPlusMinus].iedge[i]].neighbor12 ^ vPlusMinus;</a>
+<a name="ln832">                    for ( k = 0; k &lt; pBNS-&gt;vert[j].num_adj_edges; k ++ ) {</a>
+<a name="ln833">                        pBNS-&gt;edge[pBNS-&gt;vert[j].iedge[k]].cap -= delta;</a>
+<a name="ln834">                    }</a>
+<a name="ln835">                }</a>
+<a name="ln836">            }</a>
+<a name="ln837">            RemoveForbiddenEdgeMask( pBNS, &amp;AllChargeEdges, forbidden_edge_mask );</a>
+<a name="ln838">            RemoveForbiddenEdgeMask( pBNS, &amp;TautEdges, forbidden_edge_mask  );</a>
+<a name="ln839">        }</a>
+<a name="ln840">        if ( cur_success ) {</a>
+<a name="ln841">            tot_succes += cur_success;</a>
+<a name="ln842">            /* recalculate InChI from the structure */</a>
+<a name="ln843">            if ( 0 &gt; (ret = MakeOneInChIOutOfStrFromINChI2( ip, sd, pBNS, pStruct, at, at2, at3, pVA, pTCGroups,</a>
+<a name="ln844">                                                            ppt_group_info, ppat_norm, ppat_prep ) ) ) {</a>
+<a name="ln845">                goto exit_function;</a>
+<a name="ln846">            }</a>
+<a name="ln847">            if ( (ret = FillOutExtraFixedHDataRestr( pStruct )) ) {</a>
+<a name="ln848">                goto exit_function;</a>
+<a name="ln849">            }</a>
+<a name="ln850">            if ( (ret = FillOutCMP2MHINCHI( pStruct, pTCGroups, at2, pVA, pInChI, pc2i )) ) {</a>
+<a name="ln851">                goto exit_function;</a>
+<a name="ln852">            }</a>
+<a name="ln853">            if ( !pc2i-&gt;bHasDifference ) {</a>
+<a name="ln854">                goto exit_function; /* nothing to do */</a>
+<a name="ln855">            }</a>
+<a name="ln856">        }</a>
+<a name="ln857"> </a>
+<a name="ln858">exit_case_05:;</a>
+<a name="ln859">    }</a>
+<a name="ln860"> </a>
+<a name="ln861">    while ( pc2i-&gt;nNumDiffMobH &amp;&amp; pc2i-&gt;nChargeMobHRevrs &gt; pc2i-&gt;nChargeMobHInChI ) {</a>
+<a name="ln862">        /*----------------------------------------------------*/</a>
+<a name="ln863">        /* case 06: restored has extra H attached to -O(-)    */</a>
+<a name="ln864">        /*          while the chrge should be on C, most pro- */</a>
+<a name="ln865">        /*          bably in a small ring.ut. group or more   */</a>
+<a name="ln866">        /*          tautomeric endpoints.                     */</a>
+<a name="ln867">        /* Solution: move (-) from O to C                     */</a>
+<a name="ln868">        /*----------------------------------------------------*/</a>
+<a name="ln869">        int iO, mode;</a>
+<a name="ln870">        EdgeIndex e2;</a>
+<a name="ln871">        BNS_EDGE  *pe2;</a>
+<a name="ln872">        cur_success = 0;</a>
+<a name="ln873">        for ( i = 0; !cur_success &amp;&amp; i &lt; pc2i-&gt;len_c2at; i ++ ) {</a>
+<a name="ln874"> </a>
+<a name="ln875">            if ( pc2i-&gt;c2at[i].nMobHRevrs == pc2i-&gt;c2at[i].nMobHInChI + 1 &amp;&amp;</a>
+<a name="ln876">                 pc2i-&gt;c2at[i].nNumHRevrs == pc2i-&gt;c2at[i].nMobHInChI &amp;&amp;</a>
+<a name="ln877">                 !pc2i-&gt;c2at[i].endptInChI &amp;&amp; !pc2i-&gt;c2at[i].endptRevrs &amp;&amp;</a>
+<a name="ln878">                 at2[iO = pc2i-&gt;c2at[i].atomNumber].charge == -1 &amp;&amp;</a>
+<a name="ln879">                 0 &lt;= (e=pVA[iO].nCMinusGroupEdge-1) &amp;&amp; (pe=pBNS-&gt;edge+e)-&gt;flow ) {</a>
+<a name="ln880">                </a>
+<a name="ln881">                /* try suitable atoms C */</a>
+<a name="ln882">                /* first look for =C= in a small ring */</a>
+<a name="ln883"> </a>
+<a name="ln884">                for( mode = 4; !cur_success &amp;&amp; mode &lt;= 8; mode ++ ) {</a>
+<a name="ln885"> </a>
+<a name="ln886">                    if ( mode == 8 )</a>
+<a name="ln887">                        mode = 99;</a>
+<a name="ln888"> </a>
+<a name="ln889">                    for ( iat = 0; !cur_success &amp;&amp; iat &lt; pStruct-&gt;num_atoms; iat ++ ) {</a>
+<a name="ln890"> </a>
+<a name="ln891">                        if ( !at2[iat].charge &amp;&amp; !at2[iat].radical &amp;&amp;</a>
+<a name="ln892">                             pVA[iat].cNumValenceElectrons == 4 &amp;&amp;</a>
+<a name="ln893">                             0 &lt;= (e2=pVA[iat].nCMinusGroupEdge-1) &amp;&amp; !(pe2=pBNS-&gt;edge+e2)-&gt;flow &amp;&amp;</a>
+<a name="ln894">                             0 &lt; bIsUnsatCarbonInASmallRing( at2, pVA, iat, pStruct-&gt;pbfsq, mode ) ) {</a>
+<a name="ln895"> </a>
+<a name="ln896">                            SetForbiddenEdgeMask( pBNS, &amp;AllChargeEdges, forbidden_edge_mask );</a>
+<a name="ln897">                            /* allow negative charge on the chosen carbon */</a>
+<a name="ln898">                            pe2-&gt;forbidden &amp;= forbidden_edge_mask_inv;</a>
+<a name="ln899"> </a>
+<a name="ln900">                            delta = 1;</a>
+<a name="ln901">                            if ( !pe-&gt;flow )</a>
+<a name="ln902">                                continue;</a>
+<a name="ln903">                            pv1 = pBNS-&gt;vert + (v1 = pe-&gt;neighbor1);</a>
+<a name="ln904">                            pv2 = pBNS-&gt;vert + (v2 = pe-&gt;neighbor12 ^ v1);</a>
+<a name="ln905">                            pe-&gt;flow -= delta;</a>
+<a name="ln906">                            pv1-&gt;st_edge.flow -= delta;</a>
+<a name="ln907">                            pv2-&gt;st_edge.flow -= delta;</a>
+<a name="ln908">                            pBNS-&gt;tot_st_flow -= 2*delta;</a>
+<a name="ln909"> </a>
+<a name="ln910">                            ret = RunBnsTestOnce( pBNS, pBD, pVA, &amp;vPathStart, &amp;vPathEnd, &amp;nPathLen,</a>
+<a name="ln911">                                                  &amp;nDeltaH, &amp;nDeltaCharge, &amp;nNumVisitedAtoms );</a>
+<a name="ln912"> </a>
+<a name="ln913">                            if ( ret == 1 &amp;&amp; ((vPathEnd == v1 &amp;&amp; vPathStart == v2) ||</a>
+<a name="ln914">                                              (vPathEnd == v2 &amp;&amp; vPathStart == v1)) &amp;&amp; nDeltaCharge == 1 ) {</a>
+<a name="ln915">                                /* Added (-)charge to unsaturated C =&gt; nDeltaCharge == 2 */</a>
+<a name="ln916">                                ret = RunBnsRestoreOnce( pBNS, pBD, pVA, pTCGroups );</a>
+<a name="ln917">                                if ( ret &gt; 0 ) {</a>
+<a name="ln918">                                    nNumRunBNS ++;</a>
+<a name="ln919">                                    cur_success ++; /* 01 */</a>
+<a name="ln920">                                    tot_succes += cur_success;</a>
+<a name="ln921">                                }</a>
+<a name="ln922">                            } else {</a>
+<a name="ln923">                                pe-&gt;forbidden      |= forbidden_edge_mask;</a>
+<a name="ln924">                                pe-&gt;flow += delta;</a>
+<a name="ln925">                                pv1-&gt;st_edge.flow += delta;</a>
+<a name="ln926">                                pv2-&gt;st_edge.flow += delta;</a>
+<a name="ln927">                                pBNS-&gt;tot_st_flow += 2*delta;</a>
+<a name="ln928">                            }</a>
+<a name="ln929">                            SetForbiddenEdgeMask( pBNS, &amp;AllChargeEdges, forbidden_edge_mask );</a>
+<a name="ln930">                        }</a>
+<a name="ln931">                    }</a>
+<a name="ln932">                }</a>
+<a name="ln933">            }</a>
+<a name="ln934">        }</a>
+<a name="ln935">        if ( cur_success ) {</a>
+<a name="ln936">            /* recalculate InChI from the structure */</a>
+<a name="ln937">            if ( 0 &gt; (ret = MakeOneInChIOutOfStrFromINChI2( ip, sd, pBNS, pStruct, at, at2, at3, pVA, pTCGroups,</a>
+<a name="ln938">                                                            ppt_group_info, ppat_norm, ppat_prep ) ) ) {</a>
+<a name="ln939">                goto exit_function;</a>
+<a name="ln940">            }</a>
+<a name="ln941">            if ( (ret = FillOutExtraFixedHDataRestr( pStruct )) ) {</a>
+<a name="ln942">                goto exit_function;</a>
+<a name="ln943">            }</a>
+<a name="ln944">            if ( (ret = FillOutCMP2MHINCHI( pStruct, pTCGroups, at2, pVA, pInChI, pc2i )) ) {</a>
+<a name="ln945">                goto exit_function;</a>
+<a name="ln946">            }</a>
+<a name="ln947">            if ( !pc2i-&gt;bHasDifference ) {</a>
+<a name="ln948">                goto exit_function; /* nothing to do */</a>
+<a name="ln949">            }</a>
+<a name="ln950">        } else {</a>
+<a name="ln951">            break;</a>
+<a name="ln952">        }</a>
+<a name="ln953">    }</a>
+<a name="ln954">    if ( pc2i-&gt;len_c2at &amp;&amp; pc2i-&gt;nChargeMobHRevrs &gt; pc2i-&gt;nChargeMobHInChI ) {</a>
+<a name="ln955">        /*------------------------------------------------------------------*/</a>
+<a name="ln956">        /* case 07: -NO2 are to be tautomeric but they are not AND          */</a>
+<a name="ln957">        /*          InChI has a SINGLE tautomeric group                     */</a>
+<a name="ln958">        /*                                                                  */</a>
+<a name="ln959">        /*                   (-)O                   (-)O                    */</a>
+<a name="ln960">        /* Solution: convert     \                      \                   */</a>
+<a name="ln961">        /*                        N-X=...-Z(-)   =&gt;      N(+)=X- ...=Z      */</a>
+<a name="ln962">        /*                      //                      /                   */</a>
+<a name="ln963">        /*                     O                    (-)O                    */</a>
+<a name="ln964">        /*                                                                  */</a>
+<a name="ln965">        /*                     O                       O                    */</a>
+<a name="ln966">        /*        or            \\                      \\                  */</a>
+<a name="ln967">        /*                        N-X=...-Z(-)    =&gt;      N=X-  ...=Z       */</a>
+<a name="ln968">        /*                      //                       /                  */</a>
+<a name="ln969">        /*                     O                     (-)O                   */</a>
+<a name="ln970">        /*                                                                  */</a>
+<a name="ln971">        /*                                                                  */</a>
+<a name="ln972">        /*  (a) move (-) from other tautomeric atom to O in O=N-X           */</a>
+<a name="ln973">        /*          or   from other atom that has to be tautomeric          */</a>
+<a name="ln974">        /*               but is not                                         */</a>
+<a name="ln975">        /*  (b) create (+) [ion pair creation] on N as in                   */</a>
+<a name="ln976">        /*                                                                  */</a>
+<a name="ln977">        /*       OH             OH                                          */</a>
+<a name="ln978">        /*      /              /                                            */</a>
+<a name="ln979">        /*  -C=N     =&gt;  =C-N(+)                                            */</a>
+<a name="ln980">        /*     \\             \\                                            */</a>
+<a name="ln981">        /*       O              O                                           */</a>
+<a name="ln982">        /*                                                                  */</a>
+<a name="ln983">        /*------------------------------------------------------------------*/</a>
+<a name="ln984">        int num_DB_O = 0;</a>
+<a name="ln985">        short iat_DB_O[MAX_DIFF_FIXH], iat_NO2[MAX_DIFF_FIXH];</a>
+<a name="ln986">        AT_NUMB  *nCanon2AtnoRevrs = pStruct-&gt;nCanon2Atno[0];</a>
+<a name="ln987">        /*</a>
+<a name="ln988">        AT_NUMB  *nAtno2CanonRevrs = pStruct-&gt;nAtno2Canon[0];</a>
+<a name="ln989">        */</a>
+<a name="ln990">        inp_ATOM *at_Mobile_H_Revrs = (pStruct-&gt;pOne_norm_data[0] &amp;&amp;</a>
+<a name="ln991">                                     pStruct-&gt;pOne_norm_data[0]-&gt;at)? pStruct-&gt;pOne_norm_data[0]-&gt;at : NULL;</a>
+<a name="ln992"> </a>
+<a name="ln993">        int iN, one_success;</a>
+<a name="ln994">        BNS_EDGE *peDB_O_Minus;</a>
+<a name="ln995">        int neigh, nNumO, nNumOthers;</a>
+<a name="ln996">#define CHG_SET_WRONG_TAUT_N   0</a>
+<a name="ln997">#define CHG_SET_WRONG_TAUT_O   1</a>
+<a name="ln998">#define CHG_SET_WRONG_TAUT_ALL 2</a>
+<a name="ln999">#define CHG_LAST_SET           2 /* the last index in trying */</a>
+<a name="ln1000">#define CHG_SET_O_FIXED        3</a>
+<a name="ln1001">#define CHG_SET_NUM            4</a>
+<a name="ln1002">        EDGE_LIST ChangeableEdges[CHG_SET_NUM];</a>
+<a name="ln1003">        memset( ChangeableEdges, 0, sizeof(ChangeableEdges) );</a>
+<a name="ln1004">        /* equivalent to AllocEdgeList( &amp;EdgeList, EDGE_LIST_CLEAR ); */</a>
+<a name="ln1005">        /*</a>
+<a name="ln1006">        S_CHAR   *nMobHInChI = pInChI[1] &amp;&amp; pInChI[1]-&gt;nNum_H? pInChI[1]-&gt;nNum_H :</a>
+<a name="ln1007">                               pInChI[0] &amp;&amp; pInChI[0]-&gt;nNum_H? pInChI[0]-&gt;nNum_H : 0;</a>
+<a name="ln1008">        */</a>
+<a name="ln1009">        CurrEdges.num_edges = 0; /* clear current edge list */</a>
+<a name="ln1010">        cur_success = 0;</a>
+<a name="ln1011">        for ( i = 0; i &lt; pStruct-&gt;num_atoms; i ++ ) {</a>
+<a name="ln1012">            iat = nCanon2AtnoRevrs[i];</a>
+<a name="ln1013">            if ( /* orig. InChI info: taut in orig. InChI =O located in -NO2 that is not taut in Reconstructed InChI */</a>
+<a name="ln1014">                 num_DB_O &lt; MAX_DIFF_FIXH &amp;&amp;</a>
+<a name="ln1015">                 pVA[iat].cNumValenceElectrons == 6 /* O, S, Se, Te */ &amp;&amp;</a>
+<a name="ln1016">                 (!at2[iat].endpoint /*|| pc2i-&gt;c2at[i].nMobHInChI*/) &amp;&amp;</a>
+<a name="ln1017">                 (e=pVA[iat].nCMinusGroupEdge-1) &gt;= 0 &amp;&amp; !pBNS-&gt;edge[e].forbidden &amp;&amp;</a>
+<a name="ln1018">                 at2[iat].num_H == 0 &amp;&amp; /*pc2i-&gt;c2at[i].nMobHInChI ==  1 &amp;&amp;*/</a>
+<a name="ln1019">                 /* reversed structure info: */</a>
+<a name="ln1020">                 !(at_Mobile_H_Revrs &amp;&amp; at_Mobile_H_Revrs[iat].endpoint) /*|| pc2i-&gt;c2at[i].nMobHRevrs*/ &amp;&amp;</a>
+<a name="ln1021">                 !at2[iat].charge &amp;&amp;</a>
+<a name="ln1022">                 at2[iat].valence == 1 &amp;&amp; at2[iat].chem_bonds_valence == 2 &amp;&amp;</a>
+<a name="ln1023">                 /* find whether it belongs to NO2 */</a>
+<a name="ln1024">                 pVA[iN=at2[iat].neighbor[0]].cNumValenceElectrons == 5 &amp;&amp;</a>
+<a name="ln1025">                 at2[iN].valence == 3 &amp;&amp; (at2[iN].charge == 0 || at2[iN].charge == 1) &amp;&amp;</a>
+<a name="ln1026">                 at2[iN].chem_bonds_valence == 5 - at2[iN].charge ) {</a>
+<a name="ln1027">                /* find the second O */</a>
+<a name="ln1028">                nNumO = nNumOthers = 0;</a>
+<a name="ln1029">                for ( k = 0; k &lt; at2[iN].valence; k ++ ) {</a>
+<a name="ln1030">                    neigh = at2[iN].neighbor[k];</a>
+<a name="ln1031">                    if ( neigh == iat ) {</a>
+<a name="ln1032">                        continue;</a>
+<a name="ln1033">                    }</a>
+<a name="ln1034">                    if ( pVA[neigh].cNumValenceElectrons == 6 &amp;&amp;</a>
+<a name="ln1035">                         !at2[neigh].endpoint &amp;&amp;</a>
+<a name="ln1036">                         !(at_Mobile_H_Revrs &amp;&amp; at_Mobile_H_Revrs[neigh].endpoint) &amp;&amp;</a>
+<a name="ln1037">                         at2[neigh].valence == 1 &amp;&amp; at2[neigh].num_H == 0 &amp;&amp;</a>
+<a name="ln1038">                         at2[neigh].radical == 0 &amp;&amp; (at2[neigh].charge == 0 || at2[neigh].charge == -1) &amp;&amp;</a>
+<a name="ln1039">                         at2[neigh].chem_bonds_valence - at2[neigh].charge == 2) {</a>
+<a name="ln1040">                        nNumO ++;</a>
+<a name="ln1041">                    } else</a>
+<a name="ln1042">                    if ( at2[iN].bond_type[k] == BOND_TYPE_SINGLE &amp;&amp;</a>
+<a name="ln1043">                         at2[neigh].valence &gt; 1 &amp;&amp;</a>
+<a name="ln1044">                         at2[neigh].valence &lt; at2[neigh].chem_bonds_valence ) {</a>
+<a name="ln1045">                        nNumOthers ++;</a>
+<a name="ln1046">                    }</a>
+<a name="ln1047">                }</a>
+<a name="ln1048">                if ( nNumO != 1 || nNumOthers != 1 ) {</a>
+<a name="ln1049">                    continue;</a>
+<a name="ln1050">                }</a>
+<a name="ln1051">                for ( k = 0; k &lt; num_DB_O; k ++ ) {</a>
+<a name="ln1052">                    if ( iat_NO2[k] == iN ) {</a>
+<a name="ln1053">                        break;</a>
+<a name="ln1054">                    }</a>
+<a name="ln1055">                }</a>
+<a name="ln1056">                if ( k == num_DB_O ) {</a>
+<a name="ln1057">                    iat_NO2[num_DB_O]     = iN;</a>
+<a name="ln1058">                    iat_DB_O[num_DB_O ++] = iat;</a>
+<a name="ln1059">                }</a>
+<a name="ln1060">                /* save the =O (-)-edge to avoid interference */</a>
+<a name="ln1061">                if ( (ret = AddToEdgeList( &amp;ChangeableEdges[CHG_SET_O_FIXED], e, INC_ADD_EDGE )) ) {</a>
+<a name="ln1062">                    goto exit_case_07;</a>
+<a name="ln1063">                }</a>
+<a name="ln1064">            }</a>
+<a name="ln1065">        }</a>
+<a name="ln1066">        if ( num_DB_O ) {</a>
+<a name="ln1067">            /* search for falsely tautomeric negatively charged atoms N and O */</a>
+<a name="ln1068">            for ( i = 0; i &lt; pc2i-&gt;len_c2at; i ++ ) {</a>
+<a name="ln1069">                iat = pc2i-&gt;c2at[i].atomNumber;</a>
+<a name="ln1070">                if ( pc2i-&gt;c2at[i].endptRevrs &amp;&amp; !pc2i-&gt;c2at[i].endptInChI &amp;&amp;</a>
+<a name="ln1071">                     pc2i-&gt;c2at[i].nAtChargeRevrs == - 1 &amp;&amp;</a>
+<a name="ln1072">                     0 &lt;= (e=pVA[iat].nCMinusGroupEdge-1) &amp;&amp; !pBNS-&gt;edge[e].forbidden &amp;&amp; pBNS-&gt;edge[e].flow &amp;&amp;</a>
+<a name="ln1073">                     0 &gt; FindInEdgeList( &amp;ChangeableEdges[CHG_SET_O_FIXED], e ) ) {</a>
+<a name="ln1074">                    if ( pc2i-&gt;c2at[i].nValElectr == 6 ) {</a>
+<a name="ln1075">                         if ( (ret = AddToEdgeList( &amp;ChangeableEdges[CHG_SET_WRONG_TAUT_O], e, INC_ADD_EDGE )) ) {</a>
+<a name="ln1076">                             goto exit_case_07;</a>
+<a name="ln1077">                         }</a>
+<a name="ln1078">                    } else</a>
+<a name="ln1079">                    if ( pc2i-&gt;c2at[i].nValElectr == 5 ) {</a>
+<a name="ln1080">                         if ( (ret = AddToEdgeList( &amp;ChangeableEdges[CHG_SET_WRONG_TAUT_N], e, INC_ADD_EDGE )) ) {</a>
+<a name="ln1081">                             goto exit_case_07;</a>
+<a name="ln1082">                         }</a>
+<a name="ln1083">                    }</a>
+<a name="ln1084">                    if ( (ret = AddToEdgeList( &amp;ChangeableEdges[CHG_SET_WRONG_TAUT_ALL], e, INC_ADD_EDGE )) ) {</a>
+<a name="ln1085">                        goto exit_case_07;</a>
+<a name="ln1086">                    }</a>
+<a name="ln1087">                }</a>
+<a name="ln1088">            }</a>
+<a name="ln1089">            /* ------- finally, try to move charges from O=N --------------*/</a>
+<a name="ln1090">            for ( i = 0; i &lt; num_DB_O; i ++ ) {</a>
+<a name="ln1091">                int nDeltaChargeExpected;</a>
+<a name="ln1092">                one_success = 0;</a>
+<a name="ln1093">                delta = 1;</a>
+<a name="ln1094">                iat = iat_DB_O[i];</a>
+<a name="ln1095">                peDB_O_Minus = pBNS-&gt;edge + (pVA[iat].nCMinusGroupEdge-1);</a>
+<a name="ln1096">                pe =           pBNS-&gt;edge + pBNS-&gt;vert[iat].iedge[0];</a>
+<a name="ln1097">                </a>
+<a name="ln1098">                if ( !pe-&gt;flow )</a>
+<a name="ln1099">                    continue;</a>
+<a name="ln1100">                pv1 = pBNS-&gt;vert + (v1 = pe-&gt;neighbor1);</a>
+<a name="ln1101">                pv2 = pBNS-&gt;vert + (v2 = pe-&gt;neighbor12 ^ v1);</a>
+<a name="ln1102"> </a>
+<a name="ln1103">                pe-&gt;forbidden            |= forbidden_edge_mask;</a>
+<a name="ln1104"> </a>
+<a name="ln1105">                pe-&gt;flow -= delta;</a>
+<a name="ln1106">                pv1-&gt;st_edge.flow -= delta;</a>
+<a name="ln1107">                pv2-&gt;st_edge.flow -= delta;</a>
+<a name="ln1108">                pBNS-&gt;tot_st_flow -= 2*delta;</a>
+<a name="ln1109"> </a>
+<a name="ln1110">                for ( k = 0; !one_success &amp;&amp; k &lt;= CHG_LAST_SET; k ++ ) {</a>
+<a name="ln1111">                    if ( !ChangeableEdges[k].num_edges ) {</a>
+<a name="ln1112">                        continue;</a>
+<a name="ln1113">                    }</a>
+<a name="ln1114">                    nDeltaChargeExpected = 0;</a>
+<a name="ln1115">                    </a>
+<a name="ln1116">                    SetForbiddenEdgeMask( pBNS, &amp;AllChargeEdges, forbidden_edge_mask );</a>
+<a name="ln1117">                    RemoveForbiddenEdgeMask( pBNS, &amp;ChangeableEdges[k], forbidden_edge_mask  );</a>
+<a name="ln1118">                    /* allow (-) charge to move to N=O */</a>
+<a name="ln1119">                    peDB_O_Minus-&gt;forbidden  &amp;= forbidden_edge_mask_inv;</a>
+<a name="ln1120">                    </a>
+<a name="ln1121">                    ret = RunBnsTestOnce( pBNS, pBD, pVA, &amp;vPathStart, &amp;vPathEnd, &amp;nPathLen,</a>
+<a name="ln1122">                                          &amp;nDeltaH, &amp;nDeltaCharge, &amp;nNumVisitedAtoms );</a>
+<a name="ln1123"> </a>
+<a name="ln1124">                    if ( ret == 1 &amp;&amp; ((vPathEnd == v1 &amp;&amp; vPathStart == v2) ||</a>
+<a name="ln1125">                                      (vPathEnd == v2 &amp;&amp; vPathStart == v1)) &amp;&amp;</a>
+<a name="ln1126">                                      nDeltaCharge == nDeltaChargeExpected ) {</a>
+<a name="ln1127">                        /* Move (-) charge to =O and remove it an endpoint =&gt; nDeltaCharge == 0 */</a>
+<a name="ln1128">                        ret = RunBnsRestoreOnce( pBNS, pBD, pVA, pTCGroups );</a>
+<a name="ln1129">                        if ( ret &gt; 0 ) {</a>
+<a name="ln1130">                            nNumRunBNS ++;</a>
+<a name="ln1131">                            one_success ++; /* 07 */</a>
+<a name="ln1132">                        }</a>
+<a name="ln1133">                    }</a>
+<a name="ln1134">                    INCHI_HEAPCHK</a>
+<a name="ln1135">                }</a>
+<a name="ln1136">                cur_success += one_success;</a>
+<a name="ln1137">                </a>
+<a name="ln1138">                RemoveForbiddenEdgeMask( pBNS, &amp;AllChargeEdges, forbidden_edge_mask );</a>
+<a name="ln1139">                pe-&gt;forbidden            &amp;= forbidden_edge_mask_inv;</a>
+<a name="ln1140"> </a>
+<a name="ln1141">                if ( !one_success ) {</a>
+<a name="ln1142">                    pe-&gt;flow += delta;</a>
+<a name="ln1143">                    pv1-&gt;st_edge.flow += delta;</a>
+<a name="ln1144">                    pv2-&gt;st_edge.flow += delta;</a>
+<a name="ln1145">                    pBNS-&gt;tot_st_flow += 2*delta;</a>
+<a name="ln1146">                }</a>
+<a name="ln1147">            }</a>
+<a name="ln1148">        }</a>
+<a name="ln1149">exit_case_07:</a>
+<a name="ln1150">        for ( i = 0; i &lt; CHG_SET_NUM; i ++ ) {</a>
+<a name="ln1151">            AllocEdgeList( &amp;ChangeableEdges[i], EDGE_LIST_FREE );</a>
+<a name="ln1152">        }</a>
+<a name="ln1153"> </a>
+<a name="ln1154">        CurrEdges.num_edges = 0; /* clear current edge list */</a>
+<a name="ln1155">        if ( cur_success ) {</a>
+<a name="ln1156">            tot_succes += cur_success;</a>
+<a name="ln1157">            /* recalculate InChI from the structure */</a>
+<a name="ln1158">            if ( 0 &gt; (ret = MakeOneInChIOutOfStrFromINChI2( ip, sd, pBNS, pStruct, at, at2, at3, pVA, pTCGroups,</a>
+<a name="ln1159">                                                            ppt_group_info, ppat_norm, ppat_prep ) ) ) {</a>
+<a name="ln1160">                goto exit_function;</a>
+<a name="ln1161">            }</a>
+<a name="ln1162">            if ( (ret = FillOutExtraFixedHDataRestr( pStruct )) ) {</a>
+<a name="ln1163">                goto exit_function;</a>
+<a name="ln1164">            }</a>
+<a name="ln1165">            if ( (ret = FillOutCMP2MHINCHI( pStruct, pTCGroups, at2, pVA, pInChI, pc2i )) ) {</a>
+<a name="ln1166">                goto exit_function;</a>
+<a name="ln1167">            }</a>
+<a name="ln1168">            if ( !pc2i-&gt;bHasDifference ) {</a>
+<a name="ln1169">                goto exit_function; /* nothing to do */</a>
+<a name="ln1170">            }</a>
+<a name="ln1171">        }</a>
+<a name="ln1172">#undef CHG_SET_NOOH</a>
+<a name="ln1173">#undef CHG_SET_WRONG_TAUT</a>
+<a name="ln1174">#undef CHG_SET_TAUT</a>
+<a name="ln1175">#undef CHG_LAST_SET</a>
+<a name="ln1176">#undef CHG_SET_O_FIXED</a>
+<a name="ln1177">#undef CHG_SET_NUM</a>
+<a name="ln1178">    }</a>
+<a name="ln1179"> </a>
+<a name="ln1180"> </a>
+<a name="ln1181"> </a>
+<a name="ln1182">exit_function:</a>
+<a name="ln1183">    AllocEdgeList( &amp;AllChargeEdges, EDGE_LIST_FREE );</a>
+<a name="ln1184">    AllocEdgeList( &amp;CurrEdges, EDGE_LIST_FREE );</a>
+<a name="ln1185">    AllocEdgeList( &amp;CurrEdges2, EDGE_LIST_FREE );</a>
+<a name="ln1186">    AllocEdgeList( &amp;CurrEdges3, EDGE_LIST_FREE );</a>
+<a name="ln1187">    AllocEdgeList( &amp;NFlowerEdges, EDGE_LIST_FREE );</a>
+<a name="ln1188">    AllocEdgeList( &amp;OtherNFlowerEdges, EDGE_LIST_FREE );</a>
+<a name="ln1189">    AllocEdgeList( &amp;FixedLargeRingStereoEdges, EDGE_LIST_FREE );</a>
+<a name="ln1190">    AllocEdgeList( &amp;TautEdges, EDGE_LIST_FREE );</a>
+<a name="ln1191"> </a>
+<a name="ln1192"> </a>
+<a name="ln1193">    return ret;</a>
+<a name="ln1194">}</a>
+<a name="ln1195"> </a>
+<a name="ln1196">#endif</a>
+
+</code></pre>
+<div class="balloon" rel="624"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: pc2i->nNumTgOInChI.</p></div>
+<div class="balloon" rel="624"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v793/" target="_blank">V793</a> It is odd that the result of the '+' operator is a part of the condition. Perhaps, this statement should have been compared with something else.</p></div>
+<div class="balloon" rel="1154"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'CurrEdges.num_edges' variable was assigned the same value.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

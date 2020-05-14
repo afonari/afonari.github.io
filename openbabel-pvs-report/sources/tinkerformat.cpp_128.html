@@ -1,0 +1,574 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>tinkerformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Copyright (C) 2000 by OpenEye Scientific Software, Inc.</a>
+<a name="ln3">Some portions Copyright (C) 2001-2006 by Geoffrey R. Hutchison</a>
+<a name="ln4">Some portions Copyright (C) 2004 by Chris Morley</a>
+<a name="ln5"> </a>
+<a name="ln6">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln7">it under the terms of the GNU General Public License as published by</a>
+<a name="ln8">the Free Software Foundation version 2 of the License.</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is distributed in the hope that it will be useful,</a>
+<a name="ln11">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln12">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln13">GNU General Public License for more details.</a>
+<a name="ln14">***********************************************************************/</a>
+<a name="ln15">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln16"> </a>
+<a name="ln17">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln18">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/data.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln24"> </a>
+<a name="ln25">#include &lt;openbabel/forcefield.h&gt;</a>
+<a name="ln26">#include &lt;cstdlib&gt;</a>
+<a name="ln27"> </a>
+<a name="ln28">using namespace std;</a>
+<a name="ln29">namespace OpenBabel</a>
+<a name="ln30">{</a>
+<a name="ln31"> </a>
+<a name="ln32">  class TinkerFormat : public OBMoleculeFormat</a>
+<a name="ln33">  {</a>
+<a name="ln34">  public:</a>
+<a name="ln35">    //Register this format type ID</a>
+<a name="ln36">    TinkerFormat()</a>
+<a name="ln37">    {</a>
+<a name="ln38">      OBConversion::RegisterFormat(&quot;txyz&quot;,this);</a>
+<a name="ln39">    }</a>
+<a name="ln40"> </a>
+<a name="ln41">    virtual const char* Description() //required</a>
+<a name="ln42">    {</a>
+<a name="ln43">      return</a>
+<a name="ln44">        &quot;Tinker XYZ format\n&quot;</a>
+<a name="ln45">        &quot;The cartesian XYZ file format used by the molecular mechanics package TINKER.\n&quot;</a>
+<a name="ln46">        &quot;By default, the MM2 atom types are used for writing files but MM3 atom types\n&quot;</a>
+<a name="ln47">        &quot;are provided as an option. Another option provides the ability to take the\n&quot;</a>
+<a name="ln48">        &quot;atom type from the atom class (e.g. as used in SMILES, or set via the API).\n\n&quot;</a>
+<a name="ln49"> </a>
+<a name="ln50">        &quot;Read Options e.g. -as\n&quot;</a>
+<a name="ln51">        &quot;  s  Generate single bonds only\n\n&quot;</a>
+<a name="ln52">        &quot;Write Options e.g. -xm\n&quot;</a>
+<a name="ln53">        &quot;  m  Write an input file for the CNDO/INDO program.\n&quot;</a>
+<a name="ln54">        &quot;  c  Write atom types using custom atom classes, if available\n&quot;</a>
+<a name="ln55">        &quot;  3  Write atom types for the MM3 forcefield.\n\n&quot;;</a>
+<a name="ln56">    };</a>
+<a name="ln57"> </a>
+<a name="ln58">    virtual const char* SpecificationURL()</a>
+<a name="ln59">    {return &quot;http://dasher.wustl.edu/tinker/&quot;;}; //optional</a>
+<a name="ln60"> </a>
+<a name="ln61">    //Flags() can return be any the following combined by | or be omitted if none apply</a>
+<a name="ln62">    // NOTREADABLE  READONEONLY  NOTWRITABLE  WRITEONEONLY</a>
+<a name="ln63">    virtual unsigned int Flags()</a>
+<a name="ln64">    {</a>
+<a name="ln65">      return READONEONLY | WRITEONEONLY;</a>
+<a name="ln66">    };</a>
+<a name="ln67"> </a>
+<a name="ln68">    ////////////////////////////////////////////////////</a>
+<a name="ln69">    /// The &quot;API&quot; interface functions</a>
+<a name="ln70">    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln71">    virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln72"> </a>
+<a name="ln73">  };</a>
+<a name="ln74"> </a>
+<a name="ln75">  //Make an instance of the format class</a>
+<a name="ln76">  TinkerFormat theTinkerFormat;</a>
+<a name="ln77"> </a>
+<a name="ln78">  // Sets the MM3 atom type based on the MM2 atom type</a>
+<a name="ln79">  int SetMM3Type(OBAtom *atom);</a>
+<a name="ln80"> </a>
+<a name="ln81">  /////////////////////////////////////////////////////////////////</a>
+<a name="ln82"> </a>
+<a name="ln83">  bool TinkerFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln84">  {</a>
+<a name="ln85">    OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln86">    if (pmol == nullptr)</a>
+<a name="ln87">        return false;</a>
+<a name="ln88"> </a>
+<a name="ln89">    //Define some references so we can use the old parameter names</a>
+<a name="ln90">    istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln91">    OBMol &amp;mol = *pmol;</a>
+<a name="ln92">    const char* title = pConv-&gt;GetTitle();</a>
+<a name="ln93"> </a>
+<a name="ln94">    int natoms;</a>
+<a name="ln95">    char buffer[BUFF_SIZE];</a>
+<a name="ln96">    vector&lt;string&gt; vs;</a>
+<a name="ln97"> </a>
+<a name="ln98">    ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln99">    tokenize(vs,buffer);</a>
+<a name="ln100">    if (vs.size() &lt; 2)</a>
+<a name="ln101">      return false;</a>
+<a name="ln102">    natoms = atoi(vs[0].c_str());</a>
+<a name="ln103"> </a>
+<a name="ln104">    // title is 2nd token (usually add tokens for the atom types)</a>
+<a name="ln105">    mol.SetTitle(vs[1]);</a>
+<a name="ln106"> </a>
+<a name="ln107">    mol.ReserveAtoms(natoms);</a>
+<a name="ln108">    mol.BeginModify();</a>
+<a name="ln109"> </a>
+<a name="ln110">    string str;</a>
+<a name="ln111">    double x,y,z;</a>
+<a name="ln112">    OBAtom *atom;</a>
+<a name="ln113"> </a>
+<a name="ln114">    for (int i = 1; i &lt;= natoms; ++i)</a>
+<a name="ln115">    {</a>
+<a name="ln116">        if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln117">            return(false);</a>
+<a name="ln118">        tokenize(vs,buffer);</a>
+<a name="ln119">        // e.g. &quot;2  C      2.476285    0.121331   -0.001070     2     1     3    14&quot;</a>
+<a name="ln120">        if (vs.size() &lt; 5)</a>
+<a name="ln121">            return(false);</a>
+<a name="ln122"> </a>
+<a name="ln123">        atom = mol.NewAtom();</a>
+<a name="ln124">        x = atof((char*)vs[2].c_str());</a>
+<a name="ln125">        y = atof((char*)vs[3].c_str());</a>
+<a name="ln126">        z = atof((char*)vs[4].c_str());</a>
+<a name="ln127">        atom-&gt;SetVector(x,y,z); //set coordinates</a>
+<a name="ln128"> </a>
+<a name="ln129">        //set atomic number</a>
+<a name="ln130">        atom-&gt;SetAtomicNum(OBElements::GetAtomicNum(vs[1].c_str()));</a>
+<a name="ln131"> </a>
+<a name="ln132">        // add bonding</a>
+<a name="ln133">        if (vs.size() &gt; 6)</a>
+<a name="ln134">          for (unsigned int j = 6; j &lt; vs.size(); ++j)</a>
+<a name="ln135">            mol.AddBond(mol.NumAtoms(), atoi((char *)vs[j].c_str()), 1); // we don't know the bond order</a>
+<a name="ln136"> </a>
+<a name="ln137">    }</a>
+<a name="ln138">    if (!pConv-&gt;IsOption(&quot;s&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln139">      mol.PerceiveBondOrders();</a>
+<a name="ln140"> </a>
+<a name="ln141">    // clean out remaining blank lines</a>
+<a name="ln142">    std::streampos ipos;</a>
+<a name="ln143">    do</a>
+<a name="ln144">    {</a>
+<a name="ln145">      ipos = ifs.tellg();</a>
+<a name="ln146">      ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln147">    }</a>
+<a name="ln148">    while(strlen(buffer) == 0 &amp;&amp; !ifs.eof() );</a>
+<a name="ln149">    ifs.seekg(ipos);</a>
+<a name="ln150"> </a>
+<a name="ln151">    mol.EndModify();</a>
+<a name="ln152">    mol.SetTitle(title);</a>
+<a name="ln153">    return(true);</a>
+<a name="ln154">  }</a>
+<a name="ln155"> </a>
+<a name="ln156">  bool TinkerFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln157">  {</a>
+<a name="ln158">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln159">    if (pmol == nullptr)</a>
+<a name="ln160">      return false;</a>
+<a name="ln161"> </a>
+<a name="ln162">    //Define some references so we can use the old parameter names</a>
+<a name="ln163">    ostream &amp;ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln164">    OBMol &amp;mol = *pmol;</a>
+<a name="ln165">    bool mm2Types = false;</a>
+<a name="ln166">    bool mmffTypes = pConv-&gt;IsOption(&quot;m&quot;, OBConversion::OUTOPTIONS) != nullptr;</a>
+<a name="ln167">    bool mm3Types = pConv-&gt;IsOption(&quot;3&quot;, OBConversion::OUTOPTIONS) != nullptr;</a>
+<a name="ln168">    bool classTypes = pConv-&gt;IsOption(&quot;c&quot;, OBConversion::OUTOPTIONS) != nullptr;</a>
+<a name="ln169"> </a>
+<a name="ln170">    unsigned int i;</a>
+<a name="ln171">    char buffer[BUFF_SIZE];</a>
+<a name="ln172">    OBBond *bond;</a>
+<a name="ln173">    vector&lt;OBBond*&gt;::iterator j;</a>
+<a name="ln174"> </a>
+<a name="ln175">    // Before we try output of MMFF94 atom types, check if it works</a>
+<a name="ln176">    OBForceField *ff = OpenBabel::OBForceField::FindForceField(&quot;MMFF94&quot;);</a>
+<a name="ln177">    if (mmffTypes &amp;&amp; ff &amp;&amp; ff-&gt;Setup(mol))</a>
+<a name="ln178">      mmffTypes = ff-&gt;GetAtomTypes(mol);</a>
+<a name="ln179">    else</a>
+<a name="ln180">      mmffTypes = false; // either the force field isn't available, or it doesn't work</a>
+<a name="ln181"> </a>
+<a name="ln182">    if (!mmffTypes &amp;&amp; !mm3Types &amp;&amp; !classTypes) {</a>
+<a name="ln183">      snprintf(buffer, BUFF_SIZE, &quot;%6d %-20s   MM2 parameters\n&quot;,mol.NumAtoms(),mol.GetTitle());</a>
+<a name="ln184">      mm2Types = true;</a>
+<a name="ln185">    }</a>
+<a name="ln186">    else if (mm3Types)</a>
+<a name="ln187">      snprintf(buffer, BUFF_SIZE, &quot;%6d %-20s   MM3 parameters\n&quot;,mol.NumAtoms(),mol.GetTitle());</a>
+<a name="ln188">    else if (classTypes)</a>
+<a name="ln189">      snprintf(buffer, BUFF_SIZE, &quot;%6d %-20s   Custom parameters\n&quot;,mol.NumAtoms(),mol.GetTitle());</a>
+<a name="ln190">    else</a>
+<a name="ln191">      snprintf(buffer, BUFF_SIZE, &quot;%6d %-20s   MMFF94 parameters\n&quot;,mol.NumAtoms(),mol.GetTitle());</a>
+<a name="ln192">    ofs &lt;&lt; buffer;</a>
+<a name="ln193"> </a>
+<a name="ln194">    ttab.SetFromType(&quot;INT&quot;);</a>
+<a name="ln195"> </a>
+<a name="ln196">    OBAtom *atom;</a>
+<a name="ln197">    string str,str1;</a>
+<a name="ln198">    int atomType;</a>
+<a name="ln199">    for(i = 1;i &lt;= mol.NumAtoms(); i++)</a>
+<a name="ln200">      {</a>
+<a name="ln201">        atom = mol.GetAtom(i);</a>
+<a name="ln202">        str = atom-&gt;GetType();</a>
+<a name="ln203">        atomType = 0; // Something is very wrong if this doesn't get set below</a>
+<a name="ln204"> </a>
+<a name="ln205">        if (mm2Types) {</a>
+<a name="ln206">          ttab.SetToType(&quot;MM2&quot;);</a>
+<a name="ln207">          ttab.Translate(str1,str);</a>
+<a name="ln208">          atomType = atoi((char*)str1.c_str());</a>
+<a name="ln209">        }</a>
+<a name="ln210">        if (mmffTypes) {</a>
+<a name="ln211">          // Override the MM2 typing</a>
+<a name="ln212">          OBPairData *type = (OpenBabel::OBPairData*)atom-&gt;GetData(&quot;FFAtomType&quot;);</a>
+<a name="ln213">          if (type) {</a>
+<a name="ln214">            str1 = type-&gt;GetValue().c_str();</a>
+<a name="ln215">            atomType = atoi((char*)str1.c_str());</a>
+<a name="ln216">          }</a>
+<a name="ln217">        }</a>
+<a name="ln218">        if (mm3Types) {</a>
+<a name="ln219">          // convert to integer for MM3 typing</a>
+<a name="ln220">          atomType = SetMM3Type(atom);</a>
+<a name="ln221">        }</a>
+<a name="ln222">        if (classTypes) {</a>
+<a name="ln223">          // Atom classes are set by the user, so use those</a>
+<a name="ln224">          OBGenericData *data = atom-&gt;GetData(&quot;Atom Class&quot;);</a>
+<a name="ln225">          if (data) {</a>
+<a name="ln226">            OBPairInteger* acdata = dynamic_cast&lt;OBPairInteger*&gt;(data); // Could replace with C-style cast if willing to live dangerously</a>
+<a name="ln227">            if (acdata) {</a>
+<a name="ln228">              int ac = acdata-&gt;GetGenericValue();</a>
+<a name="ln229">              if (ac &gt;= 0)</a>
+<a name="ln230">                atomType = ac;</a>
+<a name="ln231">            }</a>
+<a name="ln232">          }</a>
+<a name="ln233">        }</a>
+<a name="ln234"> </a>
+<a name="ln235">        snprintf(buffer, BUFF_SIZE, &quot;%6d %2s  %12.6f%12.6f%12.6f %5d&quot;,</a>
+<a name="ln236">                 i,</a>
+<a name="ln237">                 OBElements::GetSymbol(atom-&gt;GetAtomicNum()),</a>
+<a name="ln238">                 atom-&gt;GetX(),</a>
+<a name="ln239">                 atom-&gt;GetY(),</a>
+<a name="ln240">                 atom-&gt;GetZ(),</a>
+<a name="ln241">                 atomType);</a>
+<a name="ln242">        ofs &lt;&lt; buffer;</a>
+<a name="ln243"> </a>
+<a name="ln244">        for (bond = atom-&gt;BeginBond(j); bond; bond = atom-&gt;NextBond(j))</a>
+<a name="ln245">          {</a>
+<a name="ln246">            snprintf(buffer, BUFF_SIZE, &quot;%6d&quot;, (bond-&gt;GetNbrAtom(atom))-&gt;GetIdx());</a>
+<a name="ln247">            ofs &lt;&lt; buffer;</a>
+<a name="ln248">          }</a>
+<a name="ln249"> </a>
+<a name="ln250">        ofs &lt;&lt; endl;</a>
+<a name="ln251">      }</a>
+<a name="ln252"> </a>
+<a name="ln253">    return(true);</a>
+<a name="ln254">  }</a>
+<a name="ln255"> </a>
+<a name="ln256">  int SetMM3Type(OBAtom *atom)</a>
+<a name="ln257">  {</a>
+<a name="ln258">    OBAtom *b; // neighbor</a>
+<a name="ln259">    OBBondIterator i, j;</a>
+<a name="ln260">    int countNeighborO, countNeighborS, countNeighborN, countNeighborC;</a>
+<a name="ln261">    countNeighborO = countNeighborS = countNeighborN = countNeighborC = 0;</a>
+<a name="ln262"> </a>
+<a name="ln263">    // The MM2 typing isn't very good, so we do this ourselves for the most common atom types</a>
+<a name="ln264">    switch (atom-&gt;GetAtomicNum()) {</a>
+<a name="ln265">    case 1: // Hydrogen</a>
+<a name="ln266">      b = atom-&gt;BeginNbrAtom(j);</a>
+<a name="ln267">      if (b-&gt;IsCarboxylOxygen())</a>
+<a name="ln268">        return 24;</a>
+<a name="ln269">      if (b-&gt;GetAtomicNum() == OBElements::Sulfur)</a>
+<a name="ln270">        return 44;</a>
+<a name="ln271">      if (b-&gt;GetAtomicNum() == OBElements::Nitrogen) {</a>
+<a name="ln272">        if (b-&gt;IsAmideNitrogen())</a>
+<a name="ln273">          return 28;</a>
+<a name="ln274">        if (b-&gt;GetExplicitDegree() &gt; 3)</a>
+<a name="ln275">          return 48;// ammonium</a>
+<a name="ln276">        return 23; // default amine/imine</a>
+<a name="ln277">      }</a>
+<a name="ln278">      if (b-&gt;GetAtomicNum() == OBElements::Carbon &amp;&amp; b-&gt;GetHyb() == 1)</a>
+<a name="ln279">        return 124; // acetylene</a>
+<a name="ln280"> </a>
+<a name="ln281">      if (b-&gt;GetAtomicNum() == OBElements::Oxygen) {</a>
+<a name="ln282">        if (b-&gt;HasAlphaBetaUnsat())</a>
+<a name="ln283">          return 73; // includes non-enol/phenol, but has the right spirit</a>
+<a name="ln284">        return 21; // default alcohol</a>
+<a name="ln285">      }</a>
+<a name="ln286"> </a>
+<a name="ln287">      return 5; // default H</a>
+<a name="ln288">      break;</a>
+<a name="ln289"> </a>
+<a name="ln290">    case 2: // Helium</a>
+<a name="ln291">      return 51; break;</a>
+<a name="ln292">    case 3: // Li</a>
+<a name="ln293">      return 163; break;</a>
+<a name="ln294"> </a>
+<a name="ln295">    case 5: // B</a>
+<a name="ln296">      if (atom-&gt;GetExplicitDegree() &gt;= 4)</a>
+<a name="ln297">        return 27; // tetrahedral</a>
+<a name="ln298">      return 26; break;</a>
+<a name="ln299"> </a>
+<a name="ln300">    case 6: // C</a>
+<a name="ln301">      if (atom-&gt;IsInRingSize(3)) { // cyclopropane / cyclopropene</a>
+<a name="ln302">        if (atom-&gt;GetHyb() == 3)</a>
+<a name="ln303">          return 22;</a>
+<a name="ln304">        if (atom-&gt;GetHyb() == 2) {</a>
+<a name="ln305">          if (atom-&gt;CountFreeOxygens() == 1) // propanone</a>
+<a name="ln306">            return 67;</a>
+<a name="ln307">          return 38; // propane</a>
+<a name="ln308">        }</a>
+<a name="ln309">      }</a>
+<a name="ln310">      if (atom-&gt;IsInRingSize(4)) { // cyclobutane or cyclobutene</a>
+<a name="ln311">        if (atom-&gt;GetHyb() == 3)</a>
+<a name="ln312">          return 56;</a>
+<a name="ln313">        if (atom-&gt;GetHyb() == 2) {</a>
+<a name="ln314">          if (atom-&gt;CountFreeOxygens() == 1) // butanone</a>
+<a name="ln315">            return 58;</a>
+<a name="ln316">          return 57; // regular cyclobutane</a>
+<a name="ln317">        }</a>
+<a name="ln318">      }</a>
+<a name="ln319"> </a>
+<a name="ln320">      if (atom-&gt;CountBondsOfOrder(2) == 2) { // allene</a>
+<a name="ln321">        if (atom-&gt;CountFreeOxygens() == 1) // ketene</a>
+<a name="ln322">          return 106;</a>
+<a name="ln323">        return 68;</a>
+<a name="ln324">      }</a>
+<a name="ln325"> </a>
+<a name="ln326">      if (atom-&gt;GetFormalCharge() == +1)</a>
+<a name="ln327">        return 30;</a>
+<a name="ln328">      if (atom-&gt;GetSpinMultiplicity() == 2)</a>
+<a name="ln329">        return 29;</a>
+<a name="ln330"> </a>
+<a name="ln331">      if (atom-&gt;GetHyb() == 3)</a>
+<a name="ln332">        return 1;</a>
+<a name="ln333">      else if (atom-&gt;GetHyb() == 2) {</a>
+<a name="ln334">        if (atom-&gt;CountFreeOxygens() &gt;= 1)</a>
+<a name="ln335">          return 3;</a>
+<a name="ln336">        return 2;</a>
+<a name="ln337">      }</a>
+<a name="ln338">      else if (atom-&gt;GetHyb() == 1)</a>
+<a name="ln339">        return 4;</a>
+<a name="ln340">      break;</a>
+<a name="ln341"> </a>
+<a name="ln342">    case 7: // N</a>
+<a name="ln343">      // TODO</a>
+<a name="ln344">      if (atom-&gt;IsAmideNitrogen())</a>
+<a name="ln345">        return 151;</a>
+<a name="ln346">      if (atom-&gt;IsAromatic()) {</a>
+<a name="ln347">        if (atom-&gt;GetFormalCharge() == 1)</a>
+<a name="ln348">          return 111;</a>
+<a name="ln349">        if (atom-&gt;IsInRingSize(5)) // pyrrole</a>
+<a name="ln350">          return 40;</a>
+<a name="ln351">        if (atom-&gt;IsInRingSize(6)) // pyridine</a>
+<a name="ln352">          return 37;</a>
+<a name="ln353">      }</a>
+<a name="ln354"> </a>
+<a name="ln355">      if (atom-&gt;CountFreeOxygens() == 2) // nitro</a>
+<a name="ln356">        return 46;</a>
+<a name="ln357"> </a>
+<a name="ln358">      if (atom-&gt;GetHyb() == 3) {</a>
+<a name="ln359">        if (atom-&gt;GetExplicitDegree() &gt; 3)</a>
+<a name="ln360">          return 39; // ammonium</a>
+<a name="ln361">        return 8;</a>
+<a name="ln362">      }</a>
+<a name="ln363">      else if (atom-&gt;GetHyb() == 2)</a>
+<a name="ln364">        return 9;</a>
+<a name="ln365">      else if (atom-&gt;GetHyb() == 1)</a>
+<a name="ln366">        return 10;</a>
+<a name="ln367">      break;</a>
+<a name="ln368"> </a>
+<a name="ln369">    case 8: // O</a>
+<a name="ln370">      //TODO</a>
+<a name="ln371">      if (atom-&gt;IsPhosphateOxygen())</a>
+<a name="ln372">        return 159;</a>
+<a name="ln373">      if (atom-&gt;IsCarboxylOxygen())</a>
+<a name="ln374">        return 75;</a>
+<a name="ln375">      if (atom-&gt;IsInRingSize(3))</a>
+<a name="ln376">        return 49; // epoxy</a>
+<a name="ln377"> </a>
+<a name="ln378">      b = atom-&gt;BeginNbrAtom(j);</a>
+<a name="ln379">      if (atom-&gt;HasBondOfOrder(2) &amp;&amp; b-&gt;GetAtomicNum() == OBElements::Carbon) { // O=C</a>
+<a name="ln380">        return 7;</a>
+<a name="ln381">      }</a>
+<a name="ln382"> </a>
+<a name="ln383">      if (atom-&gt;IsAromatic())</a>
+<a name="ln384">        return 41; // furan</a>
+<a name="ln385">      return 6;</a>
+<a name="ln386">      break;</a>
+<a name="ln387"> </a>
+<a name="ln388">    case 9: // F</a>
+<a name="ln389">      return 11; break;</a>
+<a name="ln390">    case 10: // Ne</a>
+<a name="ln391">      return 52; break;</a>
+<a name="ln392">    case 12: // Mg</a>
+<a name="ln393">      return 59; break;</a>
+<a name="ln394">    case 14: // Si</a>
+<a name="ln395">      return 19; break;</a>
+<a name="ln396"> </a>
+<a name="ln397">    case 15: // P</a>
+<a name="ln398">      if (atom-&gt;CountFreeOxygens() &gt; 0)</a>
+<a name="ln399">        return 153; // phosphate</a>
+<a name="ln400">      if (atom-&gt;GetExplicitValence() &gt; 3)</a>
+<a name="ln401">        return 60; // phosphorus V</a>
+<a name="ln402">      return 25; break;</a>
+<a name="ln403"> </a>
+<a name="ln404">    case 16: // S</a>
+<a name="ln405">      if (atom-&gt;IsAromatic())</a>
+<a name="ln406">        return 42; // thiophene</a>
+<a name="ln407">      if (atom-&gt;GetFormalCharge() == 1)</a>
+<a name="ln408">        return 16; // sulfonium</a>
+<a name="ln409"> </a>
+<a name="ln410">    // look at the neighbors</a>
+<a name="ln411">    for (b = atom-&gt;BeginNbrAtom(j); b; b = atom-&gt;NextNbrAtom(j))</a>
+<a name="ln412">      {</a>
+<a name="ln413">        switch (b-&gt;GetAtomicNum()) {</a>
+<a name="ln414">        case 6:</a>
+<a name="ln415">          if (b-&gt;GetHyb() == 2) // S=C</a>
+<a name="ln416">            countNeighborC++; break;</a>
+<a name="ln417">        case 7:</a>
+<a name="ln418">          countNeighborN++; break;</a>
+<a name="ln419">        case 8:</a>
+<a name="ln420">          if (b-&gt;GetHvyDegree() == 1)</a>
+<a name="ln421">            countNeighborO++;</a>
+<a name="ln422">          break;</a>
+<a name="ln423">        case 16:</a>
+<a name="ln424">          countNeighborS++; break;</a>
+<a name="ln425">        default:</a>
+<a name="ln426">          continue;</a>
+<a name="ln427">        }</a>
+<a name="ln428">      }</a>
+<a name="ln429"> </a>
+<a name="ln430">      if (countNeighborO == 1)</a>
+<a name="ln431">        return 17; // sulfoxide</a>
+<a name="ln432">      if (countNeighborO &gt;= 2) {</a>
+<a name="ln433">        if (countNeighborN)</a>
+<a name="ln434">          return 154; // sulfonamide</a>
+<a name="ln435">        return 18; // sulfone or sulfate</a>
+<a name="ln436">      }</a>
+<a name="ln437">      if (countNeighborC)</a>
+<a name="ln438">        return 74; // S=C</a>
+<a name="ln439">      if (countNeighborS == 1)</a>
+<a name="ln440">        return 104; // S-S disulfide</a>
+<a name="ln441">      else if (countNeighborS &gt; 1)</a>
+<a name="ln442">        return 105;</a>
+<a name="ln443"> </a>
+<a name="ln444">      return 15; break;</a>
+<a name="ln445"> </a>
+<a name="ln446">    case 17: // Cl</a>
+<a name="ln447">      return 12; break;</a>
+<a name="ln448">    case 18: // Ar</a>
+<a name="ln449">      return 153; break;</a>
+<a name="ln450">    case 20: // Ca</a>
+<a name="ln451">      return 125; break;</a>
+<a name="ln452">    case 26: // Fe</a>
+<a name="ln453">      if (atom-&gt;GetFormalCharge() == 2)</a>
+<a name="ln454">        return 61;</a>
+<a name="ln455">      return 62; break;</a>
+<a name="ln456">    case 27: // Co</a>
+<a name="ln457">      if (atom-&gt;GetFormalCharge() == 2)</a>
+<a name="ln458">        return 65;</a>
+<a name="ln459">      return 66; break;</a>
+<a name="ln460">    case 28: // Ni</a>
+<a name="ln461">      if (atom-&gt;GetFormalCharge() == 2)</a>
+<a name="ln462">        return 63;</a>
+<a name="ln463">      return 64; break;</a>
+<a name="ln464"> </a>
+<a name="ln465">    case 32: // Ge</a>
+<a name="ln466">      return 31; break;</a>
+<a name="ln467">    case 34: // Se</a>
+<a name="ln468">      return 34; break;</a>
+<a name="ln469">    case 35: // Br</a>
+<a name="ln470">      return 13; break;</a>
+<a name="ln471">    case 36: // Kr</a>
+<a name="ln472">      return 54; break;</a>
+<a name="ln473">    case 38: // Sr</a>
+<a name="ln474">      return 126; break;</a>
+<a name="ln475">    case 50: // Sn</a>
+<a name="ln476">      return 32; break;</a>
+<a name="ln477">    case 52: // Te</a>
+<a name="ln478">      return 35; break;</a>
+<a name="ln479">    case 53: // I</a>
+<a name="ln480">      return 14; break;</a>
+<a name="ln481">    case 54: // Xe</a>
+<a name="ln482">      return 55; break;</a>
+<a name="ln483"> </a>
+<a name="ln484">    case 56: // Ba</a>
+<a name="ln485">      return 127; break;</a>
+<a name="ln486">    case 57:</a>
+<a name="ln487">      return 128; break;</a>
+<a name="ln488">    case 58:</a>
+<a name="ln489">      return 129; break;</a>
+<a name="ln490">    case 59:</a>
+<a name="ln491">      return 130; break;</a>
+<a name="ln492">    case 60:</a>
+<a name="ln493">      return 131; break;</a>
+<a name="ln494">    case 61:</a>
+<a name="ln495">      return 132; break;</a>
+<a name="ln496">    case 62:</a>
+<a name="ln497">      return 133; break;</a>
+<a name="ln498">    case 63:</a>
+<a name="ln499">      return 134; break;</a>
+<a name="ln500">    case 64:</a>
+<a name="ln501">      return 135; break;</a>
+<a name="ln502">    case 65:</a>
+<a name="ln503">      return 136; break;</a>
+<a name="ln504">    case 66:</a>
+<a name="ln505">      return 137; break;</a>
+<a name="ln506">    case 67:</a>
+<a name="ln507">      return 138; break;</a>
+<a name="ln508">    case 68:</a>
+<a name="ln509">      return 139; break;</a>
+<a name="ln510">    case 69:</a>
+<a name="ln511">      return 140; break;</a>
+<a name="ln512">    case 70:</a>
+<a name="ln513">      return 141; break;</a>
+<a name="ln514">    case 71:</a>
+<a name="ln515">      return 142; break;</a>
+<a name="ln516"> </a>
+<a name="ln517">    case 82: // Pb</a>
+<a name="ln518">      return 33; break;</a>
+<a name="ln519"> </a>
+<a name="ln520"> </a>
+<a name="ln521">    default:</a>
+<a name="ln522">      break;</a>
+<a name="ln523">    }</a>
+<a name="ln524">    return 0;</a>
+<a name="ln525">  }</a>
+<a name="ln526"> </a>
+<a name="ln527">} //namespace OpenBabel</a>
+
+</code></pre>
+<div class="balloon" rel="143"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v663/" target="_blank">V663</a> Infinite loop is possible. The 'cin.eof()' condition is insufficient to break from the loop. Consider adding the 'cin.fail()' function call to the conditional expression.</p></div>
+<div class="balloon" rel="138"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v666/" target="_blank">V666</a> Consider inspecting second argument of the function 'IsOption'. It is possible that the value does not correspond with the length of a string which was passed with the first argument.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

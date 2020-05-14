@@ -1,0 +1,1655 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>inchi_dll_a.c</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/*</a>
+<a name="ln2"> * International Chemical Identifier (InChI)</a>
+<a name="ln3"> * Version 1</a>
+<a name="ln4"> * Software version 1.04</a>
+<a name="ln5"> * September 9, 2011</a>
+<a name="ln6"> *</a>
+<a name="ln7"> * The InChI library and programs are free software developed under the</a>
+<a name="ln8"> * auspices of the International Union of Pure and Applied Chemistry (IUPAC).</a>
+<a name="ln9"> * Originally developed at NIST. Modifications and additions by IUPAC </a>
+<a name="ln10"> * and the InChI Trust.</a>
+<a name="ln11"> *</a>
+<a name="ln12"> * IUPAC/InChI-Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln13"> * Software version 1.0.</a>
+<a name="ln14"> * Copyright (C) IUPAC and InChI Trust Limited</a>
+<a name="ln15"> * </a>
+<a name="ln16"> * This library is free software; you can redistribute it and/or modify it under the </a>
+<a name="ln17"> * terms of the IUPAC/InChI Trust Licence for the International Chemical Identifier </a>
+<a name="ln18"> * (InChI) Software version 1.0; either version 1.0 of the License, or </a>
+<a name="ln19"> * (at your option) any later version.</a>
+<a name="ln20"> * </a>
+<a name="ln21"> * This library is distributed in the hope that it will be useful, </a>
+<a name="ln22"> * but WITHOUT ANY WARRANTY; without even the implied warranty of </a>
+<a name="ln23"> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  </a>
+<a name="ln24"> * See the IUPAC/InChI Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln25"> * Software version 1.0 for more details.</a>
+<a name="ln26"> * </a>
+<a name="ln27"> * You should have received a copy of the IUPAC/InChI Trust Licence for the </a>
+<a name="ln28"> * International Chemical Identifier (InChI) Software version 1.0 along with </a>
+<a name="ln29"> * this library; if not, write to:</a>
+<a name="ln30"> * </a>
+<a name="ln31"> * The InChI Trust</a>
+<a name="ln32"> * c/o FIZ CHEMIE Berlin</a>
+<a name="ln33"> * Franklinstrasse 11</a>
+<a name="ln34"> * 10587 Berlin</a>
+<a name="ln35"> * GERMANY</a>
+<a name="ln36"> * </a>
+<a name="ln37"> */</a>
+<a name="ln38"> </a>
+<a name="ln39">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^</a>
+<a name="ln40"> </a>
+<a name="ln41">                                    InChI - API 1.02</a>
+<a name="ln42"> </a>
+<a name="ln43">^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/</a>
+<a name="ln44"> </a>
+<a name="ln45"> </a>
+<a name="ln46">#include &lt;stdio.h&gt;</a>
+<a name="ln47">#include &lt;stdlib.h&gt;</a>
+<a name="ln48">#include &lt;string.h&gt;</a>
+<a name="ln49">#include &lt;ctype.h&gt;</a>
+<a name="ln50">#include &lt;stdarg.h&gt;</a>
+<a name="ln51">#include &lt;errno.h&gt;</a>
+<a name="ln52">#include &lt;limits.h&gt;</a>
+<a name="ln53">#include &lt;float.h&gt;</a>
+<a name="ln54">#include &lt;math.h&gt;</a>
+<a name="ln55">#include &quot;inpdef.h&quot;</a>
+<a name="ln56">#include &quot;ichi.h&quot;</a>
+<a name="ln57">#include &quot;strutil.h&quot;</a>
+<a name="ln58">#include &quot;util.h&quot;</a>
+<a name="ln59">#include &quot;ichierr.h&quot;</a>
+<a name="ln60">#include &quot;ichimain.h&quot;</a>
+<a name="ln61">#include &quot;extr_ct.h&quot;</a>
+<a name="ln62">#include &quot;ichi_io.h&quot;</a>
+<a name="ln63"> </a>
+<a name="ln64">#include &quot;ichicomp.h&quot;</a>
+<a name="ln65">#include &quot;ichitaut.h&quot;</a>
+<a name="ln66">#include &quot;ichinorm.h&quot;</a>
+<a name="ln67"> </a>
+<a name="ln68"> </a>
+<a name="ln69">#include &quot;ichisize.h&quot;</a>
+<a name="ln70">#include &quot;mode.h&quot;</a>
+<a name="ln71">#include &quot;inchi_api.h&quot;</a>
+<a name="ln72"> </a>
+<a name="ln73">#include &quot;inchi_dll_a.h&quot; /* not inchi_api.h as it hides internal data types */</a>
+<a name="ln74"> </a>
+<a name="ln75"> </a>
+<a name="ln76"> </a>
+<a name="ln77"> </a>
+<a name="ln78"> </a>
+<a name="ln79">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^</a>
+<a name="ln80">Local prototypes.</a>
+<a name="ln81">^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/</a>
+<a name="ln82">int parse_options_string ( char *cmd, const char *argv[], int maxargs );</a>
+<a name="ln83"> </a>
+<a name="ln84">int ExtractOneStructure( STRUCT_DATA *sd, INPUT_PARMS *ip, char *szTitle,</a>
+<a name="ln85">         inchi_Input *pInp, INCHI_IOSTREAM *log_file, INCHI_IOSTREAM *output_file, INCHI_IOSTREAM *prb_file,</a>
+<a name="ln86">         ORIG_ATOM_DATA *orig_inp_data, long *num_inp, char *pStr, int nStrLen );</a>
+<a name="ln87"> </a>
+<a name="ln88"> </a>
+<a name="ln89"> </a>
+<a name="ln90">int NormOneStructureINChI(INCHIGEN_DATA *pGenData, INCHIGEN_CONTROL * HGen,  </a>
+<a name="ln91">                          int iINChI, INCHI_IOSTREAM *inp_file);</a>
+<a name="ln92">int CanonOneStructureINChI(INCHIGEN_CONTROL *HGen, int iINChI, INCHI_IOSTREAM *inp_file);</a>
+<a name="ln93"> </a>
+<a name="ln94"> </a>
+<a name="ln95"> </a>
+<a name="ln96"> </a>
+<a name="ln97">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^</a>
+<a name="ln98">InChI Generator: create generator</a>
+<a name="ln99">Returns handle of generator object or NULL on failure</a>
+<a name="ln100">^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/</a>
+<a name="ln101"> </a>
+<a name="ln102">INCHIGEN_HANDLE INCHI_DECL STDINCHIGEN_Create(void)</a>
+<a name="ln103">{</a>
+<a name="ln104">    return INCHIGEN_Create();</a>
+<a name="ln105">}</a>
+<a name="ln106"> </a>
+<a name="ln107"> </a>
+<a name="ln108">INCHIGEN_HANDLE INCHI_DECL INCHIGEN_Create(void)</a>
+<a name="ln109">{</a>
+<a name="ln110">INCHIGEN_CONTROL * HGen = NULL;</a>
+<a name="ln111"> </a>
+<a name="ln112"> </a>
+<a name="ln113">    HGen = (INCHIGEN_CONTROL *)inchi_malloc( sizeof(INCHIGEN_CONTROL) ); </a>
+<a name="ln114">    </a>
+<a name="ln115">    if (!HGen) </a>
+<a name="ln116">        return (INCHIGEN_HANDLE) NULL;  </a>
+<a name="ln117"> </a>
+<a name="ln118">    memset(HGen, 0, sizeof(INCHIGEN_CONTROL));</a>
+<a name="ln119"> </a>
+<a name="ln120">    /*^^^ Set/init aliases */</a>
+<a name="ln121">    memset(&amp;(HGen-&gt;InpParms), 0, sizeof(INPUT_PARMS));</a>
+<a name="ln122">    memset(&amp;(HGen-&gt;StructData), 0, sizeof(STRUCT_DATA) );</a>
+<a name="ln123"> </a>
+<a name="ln124">    HGen-&gt;ulTotalProcessingTime = 0;</a>
+<a name="ln125">    HGen-&gt;num_err = 0;</a>
+<a name="ln126">    HGen-&gt;num_inp = 0;</a>
+<a name="ln127">    HGen-&gt;szTitle[0] = '\0';</a>
+<a name="ln128">    </a>
+<a name="ln129">    HGen-&gt;pStr = (char*) inchi_malloc(PSTR_BUFFER_SIZE);</a>
+<a name="ln130">    if (!HGen-&gt;pStr) </a>
+<a name="ln131">    { </a>
+<a name="ln132">        inchi_free(HGen); </a>
+<a name="ln133">        return (INCHIGEN_HANDLE) NULL;   </a>
+<a name="ln134">    }</a>
+<a name="ln135">    HGen-&gt;pStr[0] = '\0';</a>
+<a name="ln136">    </a>
+<a name="ln137">    </a>
+<a name="ln138">    /*^^^ Initialize output streams as string buffers */</a>
+<a name="ln139">    inchi_ios_init(&amp;(HGen-&gt;inchi_file[0]), INCHI_IOSTREAM_STRING, NULL);</a>
+<a name="ln140">    inchi_ios_init(&amp;(HGen-&gt;inchi_file[1]), INCHI_IOSTREAM_STRING, NULL);</a>
+<a name="ln141">    inchi_ios_init(&amp;(HGen-&gt;inchi_file[2]), INCHI_IOSTREAM_STRING, NULL);</a>
+<a name="ln142"> </a>
+<a name="ln143"> </a>
+<a name="ln144">    memset(&amp;(HGen-&gt;OrigInpData), 0, sizeof( HGen-&gt;OrigInpData ) );</a>
+<a name="ln145">    memset(&amp;(HGen-&gt;PrepInpData[0]), 0, 2*sizeof( HGen-&gt;PrepInpData[0] ) );</a>
+<a name="ln146"> </a>
+<a name="ln147">    memset(HGen-&gt;pINChI,     0, sizeof(HGen-&gt;pINChI) );</a>
+<a name="ln148">    memset(HGen-&gt;pINChI_Aux, 0, sizeof(HGen-&gt;pINChI_Aux) );</a>
+<a name="ln149"> </a>
+<a name="ln150"> </a>
+<a name="ln151">    return (INCHIGEN_HANDLE) HGen; </a>
+<a name="ln152">}</a>
+<a name="ln153"> </a>
+<a name="ln154"> </a>
+<a name="ln155"> </a>
+<a name="ln156"> </a>
+<a name="ln157"> </a>
+<a name="ln158">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^</a>
+<a name="ln159">InChI Generator: initialization stage (accepts a specific structure)</a>
+<a name="ln160">^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/</a>
+<a name="ln161"> </a>
+<a name="ln162"> </a>
+<a name="ln163">int INCHI_DECL STDINCHIGEN_Setup(INCHIGEN_HANDLE _HGen, </a>
+<a name="ln164">                                 INCHIGEN_DATA * pGenData, </a>
+<a name="ln165">                                 inchi_Input * pInp)                                  </a>
+<a name="ln166">{</a>
+<a name="ln167">INCHIGEN_CONTROL *HGen = (INCHIGEN_CONTROL *)_HGen; </a>
+<a name="ln168">INPUT_PARMS *ip = &amp;(HGen-&gt;InpParms);</a>
+<a name="ln169">STRUCT_DATA *sd = &amp;(HGen-&gt;StructData);</a>
+<a name="ln170">int retcode = inchi_Ret_OKAY;</a>
+<a name="ln171">int force_std=0;</a>
+<a name="ln172"> </a>
+<a name="ln173">    retcode = INCHIGEN_Setup(_HGen, pGenData, pInp);</a>
+<a name="ln174">    </a>
+<a name="ln175">    /* Ensure standardness */</a>
+<a name="ln176">    if ( ip-&gt;bINChIOutputOptions &amp; INCHI_OUT_SAVEOPT )</a>
+<a name="ln177">    {</a>
+<a name="ln178">        ip-&gt;bINChIOutputOptions &amp;= ~INCHI_OUT_SAVEOPT;</a>
+<a name="ln179">        /*</a>
+<a name="ln180">        if ( !force_std )</a>
+<a name="ln181">        {</a>
+<a name="ln182">            AddMOLfileError(sd-&gt;pStrErrStruct, &quot;Options adjusted to STDINCHI mode&quot;);</a>
+<a name="ln183">            force_std = 1;</a>
+<a name="ln184">        }</a>
+<a name="ln185">        AddMOLfileError(sd-&gt;pStrErrStruct, &quot;SaveOpt ignored&quot;);</a>
+<a name="ln186">        sd-&gt;nErrorType = _IS_WARNING;</a>
+<a name="ln187">        */</a>
+<a name="ln188">        retcode = _IS_WARNING;</a>
+<a name="ln189">    }</a>
+<a name="ln190">    if ( 0 != ( ip-&gt;bTautFlags &amp; TG_FLAG_RECONNECT_COORD) )</a>
+<a name="ln191">    {</a>
+<a name="ln192">        ip-&gt;bTautFlags &amp;= ~TG_FLAG_RECONNECT_COORD;</a>
+<a name="ln193">        /*</a>
+<a name="ln194">        if ( !force_std )</a>
+<a name="ln195">        {</a>
+<a name="ln196">            AddMOLfileError(sd-&gt;pStrErrStruct, &quot;Options adjusted to STDINCHI mode&quot;);</a>
+<a name="ln197">            force_std = 1;</a>
+<a name="ln198">        }</a>
+<a name="ln199">        AddMOLfileError(sd-&gt;pStrErrStruct, &quot;RecMet ignored&quot;);</a>
+<a name="ln200">        sd-&gt;nErrorType = _IS_WARNING;</a>
+<a name="ln201">        */</a>
+<a name="ln202">        retcode = _IS_WARNING;</a>
+<a name="ln203">    }</a>
+<a name="ln204">    if ( 0 != (ip-&gt;nMode &amp; REQ_MODE_BASIC) )</a>
+<a name="ln205">    {</a>
+<a name="ln206">        ip-&gt;nMode &amp;= ~REQ_MODE_BASIC;</a>
+<a name="ln207">        /*</a>
+<a name="ln208">        if ( !force_std )</a>
+<a name="ln209">        {</a>
+<a name="ln210">            AddMOLfileError(sd-&gt;pStrErrStruct, &quot;Options adjusted to STDINCHI mode&quot;);</a>
+<a name="ln211">            force_std = 1;</a>
+<a name="ln212">        }</a>
+<a name="ln213">        AddMOLfileError(sd-&gt;pStrErrStruct, &quot;FixedH ignored&quot;);</a>
+<a name="ln214">        sd-&gt;nErrorType = _IS_WARNING;</a>
+<a name="ln215">        */</a>
+<a name="ln216">        retcode = _IS_WARNING;</a>
+<a name="ln217">    }</a>
+<a name="ln218">    if ( 0 != ( ip-&gt;nMode &amp; REQ_MODE_RELATIVE_STEREO) ) </a>
+<a name="ln219">    {</a>
+<a name="ln220">        ip-&gt;nMode &amp;= ~(REQ_MODE_RACEMIC_STEREO | REQ_MODE_RELATIVE_STEREO | REQ_MODE_CHIR_FLG_STEREO);</a>
+<a name="ln221"> </a>
+<a name="ln222">        /*</a>
+<a name="ln223">        if ( !force_std )</a>
+<a name="ln224">        {</a>
+<a name="ln225">            AddMOLfileError(sd-&gt;pStrErrStruct, &quot;Options adjusted to STDINCHI mode&quot;);</a>
+<a name="ln226">            force_std = 1;</a>
+<a name="ln227">        }</a>
+<a name="ln228">        AddMOLfileError(sd-&gt;pStrErrStruct, &quot;SREL ignored&quot;);</a>
+<a name="ln229">        sd-&gt;nErrorType = _IS_WARNING;</a>
+<a name="ln230">        */</a>
+<a name="ln231">        retcode = _IS_WARNING;</a>
+<a name="ln232">    }</a>
+<a name="ln233">    if ( 0 != ( ip-&gt;nMode &amp; REQ_MODE_RACEMIC_STEREO) ) </a>
+<a name="ln234">    {</a>
+<a name="ln235">        ip-&gt;nMode &amp;= ~(REQ_MODE_RACEMIC_STEREO | REQ_MODE_RELATIVE_STEREO | REQ_MODE_CHIR_FLG_STEREO);</a>
+<a name="ln236">        /*</a>
+<a name="ln237">        if ( !force_std )</a>
+<a name="ln238">        {</a>
+<a name="ln239">            AddMOLfileError(sd-&gt;pStrErrStruct, &quot;Options adjusted to STDINCHI mode&quot;);</a>
+<a name="ln240">            force_std = 1;</a>
+<a name="ln241">        }</a>
+<a name="ln242">        AddMOLfileError(sd-&gt;pStrErrStruct, &quot;SRAC ignored&quot;);</a>
+<a name="ln243">        sd-&gt;nErrorType = _IS_WARNING;</a>
+<a name="ln244">        */</a>
+<a name="ln245">        retcode = _IS_WARNING;</a>
+<a name="ln246">    }</a>
+<a name="ln247">    if ( 0 != ( ip-&gt;nMode &amp; REQ_MODE_CHIR_FLG_STEREO) ) </a>
+<a name="ln248">    {</a>
+<a name="ln249">        ip-&gt;nMode &amp;= ~(REQ_MODE_RACEMIC_STEREO | REQ_MODE_RELATIVE_STEREO | REQ_MODE_CHIR_FLG_STEREO);</a>
+<a name="ln250">        /*</a>
+<a name="ln251">        if ( !force_std )</a>
+<a name="ln252">        {</a>
+<a name="ln253">            AddMOLfileError(sd-&gt;pStrErrStruct, &quot;Options adjusted to STDINCHI mode&quot;);</a>
+<a name="ln254">            force_std = 1;</a>
+<a name="ln255">        }</a>
+<a name="ln256">        AddMOLfileError(sd-&gt;pStrErrStruct, &quot;SUCF ignored&quot;);</a>
+<a name="ln257">        sd-&gt;nErrorType = _IS_WARNING;</a>
+<a name="ln258">        */</a>
+<a name="ln259">        retcode = _IS_WARNING;</a>
+<a name="ln260">    }</a>
+<a name="ln261">    if ( 0 != ( ip-&gt;nMode &amp; REQ_MODE_DIFF_UU_STEREO) ) </a>
+<a name="ln262">    {</a>
+<a name="ln263">        ip-&gt;nMode &amp;= ~REQ_MODE_DIFF_UU_STEREO;</a>
+<a name="ln264">        /*</a>
+<a name="ln265">        if ( !force_std )</a>
+<a name="ln266">        {</a>
+<a name="ln267">            AddMOLfileError(sd-&gt;pStrErrStruct, &quot;Options adjusted to STDINCHI mode&quot;);</a>
+<a name="ln268">            force_std = 1;</a>
+<a name="ln269">        }</a>
+<a name="ln270">        AddMOLfileError(sd-&gt;pStrErrStruct, &quot;SLUUD ignored&quot;);</a>
+<a name="ln271">        sd-&gt;nErrorType = _IS_WARNING;</a>
+<a name="ln272">        */</a>
+<a name="ln273">        retcode = _IS_WARNING;</a>
+<a name="ln274">    }</a>
+<a name="ln275">    if ( 0 == (ip-&gt;nMode &amp; (REQ_MODE_SB_IGN_ALL_UU | REQ_MODE_SC_IGN_ALL_UU))  ) </a>
+<a name="ln276">    {</a>
+<a name="ln277">        ip-&gt;nMode |= REQ_MODE_SB_IGN_ALL_UU;</a>
+<a name="ln278">        ip-&gt;nMode |= REQ_MODE_SC_IGN_ALL_UU;</a>
+<a name="ln279">        /*</a>
+<a name="ln280">        if ( !force_std )</a>
+<a name="ln281">        {</a>
+<a name="ln282">            AddMOLfileError(sd-&gt;pStrErrStruct, &quot;Options adjusted to STDINCHI mode&quot;);</a>
+<a name="ln283">            force_std = 1;</a>
+<a name="ln284">        }</a>
+<a name="ln285">        AddMOLfileError(sd-&gt;pStrErrStruct, &quot;SUU ignored&quot;);</a>
+<a name="ln286">        sd-&gt;nErrorType = _IS_WARNING;</a>
+<a name="ln287">        */</a>
+<a name="ln288">        retcode = _IS_WARNING;</a>
+<a name="ln289">    }</a>
+<a name="ln290">    if ( 0 != (ip-&gt;bTautFlags &amp; TG_FLAG_KETO_ENOL_TAUT) )</a>
+<a name="ln291">    {</a>
+<a name="ln292">        ip-&gt;bTautFlags  &amp;= ~TG_FLAG_KETO_ENOL_TAUT;</a>
+<a name="ln293">        /*</a>
+<a name="ln294">        if ( !force_std )</a>
+<a name="ln295">        {</a>
+<a name="ln296">            AddMOLfileError(sd-&gt;pStrErrStruct, &quot;Options adjusted to STDINCHI mode&quot;);</a>
+<a name="ln297">            force_std = 1;</a>
+<a name="ln298">        }</a>
+<a name="ln299">        AddMOLfileError(sd-&gt;pStrErrStruct, &quot;KET ignored&quot;);</a>
+<a name="ln300">        sd-&gt;nErrorType = _IS_WARNING;</a>
+<a name="ln301">        */</a>
+<a name="ln302">        retcode = _IS_WARNING;</a>
+<a name="ln303">    }</a>
+<a name="ln304">    if ( 0 != (ip-&gt;bTautFlags &amp; TG_FLAG_1_5_TAUT) )</a>
+<a name="ln305">    {</a>
+<a name="ln306">        ip-&gt;bTautFlags  &amp;= ~TG_FLAG_1_5_TAUT;</a>
+<a name="ln307">        /*</a>
+<a name="ln308">        if ( !force_std )</a>
+<a name="ln309">        {</a>
+<a name="ln310">            AddMOLfileError(sd-&gt;pStrErrStruct, &quot;Options adjusted to STDINCHI mode&quot;);</a>
+<a name="ln311">            force_std = 1;</a>
+<a name="ln312">        }</a>
+<a name="ln313">        AddMOLfileError(sd-&gt;pStrErrStruct, &quot;15T ignored&quot;);</a>
+<a name="ln314">        sd-&gt;nErrorType = _IS_WARNING;</a>
+<a name="ln315">        */</a>
+<a name="ln316">        retcode = _IS_WARNING;</a>
+<a name="ln317">    }</a>
+<a name="ln318">    </a>
+<a name="ln319">    /* And anyway... */</a>
+<a name="ln320">    ip-&gt;bINChIOutputOptions |= INCHI_OUT_STDINCHI;</a>
+<a name="ln321">    ip-&gt;bINChIOutputOptions &amp;= ~INCHI_OUT_SAVEOPT;</a>
+<a name="ln322"> </a>
+<a name="ln323">    strcpy(pGenData-&gt;pStrErrStruct, sd-&gt;pStrErrStruct);</a>
+<a name="ln324">    return retcode;</a>
+<a name="ln325">}</a>
+<a name="ln326"> </a>
+<a name="ln327"> </a>
+<a name="ln328"> </a>
+<a name="ln329">int INCHI_DECL INCHIGEN_Setup(INCHIGEN_HANDLE _HGen, </a>
+<a name="ln330">                              INCHIGEN_DATA * pGenData, </a>
+<a name="ln331">                              inchi_Input * pInp) </a>
+<a name="ln332">                                   </a>
+<a name="ln333"> </a>
+<a name="ln334">{</a>
+<a name="ln335">int retcode = inchi_Ret_OKAY;</a>
+<a name="ln336"> </a>
+<a name="ln337">INCHIGEN_CONTROL *HGen = (INCHIGEN_CONTROL *)_HGen; </a>
+<a name="ln338"> </a>
+<a name="ln339">ORIG_ATOM_DATA *orig_inp_data = &amp;(HGen-&gt;OrigInpData);</a>
+<a name="ln340">STRUCT_DATA *sd = &amp;(HGen-&gt;StructData);</a>
+<a name="ln341">INPUT_PARMS *ip = &amp;(HGen-&gt;InpParms);</a>
+<a name="ln342">INCHI_IOSTREAM *log_file = HGen-&gt;inchi_file+1;  </a>
+<a name="ln343">INCHI_IOSTREAM prbstr, *prb_file=&amp;prbstr;</a>
+<a name="ln344"> </a>
+<a name="ln345">const char *argv[INCHI_MAX_NUM_ARG+1];</a>
+<a name="ln346">int   argc;</a>
+<a name="ln347">char *szOptions = NULL;</a>
+<a name="ln348">char szSdfDataValue[MAX_SDF_VALUE+1];</a>
+<a name="ln349">int bReleaseVersion = bRELEASE_VERSION;</a>
+<a name="ln350">unsigned long  ulDisplTime = 0;    /*  infinite, milliseconds */</a>
+<a name="ln351">int p;</a>
+<a name="ln352"> </a>
+<a name="ln353"> </a>
+<a name="ln354"> </a>
+<a name="ln355"> </a>
+<a name="ln356"> </a>
+<a name="ln357">    /*^^^ Make allocs/inits */</a>
+<a name="ln358"> </a>
+<a name="ln359">    if (!pGenData) </a>
+<a name="ln360">    { </a>
+<a name="ln361">        retcode = _IS_ERROR; </a>
+<a name="ln362">        goto ret; </a>
+<a name="ln363">    }    </a>
+<a name="ln364">    memset(pGenData, 0, sizeof(*pGenData));</a>
+<a name="ln365">    </a>
+<a name="ln366"> </a>
+<a name="ln367"> </a>
+<a name="ln368"> </a>
+<a name="ln369"> </a>
+<a name="ln370">    /*^^^ Parse 'command-line' options and fill internal INPUT_PARMS structure */</a>
+<a name="ln371"> </a>
+<a name="ln372">    if ( pInp &amp;&amp; pInp-&gt;szOptions ) </a>
+<a name="ln373">    {        </a>
+<a name="ln374">        szOptions = (char*)inchi_malloc( strlen(pInp-&gt;szOptions) + 1 );</a>
+<a name="ln375">        if (!szOptions) </a>
+<a name="ln376">            return _IS_FATAL;   /*^^^ Not enough memory.... */</a>
+<a name="ln377">        else</a>
+<a name="ln378">        {</a>
+<a name="ln379">            /*^^^ Parse. */</a>
+<a name="ln380">            strcpy( szOptions, pInp-&gt;szOptions );</a>
+<a name="ln381">            argc = parse_options_string ( szOptions, argv, INCHI_MAX_NUM_ARG );</a>
+<a name="ln382">        } </a>
+<a name="ln383">    } </a>
+<a name="ln384">    else    </a>
+<a name="ln385">    {</a>
+<a name="ln386">        /*^^^ Got NULL options string or NULL 'pInp', will use defaults. */</a>
+<a name="ln387">        argc = 1;</a>
+<a name="ln388">        argv[0] = &quot;&quot;;</a>
+<a name="ln389">        argv[1] = NULL;</a>
+<a name="ln390">    }</a>
+<a name="ln391"> </a>
+<a name="ln392"> </a>
+<a name="ln393">    if ( (argc == 1</a>
+<a name="ln394">#ifdef TARGET_API_LIB</a>
+<a name="ln395">        &amp;&amp; (!pInp || pInp-&gt;num_atoms &lt;= 0 || !pInp-&gt;atom)</a>
+<a name="ln396">#endif </a>
+<a name="ln397">        )</a>
+<a name="ln398">        || (argc==2 &amp;&amp; ( argv[1][0]==INCHI_OPTION_PREFX ) &amp;&amp;</a>
+<a name="ln399">        (!strcmp(argv[1]+1, &quot;?&quot;) || !stricmp(argv[1]+1, &quot;help&quot;) )) ) </a>
+<a name="ln400">    {</a>
+<a name="ln401">    </a>
+<a name="ln402">        HelpCommandLineParms(log_file);</a>
+<a name="ln403">        memset( log_file, 0, sizeof(*log_file) );</a>
+<a name="ln404">        return _IS_EOF;</a>
+<a name="ln405">    }</a>
+<a name="ln406"> </a>
+<a name="ln407"> </a>
+<a name="ln408">    memset( szSdfDataValue    , 0, sizeof( szSdfDataValue    ) );</a>
+<a name="ln409"> </a>
+<a name="ln410"> </a>
+<a name="ln411">    /*^^^ Decrypt. */</a>
+<a name="ln412">    /*^^^ NB: ReadCommandLineParms resides in _header_ file, ichiparm.h */</a>
+<a name="ln413"> </a>
+<a name="ln414">    retcode = ReadCommandLineParms( argc, argv, ip, szSdfDataValue, &amp;ulDisplTime, bReleaseVersion, log_file );    </a>
+<a name="ln415"> </a>
+<a name="ln416">    if (szOptions) </a>
+<a name="ln417">        inchi_free( szOptions );</a>
+<a name="ln418"> </a>
+<a name="ln419">    /* INChI DLL specific */</a>
+<a name="ln420">    ip-&gt;bNoStructLabels = 1;</a>
+<a name="ln421">                                                                                                                                                                                                                                                                                                                                                                </a>
+<a name="ln422">    if ( 0 &gt; retcode)   goto ret;</a>
+<a name="ln423">    </a>
+<a name="ln424">    if ( ip-&gt;bNoStructLabels ) </a>
+<a name="ln425">    {</a>
+<a name="ln426">        ip-&gt;pSdfLabel = NULL;</a>
+<a name="ln427">        ip-&gt;pSdfValue = NULL;</a>
+<a name="ln428">    } </a>
+<a name="ln429">    else</a>
+<a name="ln430">    if ( ip-&gt;nInputType == INPUT_INCHI_XML || ip-&gt;nInputType == INPUT_INCHI_PLAIN  || ip-&gt;nInputType == INPUT_CMLFILE ) </a>
+<a name="ln431">    {</a>
+<a name="ln432">        /* the input may contain both the header and the label of the structure */</a>
+<a name="ln433">        if ( !ip-&gt;pSdfLabel ) </a>
+<a name="ln434">            ip-&gt;pSdfLabel  = ip-&gt;szSdfDataHeader;</a>
+<a name="ln435">        if ( !ip-&gt;pSdfValue )</a>
+<a name="ln436">            ip-&gt;pSdfValue  = szSdfDataValue;</a>
+<a name="ln437">    }</a>
+<a name="ln438"> </a>
+<a name="ln439">    </a>
+<a name="ln440">    if (retcode!=inchi_Ret_OKAY) goto ret; </a>
+<a name="ln441"> </a>
+<a name="ln442">    PrintInputParms( log_file, ip);    </a>
+<a name="ln443"> </a>
+<a name="ln444"> </a>
+<a name="ln445"> </a>
+<a name="ln446">    /*^^^ Extract the structure */</a>
+<a name="ln447"> </a>
+<a name="ln448">    retcode = ExtractOneStructure(  sd, ip, </a>
+<a name="ln449">                                    HGen-&gt;szTitle, pInp, </a>
+<a name="ln450">                                    log_file, </a>
+<a name="ln451">                                    HGen-&gt;inchi_file, /* output_file */</a>
+<a name="ln452">                                    prb_file,</a>
+<a name="ln453">                                    orig_inp_data, </a>
+<a name="ln454">                                    &amp;(HGen-&gt;num_inp), </a>
+<a name="ln455">                                    HGen-&gt;pStr, </a>
+<a name="ln456">                                    PSTR_BUFFER_SIZE );</a>
+<a name="ln457"> </a>
+<a name="ln458"> </a>
+<a name="ln459">ret:switch (retcode) </a>
+<a name="ln460">    { </a>
+<a name="ln461">        case _IS_OKAY   : retcode = inchi_Ret_OKAY   ; HGen-&gt;init_passed = 1; break;    /* Success; break; no errors or warnings */</a>
+<a name="ln462">        </a>
+<a name="ln463">        case _IS_ERROR  : (HGen-&gt;num_err)++;  retcode = inchi_Ret_ERROR  ; break; </a>
+<a name="ln464">                                                                /* Error: no INChI has been created */</a>
+<a name="ln465">        case _IS_FATAL  : (HGen-&gt;num_err)++;  retcode = inchi_Ret_FATAL  ; break; </a>
+<a name="ln466">                                                                /* Severe error: no INChI has been created </a>
+<a name="ln467">                                                                (typically; break; memory allocation failed) */</a>
+<a name="ln468">        case _IS_SKIP   : retcode = inchi_Ret_SKIP   ; break;   /* not used in INChI dll */</a>
+<a name="ln469">        case _IS_EOF    : retcode = inchi_Ret_EOF    ; break;   /* no structural data has been provided */</a>
+<a name="ln470">        case _IS_WARNING: retcode = inchi_Ret_WARNING; HGen-&gt;init_passed = 1; break;    /* Success; break; warning(s) issued */</a>
+<a name="ln471">        case _IS_UNKNOWN:</a>
+<a name="ln472">        default         : retcode = inchi_Ret_UNKNOWN; break;   /* Unlnown program error */</a>
+<a name="ln473">    }</a>
+<a name="ln474"> </a>
+<a name="ln475">    if (!pGenData)</a>
+<a name="ln476">    {</a>
+<a name="ln477">        strcpy(pGenData-&gt;pStrErrStruct, sd-&gt;pStrErrStruct);</a>
+<a name="ln478">        for (p=0; p &lt; INCHI_NUM; p++)  </a>
+<a name="ln479">            pGenData-&gt;num_components[p] = sd-&gt;num_components[p];</a>
+<a name="ln480">    }</a>
+<a name="ln481"> </a>
+<a name="ln482">    return retcode;</a>
+<a name="ln483">}</a>
+<a name="ln484"> </a>
+<a name="ln485"> </a>
+<a name="ln486"> </a>
+<a name="ln487"> </a>
+<a name="ln488">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^</a>
+<a name="ln489"> </a>
+<a name="ln490">Get normalized form of the structure.</a>
+<a name="ln491"> </a>
+<a name="ln492">^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/</a>
+<a name="ln493">int INCHI_DECL STDINCHIGEN_DoNormalization(INCHIGEN_HANDLE HGen,INCHIGEN_DATA * pGenData)</a>
+<a name="ln494">{</a>
+<a name="ln495">    return INCHIGEN_DoNormalization( HGen, pGenData);</a>
+<a name="ln496">}</a>
+<a name="ln497"> </a>
+<a name="ln498">int INCHI_DECL INCHIGEN_DoNormalization(INCHIGEN_HANDLE _HGen, INCHIGEN_DATA *pGenData) </a>
+<a name="ln499">{</a>
+<a name="ln500">int nRet=0, nRet1=0;</a>
+<a name="ln501">/* int maxINChI=0; */</a>
+<a name="ln502"> </a>
+<a name="ln503"> </a>
+<a name="ln504">INCHIGEN_CONTROL * HGen = (INCHIGEN_CONTROL *)_HGen; </a>
+<a name="ln505">INPUT_PARMS *ip = &amp;(HGen-&gt;InpParms);</a>
+<a name="ln506">STRUCT_DATA *sd = &amp;(HGen-&gt;StructData);</a>
+<a name="ln507">NORM_CANON_FLAGS *pncFlags = &amp;(HGen-&gt;ncFlags);</a>
+<a name="ln508">INCHI_IOSTREAM *output_file = HGen-&gt;inchi_file;</a>
+<a name="ln509">INCHI_IOSTREAM inpstr, *inp_file = &amp;inpstr; </a>
+<a name="ln510">ORIG_ATOM_DATA *orig_inp_data = &amp;(HGen-&gt;OrigInpData);</a>
+<a name="ln511">ORIG_STRUCT      *pOrigStruct = NULL;</a>
+<a name="ln512"> </a>
+<a name="ln513">int k;</a>
+<a name="ln514"> </a>
+<a name="ln515">#if ( RING2CHAIN == 1 || UNDERIVATIZE == 1 )</a>
+<a name="ln516">int ret1=0, ret2=0;</a>
+<a name="ln517">#endif</a>
+<a name="ln518"> </a>
+<a name="ln519"> </a>
+<a name="ln520"> </a>
+<a name="ln521"> </a>
+<a name="ln522">/*^^^ Set debug output */</a>
+<a name="ln523">#if (TRACE_MEMORY_LEAKS == 1)</a>
+<a name="ln524"> </a>
+<a name="ln525">    _CrtSetDbgFlag(_CRTDBG_CHECK_ALWAYS_DF | _CRTDBG_LEAK_CHECK_DF | _CRTDBG_ALLOC_MEM_DF);</a>
+<a name="ln526">/* for execution outside the VC++ debugger uncomment one of the following two */</a>
+<a name="ln527">#ifdef MY_REPORT_FILE </a>
+<a name="ln528">   _CrtSetReportMode( _CRT_WARN, _CRTDBG_MODE_FILE );</a>
+<a name="ln529">   _CrtSetReportFile( _CRT_WARN, MY_REPORT_FILE );</a>
+<a name="ln530">   _CrtSetReportMode( _CRT_ERROR, _CRTDBG_MODE_FILE );</a>
+<a name="ln531">   _CrtSetReportFile( _CRT_ERROR, MY_REPORT_FILE );</a>
+<a name="ln532">   _CrtSetReportMode( _CRT_ASSERT, _CRTDBG_MODE_FILE );</a>
+<a name="ln533">   _CrtSetReportFile( _CRT_ASSERT, MY_REPORT_FILE );</a>
+<a name="ln534">#else</a>
+<a name="ln535">    _CrtSetReportMode(_CRT_WARN | _CRT_ERROR, _CRTDBG_MODE_DEBUG);</a>
+<a name="ln536">#endif </a>
+<a name="ln537">#if ( !defined(__STDC__) || __STDC__ != 1 )</a>
+<a name="ln538">    /* turn on floating point exceptions */</a>
+<a name="ln539">    {</a>
+<a name="ln540">        /* Get the default control word. */</a>
+<a name="ln541">        int cw = _controlfp( 0,0 );</a>
+<a name="ln542">        /* Set the exception masks OFF, turn exceptions on. */</a>
+<a name="ln543">        /*cw &amp;=~(EM_OVERFLOW|EM_UNDERFLOW|EM_INEXACT|EM_ZERODIVIDE|EM_DENORMAL);*/</a>
+<a name="ln544">        cw &amp;=~(EM_OVERFLOW|EM_UNDERFLOW|EM_ZERODIVIDE|EM_DENORMAL);</a>
+<a name="ln545">        /* Set the control word. */</a>
+<a name="ln546">        _controlfp( cw, MCW_EM );</a>
+<a name="ln547">    }</a>
+<a name="ln548">#endif /*^^^ ( !defined(__STDC__) || __STDC__ != 1 ) */</a>
+<a name="ln549"> </a>
+<a name="ln550">#endif /*^^^ (TRACE_MEMORY_LEAKS == 1) */</a>
+<a name="ln551"> </a>
+<a name="ln552"> </a>
+<a name="ln553"> </a>
+<a name="ln554">    if (HGen-&gt;init_passed==0)</a>
+<a name="ln555">    {</a>
+<a name="ln556">        AddMOLfileError(sd-&gt;pStrErrStruct, &quot;InChI generator not initialized&quot;);</a>
+<a name="ln557">        sd-&gt;nStructReadError =  99;</a>
+<a name="ln558">        sd-&gt;nErrorType = _IS_ERROR;</a>
+<a name="ln559">        nRet = _IS_ERROR;</a>
+<a name="ln560">        goto exit_function;</a>
+<a name="ln561">    }</a>
+<a name="ln562"> </a>
+<a name="ln563">    inchi_ios_init(inp_file, INCHI_IOSTREAM_FILE, NULL);</a>
+<a name="ln564"> </a>
+<a name="ln565">    sd-&gt;bUserQuitComponent = 0;</a>
+<a name="ln566">    sd-&gt;bUserQuitComponentDisplay = 0;</a>
+<a name="ln567">    memset( HGen-&gt;composite_norm_data, 0, sizeof(HGen-&gt;composite_norm_data) );</a>
+<a name="ln568">    memset( pncFlags, 0, sizeof(*pncFlags) );</a>
+<a name="ln569"> </a>
+<a name="ln570">    /* for testing only */</a>
+<a name="ln571">#if( REMOVE_ION_PAIRS_ORIG_STRU == 1 )</a>
+<a name="ln572">    fix_odd_things( orig_inp_data-&gt;num_inp_atoms, orig_inp_data-&gt;at, 0 );</a>
+<a name="ln573">#endif</a>
+<a name="ln574">#if( UNDERIVATIZE == 1 )  /***** post v.1 feature *****/</a>
+<a name="ln575">    if ( ip-&gt;bUnderivatize &amp;&amp; 0 &gt; (ret2=underivatize( orig_inp_data )) ) </a>
+<a name="ln576">    {</a>
+<a name="ln577">        long num_inp2 = HGen-&gt;num_inp;</a>
+<a name="ln578">        AddMOLfileError(sd-&gt;pStrErrStruct, &quot;Underivatization error&quot;);</a>
+<a name="ln579">        sd-&gt;nStructReadError =  99;</a>
+<a name="ln580">        sd-&gt;nErrorType = _IS_ERROR;</a>
+<a name="ln581">        nRet = _IS_ERROR;</a>
+<a name="ln582">        TreatReadTheStructureErrors( sd, ip, LOG_MASK_ALL, inp_file, log_file, output_file, prb_file,</a>
+<a name="ln583">                                        prep_inp_data, &amp;num_inp2, HGen-&gt;pStr, PSTR_BUFFER_SIZE);</a>
+<a name="ln584">        goto exit_function; /* output only if derivatives found */</a>
+<a name="ln585">    }</a>
+<a name="ln586">#endif /* UNDERIVATIZE == 1 */</a>
+<a name="ln587">#if( RING2CHAIN == 1 )  /***** post v.1 feature *****/</a>
+<a name="ln588">    if ( ip-&gt;bRing2Chain &amp;&amp; 0 &gt; (ret1 = Ring2Chain( orig_inp_data )) ) </a>
+<a name="ln589">    {</a>
+<a name="ln590">        long num_inp2 = HGen-&gt;num_inp;</a>
+<a name="ln591">        AddMOLfileError(sd-&gt;pStrErrStruct, &quot;Ring to chain error&quot;);</a>
+<a name="ln592">        sd-&gt;nStructReadError =  99;</a>
+<a name="ln593">        sd-&gt;nErrorType = _IS_ERROR;</a>
+<a name="ln594">        nRet = _IS_ERROR;</a>
+<a name="ln595">        TreatReadTheStructureErrors( sd, ip, LOG_MASK_ALL, inp_file, log_file, output_file, prb_file,</a>
+<a name="ln596">                                        prep_inp_data, &amp;num_inp2, HGen-&gt;pStr, PSTR_BUFFER_SIZE);</a>
+<a name="ln597">        goto exit_function; /* output only if derivatives found */</a>
+<a name="ln598">    }</a>
+<a name="ln599">#endif /* RING2CHAIN == 1 */</a>
+<a name="ln600">#if ( RING2CHAIN == 1 || UNDERIVATIZE == 1 )  /***** post v.1 feature *****/</a>
+<a name="ln601">    if ( ip-&gt;bIngnoreUnchanged &amp;&amp; !ret1 &amp;&amp; !ret2 ) </a>
+<a name="ln602">    {</a>
+<a name="ln603">        goto exit_function; /* output only if derivatives or ring/chain found */</a>
+<a name="ln604">    }</a>
+<a name="ln605">#endif /* RING2CHAIN == 1 || UNDERIVATIZE == 1 */</a>
+<a name="ln606"> </a>
+<a name="ln607"> </a>
+<a name="ln608">    /***** output MOLfile ***************/</a>
+<a name="ln609">    if ( ip-&gt;bINChIOutputOptions &amp; INCHI_OUT_SDFILE_ONLY  ) </a>
+<a name="ln610">    {</a>
+<a name="ln611">        char szNumber[32];</a>
+<a name="ln612">        int ret1a=0, ret2a=0; /* for derivatives and ring-chain */</a>
+<a name="ln613">        ret1a = sprintf(szNumber, &quot;Structure #%ld&quot;, HGen-&gt;num_inp);</a>
+<a name="ln614">        ret2a = WriteOrigAtomDataToSDfile( orig_inp_data, output_file, szNumber, NULL,</a>
+<a name="ln615">                (sd-&gt;bChiralFlag &amp; FLAG_INP_AT_CHIRAL)? 1:0,</a>
+<a name="ln616">                (ip-&gt;bINChIOutputOptions &amp; INCHI_OUT_SDFILE_ATOMS_DT)? 1:0, ip-&gt;pSdfLabel, ip-&gt;pSdfValue );</a>
+<a name="ln617">        goto exit_function;</a>
+<a name="ln618">    }</a>
+<a name="ln619"> </a>
+<a name="ln620">    /******* create full reversibility information **************/</a>
+<a name="ln621">    if ( !(ip-&gt;bINChIOutputOptions &amp; (INCHI_OUT_NO_AUX_INFO | INCHI_OUT_SHORT_AUX_INFO)) ) </a>
+<a name="ln622">    {</a>
+<a name="ln623">        pOrigStruct = &amp;(HGen-&gt;OrigStruct);</a>
+<a name="ln624">        memset( pOrigStruct, 0, sizeof(*pOrigStruct));</a>
+<a name="ln625">        if ( FillOutOrigStruct( orig_inp_data, pOrigStruct, sd ) ) </a>
+<a name="ln626">        {</a>
+<a name="ln627">            AddMOLfileError(sd-&gt;pStrErrStruct, &quot;Cannot interpret reversibility information&quot;);</a>
+<a name="ln628">            sd-&gt;nStructReadError =  99;</a>
+<a name="ln629">            sd-&gt;nErrorType = _IS_ERROR;</a>
+<a name="ln630">            nRet = _IS_ERROR;</a>
+<a name="ln631">        }</a>
+<a name="ln632">    }</a>
+<a name="ln633"> </a>
+<a name="ln634"> </a>
+<a name="ln635">    sd-&gt;bUserQuit  = 0;</a>
+<a name="ln636">    if (sd-&gt;bUserQuit) goto exit_function;</a>
+<a name="ln637"> </a>
+<a name="ln638"> </a>
+<a name="ln639"> </a>
+<a name="ln640">    /*^^^ Normalize the whole disconnected or original structure */</a>
+<a name="ln641">    if ( nRet != _IS_FATAL &amp;&amp; nRet != _IS_ERROR ) {</a>
+<a name="ln642">        nRet1 = NormOneStructureINChI( pGenData, HGen, INCHI_BAS, inp_file);</a>
+<a name="ln643">        nRet = inchi_max(nRet, nRet1);</a>
+<a name="ln644">    }</a>
+<a name="ln645">    </a>
+<a name="ln646">/*</a>
+<a name="ln647">    if ( nRet != _IS_FATAL &amp;&amp; nRet != _IS_ERROR )</a>
+<a name="ln648">        maxINChI = 1;</a>
+<a name="ln649">*/</a>
+<a name="ln650"> </a>
+<a name="ln651">    if ( nRet != _IS_FATAL &amp;&amp; nRet != _IS_ERROR &amp;&amp;</a>
+<a name="ln652">        (sd-&gt;bTautFlagsDone[INCHI_BAS] &amp; TG_FLAG_DISCONNECT_COORD_DONE) &amp;&amp;</a>
+<a name="ln653">        (ip-&gt;bTautFlags               &amp; TG_FLAG_RECONNECT_COORD)          ) </a>
+<a name="ln654">    {</a>
+<a name="ln655">        /* Normalize  the whole reconnected structure */</a>
+<a name="ln656">        nRet1 = NormOneStructureINChI( pGenData, HGen, INCHI_REC, inp_file);</a>
+<a name="ln657">        nRet = inchi_max(nRet, nRet1);</a>
+<a name="ln658">/*</a>
+<a name="ln659">        if ( nRet != _IS_FATAL &amp;&amp; nRet != _IS_ERROR )</a>
+<a name="ln660">                maxINChI = 2;</a>
+<a name="ln661">*/</a>
+<a name="ln662">    }</a>
+<a name="ln663"> </a>
+<a name="ln664"> </a>
+<a name="ln665">    </a>
+<a name="ln666"> </a>
+<a name="ln667">exit_function:</a>
+<a name="ln668"> </a>
+<a name="ln669"> </a>
+<a name="ln670">    if ( nRet != _IS_FATAL &amp;&amp; nRet != _IS_ERROR )</a>
+<a name="ln671">        HGen-&gt;norm_passed = 1;</a>
+<a name="ln672"> </a>
+<a name="ln673">    </a>
+<a name="ln674">    for (k=0; k &lt; INCHI_NUM; k++)  </a>
+<a name="ln675">        pGenData-&gt;num_components[k] = sd-&gt;num_components[k];</a>
+<a name="ln676"> </a>
+<a name="ln677"> </a>
+<a name="ln678">    /*^^^ issue normalization warnings */</a>
+<a name="ln679">    if ( nRet != _IS_FATAL &amp;&amp; nRet != _IS_ERROR )</a>
+<a name="ln680">    {</a>
+<a name="ln681">        int ic, istruct, itaut, nc[2];</a>
+<a name="ln682">        int warn_prot=0, warn_neutr=0;</a>
+<a name="ln683">        INP_ATOM_DATA *inp_norm_data[TAUT_NUM]; /*  = { &amp;InpNormAtData, &amp;InpNormTautData }; */</a>
+<a name="ln684">        nc[0] = pGenData-&gt;num_components[0];</a>
+<a name="ln685">        nc[1] = pGenData-&gt;num_components[1];</a>
+<a name="ln686">        for (istruct=0; istruct&lt;2; istruct++)</a>
+<a name="ln687">        {</a>
+<a name="ln688">            if (nc[istruct]&gt;0)</a>
+<a name="ln689">            {</a>
+<a name="ln690">                for (ic=0; ic &lt; nc[istruct]; ic++)</a>
+<a name="ln691">                {</a>
+<a name="ln692">                    inp_norm_data[0] = &amp;(HGen-&gt;InpNormAtData[istruct][ic]);</a>
+<a name="ln693">                    inp_norm_data[1] = &amp;(HGen-&gt;InpNormTautData[istruct][ic]);</a>
+<a name="ln694">                    for (itaut=0;itaut&lt;2;itaut++)</a>
+<a name="ln695">                    {</a>
+<a name="ln696">                        if (NULL!=inp_norm_data[itaut])</a>
+<a name="ln697">                        {</a>
+<a name="ln698">                            if ( inp_norm_data[itaut]-&gt;bTautomeric )</a>
+<a name="ln699">                            {</a>
+<a name="ln700">                                if (inp_norm_data[itaut]-&gt;bNormalizationFlags &amp; (FLAG_NORM_CONSIDER_TAUT &amp;~FLAG_PROTON_CHARGE_CANCEL) ) </a>
+<a name="ln701">                                if (warn_prot==0)</a>
+<a name="ln702">                                {</a>
+<a name="ln703">                                    warn_prot++;</a>
+<a name="ln704">                                    AddMOLfileError(sd-&gt;pStrErrStruct, &quot;Proton(s) added/removed&quot;);</a>
+<a name="ln705">                                }</a>
+<a name="ln706">                                if (inp_norm_data[itaut]-&gt;bNormalizationFlags &amp; FLAG_PROTON_CHARGE_CANCEL )</a>
+<a name="ln707">                                if (warn_neutr==0)</a>
+<a name="ln708">                                {</a>
+<a name="ln709">                                    warn_neutr++;</a>
+<a name="ln710">                                    AddMOLfileError(sd-&gt;pStrErrStruct, &quot;Charges neutralized&quot;);</a>
+<a name="ln711">                                }</a>
+<a name="ln712"> </a>
+<a name="ln713">                            }</a>
+<a name="ln714">                        }</a>
+<a name="ln715">                    } /* itaut */</a>
+<a name="ln716">                </a>
+<a name="ln717">                }</a>
+<a name="ln718">            }</a>
+<a name="ln719">        }</a>
+<a name="ln720"> </a>
+<a name="ln721">    }</a>
+<a name="ln722">    strcpy(pGenData-&gt;pStrErrStruct, sd-&gt;pStrErrStruct);</a>
+<a name="ln723">    make_norm_atoms_from_inp_atoms(pGenData, HGen);</a>
+<a name="ln724">    </a>
+<a name="ln725">    return nRet;</a>
+<a name="ln726">}</a>
+<a name="ln727"> </a>
+<a name="ln728"> </a>
+<a name="ln729"> </a>
+<a name="ln730"> </a>
+<a name="ln731">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^</a>
+<a name="ln732"> </a>
+<a name="ln733">Get canonicalized form of the structure.</a>
+<a name="ln734"> </a>
+<a name="ln735">^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/</a>
+<a name="ln736">int INCHI_DECL STDINCHIGEN_DoCanonicalization</a>
+<a name="ln737">                                (INCHIGEN_HANDLE HGen, INCHIGEN_DATA * pGenData)</a>
+<a name="ln738">{</a>
+<a name="ln739">    return INCHIGEN_DoCanonicalization(HGen, pGenData ) ;</a>
+<a name="ln740">}</a>
+<a name="ln741"> </a>
+<a name="ln742">int INCHI_DECL INCHIGEN_DoCanonicalization</a>
+<a name="ln743">                                (INCHIGEN_HANDLE _HGen, INCHIGEN_DATA *pGenData ) </a>
+<a name="ln744">{</a>
+<a name="ln745">int nRet = 0, nRet1 /*, maxINChI=0*/;</a>
+<a name="ln746">INCHIGEN_CONTROL * HGen = (INCHIGEN_CONTROL *)_HGen; </a>
+<a name="ln747"> </a>
+<a name="ln748"> </a>
+<a name="ln749">STRUCT_DATA *sd = &amp;(HGen-&gt;StructData);</a>
+<a name="ln750">INPUT_PARMS *ip = &amp;(HGen-&gt;InpParms);</a>
+<a name="ln751">INCHI_IOSTREAM *output_file = HGen-&gt;inchi_file, *log_file = HGen-&gt;inchi_file+1;</a>
+<a name="ln752">INCHI_IOSTREAM prbstr, *prb_file=&amp;prbstr;</a>
+<a name="ln753">INCHI_IOSTREAM inpstr, *inp_file = &amp;inpstr;</a>
+<a name="ln754"> </a>
+<a name="ln755">ORIG_ATOM_DATA *prep_inp_data = &amp;(HGen-&gt;PrepInpData[0]);</a>
+<a name="ln756">int k;</a>
+<a name="ln757"> </a>
+<a name="ln758"> </a>
+<a name="ln759">/*^^^ Set debug output */</a>
+<a name="ln760">#if (TRACE_MEMORY_LEAKS == 1)</a>
+<a name="ln761"> </a>
+<a name="ln762">    _CrtSetDbgFlag(_CRTDBG_CHECK_ALWAYS_DF | _CRTDBG_LEAK_CHECK_DF | _CRTDBG_ALLOC_MEM_DF);</a>
+<a name="ln763">    /* for execution outside the VC++ debugger uncomment one of the following two */</a>
+<a name="ln764">#ifdef MY_REPORT_FILE </a>
+<a name="ln765">   _CrtSetReportMode( _CRT_WARN, _CRTDBG_MODE_FILE );</a>
+<a name="ln766">   _CrtSetReportFile( _CRT_WARN, MY_REPORT_FILE );</a>
+<a name="ln767">   _CrtSetReportMode( _CRT_ERROR, _CRTDBG_MODE_FILE );</a>
+<a name="ln768">   _CrtSetReportFile( _CRT_ERROR, MY_REPORT_FILE );</a>
+<a name="ln769">   _CrtSetReportMode( _CRT_ASSERT, _CRTDBG_MODE_FILE );</a>
+<a name="ln770">   _CrtSetReportFile( _CRT_ASSERT, MY_REPORT_FILE );</a>
+<a name="ln771">#else</a>
+<a name="ln772">    _CrtSetReportMode(_CRT_WARN | _CRT_ERROR, _CRTDBG_MODE_DEBUG);</a>
+<a name="ln773">#endif </a>
+<a name="ln774">#if ( !defined(__STDC__) || __STDC__ != 1 )</a>
+<a name="ln775">    /* turn on floating point exceptions */</a>
+<a name="ln776">    {</a>
+<a name="ln777">        /* Get the default control word. */</a>
+<a name="ln778">        int cw = _controlfp( 0,0 );</a>
+<a name="ln779">        /* Set the exception masks OFF, turn exceptions on. */</a>
+<a name="ln780">        /*cw &amp;=~(EM_OVERFLOW|EM_UNDERFLOW|EM_INEXACT|EM_ZERODIVIDE|EM_DENORMAL);*/</a>
+<a name="ln781">        cw &amp;=~(EM_OVERFLOW|EM_UNDERFLOW|EM_ZERODIVIDE|EM_DENORMAL);</a>
+<a name="ln782">        /* Set the control word. */</a>
+<a name="ln783">        _controlfp( cw, MCW_EM );</a>
+<a name="ln784">    }</a>
+<a name="ln785">#endif /*^^^ ( !defined(__STDC__) || __STDC__ != 1 ) */</a>
+<a name="ln786"> </a>
+<a name="ln787">#endif /*^^^ (TRACE_MEMORY_LEAKS == 1) */</a>
+<a name="ln788"> </a>
+<a name="ln789"> </a>
+<a name="ln790"> </a>
+<a name="ln791">    if (HGen-&gt;norm_passed==0)</a>
+<a name="ln792">    {</a>
+<a name="ln793">        AddMOLfileError(sd-&gt;pStrErrStruct, &quot;Got non-normalized structure&quot;);</a>
+<a name="ln794">        sd-&gt;nStructReadError =  99;</a>
+<a name="ln795">        sd-&gt;nErrorType = _IS_ERROR;</a>
+<a name="ln796">        nRet = _IS_ERROR;</a>
+<a name="ln797">        goto exit_function;</a>
+<a name="ln798">    }</a>
+<a name="ln799"> </a>
+<a name="ln800"> </a>
+<a name="ln801">    inchi_ios_init(inp_file, INCHI_IOSTREAM_FILE, NULL);</a>
+<a name="ln802">    inchi_ios_init(prb_file, INCHI_IOSTREAM_FILE, NULL);</a>
+<a name="ln803"> </a>
+<a name="ln804">    sd-&gt;bUserQuit  = 0;</a>
+<a name="ln805">    if (sd-&gt;bUserQuit) goto exit_function;</a>
+<a name="ln806"> </a>
+<a name="ln807">   /* create INChI for each connected component of the structure and optionally display them */</a>
+<a name="ln808">   /* output INChI for the whole structure */</a>
+<a name="ln809">    </a>
+<a name="ln810"> </a>
+<a name="ln811"> </a>
+<a name="ln812">    /* create INChI for each connected component of the structure and optionally display them */</a>
+<a name="ln813">    /* create INChI for the whole disconnected or original structure */</a>
+<a name="ln814">    if ( nRet != _IS_FATAL &amp;&amp; nRet != _IS_ERROR ) {</a>
+<a name="ln815">        nRet1 = CanonOneStructureINChI(HGen, INCHI_BAS, inp_file);</a>
+<a name="ln816">        nRet = inchi_max(nRet, nRet1);</a>
+<a name="ln817">    }</a>
+<a name="ln818">    </a>
+<a name="ln819">/*</a>
+<a name="ln820">    if ( nRet != _IS_FATAL &amp;&amp; nRet != _IS_ERROR )</a>
+<a name="ln821">        maxINChI = 1;</a>
+<a name="ln822">*/</a>
+<a name="ln823"> </a>
+<a name="ln824">    if ( nRet != _IS_FATAL &amp;&amp; nRet != _IS_ERROR &amp;&amp;</a>
+<a name="ln825">        (sd-&gt;bTautFlagsDone[INCHI_BAS] &amp; TG_FLAG_DISCONNECT_COORD_DONE) &amp;&amp;</a>
+<a name="ln826">        (ip-&gt;bTautFlags               &amp; TG_FLAG_RECONNECT_COORD)          ) </a>
+<a name="ln827">    {</a>
+<a name="ln828">        /* create INChI for the whole reconnected structure */</a>
+<a name="ln829">        nRet1 = CanonOneStructureINChI(HGen, INCHI_REC, inp_file);</a>
+<a name="ln830">        nRet = inchi_max(nRet, nRet1);</a>
+<a name="ln831">/*</a>
+<a name="ln832">        if ( nRet != _IS_FATAL &amp;&amp; nRet != _IS_ERROR )</a>
+<a name="ln833">                maxINChI = 2;</a>
+<a name="ln834">*/</a>
+<a name="ln835">    }</a>
+<a name="ln836"> </a>
+<a name="ln837">    if (nRet != _IS_FATAL &amp;&amp; nRet != _IS_ERROR) </a>
+<a name="ln838">    {</a>
+<a name="ln839">        if (  (sd-&gt;bChiralFlag &amp; FLAG_INP_AT_CHIRAL) &amp;&amp;</a>
+<a name="ln840">              (ip-&gt;nMode &amp; REQ_MODE_STEREO) &amp;&amp;</a>
+<a name="ln841">              !(ip-&gt;nMode &amp; (REQ_MODE_RELATIVE_STEREO | REQ_MODE_RACEMIC_STEREO)) &amp;&amp;</a>
+<a name="ln842">              !bIsStructChiral( HGen-&gt;pINChI, sd-&gt;num_components ) ) </a>
+<a name="ln843">        {</a>
+<a name="ln844">            AddMOLfileError(sd-&gt;pStrErrStruct, &quot;Not chiral&quot;);</a>
+<a name="ln845">        }</a>
+<a name="ln846">        </a>
+<a name="ln847">        /*************************************/</a>
+<a name="ln848">        /*       Output err/warn messages    */</a>
+<a name="ln849">        /*************************************/</a>
+<a name="ln850">        if ( /*!sd-&gt;nErrorCode &amp;&amp;*/ !sd-&gt;bUserQuitComponent &amp;&amp; !sd-&gt;bUserQuit ) </a>
+<a name="ln851">        {</a>
+<a name="ln852">            /*  if successful then returns 0, otherwise returns _IS_FATAL */</a>
+<a name="ln853">            /*  extract the structure if requested */</a>
+<a name="ln854">            nRet1 = TreatCreateINChIWarning(sd, ip, prep_inp_data, HGen-&gt;num_inp,</a>
+<a name="ln855">                                 inp_file, log_file, output_file, prb_file, HGen-&gt;pStr, PSTR_BUFFER_SIZE);</a>
+<a name="ln856">            nRet = inchi_max(nRet, nRet1);</a>
+<a name="ln857">        }</a>
+<a name="ln858">    }</a>
+<a name="ln859">    </a>
+<a name="ln860"> </a>
+<a name="ln861"> </a>
+<a name="ln862"> </a>
+<a name="ln863">    switch (nRet) </a>
+<a name="ln864">    { </a>
+<a name="ln865">        case _IS_SKIP   : nRet = inchi_Ret_SKIP   ; break; /* not used in INChI dll */</a>
+<a name="ln866">        case _IS_EOF    : nRet = inchi_Ret_EOF    ; break; /* no structural data has been provided */</a>
+<a name="ln867">        case _IS_OKAY   : nRet = inchi_Ret_OKAY   ; HGen-&gt;canon_passed = 1; break; </a>
+<a name="ln868">                                                    /* Success; break; no errors or warnings */</a>
+<a name="ln869">        case _IS_WARNING: nRet = inchi_Ret_WARNING; HGen-&gt;canon_passed = 1; break; </a>
+<a name="ln870">                                                    /* Success; break; warning(s) issued */</a>
+<a name="ln871">        case _IS_ERROR  : nRet = inchi_Ret_ERROR  ; break; /* Error: no INChI has been created */</a>
+<a name="ln872">        case _IS_FATAL  : nRet = inchi_Ret_FATAL  ; break; /* Severe error: no INChI has been created (typically; break; memory allocation failed) */</a>
+<a name="ln873">        case _IS_UNKNOWN:</a>
+<a name="ln874">        default         : nRet = inchi_Ret_UNKNOWN; break; /* Unknown program error */</a>
+<a name="ln875">    }</a>
+<a name="ln876">exit_function:    </a>
+<a name="ln877"> </a>
+<a name="ln878">    strcpy(pGenData-&gt;pStrErrStruct, sd-&gt;pStrErrStruct);</a>
+<a name="ln879">    for (k=0; k &lt; INCHI_NUM; k++)  </a>
+<a name="ln880">        pGenData-&gt;num_components[k] = sd-&gt;num_components[k];</a>
+<a name="ln881"> </a>
+<a name="ln882"> </a>
+<a name="ln883">    return nRet;</a>
+<a name="ln884"> </a>
+<a name="ln885">} /*^^^ INCHIGEN_DoCanonicalization */</a>
+<a name="ln886"> </a>
+<a name="ln887"> </a>
+<a name="ln888"> </a>
+<a name="ln889"> </a>
+<a name="ln890"> </a>
+<a name="ln891">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^</a>
+<a name="ln892">Get serialized form (InChI string).</a>
+<a name="ln893">^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/</a>
+<a name="ln894"> </a>
+<a name="ln895">int INCHI_DECL STDINCHIGEN_DoSerialization(INCHIGEN_HANDLE HGen, </a>
+<a name="ln896">                                                                     INCHIGEN_DATA * pGenData, </a>
+<a name="ln897">                                                                     inchi_Output * pResults)</a>
+<a name="ln898">{</a>
+<a name="ln899">    return INCHIGEN_DoSerialization(HGen, pGenData, pResults);</a>
+<a name="ln900">}</a>
+<a name="ln901"> </a>
+<a name="ln902"> </a>
+<a name="ln903">int INCHI_DECL INCHIGEN_DoSerialization(INCHIGEN_HANDLE _HGen, </a>
+<a name="ln904">                                                                  INCHIGEN_DATA * pGenData, </a>
+<a name="ln905">                                                                  inchi_Output * pResults)</a>
+<a name="ln906">{</a>
+<a name="ln907">int nRet=0, nRet1=0, i, k;</a>
+<a name="ln908"> </a>
+<a name="ln909"> </a>
+<a name="ln910"> </a>
+<a name="ln911">INCHIGEN_CONTROL * HGen = (INCHIGEN_CONTROL *)_HGen; </a>
+<a name="ln912"> </a>
+<a name="ln913">INPUT_PARMS *ip = &amp;(HGen-&gt;InpParms);</a>
+<a name="ln914">INCHI_IOSTREAM *output_file = HGen-&gt;inchi_file, *log_file = HGen-&gt;inchi_file+1;    </a>
+<a name="ln915">INCHI_IOSTREAM inpstr, *inp_file = &amp;inpstr;</a>
+<a name="ln916">INCHI_IOSTREAM prbstr, *prb_file=&amp;prbstr;</a>
+<a name="ln917"> </a>
+<a name="ln918">STRUCT_DATA *sd = &amp;(HGen-&gt;StructData);</a>
+<a name="ln919">NORM_CANON_FLAGS *pncFlags = &amp;(HGen-&gt;ncFlags);</a>
+<a name="ln920">ORIG_ATOM_DATA *orig_inp_data = &amp;(HGen-&gt;OrigInpData);</a>
+<a name="ln921">ORIG_ATOM_DATA *prep_inp_data = &amp;(HGen-&gt;PrepInpData[0]);</a>
+<a name="ln922">ORIG_STRUCT      *pOrigStruct = &amp;(HGen-&gt;OrigStruct);</a>
+<a name="ln923">int bSortPrintINChIFlags=0;</a>
+<a name="ln924">unsigned char save_opt_bits=0;</a>
+<a name="ln925">int retcode = 0;</a>
+<a name="ln926"> </a>
+<a name="ln927"> </a>
+<a name="ln928">    </a>
+<a name="ln929">    /*^^^ Post-1.02b - added initialization of pResults to 0; thanks to David Foss */</a>
+<a name="ln930">    memset(pResults, 0, sizeof(*pResults));</a>
+<a name="ln931">    pResults-&gt;szLog = log_file-&gt;s.pStr;</a>
+<a name="ln932">    inchi_ios_init(inp_file, INCHI_IOSTREAM_FILE, NULL);</a>
+<a name="ln933">    inchi_ios_init(prb_file, INCHI_IOSTREAM_FILE, NULL);</a>
+<a name="ln934"> </a>
+<a name="ln935"> </a>
+<a name="ln936">/*^^^ Set debug output */</a>
+<a name="ln937"> </a>
+<a name="ln938">#if (TRACE_MEMORY_LEAKS == 1)</a>
+<a name="ln939"> </a>
+<a name="ln940">    _CrtSetDbgFlag(_CRTDBG_CHECK_ALWAYS_DF | _CRTDBG_LEAK_CHECK_DF | _CRTDBG_ALLOC_MEM_DF);</a>
+<a name="ln941"> </a>
+<a name="ln942">/* for execution outside the VC++ debugger uncomment one of the following two */</a>
+<a name="ln943">#ifdef MY_REPORT_FILE </a>
+<a name="ln944">   _CrtSetReportMode( _CRT_WARN, _CRTDBG_MODE_FILE );</a>
+<a name="ln945">   _CrtSetReportFile( _CRT_WARN, MY_REPORT_FILE );</a>
+<a name="ln946">   _CrtSetReportMode( _CRT_ERROR, _CRTDBG_MODE_FILE );</a>
+<a name="ln947">   _CrtSetReportFile( _CRT_ERROR, MY_REPORT_FILE );</a>
+<a name="ln948">   _CrtSetReportMode( _CRT_ASSERT, _CRTDBG_MODE_FILE );</a>
+<a name="ln949">   _CrtSetReportFile( _CRT_ASSERT, MY_REPORT_FILE );</a>
+<a name="ln950">#else</a>
+<a name="ln951">    _CrtSetReportMode(_CRT_WARN | _CRT_ERROR, _CRTDBG_MODE_DEBUG);</a>
+<a name="ln952">#endif </a>
+<a name="ln953">#if ( !defined(__STDC__) || __STDC__ != 1 )</a>
+<a name="ln954">    /* turn on floating point exceptions */</a>
+<a name="ln955">    {</a>
+<a name="ln956">        /* Get the default control word. */</a>
+<a name="ln957">        int cw = _controlfp( 0,0 );</a>
+<a name="ln958">        /* Set the exception masks OFF, turn exceptions on. */</a>
+<a name="ln959">        /*cw &amp;=~(EM_OVERFLOW|EM_UNDERFLOW|EM_INEXACT|EM_ZERODIVIDE|EM_DENORMAL);*/</a>
+<a name="ln960">        cw &amp;=~(EM_OVERFLOW|EM_UNDERFLOW|EM_ZERODIVIDE|EM_DENORMAL);</a>
+<a name="ln961">        /* Set the control word. */</a>
+<a name="ln962">        _controlfp( cw, MCW_EM );</a>
+<a name="ln963">    }</a>
+<a name="ln964">#endif /*^^^ ( !defined(__STDC__) || __STDC__ != 1 ) */</a>
+<a name="ln965"> </a>
+<a name="ln966">#endif /*^^^ (TRACE_MEMORY_LEAKS == 1) */</a>
+<a name="ln967"> </a>
+<a name="ln968"> </a>
+<a name="ln969">/*****************************/</a>
+<a name="ln970"> </a>
+<a name="ln971"> </a>
+<a name="ln972">    if (HGen-&gt;canon_passed==0)</a>
+<a name="ln973">    {</a>
+<a name="ln974">        AddMOLfileError(sd-&gt;pStrErrStruct, &quot;Got non-canonicalized structure&quot;);</a>
+<a name="ln975">        sd-&gt;nStructReadError =  99;</a>
+<a name="ln976">        sd-&gt;nErrorType = _IS_ERROR;</a>
+<a name="ln977">        retcode = _IS_ERROR;</a>
+<a name="ln978">        goto frees;</a>
+<a name="ln979">    }</a>
+<a name="ln980"> </a>
+<a name="ln981"> </a>
+<a name="ln982">    /************************************************/</a>
+<a name="ln983">    /*  sort and print INChI for the whole structure */</a>
+<a name="ln984">    /************************************************/</a>
+<a name="ln985"> </a>
+<a name="ln986">    /* Prepare SaveOpt bits */</a>
+<a name="ln987">    if ( ip-&gt;bINChIOutputOptions &amp; INCHI_OUT_SAVEOPT )</a>
+<a name="ln988">    {</a>
+<a name="ln989">        if ( 0 != ( ip-&gt;bTautFlags &amp; TG_FLAG_RECONNECT_COORD) )</a>
+<a name="ln990">            save_opt_bits |= SAVE_OPT_RECMET;</a>
+<a name="ln991">        if ( 0 != ( ip-&gt;nMode &amp; REQ_MODE_BASIC) )</a>
+<a name="ln992">            save_opt_bits |= SAVE_OPT_FIXEDH;</a>
+<a name="ln993">        if ( 0 != ( ip-&gt;nMode &amp; REQ_MODE_DIFF_UU_STEREO) ) </a>
+<a name="ln994">            save_opt_bits |= SAVE_OPT_SLUUD;</a>
+<a name="ln995">        if ( 0 == (ip-&gt;nMode &amp; (REQ_MODE_SB_IGN_ALL_UU | REQ_MODE_SC_IGN_ALL_UU)) ) </a>
+<a name="ln996">            save_opt_bits |= SAVE_OPT_SUU;</a>
+<a name="ln997">        if ( 0 != (ip-&gt;bTautFlags &amp; TG_FLAG_KETO_ENOL_TAUT) )</a>
+<a name="ln998">            save_opt_bits |= SAVE_OPT_KET;</a>
+<a name="ln999">        if ( 0 != (ip-&gt;bTautFlags &amp; TG_FLAG_1_5_TAUT) )</a>
+<a name="ln1000">            save_opt_bits |= SAVE_OPT_15T;</a>
+<a name="ln1001">    }</a>
+<a name="ln1002"> </a>
+<a name="ln1003"> </a>
+<a name="ln1004">    nRet = SortAndPrintINChI(output_file, HGen-&gt;pStr, PSTR_BUFFER_SIZE, log_file, </a>
+<a name="ln1005">                             ip, orig_inp_data, prep_inp_data,</a>
+<a name="ln1006">                             HGen-&gt;composite_norm_data, pOrigStruct,</a>
+<a name="ln1007">                             sd-&gt;num_components, sd-&gt;num_non_taut, sd-&gt;num_taut,</a>
+<a name="ln1008">                             sd-&gt;bTautFlags, sd-&gt;bTautFlagsDone, pncFlags, HGen-&gt;num_inp,</a>
+<a name="ln1009">                             HGen-&gt;pINChI, HGen-&gt;pINChI_Aux, </a>
+<a name="ln1010">                             &amp;bSortPrintINChIFlags, save_opt_bits);</a>
+<a name="ln1011"> </a>
+<a name="ln1012"> </a>
+<a name="ln1013"> </a>
+<a name="ln1014">    /* XML struct end tag */</a>
+<a name="ln1015">    if ( (ip-&gt;bINChIOutputOptions &amp; INCHI_OUT_XML) &amp;&amp; sd-&gt;bXmlStructStarted &gt; 0 ) </a>
+<a name="ln1016">    {</a>
+<a name="ln1017">        if ( !OutputINChIXmlStructEndTag( output_file, HGen-&gt;pStr, PSTR_BUFFER_SIZE, 1 ) ) </a>
+<a name="ln1018">        {</a>
+<a name="ln1019">            inchi_ios_eprint( log_file, &quot;Cannot create end xml tag for structure #%ld.%s%s%s%s Terminating.\n&quot;, </a>
+<a name="ln1020">                            HGen-&gt;num_inp, SDF_LBL_VAL(ip-&gt;pSdfLabel,ip-&gt;pSdfValue) );</a>
+<a name="ln1021">            sd-&gt;bXmlStructStarted = -1; /*  do not repeat same message */</a>
+<a name="ln1022">            nRet = _IS_FATAL;</a>
+<a name="ln1023">        } </a>
+<a name="ln1024">        else </a>
+<a name="ln1025">        {</a>
+<a name="ln1026">            sd-&gt;bXmlStructStarted = 0; /*  do not continue xml output for this structure */</a>
+<a name="ln1027">        }</a>
+<a name="ln1028">    }</a>
+<a name="ln1029">    if ( nRet != _IS_FATAL &amp;&amp; nRet != _IS_ERROR ) </a>
+<a name="ln1030">    {</a>
+<a name="ln1031">        /* Special mode: extract all good MOLfiles into the problem file</a>
+<a name="ln1032">        * Do not extract any MOLfile that could not be processed (option /PGO)</a>
+<a name="ln1033">        */</a>
+<a name="ln1034">        if ( prb_file-&gt;f &amp;&amp; 0L &lt;= sd-&gt;fPtrStart &amp;&amp; sd-&gt;fPtrStart &lt; sd-&gt;fPtrEnd &amp;&amp; ip-&gt;bSaveAllGoodStructsAsProblem ) {</a>
+<a name="ln1035">            CopyMOLfile(inp_file-&gt;f, sd-&gt;fPtrStart, sd-&gt;fPtrEnd, prb_file-&gt;f, 0);</a>
+<a name="ln1036">        }</a>
+<a name="ln1037">#if( /*bRELEASE_VERSION != 1 &amp;&amp;*/ EXTR_FLAGS == EXTR_TRANSPOSITION_EXAMPLES &amp;&amp; EXTR_MASK == EXTR_FLAGS )</a>
+<a name="ln1038">        else</a>
+<a name="ln1039">        if ( prb_file-&gt;f &amp;&amp; (bSortPrintINChIFlags &amp; </a>
+<a name="ln1040">             ( FLAG_SORT_PRINT_TRANSPOS_BAS | FLAG_SORT_PRINT_TRANSPOS_REC ) )</a>
+<a name="ln1041">            ) </a>
+<a name="ln1042">        {</a>
+<a name="ln1043">            CopyMOLfile(inp_file, sd-&gt;fPtrStart, sd-&gt;fPtrEnd, prb_file-&gt;f, 0);</a>
+<a name="ln1044">        }</a>
+<a name="ln1045">#endif</a>
+<a name="ln1046">    }</a>
+<a name="ln1047">    </a>
+<a name="ln1048">    for ( i = 0; i &lt; INCHI_NUM; i ++ ) </a>
+<a name="ln1049">    {</a>
+<a name="ln1050">        for ( k = 0; k &lt; TAUT_NUM+1; k ++ ) </a>
+<a name="ln1051">        {</a>
+<a name="ln1052">            FreeCompAtomData( &amp;(HGen-&gt;composite_norm_data[i][k]) );</a>
+<a name="ln1053">        }</a>
+<a name="ln1054">    }</a>
+<a name="ln1055">/*****************************/        </a>
+<a name="ln1056"> </a>
+<a name="ln1057">    /*^^^ Prepare output message(s). */</a>
+<a name="ln1058"> </a>
+<a name="ln1059">    </a>
+<a name="ln1060">    /*^^^ Error/warning. */</a>
+<a name="ln1061">    if ( sd-&gt;pStrErrStruct[0] ) </a>
+<a name="ln1062">        if ( pGenData &amp;&amp; (pResults-&gt;szMessage = (char *)inchi_malloc( strlen(sd-&gt;pStrErrStruct) + 1 )) ) </a>
+<a name="ln1063">            strcpy( pResults-&gt;szMessage, sd-&gt;pStrErrStruct );</a>
+<a name="ln1064">    </a>
+<a name="ln1065">    /*^^^ InChI, AuxInfo  (go to  pResults-&gt;szInChI, pResults-&gt;szAuxInfo) */</a>
+<a name="ln1066">    if ( output_file-&gt;s.pStr &amp;&amp; output_file-&gt;s.nUsedLength &gt; 0 &amp;&amp; pGenData ) </a>
+<a name="ln1067">    {</a>
+<a name="ln1068">        char *p;</a>
+<a name="ln1069">        pResults-&gt;szInChI   = output_file-&gt;s.pStr;</a>
+<a name="ln1070">        pResults-&gt;szAuxInfo = NULL;</a>
+<a name="ln1071">        if ( !(INCHI_OUT_SDFILE_ONLY &amp; ip-&gt;bINChIOutputOptions ) ) /* do not remove last LF from SDF output - 2008-12-23 DT */</a>
+<a name="ln1072">        for ( p = strchr(pResults-&gt;szInChI, '\n'); p; p = strchr(p+1, '\n') ) </a>
+<a name="ln1073">        {</a>
+<a name="ln1074">            if ( !memcmp( p, &quot;\nAuxInfo&quot;, 8 ) ) </a>
+<a name="ln1075">            {</a>
+<a name="ln1076">                *p = '\0';            /* remove LF after INChI */</a>
+<a name="ln1077">                pResults-&gt;szAuxInfo = p+1; /* save pointer to AuxInfo */</a>
+<a name="ln1078">            } </a>
+<a name="ln1079">            else</a>
+<a name="ln1080">                if ( pResults-&gt;szAuxInfo || !p[1]) </a>
+<a name="ln1081">                {   </a>
+<a name="ln1082">                    /* remove LF after aux info or from the last char */</a>
+<a name="ln1083">                    *p = '\0';</a>
+<a name="ln1084">                    break;</a>
+<a name="ln1085">                }</a>
+<a name="ln1086">        }</a>
+<a name="ln1087">        output_file-&gt;s.pStr = NULL;</a>
+<a name="ln1088">    }</a>
+<a name="ln1089"> </a>
+<a name="ln1090"> </a>
+<a name="ln1091">    /*^^^ Log message. */</a>
+<a name="ln1092">    if ( log_file-&gt;s.pStr &amp;&amp; log_file-&gt;s.nUsedLength &gt; 0 ) </a>
+<a name="ln1093">    {</a>
+<a name="ln1094">        while ( log_file-&gt;s.nUsedLength &amp;&amp; '\n' == log_file-&gt;s.pStr[log_file-&gt;s.nUsedLength-1] ) </a>
+<a name="ln1095">            log_file-&gt;s.pStr[-- log_file-&gt;s.nUsedLength]  = '\0'; /* remove last LF */</a>
+<a name="ln1096">        if ( pGenData ) </a>
+<a name="ln1097">        {</a>
+<a name="ln1098">            pResults-&gt;szLog = log_file-&gt;s.pStr;</a>
+<a name="ln1099">            log_file-&gt;s.pStr = NULL;</a>
+<a name="ln1100">        }</a>
+<a name="ln1101">    }</a>
+<a name="ln1102">    </a>
+<a name="ln1103">    if ( output_file-&gt;s.pStr )    {inchi_free( output_file-&gt;s.pStr ); output_file-&gt;s.pStr  = NULL;}</a>
+<a name="ln1104">    if ( log_file-&gt;s.pStr    )    {inchi_free( log_file-&gt;s.pStr ); log_file-&gt;s.pStr = NULL;}</a>
+<a name="ln1105">    </a>
+<a name="ln1106"> </a>
+<a name="ln1107">        </a>
+<a name="ln1108">        </a>
+<a name="ln1109"> </a>
+<a name="ln1110">    HGen-&gt;ulTotalProcessingTime += sd-&gt;ulStructTime;</a>
+<a name="ln1111">    nRet = inchi_max(nRet, nRet1);</a>
+<a name="ln1112">    </a>
+<a name="ln1113">    switch ( nRet ) </a>
+<a name="ln1114">    {</a>
+<a name="ln1115">        case _IS_FATAL:     </a>
+<a name="ln1116">        case _IS_ERROR:     HGen-&gt;num_err ++;</a>
+<a name="ln1117">    }</a>
+<a name="ln1118"> </a>
+<a name="ln1119"> </a>
+<a name="ln1120"> </a>
+<a name="ln1121">    /*^^^ XML-related. */</a>
+<a name="ln1122">    if ( (ip-&gt;bINChIOutputOptions &amp; INCHI_OUT_XML) &amp;&amp; sd-&gt;bXmlStructStarted &gt; 0 ) </a>
+<a name="ln1123">    {</a>
+<a name="ln1124">        if ( !OutputINChIXmlStructEndTag( output_file, HGen-&gt;pStr, PSTR_BUFFER_SIZE, 1 ) ) </a>
+<a name="ln1125">        {</a>
+<a name="ln1126">            inchi_ios_eprint( log_file, &quot;Cannot create end xml tag for structure #%d.%s%s%s%s Terminating.\n&quot;, </a>
+<a name="ln1127">                HGen-&gt;num_inp, SDF_LBL_VAL(ip-&gt;pSdfLabel,ip-&gt;pSdfValue) );</a>
+<a name="ln1128">            sd-&gt;bXmlStructStarted = -1; /*  do not repeat same message */</a>
+<a name="ln1129">        }</a>
+<a name="ln1130">    }</a>
+<a name="ln1131">    if ( (ip-&gt;bINChIOutputOptions &amp; INCHI_OUT_XML) &amp;&amp; ip-&gt;bXmlStarted ) </a>
+<a name="ln1132">    {</a>
+<a name="ln1133">        OutputINChIXmlRootEndTag( output_file );</a>
+<a name="ln1134">        ip-&gt;bXmlStarted = 0;</a>
+<a name="ln1135">    }</a>
+<a name="ln1136"> </a>
+<a name="ln1137"> </a>
+<a name="ln1138">frees:    </a>
+<a name="ln1139">    /*^^^ Free all. */</a>
+<a name="ln1140"> </a>
+<a name="ln1141">    /*  free INChI memory */</a>
+<a name="ln1142">/*     FreeAllINChIArrays(HGen-&gt;pINChI, HGen-&gt;pINChI_Aux, sd-&gt;num_components ); </a>
+<a name="ln1143">*/</a>
+<a name="ln1144">#if( ADD_CMLPP == 1 )</a>
+<a name="ln1145">        /* BILLY 8/6/04 */</a>
+<a name="ln1146">        /* free CML memory */</a>
+<a name="ln1147">        FreeCml ();</a>
+<a name="ln1148">        FreeCmlDoc( 1 );</a>
+<a name="ln1149">#endif</a>
+<a name="ln1150">    for ( i = 0; i &lt; MAX_NUM_PATHS; i ++ ) </a>
+<a name="ln1151">    {</a>
+<a name="ln1152">        if ( ip-&gt;path[i] ) </a>
+<a name="ln1153">        {</a>
+<a name="ln1154">            inchi_free( (char*) ip-&gt;path[i] ); /*  cast deliberately discards 'const' qualifier */</a>
+<a name="ln1155">            ip-&gt;path[i] = NULL;</a>
+<a name="ln1156">        }</a>
+<a name="ln1157">    }</a>
+<a name="ln1158">    SetBitFree( );</a>
+<a name="ln1159"> </a>
+<a name="ln1160"> </a>
+<a name="ln1161">    strcpy(pGenData-&gt;pStrErrStruct, sd-&gt;pStrErrStruct);</a>
+<a name="ln1162">    for (k=0; k &lt; INCHI_NUM; k++)  </a>
+<a name="ln1163">        pGenData-&gt;num_components[k] = sd-&gt;num_components[k];</a>
+<a name="ln1164"> </a>
+<a name="ln1165"> </a>
+<a name="ln1166">    return retcode;</a>
+<a name="ln1167">}</a>
+<a name="ln1168"> </a>
+<a name="ln1169"> </a>
+<a name="ln1170">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^</a>
+<a name="ln1171"> </a>
+<a name="ln1172">InChI Generator: reset stage (use before get next structure)</a>
+<a name="ln1173"> </a>
+<a name="ln1174">^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/</a>
+<a name="ln1175">void INCHI_DECL STDINCHIGEN_Reset(INCHIGEN_HANDLE HGen, </a>
+<a name="ln1176">                               INCHIGEN_DATA * pGenData, </a>
+<a name="ln1177">                               inchi_Output * pResults)</a>
+<a name="ln1178">{</a>
+<a name="ln1179">    INCHIGEN_Reset(HGen, pGenData, pResults);</a>
+<a name="ln1180">}</a>
+<a name="ln1181"> </a>
+<a name="ln1182"> </a>
+<a name="ln1183">void INCHI_DECL INCHIGEN_Reset(INCHIGEN_HANDLE _HGen, </a>
+<a name="ln1184">                                 INCHIGEN_DATA * pGenData, </a>
+<a name="ln1185">                                 inchi_Output * pResults)</a>
+<a name="ln1186">{</a>
+<a name="ln1187">int i, k, nc;</a>
+<a name="ln1188">INCHIGEN_CONTROL * HGen = (INCHIGEN_CONTROL *)_HGen; </a>
+<a name="ln1189"> </a>
+<a name="ln1190"> </a>
+<a name="ln1191">    if ( pResults-&gt;szInChI )    inchi_free( pResults-&gt;szInChI );</a>
+<a name="ln1192">    if ( pResults-&gt;szLog )      inchi_free( pResults-&gt;szLog );</a>
+<a name="ln1193">    if ( pResults-&gt;szMessage )  inchi_free( pResults-&gt;szMessage );</a>
+<a name="ln1194">    </a>
+<a name="ln1195"> </a>
+<a name="ln1196">    /* Free all data associated with components of disconn/conn structures */</a>
+<a name="ln1197"> </a>
+<a name="ln1198">    if (NULL!=HGen)</a>
+<a name="ln1199">    {</a>
+<a name="ln1200"> </a>
+<a name="ln1201">        /*^^^ Re-initialize output streams/string buffers */</a>
+<a name="ln1202">        inchi_ios_close(&amp;(HGen-&gt;inchi_file[0]));</a>
+<a name="ln1203">        inchi_ios_close(&amp;(HGen-&gt;inchi_file[1]));</a>
+<a name="ln1204">        inchi_ios_close(&amp;(HGen-&gt;inchi_file[2]));</a>
+<a name="ln1205">        inchi_ios_init(&amp;(HGen-&gt;inchi_file[0]), INCHI_IOSTREAM_STRING, NULL);</a>
+<a name="ln1206">        inchi_ios_init(&amp;(HGen-&gt;inchi_file[1]), INCHI_IOSTREAM_STRING, NULL);</a>
+<a name="ln1207">        inchi_ios_init(&amp;(HGen-&gt;inchi_file[2]), INCHI_IOSTREAM_STRING, NULL);</a>
+<a name="ln1208"> </a>
+<a name="ln1209"> </a>
+<a name="ln1210">        if (HGen-&gt;pStr )            </a>
+<a name="ln1211">            memset(HGen-&gt;pStr, 0, sizeof( (*HGen-&gt;pStr) ));</a>
+<a name="ln1212"> </a>
+<a name="ln1213"> </a>
+<a name="ln1214">        for ( i = 0; i &lt; MAX_NUM_PATHS; i ++ ) </a>
+<a name="ln1215">        {</a>
+<a name="ln1216">            if ( HGen-&gt;InpParms.path[i] ) </a>
+<a name="ln1217">            {</a>
+<a name="ln1218">                inchi_free( (char*) HGen-&gt;InpParms.path[i] ); /*  cast deliberately discards 'const' qualifier */</a>
+<a name="ln1219">                HGen-&gt;InpParms.path[i] = NULL;</a>
+<a name="ln1220">            }</a>
+<a name="ln1221">        }</a>
+<a name="ln1222">        memset(&amp;(HGen-&gt;InpParms), 0, sizeof(INPUT_PARMS));</a>
+<a name="ln1223"> </a>
+<a name="ln1224">        FreeOrigAtData( &amp;(HGen-&gt;OrigInpData) );</a>
+<a name="ln1225">        memset(&amp;(HGen-&gt;OrigInpData), 0, sizeof( HGen-&gt;OrigInpData ) );</a>
+<a name="ln1226">    </a>
+<a name="ln1227">    </a>
+<a name="ln1228">        FreeOrigAtData( &amp;(HGen-&gt;PrepInpData[0]));</a>
+<a name="ln1229">        FreeOrigAtData( &amp;(HGen-&gt;PrepInpData[1]));</a>
+<a name="ln1230">        memset(&amp;(HGen-&gt;PrepInpData[0]), 0, 2*sizeof( HGen-&gt;PrepInpData[0] ) );  </a>
+<a name="ln1231"> </a>
+<a name="ln1232">        FreeOrigStruct( &amp;(HGen-&gt;OrigStruct));</a>
+<a name="ln1233">        memset(&amp;(HGen-&gt;OrigStruct), 0, sizeof( HGen-&gt;OrigStruct ) );</a>
+<a name="ln1234"> </a>
+<a name="ln1235"> </a>
+<a name="ln1236">        for ( i = 0; i &lt; INCHI_NUM; i ++ ) </a>
+<a name="ln1237">            for ( k = 0; k &lt; TAUT_NUM+1; k ++ ) </a>
+<a name="ln1238">                FreeCompAtomData( &amp;(HGen-&gt;composite_norm_data[i][k]) );</a>
+<a name="ln1239"> </a>
+<a name="ln1240">        for ( k = 0;  k &lt; INCHI_NUM; k++) </a>
+<a name="ln1241">        {</a>
+<a name="ln1242">            nc = HGen-&gt;StructData.num_components[k];</a>
+<a name="ln1243"> </a>
+<a name="ln1244">            if ( HGen-&gt;InpCurAtData[k] )</a>
+<a name="ln1245">            {</a>
+<a name="ln1246">                for ( i = 0;  i &lt; nc; i ++ ) </a>
+<a name="ln1247">                    FreeInpAtomData( &amp;(HGen-&gt;InpCurAtData[k][i]) );</a>
+<a name="ln1248">                inchi_free(HGen-&gt;InpCurAtData[k]);</a>
+<a name="ln1249">                HGen-&gt;InpCurAtData[k] = NULL;</a>
+<a name="ln1250">            }</a>
+<a name="ln1251"> </a>
+<a name="ln1252"> </a>
+<a name="ln1253">            if ( HGen-&gt;cti[k] )</a>
+<a name="ln1254">            {</a>
+<a name="ln1255">                if ( (HGen-&gt;cti[k])-&gt;at[TAUT_YES] )</a>
+<a name="ln1256">                {</a>
+<a name="ln1257">                    inchi_free( (HGen-&gt;cti[k])-&gt;at[TAUT_YES] );</a>
+<a name="ln1258">                    (HGen-&gt;cti[k])-&gt;at[TAUT_YES] = NULL;</a>
+<a name="ln1259">                }</a>
+<a name="ln1260">    </a>
+<a name="ln1261">                if ( (HGen-&gt;cti[k])-&gt;at[TAUT_NON] )</a>
+<a name="ln1262">                {</a>
+<a name="ln1263">                    inchi_free( (HGen-&gt;cti[k])-&gt;at[TAUT_NON] );</a>
+<a name="ln1264">                    (HGen-&gt;cti[k])-&gt;at[TAUT_NON] = NULL;</a>
+<a name="ln1265">                }</a>
+<a name="ln1266"> </a>
+<a name="ln1267">                if (&amp;((HGen-&gt;cti[k])-&gt;vt_group_info)) </a>
+<a name="ln1268">                    free_t_group_info(&amp;((HGen-&gt;cti[k])-&gt;vt_group_info));</a>
+<a name="ln1269">    </a>
+<a name="ln1270">                if (&amp;((HGen-&gt;cti[k])-&gt;vt_group_info_orig)) </a>
+<a name="ln1271">                    free_t_group_info(&amp;((HGen-&gt;cti[k])-&gt;vt_group_info_orig));</a>
+<a name="ln1272"> </a>
+<a name="ln1273">                inchi_free(HGen-&gt;cti[k]);</a>
+<a name="ln1274">                HGen-&gt;cti[k] = NULL;</a>
+<a name="ln1275">            }</a>
+<a name="ln1276"> </a>
+<a name="ln1277">        }</a>
+<a name="ln1278"> </a>
+<a name="ln1279"> </a>
+<a name="ln1280">        for ( k = 0;  k &lt; INCHI_NUM; k++) </a>
+<a name="ln1281">        {</a>
+<a name="ln1282">            nc = HGen-&gt;StructData.num_components[k];</a>
+<a name="ln1283">            if ( HGen-&gt;InpNormAtData[k] )</a>
+<a name="ln1284">            {</a>
+<a name="ln1285">                for ( i = 0;  i &lt; nc; i ++ ) </a>
+<a name="ln1286">                    FreeInpAtomData( &amp;(HGen-&gt;InpNormAtData[k][i]) );</a>
+<a name="ln1287">                inchi_free(HGen-&gt;InpNormAtData[k]);</a>
+<a name="ln1288">                HGen-&gt;InpNormAtData[k] = NULL;</a>
+<a name="ln1289">            }</a>
+<a name="ln1290"> </a>
+<a name="ln1291">            if ( HGen-&gt;InpNormTautData[k] )</a>
+<a name="ln1292">            {</a>
+<a name="ln1293">                for ( i = 0;  i &lt; nc; i ++ ) </a>
+<a name="ln1294">                    FreeInpAtomData( &amp;(HGen-&gt;InpNormTautData[k][i]) );</a>
+<a name="ln1295">                inchi_free(HGen-&gt;InpNormTautData[k]);</a>
+<a name="ln1296">                HGen-&gt;InpNormTautData[k] = NULL;</a>
+<a name="ln1297">            }</a>
+<a name="ln1298"> </a>
+<a name="ln1299"> </a>
+<a name="ln1300">            if ( pGenData-&gt;NormAtomsTaut[k] )</a>
+<a name="ln1301">            {</a>
+<a name="ln1302">                /* </a>
+<a name="ln1303">                for ( i = 0;  i &lt; nc; i ++ ) </a>
+<a name="ln1304">                    FreeInpAtomData( &amp;(pGenData-&gt;NormAtomsTaut[k][i]) );</a>
+<a name="ln1305">                */</a>
+<a name="ln1306">                inchi_free(pGenData-&gt;NormAtomsTaut[k]);</a>
+<a name="ln1307">                pGenData-&gt;NormAtomsTaut[k] = NULL;</a>
+<a name="ln1308">            }</a>
+<a name="ln1309">            if ( pGenData-&gt;NormAtomsNontaut[k] )</a>
+<a name="ln1310">            {</a>
+<a name="ln1311">                /* for ( i = 0;  i &lt; nc; i ++ ) </a>
+<a name="ln1312">                    FreeInpAtomData( &amp;(pGenData-&gt;NormAtomsNontaut[k][i]) );</a>
+<a name="ln1313">                */</a>
+<a name="ln1314">                inchi_free(pGenData-&gt;NormAtomsNontaut[k]);</a>
+<a name="ln1315">                pGenData-&gt;NormAtomsNontaut[k] = NULL;</a>
+<a name="ln1316">            }</a>
+<a name="ln1317"> </a>
+<a name="ln1318"> </a>
+<a name="ln1319">        }</a>
+<a name="ln1320"> </a>
+<a name="ln1321">        /*  free INChI memory */</a>
+<a name="ln1322">        FreeAllINChIArrays( HGen-&gt;pINChI, HGen-&gt;pINChI_Aux, HGen-&gt;StructData.num_components );</a>
+<a name="ln1323">        memset(HGen-&gt;pINChI,     0, sizeof(HGen-&gt;pINChI) );</a>
+<a name="ln1324">        memset(HGen-&gt;pINChI_Aux, 0, sizeof(HGen-&gt;pINChI_Aux) );</a>
+<a name="ln1325">        </a>
+<a name="ln1326">        HGen-&gt;szTitle[0] = '\0';</a>
+<a name="ln1327">    }</a>
+<a name="ln1328"> </a>
+<a name="ln1329">    memset(&amp;(HGen-&gt;StructData), 0, sizeof(STRUCT_DATA) );    </a>
+<a name="ln1330"> </a>
+<a name="ln1331">    memset( pResults, 0, sizeof(*pResults) );</a>
+<a name="ln1332">    memset( pGenData , 0, sizeof(*pGenData) );</a>
+<a name="ln1333"> </a>
+<a name="ln1334">    return;</a>
+<a name="ln1335">}</a>
+<a name="ln1336"> </a>
+<a name="ln1337"> </a>
+<a name="ln1338">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^</a>
+<a name="ln1339">InChI Generator: destroy generator</a>
+<a name="ln1340">^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/</a>
+<a name="ln1341">void INCHI_DECL STDINCHIGEN_Destroy(INCHIGEN_HANDLE HGen)</a>
+<a name="ln1342">{</a>
+<a name="ln1343">    INCHIGEN_Destroy(HGen) ;</a>
+<a name="ln1344">}</a>
+<a name="ln1345"> </a>
+<a name="ln1346"> </a>
+<a name="ln1347">void INCHI_DECL INCHIGEN_Destroy(INCHIGEN_HANDLE _HGen) </a>
+<a name="ln1348">{</a>
+<a name="ln1349">INCHIGEN_CONTROL * HGen = (INCHIGEN_CONTROL *)_HGen; </a>
+<a name="ln1350"> </a>
+<a name="ln1351">    if (NULL!=HGen)</a>
+<a name="ln1352">    {</a>
+<a name="ln1353">        if ( HGen-&gt;pStr )           </a>
+<a name="ln1354">            inchi_free(HGen-&gt;pStr);</a>
+<a name="ln1355">            </a>
+<a name="ln1356">        inchi_ios_close(&amp;(HGen-&gt;inchi_file[0]));</a>
+<a name="ln1357">        inchi_ios_close(&amp;(HGen-&gt;inchi_file[1]));</a>
+<a name="ln1358">        inchi_ios_close(&amp;(HGen-&gt;inchi_file[2]));</a>
+<a name="ln1359"> </a>
+<a name="ln1360">        inchi_free(HGen);</a>
+<a name="ln1361">    }</a>
+<a name="ln1362">}</a>
+<a name="ln1363"> </a>
+<a name="ln1364"> </a>
+<a name="ln1365"> </a>
+<a name="ln1366"> </a>
+<a name="ln1367"> </a>
+<a name="ln1368">/********************************************************************/</a>
+<a name="ln1369"> </a>
+<a name="ln1370">#if( defined( _WIN32 ) &amp;&amp; defined( _MSC_VER ) &amp;&amp; _MSC_VER &gt;= 800 &amp;&amp; defined(_USRDLL) &amp;&amp; defined(BUILD_LINK_AS_DLL) )</a>
+<a name="ln1371">    /* Win32 &amp; MS VC ++, compile and link as a DLL */</a>
+<a name="ln1372">/*********************************************************/</a>
+<a name="ln1373">/*   C calling conventions export from Win32 dll         */</a>
+<a name="ln1374">/*********************************************************/</a>
+<a name="ln1375">/* prototypes */</a>
+<a name="ln1376">#ifndef COMPILE_ALL_CPP</a>
+<a name="ln1377">#ifdef __cplusplus</a>
+<a name="ln1378">extern &quot;C&quot; {</a>
+<a name="ln1379">#endif</a>
+<a name="ln1380">#endif</a>
+<a name="ln1381">INCHIGEN_HANDLE cdecl_INCHIGEN_Create(void); </a>
+<a name="ln1382">INCHIGEN_HANDLE cdecl_STDINCHIGEN_Create(void); </a>
+<a name="ln1383">int  cdecl_INCHIGEN_Setup( INCHIGEN_HANDLE HGen, INCHIGEN_DATA * pGenData, inchi_Input * pInp); </a>
+<a name="ln1384">int  cdecl_STDINCHIGEN_Setup( INCHIGEN_HANDLE HGen, INCHIGEN_DATA * pGenData, inchi_Input * pInp); </a>
+<a name="ln1385">int  cdecl_INCHIGEN_DoNormalization( INCHIGEN_HANDLE HGen, INCHIGEN_DATA *pGenData ); </a>
+<a name="ln1386">int  cdecl_STDINCHIGEN_DoNormalization( INCHIGEN_HANDLE HGen, INCHIGEN_DATA *pGenData ); </a>
+<a name="ln1387">int  cdecl_INCHIGEN_DoCanonicalization( INCHIGEN_HANDLE HGen, INCHIGEN_DATA *pGenData ); </a>
+<a name="ln1388">int  cdecl_STDINCHIGEN_DoCanonicalization( INCHIGEN_HANDLE HGen, INCHIGEN_DATA *pGenData ); </a>
+<a name="ln1389">int  cdecl_INCHIGEN_DoSerialization(INCHIGEN_HANDLE HGen, INCHIGEN_DATA * pGenData, inchi_Output * pResults );</a>
+<a name="ln1390">int  cdecl_STDINCHIGEN_DoSerialization(INCHIGEN_HANDLE HGen, INCHIGEN_DATA * pGenData, inchi_Output * pResults ); </a>
+<a name="ln1391">void cdecl_INCHIGEN_Reset( INCHIGEN_HANDLE HGen, INCHIGEN_DATA * pGenData, inchi_Output * pResults); </a>
+<a name="ln1392">void cdecl_STDINCHIGEN_Reset( INCHIGEN_HANDLE HGen, INCHIGEN_DATA * pGenData, inchi_Output * pResults); </a>
+<a name="ln1393">void cdecl_INCHIGEN_Destroy( INCHIGEN_HANDLE HGen ); </a>
+<a name="ln1394">void cdecl_STDINCHIGEN_Destroy( INCHIGEN_HANDLE HGen ); </a>
+<a name="ln1395">#ifndef COMPILE_ALL_CPP</a>
+<a name="ln1396">#ifdef __cplusplus</a>
+<a name="ln1397">}</a>
+<a name="ln1398">#endif</a>
+<a name="ln1399">#endif</a>
+<a name="ln1400"> </a>
+<a name="ln1401">/* implementation */</a>
+<a name="ln1402">/* libinchi.def provides export withou cdecl_ prefixes */</a>
+<a name="ln1403"> </a>
+<a name="ln1404">/********************************************************/</a>
+<a name="ln1405">INCHIGEN_HANDLE cdecl_INCHIGEN_Create(void) </a>
+<a name="ln1406">{</a>
+<a name="ln1407">    return INCHIGEN_Create( );</a>
+<a name="ln1408">}</a>
+<a name="ln1409">/********************************************************/</a>
+<a name="ln1410">INCHIGEN_HANDLE cdecl_STDINCHIGEN_Create(void) </a>
+<a name="ln1411">{</a>
+<a name="ln1412">    return STDINCHIGEN_Create( );</a>
+<a name="ln1413">}</a>
+<a name="ln1414">/********************************************************/</a>
+<a name="ln1415">int cdecl_INCHIGEN_Setup( INCHIGEN_HANDLE HGen, INCHIGEN_DATA * pGenData, inchi_Input * pInp) </a>
+<a name="ln1416">{</a>
+<a name="ln1417">    return INCHIGEN_Setup( HGen, pGenData, pInp );</a>
+<a name="ln1418">}</a>
+<a name="ln1419">/********************************************************/</a>
+<a name="ln1420">int cdecl_STDINCHIGEN_Setup( INCHIGEN_HANDLE HGen, INCHIGEN_DATA * pGenData, inchi_Input * pInp) </a>
+<a name="ln1421">{</a>
+<a name="ln1422">    return STDINCHIGEN_Setup( HGen, pGenData, pInp );</a>
+<a name="ln1423">}</a>
+<a name="ln1424">/********************************************************/</a>
+<a name="ln1425">int cdecl_INCHIGEN_DoNormalization( INCHIGEN_HANDLE HGen, INCHIGEN_DATA *pGenData ) </a>
+<a name="ln1426">{</a>
+<a name="ln1427">    return INCHIGEN_DoNormalization( HGen, pGenData );</a>
+<a name="ln1428">}</a>
+<a name="ln1429">/********************************************************/</a>
+<a name="ln1430">int cdecl_STDINCHIGEN_DoNormalization( INCHIGEN_HANDLE HGen, INCHIGEN_DATA *pGenData ) </a>
+<a name="ln1431">{</a>
+<a name="ln1432">    return STDINCHIGEN_DoNormalization( HGen, pGenData );</a>
+<a name="ln1433">}</a>
+<a name="ln1434">/********************************************************/</a>
+<a name="ln1435">int cdecl_INCHIGEN_DoCanonicalization( INCHIGEN_HANDLE HGen, INCHIGEN_DATA *pGenData ) </a>
+<a name="ln1436">{</a>
+<a name="ln1437">    return INCHIGEN_DoCanonicalization( HGen, pGenData );</a>
+<a name="ln1438">}/********************************************************/</a>
+<a name="ln1439">int cdecl_STDINCHIGEN_DoCanonicalization( INCHIGEN_HANDLE HGen, INCHIGEN_DATA *pGenData ) </a>
+<a name="ln1440">{</a>
+<a name="ln1441">    return STDINCHIGEN_DoCanonicalization( HGen, pGenData );</a>
+<a name="ln1442">}</a>
+<a name="ln1443">/********************************************************/</a>
+<a name="ln1444">int cdecl_INCHIGEN_DoSerialization( INCHIGEN_HANDLE HGen, INCHIGEN_DATA * pGenData, inchi_Output * pResults ) </a>
+<a name="ln1445">{</a>
+<a name="ln1446">    return INCHIGEN_DoSerialization( HGen, pGenData, pResults );</a>
+<a name="ln1447">}</a>
+<a name="ln1448">/********************************************************/</a>
+<a name="ln1449">int cdecl_STDINCHIGEN_DoSerialization( INCHIGEN_HANDLE HGen, INCHIGEN_DATA * pGenData, inchi_Output * pResults ) </a>
+<a name="ln1450">{</a>
+<a name="ln1451">    return STDINCHIGEN_DoSerialization( HGen, pGenData, pResults );</a>
+<a name="ln1452">}</a>
+<a name="ln1453">/********************************************************/</a>
+<a name="ln1454">void cdecl_INCHIGEN_Reset( INCHIGEN_HANDLE HGen , INCHIGEN_DATA *pGenData, inchi_Output *pResults) </a>
+<a name="ln1455">{</a>
+<a name="ln1456">    INCHIGEN_Reset( HGen, pGenData, pResults );</a>
+<a name="ln1457">}</a>
+<a name="ln1458">/********************************************************/</a>
+<a name="ln1459">void cdecl_STDINCHIGEN_Reset( INCHIGEN_HANDLE HGen , INCHIGEN_DATA *pGenData, inchi_Output *pResults) </a>
+<a name="ln1460">{</a>
+<a name="ln1461">    STDINCHIGEN_Reset( HGen, pGenData, pResults );</a>
+<a name="ln1462">}</a>
+<a name="ln1463">/********************************************************/</a>
+<a name="ln1464">void cdecl_INCHIGEN_Destroy( INCHIGEN_HANDLE HGen ) </a>
+<a name="ln1465">{</a>
+<a name="ln1466">    INCHIGEN_Destroy( HGen );</a>
+<a name="ln1467">}</a>
+<a name="ln1468">/********************************************************/</a>
+<a name="ln1469">void cdecl_STDINCHIGEN_Destroy( INCHIGEN_HANDLE HGen ) </a>
+<a name="ln1470">{</a>
+<a name="ln1471">    STDINCHIGEN_Destroy( HGen );</a>
+<a name="ln1472">}</a>
+<a name="ln1473">#endif</a>
+<a name="ln1474"> </a>
+<a name="ln1475">#if( defined(__GNUC__) &amp;&amp; __GNUC__ &gt;= 3 &amp;&amp; defined(__MINGW32__) &amp;&amp; defined(_WIN32) )</a>
+<a name="ln1476">#include &lt;windows.h&gt;</a>
+<a name="ln1477">/*********************************************************/</a>
+<a name="ln1478">/*   Pacal calling conventions export from Win32 dll     */</a>
+<a name="ln1479">/*********************************************************/</a>
+<a name="ln1480">#ifndef COMPILE_ALL_CPP</a>
+<a name="ln1481">#ifdef __cplusplus</a>
+<a name="ln1482">extern &quot;C&quot; {</a>
+<a name="ln1483">#endif</a>
+<a name="ln1484">#endif</a>
+<a name="ln1485">/* prototypes */</a>
+<a name="ln1486">/********************************************************/</a>
+<a name="ln1487">INCHIGEN_HANDLE PASCAL pasc_INCHIGEN_Create(void); </a>
+<a name="ln1488">INCHIGEN_HANDLE PASCAL pasc_STDINCHIGEN_Create(void); </a>
+<a name="ln1489">int  PASCAL pasc_INCHIGEN_Setup( INCHIGEN_HANDLE HGen, INCHIGEN_DATA * pGenData, inchi_Input * pInp ); </a>
+<a name="ln1490">int  PASCAL pasc_STDINCHIGEN_Setup( INCHIGEN_HANDLE HGen, INCHIGEN_DATA * pGenData, inchi_Input * pInp ); </a>
+<a name="ln1491">int  PASCAL pasc_INCHIGEN_DoNormalization( INCHIGEN_HANDLE HGen, INCHIGEN_DATA *pGenData ); </a>
+<a name="ln1492">int  PASCAL pasc_STDINCHIGEN_DoNormalization( INCHIGEN_HANDLE HGen, INCHIGEN_DATA *pGenData ); </a>
+<a name="ln1493">int  PASCAL pasc_INCHIGEN_DoCanonicalization( INCHIGEN_HANDLE _HGen, INCHIGEN_DATA *pGenData ); </a>
+<a name="ln1494">int  PASCAL pasc_STDINCHIGEN_DoCanonicalization( INCHIGEN_HANDLE _HGen, INCHIGEN_DATA *pGenData ); </a>
+<a name="ln1495">int  PASCAL pasc_INCHIGEN_DoSerialization( INCHIGEN_HANDLE HGen, INCHIGEN_DATA * pGenData, inchi_Output * pResults ); </a>
+<a name="ln1496">int  PASCAL pasc_STDINCHIGEN_DoSerialization( INCHIGEN_HANDLE HGen, INCHIGEN_DATA * pGenData, inchi_Output * pResults ); </a>
+<a name="ln1497">void PASCAL pasc_INCHIGEN_Reset( INCHIGEN_HANDLE HGen, INCHIGEN_DATA *pGenData, inchi_Output *pResults ); </a>
+<a name="ln1498">void PASCAL pasc_STDINCHIGEN_Reset( INCHIGEN_HANDLE HGen, INCHIGEN_DATA *pGenData, inchi_Output *pResults ); </a>
+<a name="ln1499">void PASCAL pasc_INCHIGEN_Destroy(INCHIGEN_HANDLE HGen); </a>
+<a name="ln1500">void PASCAL pasc_STDINCHIGEN_Destroy(INCHIGEN_HANDLE HGen); </a>
+<a name="ln1501">#ifndef COMPILE_ALL_CPP</a>
+<a name="ln1502">#ifdef __cplusplus</a>
+<a name="ln1503">}</a>
+<a name="ln1504">#endif</a>
+<a name="ln1505">#endif</a>
+<a name="ln1506"> </a>
+<a name="ln1507">/* implementation */</a>
+<a name="ln1508">/* libinchi.def provides export without PASCAL pasc_ prefixes */</a>
+<a name="ln1509">/********************************************************/</a>
+<a name="ln1510">INCHIGEN_HANDLE PASCAL pasc_INCHIGEN_Create(void) </a>
+<a name="ln1511">{</a>
+<a name="ln1512">    return INCHIGEN_Create( );</a>
+<a name="ln1513">}</a>
+<a name="ln1514">/********************************************************/</a>
+<a name="ln1515">INCHIGEN_HANDLE PASCAL pasc_STDINCHIGEN_Create(void) </a>
+<a name="ln1516">{</a>
+<a name="ln1517">    return STDINCHIGEN_Create( );</a>
+<a name="ln1518">}</a>
+<a name="ln1519">/********************************************************/</a>
+<a name="ln1520">int PASCAL pasc_INCHIGEN_Setup( INCHIGEN_HANDLE HGen, INCHIGEN_DATA * pGenData, inchi_Input * pInp) </a>
+<a name="ln1521">{</a>
+<a name="ln1522">    return INCHIGEN_Setup( HGen, pGenData, pInp);</a>
+<a name="ln1523">}</a>
+<a name="ln1524">/********************************************************/</a>
+<a name="ln1525">int PASCAL pasc_STDINCHIGEN_Setup( INCHIGEN_HANDLE HGen, INCHIGEN_DATA * pGenData, inchi_Input * pInp) </a>
+<a name="ln1526">{</a>
+<a name="ln1527">    return STDINCHIGEN_Setup( HGen, pGenData, pInp);</a>
+<a name="ln1528">}</a>
+<a name="ln1529">/********************************************************/</a>
+<a name="ln1530">int PASCAL pasc_INCHIGEN_DoNormalization( INCHIGEN_HANDLE HGen, INCHIGEN_DATA *pGenData ) </a>
+<a name="ln1531">{</a>
+<a name="ln1532">    return INCHIGEN_DoNormalization( HGen, pGenData );</a>
+<a name="ln1533">}/********************************************************/</a>
+<a name="ln1534">int PASCAL pasc_STDINCHIGEN_DoNormalization( INCHIGEN_HANDLE HGen, INCHIGEN_DATA *pGenData ) </a>
+<a name="ln1535">{</a>
+<a name="ln1536">    return STDINCHIGEN_DoNormalization( HGen, pGenData );</a>
+<a name="ln1537">}</a>
+<a name="ln1538">/********************************************************/</a>
+<a name="ln1539">int PASCAL pasc_INCHIGEN_DoCanonicalization( INCHIGEN_HANDLE HGen, INCHIGEN_DATA *pGenData ) </a>
+<a name="ln1540">{</a>
+<a name="ln1541">    return INCHIGEN_DoCanonicalization( HGen, pGenData );</a>
+<a name="ln1542">}/********************************************************/</a>
+<a name="ln1543">int PASCAL pasc_STDINCHIGEN_DoCanonicalization( INCHIGEN_HANDLE HGen, INCHIGEN_DATA *pGenData ) </a>
+<a name="ln1544">{</a>
+<a name="ln1545">    return STDINCHIGEN_DoCanonicalization( HGen, pGenData );</a>
+<a name="ln1546">}</a>
+<a name="ln1547">/********************************************************/</a>
+<a name="ln1548">int PASCAL pasc_INCHIGEN_DoSerialization( INCHIGEN_HANDLE HGen, INCHIGEN_DATA * pGenData, inchi_Output * pResults ) </a>
+<a name="ln1549">{</a>
+<a name="ln1550">    return INCHIGEN_DoSerialization( HGen, pGenData, pResults );</a>
+<a name="ln1551">}/********************************************************/</a>
+<a name="ln1552">int PASCAL pasc_STDINCHIGEN_DoSerialization( INCHIGEN_HANDLE HGen, INCHIGEN_DATA * pGenData, inchi_Output * pResults ) </a>
+<a name="ln1553">{</a>
+<a name="ln1554">    return STDINCHIGEN_DoSerialization( HGen, pGenData, pResults );</a>
+<a name="ln1555">}</a>
+<a name="ln1556">/********************************************************/</a>
+<a name="ln1557">void PASCAL pasc_INCHIGEN_Reset( INCHIGEN_HANDLE HGen, INCHIGEN_DATA *pGenData,  inchi_Output *pResults) </a>
+<a name="ln1558">{</a>
+<a name="ln1559">    INCHIGEN_Reset( HGen, pGenData, pResults );</a>
+<a name="ln1560">}</a>
+<a name="ln1561">/********************************************************/</a>
+<a name="ln1562">void PASCAL pasc_STDINCHIGEN_Reset( INCHIGEN_HANDLE HGen, INCHIGEN_DATA *pGenData,  inchi_Output *pResults) </a>
+<a name="ln1563">{</a>
+<a name="ln1564">    STDINCHIGEN_Reset( HGen, pGenData, pResults );</a>
+<a name="ln1565">}</a>
+<a name="ln1566">/********************************************************/</a>
+<a name="ln1567">void PASCAL pasc_INCHIGEN_Destroy(INCHIGEN_HANDLE HGen) </a>
+<a name="ln1568">{</a>
+<a name="ln1569">    INCHIGEN_Destroy( HGen);</a>
+<a name="ln1570">}</a>
+<a name="ln1571">/********************************************************/</a>
+<a name="ln1572">void PASCAL pasc_STDINCHIGEN_Destroy(INCHIGEN_HANDLE HGen) </a>
+<a name="ln1573">{</a>
+<a name="ln1574">    STDINCHIGEN_Destroy( HGen);</a>
+<a name="ln1575">}</a>
+<a name="ln1576">#endif </a>
+<a name="ln1577"> </a>
+<a name="ln1578"> </a>
+<a name="ln1579"> </a>
+<a name="ln1580"> </a>
+<a name="ln1581"> </a>
+<a name="ln1582"> </a>
+<a name="ln1583"> </a>
+<a name="ln1584"> </a>
+<a name="ln1585"> </a>
+
+</code></pre>
+<div class="balloon" rel="403"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v512/" target="_blank">V512</a> A call of the 'memset' function will lead to underflow of the buffer 'log_file'.</p></div>
+<div class="balloon" rel="424"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'ip->bNoStructLabels' is always true.</p></div>
+<div class="balloon" rel="463"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'retcode' variable was assigned the same value.</p></div>
+<div class="balloon" rel="465"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'retcode' variable was assigned the same value.</p></div>
+<div class="balloon" rel="468"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'retcode' variable was assigned the same value.</p></div>
+<div class="balloon" rel="469"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'retcode' variable was assigned the same value.</p></div>
+<div class="balloon" rel="470"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'retcode' variable was assigned the same value.</p></div>
+<div class="balloon" rel="477"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v522/" target="_blank">V522</a> Dereferencing of the null pointer 'pGenData' might take place.</p></div>
+<div class="balloon" rel="636"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'sd->bUserQuit' is always false.</p></div>
+<div class="balloon" rel="641"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: nRet != 3.</p></div>
+<div class="balloon" rel="805"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'sd->bUserQuit' is always false.</p></div>
+<div class="balloon" rel="814"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: nRet != 3.</p></div>
+<div class="balloon" rel="814"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: nRet != 2.</p></div>
+<div class="balloon" rel="850"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: !sd->bUserQuit.</p></div>
+<div class="balloon" rel="869"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'nRet' variable was assigned the same value.</p></div>
+<div class="balloon" rel="871"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'nRet' variable was assigned the same value.</p></div>
+<div class="balloon" rel="872"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'nRet' variable was assigned the same value.</p></div>
+<div class="balloon" rel="1103"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'output_file->s.pStr' is always true.</p></div>
+<div class="balloon" rel="1104"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'log_file->s.pStr' is always true.</p></div>
+<div class="balloon" rel="1154"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'ip->path[i]' is always true.</p></div>
+<div class="balloon" rel="1191"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'pResults->szInChI' is always true.</p></div>
+<div class="balloon" rel="1192"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'pResults->szLog' is always true.</p></div>
+<div class="balloon" rel="1193"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'pResults->szMessage' is always true.</p></div>
+<div class="balloon" rel="1218"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'HGen->InpParms.path[i]' is always true.</p></div>
+<div class="balloon" rel="1329"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1004/" target="_blank">V1004</a> The 'HGen' pointer was used unsafely after it was verified against nullptr. Check lines: 1198, 1329.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,1663 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>ichiprt2.c</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/*</a>
+<a name="ln2"> * International Chemical Identifier (InChI)</a>
+<a name="ln3"> * Version 1</a>
+<a name="ln4"> * Software version 1.04</a>
+<a name="ln5"> * September 9, 2011</a>
+<a name="ln6"> *</a>
+<a name="ln7"> * The InChI library and programs are free software developed under the</a>
+<a name="ln8"> * auspices of the International Union of Pure and Applied Chemistry (IUPAC).</a>
+<a name="ln9"> * Originally developed at NIST. Modifications and additions by IUPAC </a>
+<a name="ln10"> * and the InChI Trust.</a>
+<a name="ln11"> *</a>
+<a name="ln12"> * IUPAC/InChI-Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln13"> * Software version 1.0.</a>
+<a name="ln14"> * Copyright (C) IUPAC and InChI Trust Limited</a>
+<a name="ln15"> * </a>
+<a name="ln16"> * This library is free software; you can redistribute it and/or modify it under the </a>
+<a name="ln17"> * terms of the IUPAC/InChI Trust Licence for the International Chemical Identifier </a>
+<a name="ln18"> * (InChI) Software version 1.0; either version 1.0 of the License, or </a>
+<a name="ln19"> * (at your option) any later version.</a>
+<a name="ln20"> * </a>
+<a name="ln21"> * This library is distributed in the hope that it will be useful, </a>
+<a name="ln22"> * but WITHOUT ANY WARRANTY; without even the implied warranty of </a>
+<a name="ln23"> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  </a>
+<a name="ln24"> * See the IUPAC/InChI Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln25"> * Software version 1.0 for more details.</a>
+<a name="ln26"> * </a>
+<a name="ln27"> * You should have received a copy of the IUPAC/InChI Trust Licence for the </a>
+<a name="ln28"> * International Chemical Identifier (InChI) Software version 1.0 along with </a>
+<a name="ln29"> * this library; if not, write to:</a>
+<a name="ln30"> * </a>
+<a name="ln31"> * The InChI Trust</a>
+<a name="ln32"> * c/o FIZ CHEMIE Berlin</a>
+<a name="ln33"> * Franklinstrasse 11</a>
+<a name="ln34"> * 10587 Berlin</a>
+<a name="ln35"> * GERMANY</a>
+<a name="ln36"> * </a>
+<a name="ln37"> */</a>
+<a name="ln38"> </a>
+<a name="ln39"> </a>
+<a name="ln40">#include &lt;stdio.h&gt;</a>
+<a name="ln41">#include &lt;stdlib.h&gt;</a>
+<a name="ln42">#include &lt;string.h&gt;</a>
+<a name="ln43">#include &lt;ctype.h&gt;</a>
+<a name="ln44"> </a>
+<a name="ln45">#include &quot;mode.h&quot;</a>
+<a name="ln46"> </a>
+<a name="ln47">#include &quot;inpdef.h&quot;</a>
+<a name="ln48">#include &quot;ichi.h&quot;</a>
+<a name="ln49">#include &quot;strutil.h&quot;</a>
+<a name="ln50">#include &quot;util.h&quot;</a>
+<a name="ln51">#include &quot;extr_ct.h&quot;</a>
+<a name="ln52">#include &quot;ichitaut.h&quot;</a>
+<a name="ln53">#include &quot;ichinorm.h&quot;</a>
+<a name="ln54">#include &quot;ichicant.h&quot;</a>
+<a name="ln55">#include &quot;ichicano.h&quot;</a>
+<a name="ln56">#include &quot;ichicomn.h&quot;</a>
+<a name="ln57"> </a>
+<a name="ln58">#include &quot;ichicomp.h&quot;</a>
+<a name="ln59">#include &quot;ichimain.h&quot;</a>
+<a name="ln60">#include &quot;ichimake.h&quot;</a>
+<a name="ln61"> </a>
+<a name="ln62">/*****************************************************************************************/</a>
+<a name="ln63">int Eql_INChI_Stereo( INChI_Stereo *s1, int eql1, INChI_Stereo *s2, int eql2, int bRelRac )</a>
+<a name="ln64">{</a>
+<a name="ln65">    int inv1=0, inv2=0, len;</a>
+<a name="ln66">    </a>
+<a name="ln67">    if ( !s1 ) {</a>
+<a name="ln68">        return 0;</a>
+<a name="ln69">    }</a>
+<a name="ln70">#if ( REL_RAC_STEREO_IGN_1_SC == 1 )</a>
+<a name="ln71">#else</a>
+<a name="ln72">    bRelRac = 0;</a>
+<a name="ln73">#endif</a>
+<a name="ln74">    </a>
+<a name="ln75">    if( EQL_SP2 == eql1 ) {</a>
+<a name="ln76">        if ( (len=s1-&gt;nNumberOfStereoBonds) &gt; 0 &amp;&amp; s1-&gt;b_parity &amp;&amp; s1-&gt;nBondAtom1 &amp;&amp; s1-&gt;nBondAtom2 ) {</a>
+<a name="ln77">            if ( !s2  ) {</a>
+<a name="ln78">                if ( EQL_EXISTS == eql2  ) {</a>
+<a name="ln79">                    /* find whether double bond stereo exists*/</a>
+<a name="ln80">                    return 1;</a>
+<a name="ln81">                }</a>
+<a name="ln82">                return 0;</a>
+<a name="ln83">            }</a>
+<a name="ln84">            if ( EQL_SP2 == eql2 &amp;&amp;</a>
+<a name="ln85">                 len == s2-&gt;nNumberOfStereoBonds &amp;&amp; s2-&gt;b_parity &amp;&amp; s2-&gt;nBondAtom1 &amp;&amp; s2-&gt;nBondAtom2 &amp;&amp;</a>
+<a name="ln86">                 !memcmp( s1-&gt;nBondAtom1, s2-&gt;nBondAtom1, len * sizeof(s1-&gt;nBondAtom1[0])) &amp;&amp;</a>
+<a name="ln87">                 !memcmp( s1-&gt;nBondAtom2, s2-&gt;nBondAtom2, len * sizeof(s1-&gt;nBondAtom2[0])) &amp;&amp;</a>
+<a name="ln88">                 !memcmp( s1-&gt;b_parity,   s2-&gt;b_parity,   len * sizeof(s1-&gt;b_parity[0])) ) {</a>
+<a name="ln89">                return 1;</a>
+<a name="ln90">            }</a>
+<a name="ln91">        }</a>
+<a name="ln92">        return 0;</a>
+<a name="ln93">    } else</a>
+<a name="ln94">    if ( (eql1 == EQL_SP3 || (inv1 = (eql1 == EQL_SP3_INV))) &amp;&amp;</a>
+<a name="ln95">         (len=s1-&gt;nNumberOfStereoCenters) &gt; (bRelRac? 1 : 0) ) {</a>
+<a name="ln96">        </a>
+<a name="ln97">        S_CHAR  *t_parity1, *t_parity2;</a>
+<a name="ln98">        AT_NUMB *nNumber1, *nNumber2;</a>
+<a name="ln99">        if ( inv1 ) {</a>
+<a name="ln100">            if ( s1-&gt;nCompInv2Abs ) {</a>
+<a name="ln101">                t_parity1 = s1-&gt;t_parityInv;</a>
+<a name="ln102">                nNumber1  = s1-&gt;nNumberInv;</a>
+<a name="ln103">            } else {</a>
+<a name="ln104">                return 0;</a>
+<a name="ln105">            }</a>
+<a name="ln106">        } else {</a>
+<a name="ln107">            t_parity1 = s1-&gt;t_parity;</a>
+<a name="ln108">            nNumber1  = s1-&gt;nNumber;</a>
+<a name="ln109">        }</a>
+<a name="ln110"> </a>
+<a name="ln111">        if ( t_parity1 &amp;&amp; nNumber1 ) {</a>
+<a name="ln112">            if ( !s2 ) {</a>
+<a name="ln113">                if ( EQL_EXISTS == eql2 &amp;&amp; (!inv1 || s1-&gt;nCompInv2Abs) ) {</a>
+<a name="ln114">                    /* the 1st sp3 (inverted if requested) stereo exists*/</a>
+<a name="ln115">                    return 1;</a>
+<a name="ln116">                }</a>
+<a name="ln117">                return 0;  /* both sp3 do not exist */</a>
+<a name="ln118">            }</a>
+<a name="ln119">            if( (eql2 == EQL_SP3 || (inv2 = (eql2 == EQL_SP3_INV))) &amp;&amp;</a>
+<a name="ln120">                len == s2-&gt;nNumberOfStereoCenters ) {</a>
+<a name="ln121">                if ( inv2 ) {</a>
+<a name="ln122">                    if ( s2-&gt;nCompInv2Abs &amp;&amp; s1-&gt;nCompInv2Abs ) {</a>
+<a name="ln123">                        t_parity2 = s2-&gt;t_parityInv;</a>
+<a name="ln124">                        nNumber2  = s2-&gt;nNumberInv;</a>
+<a name="ln125">                    } else {</a>
+<a name="ln126">                        /* if one sp3 is inverted then another should have non-trivial inverted stereo */</a>
+<a name="ln127">                        return 0;</a>
+<a name="ln128">                    }</a>
+<a name="ln129">                } else {</a>
+<a name="ln130">                    if ( inv1 &amp;&amp; !s2-&gt;nCompInv2Abs ) {</a>
+<a name="ln131">                        /* if one sp3 is inverted then another should have non-trivial inverted stereo */</a>
+<a name="ln132">                        return 0;</a>
+<a name="ln133">                    }</a>
+<a name="ln134">                    t_parity2 = s2-&gt;t_parity;</a>
+<a name="ln135">                    nNumber2  = s2-&gt;nNumber;</a>
+<a name="ln136">                }</a>
+<a name="ln137">                if ( t_parity2 &amp;&amp; nNumber2 ) {</a>
+<a name="ln138">                    if ( inv1 ^ inv2 ) {</a>
+<a name="ln139">                        int i, num_inv;</a>
+<a name="ln140">                        for ( i = 0, num_inv = 0; i &lt; len; i ++ ) {</a>
+<a name="ln141">                            if ( nNumber1[i] != nNumber2[i] )</a>
+<a name="ln142">                                break;</a>
+<a name="ln143">                            if ( ATOM_PARITY_WELL_DEF(t_parity1[i]) &amp;&amp;</a>
+<a name="ln144">                                 ATOM_PARITY_WELL_DEF(t_parity2[i]) ) {</a>
+<a name="ln145">                                if ( 3 == t_parity1[i] + t_parity2[i] ) {</a>
+<a name="ln146">                                    num_inv ++;</a>
+<a name="ln147">                                } else {</a>
+<a name="ln148">                                    break;</a>
+<a name="ln149">                                }</a>
+<a name="ln150">                            } else</a>
+<a name="ln151">                            if ( t_parity1[i] != t_parity2[i] ) {</a>
+<a name="ln152">                                break;</a>
+<a name="ln153">                            }</a>
+<a name="ln154">                        }</a>
+<a name="ln155">                        return (len == i &amp;&amp; num_inv &gt; 0); </a>
+<a name="ln156">                    } else {</a>
+<a name="ln157">                        return !memcmp( t_parity1, t_parity2, len*sizeof(t_parity1[0])) &amp;&amp;</a>
+<a name="ln158">                               !memcmp( nNumber1,  nNumber2,  len*sizeof(nNumber1[0]));</a>
+<a name="ln159">                    }</a>
+<a name="ln160">                }</a>
+<a name="ln161">            }</a>
+<a name="ln162">        }</a>
+<a name="ln163">    }    </a>
+<a name="ln164">    return 0;</a>
+<a name="ln165">}</a>
+<a name="ln166">/**********************************************************************************************/</a>
+<a name="ln167">int Eql_INChI_Isotopic( INChI *i1, INChI *i2 )</a>
+<a name="ln168">{</a>
+<a name="ln169">    int eq  = i1 &amp;&amp; i2 &amp;&amp; !i1-&gt;bDeleted &amp;&amp; !i2-&gt;bDeleted &amp;&amp;</a>
+<a name="ln170">              ( i1-&gt;nNumberOfIsotopicAtoms &gt; 0 || i1-&gt;nNumberOfIsotopicTGroups &gt; 0 ) &amp;&amp;</a>
+<a name="ln171">              i1-&gt;nNumberOfIsotopicAtoms == i2-&gt;nNumberOfIsotopicAtoms &amp;&amp;</a>
+<a name="ln172">              i1-&gt;nNumberOfIsotopicTGroups == i2-&gt;nNumberOfIsotopicTGroups &amp;&amp;</a>
+<a name="ln173">             ( !i1-&gt;nNumberOfIsotopicAtoms   ||</a>
+<a name="ln174">               (i1-&gt;IsotopicAtom &amp;&amp; i2-&gt;IsotopicAtom &amp;&amp;</a>
+<a name="ln175">               !memcmp( i1-&gt;IsotopicAtom,  i2-&gt;IsotopicAtom,</a>
+<a name="ln176">                        i1-&gt;nNumberOfIsotopicAtoms  * sizeof(i1-&gt;IsotopicAtom[0]) )) ) &amp;&amp;</a>
+<a name="ln177">             ( !i1-&gt;nNumberOfIsotopicTGroups ||</a>
+<a name="ln178">               (i1-&gt;IsotopicTGroup &amp;&amp; i2-&gt;IsotopicTGroup &amp;&amp;</a>
+<a name="ln179">               !memcmp( i1-&gt;IsotopicTGroup, i2-&gt;IsotopicTGroup,</a>
+<a name="ln180">                        i1-&gt;nNumberOfIsotopicTGroups * sizeof(i1-&gt;IsotopicAtom[0]) )) );</a>
+<a name="ln181">    return eq;</a>
+<a name="ln182"> </a>
+<a name="ln183">}</a>
+<a name="ln184">/**********************************************************************************************/</a>
+<a name="ln185">int Eql_INChI_Aux_Equ( INChI_Aux *a1, int eql1, INChI_Aux *a2, int eql2 )</a>
+<a name="ln186">{</a>
+<a name="ln187">    int t1=0, t2=0, len;</a>
+<a name="ln188">    AT_NUMB *n1=NULL, *n2=NULL;</a>
+<a name="ln189">    if ( !a1 || !a2 ) {</a>
+<a name="ln190">        return 0;</a>
+<a name="ln191">    }</a>
+<a name="ln192">    t1 = (eql1 &amp; EQL_EQU_TG);</a>
+<a name="ln193">    t2 = (eql2 &amp; EQL_EQU_TG);</a>
+<a name="ln194">    if ( t1 &amp;&amp; t2 ) {</a>
+<a name="ln195">        if ( (len = a1-&gt;nNumberOfTGroups) &gt; 0 &amp;&amp; len == a2-&gt;nNumberOfTGroups &amp;&amp; !a1-&gt;bDeleted &amp;&amp; !a2-&gt;bDeleted ) {</a>
+<a name="ln196">            if (eql1 &amp; EQL_EQU_ISO) {</a>
+<a name="ln197">                if ( a1-&gt;bIsIsotopic ) {</a>
+<a name="ln198">                    n1 = a1-&gt;nConstitEquIsotopicTGroupNumbers;</a>
+<a name="ln199">                }</a>
+<a name="ln200">            } else {</a>
+<a name="ln201">                n1 = a1-&gt;nConstitEquTGroupNumbers;</a>
+<a name="ln202">            }</a>
+<a name="ln203">            if (eql2 &amp; EQL_EQU_ISO) {</a>
+<a name="ln204">                if ( a2-&gt;bIsIsotopic ) {</a>
+<a name="ln205">                    n2 = a2-&gt;nConstitEquIsotopicTGroupNumbers;</a>
+<a name="ln206">                }</a>
+<a name="ln207">            } else {</a>
+<a name="ln208">                n2 = a2-&gt;nConstitEquTGroupNumbers;</a>
+<a name="ln209">            }</a>
+<a name="ln210">        }</a>
+<a name="ln211">    } else</a>
+<a name="ln212">    if ( !t1 &amp;&amp; !t2 ) {</a>
+<a name="ln213">        if ( (len = a1-&gt;nNumberOfAtoms) &gt; 0 &amp;&amp; len == a2-&gt;nNumberOfAtoms &amp;&amp; !a1-&gt;bDeleted &amp;&amp; !a2-&gt;bDeleted ) {</a>
+<a name="ln214">            if (eql1 &amp; EQL_EQU_ISO) {</a>
+<a name="ln215">                if ( a1-&gt;bIsIsotopic ) {</a>
+<a name="ln216">                    n1 = a1-&gt;nConstitEquIsotopicNumbers;</a>
+<a name="ln217">                }</a>
+<a name="ln218">            } else {</a>
+<a name="ln219">                n1 = a1-&gt;nConstitEquNumbers;</a>
+<a name="ln220">            }</a>
+<a name="ln221">            if (eql2 &amp; EQL_EQU_ISO) {</a>
+<a name="ln222">                if ( a2-&gt;bIsIsotopic ) {</a>
+<a name="ln223">                    n2 = a2-&gt;nConstitEquIsotopicNumbers;</a>
+<a name="ln224">                }</a>
+<a name="ln225">            } else {</a>
+<a name="ln226">                n2 = a2-&gt;nConstitEquNumbers;</a>
+<a name="ln227">            }</a>
+<a name="ln228">        }</a>
+<a name="ln229">    }</a>
+<a name="ln230">    if ( n1 &amp;&amp; n2 &amp;&amp; !memcmp(n1, n2, len*sizeof(n1[0])) &amp;&amp; bHasEquString( n1, len) ) {</a>
+<a name="ln231">        return 1;</a>
+<a name="ln232">    }</a>
+<a name="ln233">    return 0;</a>
+<a name="ln234">}</a>
+<a name="ln235">/**********************************************************************************************/</a>
+<a name="ln236">int Eql_INChI_Aux_Num( INChI_Aux *a1, int eql1, INChI_Aux *a2, int eql2 )</a>
+<a name="ln237">{</a>
+<a name="ln238">    int len;</a>
+<a name="ln239">    AT_NUMB *n1=NULL, *n2=NULL;</a>
+<a name="ln240">    if ( !a1 || !a2 ) {</a>
+<a name="ln241">        return 0;</a>
+<a name="ln242">    }</a>
+<a name="ln243">    if ( (len = a1-&gt;nNumberOfAtoms) &lt;= 0 || len != a2-&gt;nNumberOfAtoms || a1-&gt;bDeleted || a2-&gt;bDeleted ) {</a>
+<a name="ln244">        return 0;</a>
+<a name="ln245">    }</a>
+<a name="ln246">    if ( ((eql1 &amp; EQL_NUM_ISO) &amp;&amp; !a1-&gt;bIsIsotopic) ||</a>
+<a name="ln247">         ((eql2 &amp; EQL_NUM_ISO) &amp;&amp; !a2-&gt;bIsIsotopic) ) {</a>
+<a name="ln248">        return 0;</a>
+<a name="ln249">    }</a>
+<a name="ln250"> </a>
+<a name="ln251">    switch ( eql1 ) {</a>
+<a name="ln252">    case EQL_NUM:</a>
+<a name="ln253">        n1 = a1-&gt;nOrigAtNosInCanonOrd;</a>
+<a name="ln254">        break;</a>
+<a name="ln255">    case EQL_NUM_ISO:</a>
+<a name="ln256">        n1 = a1-&gt;nIsotopicOrigAtNosInCanonOrd;</a>
+<a name="ln257">        break;</a>
+<a name="ln258">    case EQL_NUM_INV:</a>
+<a name="ln259">        n1 = a1-&gt;nOrigAtNosInCanonOrdInv;</a>
+<a name="ln260">        break;</a>
+<a name="ln261">    case ( EQL_NUM_INV | EQL_NUM_ISO ):</a>
+<a name="ln262">        n1 = a1-&gt;nIsotopicOrigAtNosInCanonOrdInv;</a>
+<a name="ln263">        break;</a>
+<a name="ln264">    default:</a>
+<a name="ln265">        return 0;</a>
+<a name="ln266">    }</a>
+<a name="ln267"> </a>
+<a name="ln268">    switch ( eql2 ) {</a>
+<a name="ln269">    case EQL_NUM:</a>
+<a name="ln270">        n2 = a2-&gt;nOrigAtNosInCanonOrd;</a>
+<a name="ln271">        break;</a>
+<a name="ln272">    case EQL_NUM_ISO:</a>
+<a name="ln273">        n2 = a2-&gt;nIsotopicOrigAtNosInCanonOrd;</a>
+<a name="ln274">        break;</a>
+<a name="ln275">    case EQL_NUM_INV:</a>
+<a name="ln276">        n2 = a2-&gt;nOrigAtNosInCanonOrdInv;</a>
+<a name="ln277">        break;</a>
+<a name="ln278">    case ( EQL_NUM_INV | EQL_NUM_ISO ):</a>
+<a name="ln279">        n2 = a2-&gt;nIsotopicOrigAtNosInCanonOrdInv;</a>
+<a name="ln280">        break;</a>
+<a name="ln281">    default:</a>
+<a name="ln282">        return 0;</a>
+<a name="ln283">    }</a>
+<a name="ln284">    </a>
+<a name="ln285">    if ( n1 &amp;&amp; n2 &amp;&amp; !memcmp( n1, n2, len*sizeof(n1[0])) ) {</a>
+<a name="ln286">        return 1;</a>
+<a name="ln287">    }</a>
+<a name="ln288">    return 0;</a>
+<a name="ln289">}</a>
+<a name="ln290">/**********************************************************************************************/</a>
+<a name="ln291">int bHasOrigInfo( ORIG_INFO *OrigInfo, int num_atoms )</a>
+<a name="ln292">{</a>
+<a name="ln293">    int i, bFound = 0;</a>
+<a name="ln294">    if ( OrigInfo &amp;&amp; num_atoms &gt; 0 ) {</a>
+<a name="ln295">        for ( i = 0; !bFound &amp;&amp; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln296">            bFound |= (0 != OrigInfo[i].cCharge) ||</a>
+<a name="ln297">                      (0 != OrigInfo[i].cRadical) ||</a>
+<a name="ln298">                      (0 != OrigInfo[i].cUnusualValence);</a>
+<a name="ln299"> </a>
+<a name="ln300">        }</a>
+<a name="ln301">    }</a>
+<a name="ln302">    return bFound;</a>
+<a name="ln303">}</a>
+<a name="ln304">/**********************************************************************************************/</a>
+<a name="ln305">int EqlOrigInfo( INChI_Aux *a1, INChI_Aux *a2 )</a>
+<a name="ln306">{</a>
+<a name="ln307">    int ret =  a1 &amp;&amp; a2 &amp;&amp; a1-&gt;nNumberOfAtoms == a2-&gt;nNumberOfAtoms &amp;&amp;</a>
+<a name="ln308">               bHasOrigInfo( a1-&gt;OrigInfo, a1-&gt;nNumberOfAtoms ) &amp;&amp; a2-&gt;OrigInfo &amp;&amp;</a>
+<a name="ln309">               !memcmp( a1-&gt;OrigInfo, a2-&gt;OrigInfo, a1-&gt;nNumberOfAtoms * sizeof(a1-&gt;OrigInfo[0]) );</a>
+<a name="ln310">    return ret;</a>
+<a name="ln311"> </a>
+<a name="ln312">}</a>
+<a name="ln313"> </a>
+<a name="ln314">/**********************************************************************************************/</a>
+<a name="ln315">int bHasEquString( AT_NUMB *LinearCT, int nLenCT )</a>
+<a name="ln316">{</a>
+<a name="ln317">    /*  produce output string; */</a>
+<a name="ln318">    int i, k;</a>
+<a name="ln319">    if ( !LinearCT )</a>
+<a name="ln320">        return 0;</a>
+<a name="ln321">    for ( k = 0; k &lt; nLenCT; k ++ ) {</a>
+<a name="ln322">        /*  find the first equivalence number */</a>
+<a name="ln323">        if ( k != (int)LinearCT[k] - 1 )</a>
+<a name="ln324">            continue;</a>
+<a name="ln325">        for ( i = k; i &lt; nLenCT; i ++ ) {</a>
+<a name="ln326">            if ( k != (int)LinearCT[i]-1 )</a>
+<a name="ln327">                continue;</a>
+<a name="ln328">            if ( k &lt; i ) {</a>
+<a name="ln329">                return 1;</a>
+<a name="ln330">            }</a>
+<a name="ln331">        }</a>
+<a name="ln332">    }</a>
+<a name="ln333">    return 0;</a>
+<a name="ln334">}</a>
+<a name="ln335">/********************************************************************************************/</a>
+<a name="ln336">int MakeMult( int mult, const char *szTailingDelim, char *szLinearCT, int nLen_szLinearCT, int nCtMode, int *bOverflow)</a>
+<a name="ln337">{</a>
+<a name="ln338">    char szValue[16];</a>
+<a name="ln339">    int  len = 0, len_delim;</a>
+<a name="ln340">    if ( mult == 1 || *bOverflow )</a>
+<a name="ln341">        return 0;</a>
+<a name="ln342">    if ( nCtMode &amp; CT_MODE_ABC_NUMBERS ) {</a>
+<a name="ln343">        len += MakeAbcNumber( szValue, (int)sizeof(szValue), NULL, mult );</a>
+<a name="ln344">    } else {</a>
+<a name="ln345">        len += MakeDecNumber( szValue, (int)sizeof(szValue), NULL, mult );</a>
+<a name="ln346">    }</a>
+<a name="ln347">    len_delim = strlen(szTailingDelim);</a>
+<a name="ln348">    if ( len + len_delim &lt; (int)sizeof(szValue) ) {</a>
+<a name="ln349">        strcpy( szValue+len, szTailingDelim );</a>
+<a name="ln350">        len += len_delim;</a>
+<a name="ln351">        if ( len &lt; nLen_szLinearCT ) {</a>
+<a name="ln352">            strcpy( szLinearCT, szValue );</a>
+<a name="ln353">            return len;</a>
+<a name="ln354">        }</a>
+<a name="ln355">    }</a>
+<a name="ln356">    *bOverflow |= 1;</a>
+<a name="ln357">    return 0;</a>
+<a name="ln358">}</a>
+<a name="ln359">/********************************************************************************************/</a>
+<a name="ln360">int MakeDelim( const char *szTailingDelim, char *szLinearCT, int nLen_szLinearCT, int *bOverflow)</a>
+<a name="ln361">{</a>
+<a name="ln362">    int len_delim;</a>
+<a name="ln363">    if ( !szTailingDelim || !*szTailingDelim || *bOverflow )</a>
+<a name="ln364">        return 0;</a>
+<a name="ln365">    len_delim = strlen(szTailingDelim);</a>
+<a name="ln366">    if ( len_delim &lt; nLen_szLinearCT ) {</a>
+<a name="ln367">        strcpy( szLinearCT, szTailingDelim );</a>
+<a name="ln368">        return len_delim;</a>
+<a name="ln369">    }</a>
+<a name="ln370">    *bOverflow |= 1;</a>
+<a name="ln371">    return 0;</a>
+<a name="ln372">}</a>
+<a name="ln373">/********************************************************************************************/</a>
+<a name="ln374">int MakeEqStr( const char *szTailingDelim, int mult, char *szLinearCT, int nLen_szLinearCT, int *bOverflow)</a>
+<a name="ln375">{</a>
+<a name="ln376">    int  len = 0, len_delim;</a>
+<a name="ln377">    char szValue[16];</a>
+<a name="ln378">    if ( !szTailingDelim || !*szTailingDelim || *bOverflow )</a>
+<a name="ln379">        return 0;</a>
+<a name="ln380">    if ( mult != 1 ) {</a>
+<a name="ln381">        len = MakeDecNumber( szValue, (int)sizeof(szValue), NULL, mult );</a>
+<a name="ln382">    }</a>
+<a name="ln383">    len_delim = strlen(szTailingDelim);</a>
+<a name="ln384">    if ( len_delim + len &lt; nLen_szLinearCT ) {</a>
+<a name="ln385">        if ( len &gt; 0 ) {</a>
+<a name="ln386">            memcpy( szLinearCT, szValue, len );</a>
+<a name="ln387">        }</a>
+<a name="ln388">        strcpy( szLinearCT+len, szTailingDelim );</a>
+<a name="ln389">        return len + len_delim;</a>
+<a name="ln390">    }</a>
+<a name="ln391">    *bOverflow |= 1;</a>
+<a name="ln392">    return 0;</a>
+<a name="ln393">}</a>
+<a name="ln394">/**********************************************************************************************</a>
+<a name="ln395"> * nCtMode = 0: full</a>
+<a name="ln396"> *           1: censored CT (no orphans)</a>
+<a name="ln397"> *           2: compressed CT (Abs numbers)</a>
+<a name="ln398"> **********************************************************************************************/</a>
+<a name="ln399">int MakeCtStringNew( AT_NUMB *LinearCT, int nLenCT, int bAddDelim,</a>
+<a name="ln400">                  S_CHAR *nNum_H, int num_atoms,</a>
+<a name="ln401">                  char *szLinearCT, int nLen_szLinearCT, int nCtMode, int *bOverflow)</a>
+<a name="ln402">{</a>
+<a name="ln403">    /*  produce output string; */</a>
+<a name="ln404">    int nLen = 0, len, i, bOvfl = *bOverflow;</a>
+<a name="ln405">    char szValue[16];</a>
+<a name="ln406">    int   nValue, nDelim, num_H;</a>
+<a name="ln407">    AT_NUMB *nDfsOrderCT = NULL;</a>
+<a name="ln408">    int      bNoNum_H    = (NULL == nNum_H);</a>
+<a name="ln409">    int      nNumRingClosures;</a>
+<a name="ln410">    int      bAbcNumbers   = (0 != ( nCtMode &amp; CT_MODE_ABC_NUMBERS ));</a>
+<a name="ln411">    int      bPredecessors = (0 != ( nCtMode &amp; CT_MODE_PREDECESSORS ));</a>
+<a name="ln412">    int      bCountRingClosures = bAbcNumbers &amp;&amp; bPredecessors &amp;&amp; (nCtMode &amp; CT_MODE_ABC_NUM_CLOSURES);</a>
+<a name="ln413">    if ( nLenCT &lt;= 1 ) {</a>
+<a name="ln414">        return 0;  /*  no atoms or a single atom: no connection table */</a>
+<a name="ln415">    }</a>
+<a name="ln416">    /*  make array containing connection string data */</a>
+<a name="ln417">    if ( !(nDfsOrderCT = GetDfsOrder4CT( LinearCT, nLenCT, nNum_H, num_atoms, nCtMode ) ) ) {</a>
+<a name="ln418">        (*bOverflow) ++;</a>
+<a name="ln419">        return 0;</a>
+<a name="ln420">    }</a>
+<a name="ln421"> </a>
+<a name="ln422">    /*  add connection table string */</a>
+<a name="ln423">    if ( !bOvfl &amp;&amp; bAddDelim ) {</a>
+<a name="ln424">        if ( nLen_szLinearCT &gt; 1 ) {</a>
+<a name="ln425">            strcpy( szLinearCT, &quot;,&quot; );</a>
+<a name="ln426">            nLen ++;</a>
+<a name="ln427">        } else {</a>
+<a name="ln428">            bOvfl = 1;</a>
+<a name="ln429">        }</a>
+<a name="ln430">    }</a>
+<a name="ln431"> </a>
+<a name="ln432">    if ( !bOvfl ) {</a>
+<a name="ln433">        nNumRingClosures = 0;</a>
+<a name="ln434">        for ( i = 0; nDfsOrderCT[i] &amp;&amp; nLen &lt; nLen_szLinearCT; i += 3 ) {</a>
+<a name="ln435">            nValue = (nDfsOrderCT[i] &gt; MAX_ATOMS)? 0 : nDfsOrderCT[i];</a>
+<a name="ln436">            num_H  = nDfsOrderCT[i+1]? nDfsOrderCT[i+1]-16:0;</a>
+<a name="ln437">            nDelim = nDfsOrderCT[i+2];</a>
+<a name="ln438">            len = 0;</a>
+<a name="ln439">            /*  delimiter */</a>
+<a name="ln440">            if ( bPredecessors ) {</a>
+<a name="ln441">                if ( bCountRingClosures ) {</a>
+<a name="ln442">                    if ( nDelim == '-' &amp;&amp; i &gt; 3 &amp;&amp; bNoNum_H ) {</a>
+<a name="ln443">                        if ( !nNumRingClosures ) {</a>
+<a name="ln444">                            int j;</a>
+<a name="ln445">                            for ( j = i; nDfsOrderCT[j] &amp;&amp; '-' == nDfsOrderCT[j+2]; j += 3 ) {</a>
+<a name="ln446">                                nNumRingClosures ++;</a>
+<a name="ln447">                            }</a>
+<a name="ln448">                            if ( nNumRingClosures ) {</a>
+<a name="ln449">                                len += MakeDecNumber( szValue+len, (int)sizeof(szValue)-len, NULL, nNumRingClosures );</a>
+<a name="ln450">                            }</a>
+<a name="ln451">                            nNumRingClosures --;</a>
+<a name="ln452">                        } else {</a>
+<a name="ln453">                            nNumRingClosures --;</a>
+<a name="ln454">                        }</a>
+<a name="ln455">                    } else {</a>
+<a name="ln456">                        nNumRingClosures = 0;</a>
+<a name="ln457">                    }</a>
+<a name="ln458">                } else</a>
+<a name="ln459">                if ( nDelim &amp;&amp; !( bAbcNumbers &amp;&amp; nDelim == ',' ) ) {</a>
+<a name="ln460">                    if ( nNum_H || i &gt; 3 ) { </a>
+<a name="ln461">                        szValue[len ++] = nDelim;</a>
+<a name="ln462">                    }</a>
+<a name="ln463">                }</a>
+<a name="ln464">            } else {</a>
+<a name="ln465">                if ( nDelim &amp;&amp; !( bAbcNumbers &amp;&amp; nDelim == '-' ) ) {</a>
+<a name="ln466">                    szValue[len ++] = nDelim;</a>
+<a name="ln467">                }</a>
+<a name="ln468">            }</a>
+<a name="ln469">            if ( bAbcNumbers ) {</a>
+<a name="ln470">                if ( nValue || i ) { /* the 1st value may be zero in case of presdecessor list */</a>
+<a name="ln471">                    len += MakeAbcNumber( szValue+len, (int)sizeof(szValue)-len, NULL, nValue );</a>
+<a name="ln472">                }</a>
+<a name="ln473">                if ( num_H ) {</a>
+<a name="ln474">                    len += MakeDecNumber( szValue+len, (int)sizeof(szValue)-len, NULL, num_H );</a>
+<a name="ln475">                }</a>
+<a name="ln476">            } else {</a>
+<a name="ln477">                if ( nValue || i ) { /* the 1st value may be zero in case of presdecessor list */</a>
+<a name="ln478">                    len += MakeDecNumber( szValue+len, (int)sizeof(szValue)-len, NULL, nValue );</a>
+<a name="ln479">                }</a>
+<a name="ln480">                if ( num_H ) {</a>
+<a name="ln481">                    szValue[len] = 'H';</a>
+<a name="ln482">                    len ++;</a>
+<a name="ln483">                    if ( num_H &gt; 1 ) {</a>
+<a name="ln484">                        len += MakeDecNumber( szValue+len, (int)sizeof(szValue)-len, NULL, num_H );</a>
+<a name="ln485">                    }</a>
+<a name="ln486">                }</a>
+<a name="ln487">            }</a>
+<a name="ln488">            if ( 0 &lt;= len &amp;&amp; nLen+len &lt; nLen_szLinearCT ) {</a>
+<a name="ln489">                if ( len ) {</a>
+<a name="ln490">                    strcpy( szLinearCT+nLen, szValue );</a>
+<a name="ln491">                    nLen += len;</a>
+<a name="ln492">                }</a>
+<a name="ln493">            } else {</a>
+<a name="ln494">                bOvfl = 1;</a>
+<a name="ln495">                break;</a>
+<a name="ln496">            }</a>
+<a name="ln497">        }</a>
+<a name="ln498">    }</a>
+<a name="ln499">    *bOverflow |= bOvfl;</a>
+<a name="ln500">    if ( nDfsOrderCT )</a>
+<a name="ln501">        inchi_free( nDfsOrderCT );</a>
+<a name="ln502">    return nLen;</a>
+<a name="ln503">}</a>
+<a name="ln504">/**********************************************************************************************</a>
+<a name="ln505"> *  nCtMode = 0: full</a>
+<a name="ln506"> *            1: censored CT (no orphans)</a>
+<a name="ln507"> *            2: compressed CT (Abs numbers)</a>
+<a name="ln508"> **********************************************************************************************/</a>
+<a name="ln509">int MakeCtStringOld( AT_NUMB *LinearCT, int nLenCT, int bAddDelim,</a>
+<a name="ln510">                  char *szLinearCT, int nLen_szLinearCT, int nCtMode, int *bOverflow)</a>
+<a name="ln511">{</a>
+<a name="ln512">    /*  produce output string; */</a>
+<a name="ln513">    int nLen = 0, len, i, bLessThanPrev, bOvfl = *bOverflow;</a>
+<a name="ln514">    AT_NUMB nMax = 0;</a>
+<a name="ln515">    char szValue[16];</a>
+<a name="ln516">    int   nValue, bNext = 0;</a>
+<a name="ln517">    /*  add connection table string */</a>
+<a name="ln518">    if ( !( nCtMode &amp; CT_MODE_ABC_NUMBERS ) &amp;&amp; !bOvfl &amp;&amp; bAddDelim ) {</a>
+<a name="ln519">        if ( nLen_szLinearCT &gt; 1 ) {</a>
+<a name="ln520">            strcpy( szLinearCT, &quot;,&quot; );</a>
+<a name="ln521">            nLen ++;</a>
+<a name="ln522">        } else {</a>
+<a name="ln523">            bOvfl = 1;</a>
+<a name="ln524">        }</a>
+<a name="ln525">    }</a>
+<a name="ln526">    if ( !bOvfl ) {</a>
+<a name="ln527">        for ( i = 0; i &lt; nLenCT &amp;&amp; nLen &lt; nLen_szLinearCT; i ++ ) {</a>
+<a name="ln528">            bLessThanPrev = 0;</a>
+<a name="ln529">            if ( !(nCtMode &amp; CT_MODE_NO_ORPHANS) || ((bLessThanPrev=LinearCT[i] &lt; nMax) ||</a>
+<a name="ln530">                  (i+1 &lt; nLenCT &amp;&amp; LinearCT[i+1] &lt; (nMax=LinearCT[i]))) ) {</a>
+<a name="ln531">                nValue = LinearCT[i];</a>
+<a name="ln532">                if ( nCtMode &amp; CT_MODE_ABC_NUMBERS ) {</a>
+<a name="ln533">                    len = MakeAbcNumber( szValue, (int)sizeof(szValue), (!bNext &amp;&amp; bAddDelim)? ITEM_DELIMETER : NULL, nValue );</a>
+<a name="ln534">                } else</a>
+<a name="ln535">                if ( nCtMode &amp; CT_MODE_NO_ORPHANS ) {  /*  censored CT */</a>
+<a name="ln536">                    /*  output '-' as a delimiter to show a bonding for decimal output of the connection table */</a>
+<a name="ln537">                    len = MakeDecNumber( szValue, (int)sizeof(szValue), bLessThanPrev? &quot;-&quot;:ITEM_DELIMETER, nValue );</a>
+<a name="ln538">                } else {</a>
+<a name="ln539">                    len = MakeDecNumber( szValue, (int)sizeof(szValue), i? ITEM_DELIMETER:NULL, nValue );</a>
+<a name="ln540">                }</a>
+<a name="ln541">                if ( 0 &lt;= len &amp;&amp; nLen+len &lt; nLen_szLinearCT ) {</a>
+<a name="ln542">                    if ( len ) {</a>
+<a name="ln543">                        strcpy( szLinearCT+nLen, szValue );</a>
+<a name="ln544">                        nLen += len;</a>
+<a name="ln545">                        bNext ++;</a>
+<a name="ln546">                    }</a>
+<a name="ln547">                } else {</a>
+<a name="ln548">                    bOvfl = 1;</a>
+<a name="ln549">                    break;</a>
+<a name="ln550">                }</a>
+<a name="ln551">            }</a>
+<a name="ln552">        }</a>
+<a name="ln553">    }</a>
+<a name="ln554">    *bOverflow |= bOvfl;</a>
+<a name="ln555">    return nLen;</a>
+<a name="ln556">}</a>
+<a name="ln557">/**********************************************************************************************</a>
+<a name="ln558"> *  nCtMode = 0: decimal</a>
+<a name="ln559"> *            2: compressed CT (Abs numbers)</a>
+<a name="ln560"> **********************************************************************************************/</a>
+<a name="ln561">int MakeHString( int bAddDelim, S_CHAR *LinearCT, int nLenCT,</a>
+<a name="ln562">                 char *szLinearCT, int nLen_szLinearCT, int nCtMode, int *bOverflow )</a>
+<a name="ln563">{</a>
+<a name="ln564">#define INIT_MIN_NUM_H (-4)</a>
+<a name="ln565">#define INIT_MAX_NUM_H 16</a>
+<a name="ln566">#define INIT_LEN_NUM_H (INIT_MAX_NUM_H - INIT_MIN_NUM_H + 1)</a>
+<a name="ln567"> </a>
+<a name="ln568">    /*  produce output string; */</a>
+<a name="ln569">    int nLen = 0, len, i, iFirst, nVal, bOvfl = *bOverflow;</a>
+<a name="ln570">    char szValue[32];</a>
+<a name="ln571">    const char *pH;</a>
+<a name="ln572">    int  bNext = 0;</a>
+<a name="ln573">    /*  add connection table string */</a>
+<a name="ln574">    if ( !( nCtMode &amp; CT_MODE_ABC_NUMBERS ) &amp;&amp; !bOvfl &amp;&amp; bAddDelim ) {</a>
+<a name="ln575">        if ( nLen_szLinearCT &gt; 1 ) {</a>
+<a name="ln576">            strcpy( szLinearCT, &quot;,&quot; );</a>
+<a name="ln577">            nLen ++;</a>
+<a name="ln578">        } else {</a>
+<a name="ln579">            bOvfl = 1;</a>
+<a name="ln580">        }</a>
+<a name="ln581">    }</a>
+<a name="ln582">    if ( !bOvfl &amp;&amp; 0 &lt; nLenCT &amp;&amp; LinearCT ) {</a>
+<a name="ln583">        if ( nCtMode &amp; CT_MODE_EQL_H_TOGETHER ) {</a>
+<a name="ln584">            int  curMinH = INIT_MIN_NUM_H;</a>
+<a name="ln585">            int  curMaxH = INIT_MAX_NUM_H;</a>
+<a name="ln586">            int  curLenH = INIT_LEN_NUM_H;</a>
+<a name="ln587">            int  nInitNumH[INIT_LEN_NUM_H];</a>
+<a name="ln588">            int *nNumH = nInitNumH;</a>
+<a name="ln589">            int  numAt, curNumH;</a>
+<a name="ln590">            int      j, bOutOfRange, tot_num_no_H;</a>
+<a name="ln591">            /* count atoms H */</a>
+<a name="ln592">            do {</a>
+<a name="ln593">                bOutOfRange = 0;</a>
+<a name="ln594">                tot_num_no_H = 0; /* number of atoms that have no H */</a>
+<a name="ln595">                memset( nNumH, 0, curLenH*sizeof(nNumH[0]) );</a>
+<a name="ln596">                for ( i = 0; i &lt; nLenCT; i ++ ) {</a>
+<a name="ln597">                    curNumH = LinearCT[i];</a>
+<a name="ln598">                    if ( curNumH &lt; curMinH ) {</a>
+<a name="ln599">                        curMinH = curNumH;</a>
+<a name="ln600">                        bOutOfRange ++;</a>
+<a name="ln601">                    } else</a>
+<a name="ln602">                    if ( curNumH &gt; curMaxH ) {</a>
+<a name="ln603">                        curMaxH = curNumH;</a>
+<a name="ln604">                        bOutOfRange ++;</a>
+<a name="ln605">                    } else</a>
+<a name="ln606">                    if ( !bOutOfRange ) {</a>
+<a name="ln607">                        nNumH[curNumH-curMinH] ++;</a>
+<a name="ln608">                    }</a>
+<a name="ln609">                    tot_num_no_H += !curNumH;</a>
+<a name="ln610">                }</a>
+<a name="ln611">                if ( tot_num_no_H == nLenCT ) {</a>
+<a name="ln612">                    return nLen; /* empty string */</a>
+<a name="ln613">                }</a>
+<a name="ln614">                if ( bOutOfRange ) {</a>
+<a name="ln615">                    /* for debug only */</a>
+<a name="ln616">                    if ( nNumH != nInitNumH ) {</a>
+<a name="ln617">                        *bOverflow |= 1;</a>
+<a name="ln618">                        inchi_free( nNumH );</a>
+<a name="ln619">                        return nLen;</a>
+<a name="ln620">                    }</a>
+<a name="ln621">                    /* end debug */</a>
+<a name="ln622">                    curLenH = curMaxH - curMinH + 1;</a>
+<a name="ln623">                    nNumH = (int*) inchi_malloc( curLenH * sizeof(nNumH[0]) );</a>
+<a name="ln624">                    if ( !nNumH ) {</a>
+<a name="ln625">                        *bOverflow |= 1;</a>
+<a name="ln626">                        return nLen;</a>
+<a name="ln627">                    }</a>
+<a name="ln628">                }</a>
+<a name="ln629">            } while ( bOutOfRange ); /* the loop may be executed 1 or 2 times only */</a>
+<a name="ln630"> </a>
+<a name="ln631">            for ( curNumH = curMinH;  curNumH &lt;= curMaxH; curNumH ++ ) {</a>
+<a name="ln632">                numAt = nNumH[curNumH-curMinH]; /* number of atoms that have curNumH atoms H */</a>
+<a name="ln633">                if ( !numAt || !curNumH ) {</a>
+<a name="ln634">                    continue; /* no atom has this number of H or number of H = 0 */</a>
+<a name="ln635">                }</a>
+<a name="ln636">                j = 0;</a>
+<a name="ln637">                while ( j &lt; nLenCT &amp;&amp; numAt ) {</a>
+<a name="ln638">                    if ( curNumH == LinearCT[j] ) {</a>
+<a name="ln639">                        iFirst = ++j;</a>
+<a name="ln640">                        numAt --;</a>
+<a name="ln641">                        for ( ; j &lt; nLenCT &amp;&amp; curNumH == LinearCT[j] &amp;&amp; numAt; j ++ ) {</a>
+<a name="ln642">                            numAt --;</a>
+<a name="ln643">                        }</a>
+<a name="ln644">                        if ( nCtMode &amp; CT_MODE_ABC_NUMBERS ) {</a>
+<a name="ln645">                            len = MakeAbcNumber( szValue, (int)sizeof(szValue), NULL, iFirst );</a>
+<a name="ln646">                        } else {</a>
+<a name="ln647">                            len = MakeDecNumber( szValue, (int)sizeof(szValue), bNext?ITEM_DELIMETER:NULL, iFirst );</a>
+<a name="ln648">                            bNext ++; /* add a delimiter (comma) before all except the first */</a>
+<a name="ln649">                        }</a>
+<a name="ln650">                        if ( iFirst &lt; j ) {</a>
+<a name="ln651">                            /* output last canonical number */</a>
+<a name="ln652">                            if ( nCtMode &amp; CT_MODE_ABC_NUMBERS ) {</a>
+<a name="ln653">                                len += MakeAbcNumber( szValue+len, (int)sizeof(szValue), NULL, j );</a>
+<a name="ln654">                            } else {</a>
+<a name="ln655">                                len += MakeDecNumber( szValue+len, (int)sizeof(szValue)-len, &quot;-&quot;, j );</a>
+<a name="ln656">                            }</a>
+<a name="ln657">                        }</a>
+<a name="ln658">                        if ( !numAt || ( nCtMode &amp; CT_MODE_ABC_NUMBERS ) ) {</a>
+<a name="ln659">                            /* add number of H */</a>
+<a name="ln660">                            /* output number of H */</a>
+<a name="ln661">                            nVal = curNumH;</a>
+<a name="ln662">                            if ( nCtMode &amp; CT_MODE_ABC_NUMBERS ) {</a>
+<a name="ln663">                                len += MakeDecNumber( szValue+len, (int)sizeof(szValue)-len, NULL, nVal );</a>
+<a name="ln664">                            } else {</a>
+<a name="ln665">                                pH = nVal &gt; 0? &quot;H&quot;:&quot;h&quot;;</a>
+<a name="ln666">                                nVal = abs(nVal);</a>
+<a name="ln667">                                if ( nVal &gt; 1 ) {</a>
+<a name="ln668">                                    len += MakeDecNumber( szValue+len, (int)sizeof(szValue)-len, pH, nVal );</a>
+<a name="ln669">                                } else {</a>
+<a name="ln670">                                    strcpy( szValue+len, pH );</a>
+<a name="ln671">                                    len ++;</a>
+<a name="ln672">                                }</a>
+<a name="ln673">                            }</a>
+<a name="ln674">                        }</a>
+<a name="ln675">                        /* add to the output */</a>
+<a name="ln676">                        if ( 0 &lt;= len &amp;&amp; nLen+len &lt; nLen_szLinearCT ) {</a>
+<a name="ln677">                            if ( len ) {</a>
+<a name="ln678">                                strcpy( szLinearCT+nLen, szValue );</a>
+<a name="ln679">                                nLen += len;</a>
+<a name="ln680">                                bNext ++;</a>
+<a name="ln681">                            }</a>
+<a name="ln682">                        } else {</a>
+<a name="ln683">                            bOvfl = 1;</a>
+<a name="ln684">                            break;</a>
+<a name="ln685">                        }</a>
+<a name="ln686">                    } else {</a>
+<a name="ln687">                        j ++;</a>
+<a name="ln688">                    }</a>
+<a name="ln689">                }</a>
+<a name="ln690">            }</a>
+<a name="ln691">            if ( nNumH != nInitNumH ) {</a>
+<a name="ln692">                inchi_free( nNumH );</a>
+<a name="ln693">            }</a>
+<a name="ln694">        } else {</a>
+<a name="ln695">            iFirst     = 0;</a>
+<a name="ln696">            for ( i = iFirst+1; i &lt;= nLenCT &amp;&amp; nLen &lt; nLen_szLinearCT; i ++ ) {</a>
+<a name="ln697">                if ( i &lt; nLenCT &amp;&amp; LinearCT[i] == LinearCT[iFirst] ) {</a>
+<a name="ln698">                    continue;</a>
+<a name="ln699">                }</a>
+<a name="ln700">                /* output identical values located at i = iFirst..i-1 */</a>
+<a name="ln701">                if ( LinearCT[iFirst] ) { /* output only non-zero values */</a>
+<a name="ln702">                    /* first canonical number */</a>
+<a name="ln703">                    nVal = LinearCT[iFirst];</a>
+<a name="ln704">                    iFirst ++;</a>
+<a name="ln705">                    if ( nCtMode &amp; CT_MODE_ABC_NUMBERS ) {</a>
+<a name="ln706">                        len = MakeAbcNumber( szValue, (int)sizeof(szValue), NULL, iFirst );</a>
+<a name="ln707">                    } else {</a>
+<a name="ln708">                        len = MakeDecNumber( szValue, (int)sizeof(szValue), bNext?ITEM_DELIMETER:NULL, iFirst );</a>
+<a name="ln709">                    }</a>
+<a name="ln710">                    if ( iFirst &lt; i ) {</a>
+<a name="ln711">                        /* output last canonical number */</a>
+<a name="ln712">                        if ( nCtMode &amp; CT_MODE_ABC_NUMBERS ) {</a>
+<a name="ln713">                            len += MakeAbcNumber( szValue+len, (int)sizeof(szValue), NULL, i );</a>
+<a name="ln714">                        } else {</a>
+<a name="ln715">                            len += MakeDecNumber( szValue+len, (int)sizeof(szValue)-len, &quot;-&quot;, i );</a>
+<a name="ln716">                        }</a>
+<a name="ln717">                    }</a>
+<a name="ln718">                    /* output number of H */</a>
+<a name="ln719">                    if ( nCtMode &amp; CT_MODE_ABC_NUMBERS ) {</a>
+<a name="ln720">                        len += MakeDecNumber( szValue+len, (int)sizeof(szValue)-len, NULL, nVal );</a>
+<a name="ln721">                    } else {</a>
+<a name="ln722">                        pH = nVal &gt; 0? &quot;H&quot;:&quot;h&quot;;</a>
+<a name="ln723">                        nVal = abs(nVal);</a>
+<a name="ln724">                        if ( nVal &gt; 1 ) {</a>
+<a name="ln725">                            len += MakeDecNumber( szValue+len, (int)sizeof(szValue)-len, pH, nVal );</a>
+<a name="ln726">                        } else {</a>
+<a name="ln727">                            strcpy( szValue+len, pH );</a>
+<a name="ln728">                            len ++;</a>
+<a name="ln729">                        }</a>
+<a name="ln730">                    }</a>
+<a name="ln731">                    if ( 0 &lt;= len &amp;&amp; nLen+len &lt; nLen_szLinearCT ) {</a>
+<a name="ln732">                        if ( len ) {</a>
+<a name="ln733">                            strcpy( szLinearCT+nLen, szValue );</a>
+<a name="ln734">                            nLen += len;</a>
+<a name="ln735">                            bNext ++;</a>
+<a name="ln736">                        }</a>
+<a name="ln737">                    } else {</a>
+<a name="ln738">                        bOvfl = 1;</a>
+<a name="ln739">                        break;</a>
+<a name="ln740">                    }</a>
+<a name="ln741">                }</a>
+<a name="ln742">                iFirst = i;</a>
+<a name="ln743">            }</a>
+<a name="ln744">        }</a>
+<a name="ln745">    }</a>
+<a name="ln746"> </a>
+<a name="ln747">    *bOverflow |= bOvfl;</a>
+<a name="ln748">    return nLen;</a>
+<a name="ln749"> </a>
+<a name="ln750">#undef INIT_MIN_NUM_H</a>
+<a name="ln751">#undef INIT_MAX_NUM_H</a>
+<a name="ln752">#undef INIT_LEN_NUM_H</a>
+<a name="ln753">}</a>
+<a name="ln754">/**********************************************************************************************</a>
+<a name="ln755"> *  nCtMode = 0: full</a>
+<a name="ln756"> *            1: censored CT (no orphans, that CT should have only atoms with neighbors)</a>
+<a name="ln757"> *            2: compressed CT (Abc numbers)</a>
+<a name="ln758"> **********************************************************************************************/</a>
+<a name="ln759">int MakeCtString( AT_NUMB *LinearCT, int nLenCT, int bAddDelim,</a>
+<a name="ln760">                  S_CHAR *nNum_H, int num_atoms, /* both parameters are not used here */</a>
+<a name="ln761">                  char *szLinearCT, int nLen_szLinearCT, int nCtMode, int *bOverflow)</a>
+<a name="ln762">{</a>
+<a name="ln763">    </a>
+<a name="ln764">    if ( !nNum_H || !(nCtMode &amp; CT_MODE_NO_ORPHANS) ) {</a>
+<a name="ln765">        return MakeCtStringOld( LinearCT, nLenCT, bAddDelim,</a>
+<a name="ln766">                                szLinearCT, nLen_szLinearCT, nCtMode, bOverflow);</a>
+<a name="ln767">    } else {</a>
+<a name="ln768">        return MakeCtStringNew( LinearCT, nLenCT, bAddDelim,</a>
+<a name="ln769">                             nNum_H, num_atoms,</a>
+<a name="ln770">                             szLinearCT, nLen_szLinearCT, nCtMode, bOverflow);</a>
+<a name="ln771">    }</a>
+<a name="ln772">}    </a>
+<a name="ln773"> </a>
+<a name="ln774"> </a>
+<a name="ln775"> </a>
+<a name="ln776">/**********************************************************************************************</a>
+<a name="ln777"> *  nCtMode = 0: full: decimal-only, with parentheses around t-groups</a>
+<a name="ln778"> *            2: compressed CT: do not add comma before the output string if bAddDelim != 0</a>
+<a name="ln779"> *                            do not add parentheses around t-groups</a>
+<a name="ln780"> *                            atom canon numbers an Abc</a>
+<a name="ln781"> * LinearCT format:</a>
+<a name="ln782"> *    N      = number of tautomeric groups</a>
+<a name="ln783"> *    n      = number of endpoints + 1 in a tautomeric group #1</a>
+<a name="ln784"> *   next INCHI_T_NUM_MOVABLE lines (any after the first non-zero):</a>
+<a name="ln785"> *    h      = number of hydrogen atoms in the tautomeric group</a>
+<a name="ln786"> *    m      = number of negative charges</a>
+<a name="ln787"> *    ...    (the rest of the INCHI_T_NUM_MOVABLE has not been established, ignore them)</a>
+<a name="ln788"> *    c(1)   = canonical number of the first atom in the t-group</a>
+<a name="ln789"> *    ...</a>
+<a name="ln790"> *    c(n-1) = canonical number of the last atom in the t-group</a>
+<a name="ln791"> *</a>
+<a name="ln792"> **********************************************************************************************/</a>
+<a name="ln793"> </a>
+<a name="ln794">int MakeTautString( AT_NUMB *LinearCT, int nLenCT, int bAddDelim,</a>
+<a name="ln795">                  char *szLinearCT, int nLen_szLinearCT, int nCtMode, int *bOverflow)</a>
+<a name="ln796">{</a>
+<a name="ln797">    /*  produce output string; */</a>
+<a name="ln798">    int nLen = 0, len, i, bOvfl = *bOverflow;</a>
+<a name="ln799">    char szValue[16];</a>
+<a name="ln800">    const char *p;</a>
+<a name="ln801">    int   nValue, nGroupLen, iGroupOutputCount, bCompressed;</a>
+<a name="ln802">    /*  make tautomer string */</a>
+<a name="ln803">    if ( !nLenCT || !LinearCT || !*LinearCT ) {</a>
+<a name="ln804">        return nLen;</a>
+<a name="ln805">    }</a>
+<a name="ln806">    bCompressed = ( nCtMode &amp; CT_MODE_ABC_NUMBERS );</a>
+<a name="ln807">    if ( !bCompressed &amp;&amp; !bOvfl &amp;&amp; bAddDelim ) {</a>
+<a name="ln808">        if ( nLen_szLinearCT &gt; 1+LEN_EXTRA_SPACE ) {</a>
+<a name="ln809">            strcpy( szLinearCT, COMMA_EXTRA_SPACE);</a>
+<a name="ln810">            nLen += 1+LEN_EXTRA_SPACE;</a>
+<a name="ln811">        } else {</a>
+<a name="ln812">            bOvfl = 1;</a>
+<a name="ln813">        }</a>
+<a name="ln814">    }</a>
+<a name="ln815">    LinearCT ++; /*  bypass number of tautomeric groups */</a>
+<a name="ln816">    nLenCT --;</a>
+<a name="ln817">    </a>
+<a name="ln818">    if ( !bOvfl ) {</a>
+<a name="ln819">        for ( i = nGroupLen = iGroupOutputCount = 0; i &lt; nLenCT &amp;&amp; nLen &lt; nLen_szLinearCT; i ++ ) {</a>
+<a name="ln820">            nValue = (int)LinearCT[i];</a>
+<a name="ln821">            if ( nGroupLen == iGroupOutputCount ) {</a>
+<a name="ln822">                nGroupLen = nValue;</a>
+<a name="ln823">                iGroupOutputCount = 0;</a>
+<a name="ln824">                /* group delimiter (uncompressed) */</a>
+<a name="ln825">                if ( !bCompressed ) {</a>
+<a name="ln826">                    if ( !i ) {</a>
+<a name="ln827">                        strcpy( szValue, &quot;(&quot; );</a>
+<a name="ln828">                        len = 1;</a>
+<a name="ln829">                    } else {</a>
+<a name="ln830">                        strcpy( szValue, &quot;)(&quot; );</a>
+<a name="ln831">                        len = 2;</a>
+<a name="ln832">                    }</a>
+<a name="ln833">                } else {</a>
+<a name="ln834">                    len = 0;</a>
+<a name="ln835">                }</a>
+<a name="ln836">            } else</a>
+<a name="ln837">            if ( bCompressed &amp;&amp; iGroupOutputCount &gt;= INCHI_T_NUM_MOVABLE ) {</a>
+<a name="ln838">                /*  compressed canon number in Abc */</a>
+<a name="ln839">                len = MakeAbcNumber( szValue, (int)sizeof(szValue), NULL, nValue );</a>
+<a name="ln840">                iGroupOutputCount ++;</a>
+<a name="ln841">            } else {</a>
+<a name="ln842">                /*  always output number of hydrogen atoms as a decimal */</a>
+<a name="ln843">                /*  output leading space if: */</a>
+<a name="ln844">                /*  (a) this is the first output value in compressed mode (i==1 &amp;&amp; bCompressed) */</a>
+<a name="ln845">                /*  (b) this is not the first output value in non-compressed mode ( iGroupOutputCount &amp;&amp; !bCompressed) */</a>
+<a name="ln846">                if ( bCompressed ) {</a>
+<a name="ln847">                    p   = NULL;</a>
+<a name="ln848">                    len = 0;</a>
+<a name="ln849">                    switch( iGroupOutputCount ) {</a>
+<a name="ln850">                    case 0:</a>
+<a name="ln851">                        len = MakeDecNumber( szValue, (int)sizeof(szValue), (i == 1)? ITEM_DELIMETER:NULL, nValue );</a>
+<a name="ln852">                        break;</a>
+<a name="ln853">                    case 1:</a>
+<a name="ln854">                        p = &quot;-&quot;;</a>
+<a name="ln855">                        break;</a>
+<a name="ln856">                    case 2:</a>
+<a name="ln857">                        p = &quot;+&quot;;</a>
+<a name="ln858">                        break;</a>
+<a name="ln859">                    }</a>
+<a name="ln860">                    if ( p ) {</a>
+<a name="ln861">                        switch( nValue ) {</a>
+<a name="ln862">                        case 0:</a>
+<a name="ln863">                            len = 0;</a>
+<a name="ln864">                            break;</a>
+<a name="ln865">                        case 1:</a>
+<a name="ln866">                            strcpy(szValue, p);</a>
+<a name="ln867">                            len = strlen(szValue);</a>
+<a name="ln868">                            break;</a>
+<a name="ln869">                        default:</a>
+<a name="ln870">                            len = MakeDecNumber( szValue, (int)sizeof(szValue), p, nValue );</a>
+<a name="ln871">                            break;</a>
+<a name="ln872">                        }</a>
+<a name="ln873">                    }</a>
+<a name="ln874">                } else {</a>
+<a name="ln875">                    if ( iGroupOutputCount &gt;= INCHI_T_NUM_MOVABLE ) {</a>
+<a name="ln876">                        /*  canonical number of the atom in the tautomeric group */</a>
+<a name="ln877">                        len = MakeDecNumber( szValue, (int)sizeof(szValue), ITEM_DELIMETER, nValue );</a>
+<a name="ln878">                    } else {</a>
+<a name="ln879">                        p   = NULL;</a>
+<a name="ln880">                        len = 0;</a>
+<a name="ln881">                        if ( nValue ) {</a>
+<a name="ln882">                            switch( iGroupOutputCount ) {</a>
+<a name="ln883">                            case 0:</a>
+<a name="ln884">                                p = &quot;H&quot;;</a>
+<a name="ln885">                                break;</a>
+<a name="ln886">                            case 1:</a>
+<a name="ln887">                                p = &quot;-&quot;;</a>
+<a name="ln888">                                break;</a>
+<a name="ln889">                            case 2:</a>
+<a name="ln890">                                p = &quot;+&quot;;</a>
+<a name="ln891">                                break;</a>
+<a name="ln892">                            }</a>
+<a name="ln893">                            if ( p ) {</a>
+<a name="ln894">                                /*  number of hydrogens */</a>
+<a name="ln895">                                if ( nValue == 1 ) {</a>
+<a name="ln896">                                    strcpy(szValue, p);</a>
+<a name="ln897">                                    len = strlen(szValue);</a>
+<a name="ln898">                                } else {</a>
+<a name="ln899">                                    len = MakeDecNumber( szValue, (int)sizeof(szValue), p, nValue );</a>
+<a name="ln900">                                }</a>
+<a name="ln901">                            }</a>
+<a name="ln902">                        }</a>
+<a name="ln903">                    }</a>
+<a name="ln904">                }</a>
+<a name="ln905">                iGroupOutputCount ++;</a>
+<a name="ln906">            }</a>
+<a name="ln907">            if ( 0 &lt;= len &amp;&amp; nLen+len &lt; nLen_szLinearCT ) {</a>
+<a name="ln908">                if ( len ) {</a>
+<a name="ln909">                    strcpy( szLinearCT+nLen, szValue );</a>
+<a name="ln910">                    nLen += len;</a>
+<a name="ln911">                }</a>
+<a name="ln912">            } else {</a>
+<a name="ln913">                bOvfl = 1;</a>
+<a name="ln914">                break;</a>
+<a name="ln915">            }</a>
+<a name="ln916">        }</a>
+<a name="ln917">        if ( !bOvfl &amp;&amp; !bCompressed &amp;&amp; i ) {</a>
+<a name="ln918">            if ( nLen + 1 &lt; nLen_szLinearCT ) {</a>
+<a name="ln919">                strcpy( szLinearCT+nLen, &quot;)&quot; );</a>
+<a name="ln920">                nLen ++;</a>
+<a name="ln921">            } else {</a>
+<a name="ln922">                bOvfl = 1;</a>
+<a name="ln923">            }</a>
+<a name="ln924">        }</a>
+<a name="ln925">    }</a>
+<a name="ln926">    *bOverflow |= bOvfl;</a>
+<a name="ln927">    return nLen;</a>
+<a name="ln928">}</a>
+<a name="ln929">/**********************************************************************************************</a>
+<a name="ln930"> *  nCtMode = 0: full</a>
+<a name="ln931"> *            2: compressed CT</a>
+<a name="ln932"> *  22+3s3:  22=canon. number; +3=charge; s=singlet (d=doublet, t=triplet, s is omitted if valence=0), 3 = valence</a>
+<a name="ln933"> *  22+3.3, (charge, valence) 22.3 (valence) 22t3 (triplet, valence) </a>
+<a name="ln934"> *  Ab+3t4:  Ab=canon. number; +3=charge or &quot;.&quot; t=triplet (or s, d), 4=valence</a>
+<a name="ln935"> **********************************************************************************************/</a>
+<a name="ln936">int MakeCRVString( ORIG_INFO *OrigInfo, int nLenCT, int bAddDelim,</a>
+<a name="ln937">               char *szLinearCT, int nLen_szLinearCT, int nCtMode, int *bOverflow)</a>
+<a name="ln938">{</a>
+<a name="ln939">    /*  produce output string; */</a>
+<a name="ln940">    int nLen = 0, len, k, bAbcNumbers;</a>
+<a name="ln941">    int bOvfl = *bOverflow;</a>
+<a name="ln942">    char szValue[32];</a>
+<a name="ln943">    int  bNext=0;</a>
+<a name="ln944">    bAbcNumbers = ( nCtMode &amp; CT_MODE_ABC_NUMBERS );</a>
+<a name="ln945">    /*  add connection table string */</a>
+<a name="ln946">    if ( !bOvfl &amp;&amp; bAddDelim ) {</a>
+<a name="ln947">        if ( nLen_szLinearCT &gt; 2 ) {</a>
+<a name="ln948">            strcpy( szLinearCT, &quot;, &quot; );</a>
+<a name="ln949">            nLen += 2;</a>
+<a name="ln950">        } else {</a>
+<a name="ln951">            bOvfl = 1;</a>
+<a name="ln952">        }</a>
+<a name="ln953">    }</a>
+<a name="ln954">    for ( k = 0; !bOvfl &amp;&amp; k &lt; nLenCT &amp;&amp; nLen &lt; nLen_szLinearCT; k ++ ) {</a>
+<a name="ln955">        /*  find the next non-empty entry */</a>
+<a name="ln956">        if ( OrigInfo[k].cCharge || OrigInfo[k].cRadical || OrigInfo[k].cUnusualValence ) {</a>
+<a name="ln957">            if ( bAbcNumbers ) {</a>
+<a name="ln958">                /*</a>
+<a name="ln959">                    3 items: Ad+3d4 (canon. numb=Ad, charge=+3, doublet, valence = 4</a>
+<a name="ln960">                    2 items: Ad.d4  Ad+3.4  Ad+3d</a>
+<a name="ln961">                    1 item:  Ad+3   Ad.d     Ad4</a>
+<a name="ln962"> </a>
+<a name="ln963">                    dot output before radical: no charge, radical is present</a>
+<a name="ln964">                    dot before valence:        charge is present, no radical, valence is present</a>
+<a name="ln965">                 */</a>
+<a name="ln966">                len = MakeAbcNumber( szValue, (int)sizeof(szValue), NULL, k+1 );</a>
+<a name="ln967"> </a>
+<a name="ln968">                /* charge */</a>
+<a name="ln969">                if ( OrigInfo[k].cCharge ) {</a>
+<a name="ln970">                    if ( OrigInfo[k].cCharge &gt; 0 ) {</a>
+<a name="ln971">                        len += MakeDecNumber( szValue+len, (int)sizeof(szValue)-len, &quot;+&quot;, OrigInfo[k].cCharge );</a>
+<a name="ln972">                    } else {</a>
+<a name="ln973">                        len += MakeDecNumber( szValue+len, (int)sizeof(szValue)-len, NULL, OrigInfo[k].cCharge );</a>
+<a name="ln974">                    }</a>
+<a name="ln975">                }</a>
+<a name="ln976">                /* radical */</a>
+<a name="ln977">                if ( OrigInfo[k].cRadical ) {</a>
+<a name="ln978">                    if ( !OrigInfo[k].cCharge ) {</a>
+<a name="ln979">                        szValue[len ++] = '.';</a>
+<a name="ln980">                    }</a>
+<a name="ln981">                    switch( OrigInfo[k].cRadical ) {</a>
+<a name="ln982">                    case 1:</a>
+<a name="ln983">                        szValue[len ++] = 'd';</a>
+<a name="ln984">                        break;</a>
+<a name="ln985">                    case 2:</a>
+<a name="ln986">                        szValue[len ++] = 't';</a>
+<a name="ln987">                        break;</a>
+<a name="ln988">                    default:</a>
+<a name="ln989">                        szValue[len ++] = 'u';</a>
+<a name="ln990">                        break;</a>
+<a name="ln991">                    }</a>
+<a name="ln992">                }</a>
+<a name="ln993">                /* valence */</a>
+<a name="ln994">                if ( OrigInfo[k].cUnusualValence ) {</a>
+<a name="ln995">                    if ( OrigInfo[k].cCharge &amp;&amp; !OrigInfo[k].cRadical ) {</a>
+<a name="ln996">                        szValue[len ++] = '.';</a>
+<a name="ln997">                    }</a>
+<a name="ln998">                    len += MakeDecNumber( szValue+len, (int)sizeof(szValue)-len, NULL, OrigInfo[k].cUnusualValence );</a>
+<a name="ln999">                }</a>
+<a name="ln1000">            } else {</a>
+<a name="ln1001">                /*</a>
+<a name="ln1002">                    3 items: 22+3d4 (canon. numb=22, charge=+3, doublet, valence = 4</a>
+<a name="ln1003">                    2 items: 22d4  22+3.4  22+3d</a>
+<a name="ln1004">                    1 item:  22+3  22d     22.4</a>
+<a name="ln1005"> </a>
+<a name="ln1006">                    dot output before valence:</a>
+<a name="ln1007">                                (a) charge,    no radical, valence</a>
+<a name="ln1008">                                (b) no charge, no radical, valence</a>
+<a name="ln1009">                    that is, whenever valence is present and no radical</a>
+<a name="ln1010">                 */</a>
+<a name="ln1011">                len = MakeDecNumber( szValue, (int)sizeof(szValue), bNext? ITEM_DELIMETER:NULL, k+1 );</a>
+<a name="ln1012">                /* charge */</a>
+<a name="ln1013">                if ( OrigInfo[k].cCharge ) {</a>
+<a name="ln1014">                    if ( OrigInfo[k].cCharge &gt; 0 ) {</a>
+<a name="ln1015">                        len += MakeDecNumber( szValue+len, (int)sizeof(szValue)-len, &quot;+&quot;, OrigInfo[k].cCharge );</a>
+<a name="ln1016">                    } else {</a>
+<a name="ln1017">                        len += MakeDecNumber( szValue+len, (int)sizeof(szValue)-len, NULL, OrigInfo[k].cCharge );</a>
+<a name="ln1018">                    }</a>
+<a name="ln1019">                }</a>
+<a name="ln1020">                /* radical */</a>
+<a name="ln1021">                if ( OrigInfo[k].cRadical ) {</a>
+<a name="ln1022">                    switch( OrigInfo[k].cRadical ) {</a>
+<a name="ln1023">                    case 1:</a>
+<a name="ln1024">                        szValue[len ++] = 'd';</a>
+<a name="ln1025">                        break;</a>
+<a name="ln1026">                    case 2:</a>
+<a name="ln1027">                        szValue[len ++] = 't';</a>
+<a name="ln1028">                        break;</a>
+<a name="ln1029">                    default:</a>
+<a name="ln1030">                        szValue[len ++] = 'u';</a>
+<a name="ln1031">                        break;</a>
+<a name="ln1032">                    }</a>
+<a name="ln1033">                }</a>
+<a name="ln1034">                /* valence */</a>
+<a name="ln1035">                if ( OrigInfo[k].cUnusualValence ) {</a>
+<a name="ln1036">                    if ( !OrigInfo[k].cRadical ) {</a>
+<a name="ln1037">                        szValue[len ++] = '.';</a>
+<a name="ln1038">                    }</a>
+<a name="ln1039">                    len += MakeDecNumber( szValue+len, (int)sizeof(szValue)-len, NULL, OrigInfo[k].cUnusualValence );</a>
+<a name="ln1040">                }</a>
+<a name="ln1041">            }</a>
+<a name="ln1042">        } else {</a>
+<a name="ln1043">            len = 0;</a>
+<a name="ln1044">        }</a>
+<a name="ln1045">        if ( len &amp;&amp; nLen+len &lt; nLen_szLinearCT ) {</a>
+<a name="ln1046">            strcpy( szLinearCT+nLen, szValue );</a>
+<a name="ln1047">            nLen += len;</a>
+<a name="ln1048">            bNext ++;</a>
+<a name="ln1049">        } else</a>
+<a name="ln1050">        if ( len ) {</a>
+<a name="ln1051">            bOvfl = 1;</a>
+<a name="ln1052">            break;</a>
+<a name="ln1053">        }</a>
+<a name="ln1054">    }</a>
+<a name="ln1055">    *bOverflow |= bOvfl;</a>
+<a name="ln1056">    return nLen;</a>
+<a name="ln1057">}</a>
+<a name="ln1058"> </a>
+<a name="ln1059">/**********************************************************************************************</a>
+<a name="ln1060"> *  nCtMode = 0: full</a>
+<a name="ln1061"> *            2: compressed CT</a>
+<a name="ln1062"> **********************************************************************************************/</a>
+<a name="ln1063">int MakeEquString( AT_NUMB *LinearCT, int nLenCT, int bAddDelim,</a>
+<a name="ln1064">                  char *szLinearCT, int nLen_szLinearCT, int nCtMode, int *bOverflow)</a>
+<a name="ln1065">{</a>
+<a name="ln1066">    /*  produce output string; */</a>
+<a name="ln1067">    int nLen = 0, len, i, k, bAbcNumbers;</a>
+<a name="ln1068">    int bOvfl = *bOverflow;</a>
+<a name="ln1069">    char szValue[16];</a>
+<a name="ln1070">    int  bNext=0;</a>
+<a name="ln1071">    bAbcNumbers = ( nCtMode &amp; CT_MODE_ABC_NUMBERS );</a>
+<a name="ln1072">    /*  add connection table string */</a>
+<a name="ln1073">    if ( !bOvfl &amp;&amp; bAddDelim ) {</a>
+<a name="ln1074">        if ( nLen_szLinearCT &gt; 2 ) {</a>
+<a name="ln1075">            strcpy( szLinearCT, &quot;, &quot; );</a>
+<a name="ln1076">            nLen += 2;</a>
+<a name="ln1077">        } else {</a>
+<a name="ln1078">            bOvfl = 1;</a>
+<a name="ln1079">        }</a>
+<a name="ln1080">    }</a>
+<a name="ln1081">    for ( k = 0; !bOvfl &amp;&amp; k &lt; nLenCT &amp;&amp; nLen &lt; nLen_szLinearCT; k ++ ) {</a>
+<a name="ln1082">        /*  find the first equivalence number */</a>
+<a name="ln1083">        if ( k != (int)LinearCT[k] - 1 )</a>
+<a name="ln1084">            continue;</a>
+<a name="ln1085">        for ( i = k; i &lt; nLenCT &amp;&amp; nLen &lt; nLen_szLinearCT; i ++ ) {</a>
+<a name="ln1086">            if ( k != (int)LinearCT[i]-1 )</a>
+<a name="ln1087">                continue;</a>
+<a name="ln1088">            /*  equivalence number: a minimal canon_number out of a group of equivalent atoms */</a>
+<a name="ln1089">            /*  is at canon_number-1 position of each equivalent atom.  */</a>
+<a name="ln1090">            if ( bAbcNumbers ) {</a>
+<a name="ln1091">                len = MakeAbcNumber( szValue, (int)sizeof(szValue), (i==k &amp;&amp; bNext)? ITEM_DELIMETER : NULL, i+1 );</a>
+<a name="ln1092">            } else {</a>
+<a name="ln1093">                len = MakeDecNumber( szValue, (int)sizeof(szValue), (i==k)? &quot;(&quot;:ITEM_DELIMETER, i+1 );</a>
+<a name="ln1094">            }</a>
+<a name="ln1095">            if ( 0 &lt;= len &amp;&amp; nLen+len &lt; nLen_szLinearCT ) {</a>
+<a name="ln1096">                strcpy( szLinearCT+nLen, szValue );</a>
+<a name="ln1097">                nLen += len;</a>
+<a name="ln1098">                bNext ++;</a>
+<a name="ln1099">            } else</a>
+<a name="ln1100">            if ( 0 &gt; len ) {</a>
+<a name="ln1101">                bOvfl = 1;</a>
+<a name="ln1102">                break;</a>
+<a name="ln1103">            }</a>
+<a name="ln1104">        }</a>
+<a name="ln1105">        if ( !bOvfl &amp;&amp; !bAbcNumbers ) {</a>
+<a name="ln1106">            if ( nLen + 2 &lt; nLen_szLinearCT ) {</a>
+<a name="ln1107">                strcpy( szLinearCT+nLen, &quot;)&quot; );</a>
+<a name="ln1108">                nLen ++;</a>
+<a name="ln1109">            } else {</a>
+<a name="ln1110">                bOvfl = 1;</a>
+<a name="ln1111">            }</a>
+<a name="ln1112">        }</a>
+<a name="ln1113">    }</a>
+<a name="ln1114">    *bOverflow |= bOvfl;</a>
+<a name="ln1115">    return nLen;</a>
+<a name="ln1116">}</a>
+<a name="ln1117">/**********************************************************************************************</a>
+<a name="ln1118"> *  nCtMode = 0: full</a>
+<a name="ln1119"> *            2: compressed CT</a>
+<a name="ln1120"> **********************************************************************************************/</a>
+<a name="ln1121">int MakeIsoAtomString( INChI_IsotopicAtom   *IsotopicAtom, int nNumberOfIsotopicAtoms,</a>
+<a name="ln1122">                  char *szLinearCT, int nLen_szLinearCT, int nCtMode, int *bOverflow)</a>
+<a name="ln1123">{</a>
+<a name="ln1124">    /*  produce output string; */</a>
+<a name="ln1125">    int nLen = 0, len, tot_len, ret, i, j, bOvfl = *bOverflow;</a>
+<a name="ln1126">    char szValue[64];</a>
+<a name="ln1127">    char *p;</a>
+<a name="ln1128">    int   nValue;</a>
+<a name="ln1129">    int   bAbcNumbers = (nCtMode &amp; CT_MODE_ABC_NUMBERS );</a>
+<a name="ln1130">    static const char letter[]  = &quot;itdh&quot;;</a>
+<a name="ln1131">    static const char *h[]      = {&quot;T&quot;, &quot;D&quot;, &quot;H&quot;};</a>
+<a name="ln1132">    static const char *sign[]   = {&quot;-&quot;, &quot;+&quot;};</a>
+<a name="ln1133"> </a>
+<a name="ln1134">    if ( !bOvfl ) {</a>
+<a name="ln1135">        for ( i = 0; i &lt; nNumberOfIsotopicAtoms &amp;&amp; nLen &lt; nLen_szLinearCT; i ++ ) {</a>
+<a name="ln1136">            p = szValue;</a>
+<a name="ln1137">            tot_len = 0;</a>
+<a name="ln1138">            for ( j = 0; j &lt; 5; j ++ ) {</a>
+<a name="ln1139">                len = 0;</a>
+<a name="ln1140">                switch( j ) {</a>
+<a name="ln1141">                case 0:</a>
+<a name="ln1142">                    nValue = (int)IsotopicAtom[i].nAtomNumber;</a>
+<a name="ln1143">                    break;</a>
+<a name="ln1144">                case 1:</a>
+<a name="ln1145">                    nValue = (int)IsotopicAtom[i].nIsoDifference;</a>
+<a name="ln1146">                    break;</a>
+<a name="ln1147">                case 2:</a>
+<a name="ln1148">                    nValue = (int)IsotopicAtom[i].nNum_T;</a>
+<a name="ln1149">                    break;</a>
+<a name="ln1150">                case 3:</a>
+<a name="ln1151">                    nValue = (int)IsotopicAtom[i].nNum_D;</a>
+<a name="ln1152">                    break;</a>
+<a name="ln1153">                case 4:</a>
+<a name="ln1154">                    nValue = (int)IsotopicAtom[i].nNum_H;</a>
+<a name="ln1155">                    break;</a>
+<a name="ln1156">                }</a>
+<a name="ln1157">                if ( !j ) {</a>
+<a name="ln1158">                    /*  atom canonical number */</a>
+<a name="ln1159">                    len = (bAbcNumbers? MakeAbcNumber:MakeDecNumber)</a>
+<a name="ln1160">                               ( p, (int)sizeof(szValue)-tot_len,</a>
+<a name="ln1161">                                 bAbcNumbers?NULL:(i?ITEM_DELIMETER:EXTRA_SPACE), nValue</a>
+<a name="ln1162">                               );</a>
+<a name="ln1163">                } else</a>
+<a name="ln1164">                if ( bAbcNumbers ) { /*  Abc output */</a>
+<a name="ln1165">                    switch ( j ) {</a>
+<a name="ln1166">                    case 1: /* nIsoDifference */</a>
+<a name="ln1167">                        len = MakeDecNumber( p, (int)sizeof(szValue)-tot_len, NULL, nValue );</a>
+<a name="ln1168">                        break;</a>
+<a name="ln1169">                    case 2: /* nNum_T */</a>
+<a name="ln1170">                    case 3: /* nNum_D */</a>
+<a name="ln1171">                    case 4: /* nNum_H */</a>
+<a name="ln1172">                        if ( nValue ) {</a>
+<a name="ln1173">                            if ( (int)sizeof(szValue) - tot_len &gt; 1 ) {</a>
+<a name="ln1174">                                p[len++]=letter[j-1];</a>
+<a name="ln1175">                                if ( 1 == nValue ) {</a>
+<a name="ln1176">                                    p[len]  = '\0';</a>
+<a name="ln1177">                                } else {</a>
+<a name="ln1178">                                    ret = MakeDecNumber( p+len, (int)sizeof(szValue)-tot_len-len, NULL, nValue );</a>
+<a name="ln1179">                                    len = (ret &gt;= 0)? len+ret : ret;</a>
+<a name="ln1180">                                }</a>
+<a name="ln1181">                            } else {</a>
+<a name="ln1182">                                len = -1; /* overflow */</a>
+<a name="ln1183">                            }</a>
+<a name="ln1184">                        }</a>
+<a name="ln1185">                    }</a>
+<a name="ln1186">                } else</a>
+<a name="ln1187">                if ( nValue ) {</a>
+<a name="ln1188">                    if ( j == 1 ) { /*  Decimal output */</a>
+<a name="ln1189">                        /*  signed isotopic mass difference */</a>
+<a name="ln1190">                        int subtract = (nValue &gt; 0);</a>
+<a name="ln1191">                        /*  (n = mass difference) &gt; 0 corresponds to nValue = n+1 */</a>
+<a name="ln1192">                        /*  subtract 1 from it so that mass difference for 35Cl or 12C is zero */</a>
+<a name="ln1193">                        len = MakeDecNumber( p, (int)sizeof(szValue)-tot_len, sign[nValue&gt;=0], abs(nValue-subtract) );</a>
+<a name="ln1194">                    } else {</a>
+<a name="ln1195">                        /*  hydrogen isotope */</a>
+<a name="ln1196">                        if ( nValue != 1 ) {</a>
+<a name="ln1197">                            len = MakeDecNumber( p, (int)sizeof(szValue)-tot_len, h[j-2], nValue );</a>
+<a name="ln1198">                        } else</a>
+<a name="ln1199">                        if ( (int)sizeof(szValue)-tot_len &gt; 1 ) {</a>
+<a name="ln1200">                            strcpy( p, h[j-2] );</a>
+<a name="ln1201">                            len = 1;</a>
+<a name="ln1202">                        } else {</a>
+<a name="ln1203">                            len = -1; /*  overflow */</a>
+<a name="ln1204">                        }</a>
+<a name="ln1205">                    }</a>
+<a name="ln1206">                } else {</a>
+<a name="ln1207">                    continue; /*  do not write zeroes */</a>
+<a name="ln1208">                }</a>
+<a name="ln1209">                if ( len &lt; 0 ) {</a>
+<a name="ln1210">                    bOvfl = 1;</a>
+<a name="ln1211">                    break;</a>
+<a name="ln1212">                }</a>
+<a name="ln1213">                tot_len += len;</a>
+<a name="ln1214">                p += len;</a>
+<a name="ln1215">            }</a>
+<a name="ln1216">            if ( nLen+tot_len &lt; nLen_szLinearCT ) {</a>
+<a name="ln1217">                memcpy( szLinearCT+nLen, szValue, tot_len+1 );</a>
+<a name="ln1218">                nLen += tot_len;</a>
+<a name="ln1219">            } else {</a>
+<a name="ln1220">                bOvfl = 1;</a>
+<a name="ln1221">                break;</a>
+<a name="ln1222">            }</a>
+<a name="ln1223">        }</a>
+<a name="ln1224">    }</a>
+<a name="ln1225">    *bOverflow |= bOvfl;</a>
+<a name="ln1226">    return nLen;</a>
+<a name="ln1227">}</a>
+<a name="ln1228">/**********************************************************************************************/</a>
+<a name="ln1229">int MakeIsoTautString( INChI_IsotopicTGroup   *IsotopicTGroup, int nNumberOfIsotopicTGroups,</a>
+<a name="ln1230">                  char *szLinearCT, int nLen_szLinearCT, int nCtMode, int *bOverflow)</a>
+<a name="ln1231">{</a>
+<a name="ln1232">    /*  produce output string; */</a>
+<a name="ln1233">    int nLen = 0, len, tot_len, i, j, bOvfl = *bOverflow;</a>
+<a name="ln1234">    AT_NUMB nMax;</a>
+<a name="ln1235">    char szValue[32];</a>
+<a name="ln1236">    char *p;</a>
+<a name="ln1237">    int   nValue;</a>
+<a name="ln1238">    int   bAbcNumbers = ( nCtMode &amp; CT_MODE_ABC_NUMBERS );</a>
+<a name="ln1239">    static const char letter[] = &quot;tdh&quot;;</a>
+<a name="ln1240">    static const char *h[]     = {&quot;T&quot;, &quot;D&quot;, &quot;H&quot;};</a>
+<a name="ln1241">    /*  add connection table string */</a>
+<a name="ln1242">    nMax = 0;</a>
+<a name="ln1243">    if ( !bOvfl ) {</a>
+<a name="ln1244">        for ( i = 0; i &lt; nNumberOfIsotopicTGroups &amp;&amp; nLen &lt; nLen_szLinearCT; i ++ ) {</a>
+<a name="ln1245">            p = szValue;</a>
+<a name="ln1246">            tot_len = 0;</a>
+<a name="ln1247">            for ( j = 0; j &lt; 4; j ++ ) {</a>
+<a name="ln1248">                switch( j ) {</a>
+<a name="ln1249">                case 0:</a>
+<a name="ln1250">                    nValue = (int)IsotopicTGroup[i].nTGroupNumber;</a>
+<a name="ln1251">                    break;</a>
+<a name="ln1252">                case 1:</a>
+<a name="ln1253">                    nValue = (int)IsotopicTGroup[i].nNum_T;</a>
+<a name="ln1254">                    break;</a>
+<a name="ln1255">                case 2:</a>
+<a name="ln1256">                    nValue = (int)IsotopicTGroup[i].nNum_D;</a>
+<a name="ln1257">                    break;</a>
+<a name="ln1258">                case 3:</a>
+<a name="ln1259">                    nValue = (int)IsotopicTGroup[i].nNum_H;</a>
+<a name="ln1260">                    break;</a>
+<a name="ln1261">                }</a>
+<a name="ln1262">                if ( !j ) {</a>
+<a name="ln1263">                    /*  atom canonical number */</a>
+<a name="ln1264">                    len = (bAbcNumbers?MakeAbcNumber:MakeDecNumber)</a>
+<a name="ln1265">                            ( p, (int)sizeof(szValue)-tot_len,</a>
+<a name="ln1266">                              bAbcNumbers?NULL:(i?ITEM_DELIMETER:EXTRA_SPACE),</a>
+<a name="ln1267">                              nValue</a>
+<a name="ln1268">                            );</a>
+<a name="ln1269">                } else</a>
+<a name="ln1270">                if ( nValue ) {</a>
+<a name="ln1271">                    if ( bAbcNumbers ) {</a>
+<a name="ln1272">                        len = MakeDecNumber( p, (int)sizeof(szValue)-tot_len, NULL, nValue );</a>
+<a name="ln1273">                        if ( len &gt; 0 ) { /*  make sure overflow has not happened */</a>
+<a name="ln1274">                            if ( (int)sizeof(szValue)-tot_len-len &gt; 1 ) {</a>
+<a name="ln1275">                                p[len++]=letter[j-1];</a>
+<a name="ln1276">                                p[len]  = '\0';</a>
+<a name="ln1277">                            } else {</a>
+<a name="ln1278">                                len = -1; /*  overflow */</a>
+<a name="ln1279">                            }</a>
+<a name="ln1280">                        }</a>
+<a name="ln1281">                    } else {</a>
+<a name="ln1282">                        /*  hydrogen isotope */</a>
+<a name="ln1283">                        if ( nValue != 1 ) {</a>
+<a name="ln1284">                            len = MakeDecNumber( p, (int)sizeof(szValue)-tot_len, h[j-1], nValue );</a>
+<a name="ln1285">                        } else</a>
+<a name="ln1286">                        if ( (int)sizeof(szValue)-tot_len &gt; 1 ) {</a>
+<a name="ln1287">                            strcpy( p, h[j-1] );</a>
+<a name="ln1288">                            len = 1;</a>
+<a name="ln1289">                        } else {</a>
+<a name="ln1290">                            len = -1; /*  overflow */</a>
+<a name="ln1291">                        }</a>
+<a name="ln1292">                    }</a>
+<a name="ln1293">                } else {</a>
+<a name="ln1294">                    continue; /*  do not write zeroes */</a>
+<a name="ln1295">                }</a>
+<a name="ln1296">                if ( len &lt; 0 ) {</a>
+<a name="ln1297">                    bOvfl = 1;</a>
+<a name="ln1298">                    break;</a>
+<a name="ln1299">                }</a>
+<a name="ln1300">                p += len;</a>
+<a name="ln1301">                tot_len += len;</a>
+<a name="ln1302">            }</a>
+<a name="ln1303">            if ( nLen+tot_len &lt; nLen_szLinearCT ) {</a>
+<a name="ln1304">                memcpy( szLinearCT+nLen, szValue, tot_len+1 );</a>
+<a name="ln1305">                nLen += tot_len;</a>
+<a name="ln1306">            } else {</a>
+<a name="ln1307">                bOvfl = 1;</a>
+<a name="ln1308">                break;</a>
+<a name="ln1309">            }</a>
+<a name="ln1310">        }</a>
+<a name="ln1311">    }</a>
+<a name="ln1312">    *bOverflow |= bOvfl;</a>
+<a name="ln1313">    return nLen;</a>
+<a name="ln1314">}</a>
+<a name="ln1315">/**********************************************************************************************/</a>
+<a name="ln1316">int MakeIsoHString( int num_iso_H[], char *szLinearCT, int nLen_szLinearCT, int nCtMode, int *bOverflow)</a>
+<a name="ln1317">{</a>
+<a name="ln1318">    /*  produce output string; */</a>
+<a name="ln1319">    int nLen = 0, len, tot_len, j, bOvfl = *bOverflow;</a>
+<a name="ln1320">    AT_NUMB nMax;</a>
+<a name="ln1321">    char szValue[32];</a>
+<a name="ln1322">    char *p;</a>
+<a name="ln1323">    int   nValue;</a>
+<a name="ln1324">    int   bAbcNumbers = ( nCtMode &amp; CT_MODE_ABC_NUMBERS );</a>
+<a name="ln1325">    static const char letter[] = &quot;tdh&quot;;</a>
+<a name="ln1326">    static const char *h[]     = {&quot;T&quot;, &quot;D&quot;, &quot;H&quot;};</a>
+<a name="ln1327">    /*  add connection table string */</a>
+<a name="ln1328">    nMax = 0;</a>
+<a name="ln1329">    if ( !bOvfl ) {</a>
+<a name="ln1330">        p = szValue;</a>
+<a name="ln1331">        tot_len = 0;</a>
+<a name="ln1332">        for ( j = 1; j &lt; 4; j ++ ) {</a>
+<a name="ln1333">            nValue = num_iso_H[NUM_H_ISOTOPES-j];/* j: 1=&gt;T, 2=&gt;D, 3=&gt;1H */</a>
+<a name="ln1334">            if ( nValue ) {</a>
+<a name="ln1335">                if ( bAbcNumbers ) {</a>
+<a name="ln1336">                    len = MakeDecNumber( p, (int)sizeof(szValue)-tot_len, NULL, nValue );</a>
+<a name="ln1337">                    if ( len &gt; 0 ) { /*  make sure overflow has not happened */</a>
+<a name="ln1338">                        if ( (int)sizeof(szValue)-tot_len-len &gt; 1 ) {</a>
+<a name="ln1339">                            p[len++]=letter[j-1];</a>
+<a name="ln1340">                            p[len]  = '\0';</a>
+<a name="ln1341">                        } else {</a>
+<a name="ln1342">                            len = -1; /*  overflow */</a>
+<a name="ln1343">                        }</a>
+<a name="ln1344">                    }</a>
+<a name="ln1345">                } else {</a>
+<a name="ln1346">                    /*  hydrogen isotope */</a>
+<a name="ln1347">                    if ( nValue != 1 ) {</a>
+<a name="ln1348">                        len = MakeDecNumber( p, (int)sizeof(szValue)-tot_len, h[j-1], nValue );</a>
+<a name="ln1349">                    } else</a>
+<a name="ln1350">                    if ( (int)sizeof(szValue)-tot_len &gt; 1 ) {</a>
+<a name="ln1351">                        strcpy( p, h[j-1] );</a>
+<a name="ln1352">                        len = 1;</a>
+<a name="ln1353">                    } else {</a>
+<a name="ln1354">                        len = -1; /*  overflow */</a>
+<a name="ln1355">                    }</a>
+<a name="ln1356">                }</a>
+<a name="ln1357">            } else {</a>
+<a name="ln1358">                continue; /*  do not write zeroes */</a>
+<a name="ln1359">            }</a>
+<a name="ln1360">            if ( len &lt; 0 ) {</a>
+<a name="ln1361">                bOvfl = 1;</a>
+<a name="ln1362">                break;</a>
+<a name="ln1363">            }</a>
+<a name="ln1364">            p += len;</a>
+<a name="ln1365">            tot_len += len;</a>
+<a name="ln1366">        }</a>
+<a name="ln1367">        if ( nLen+tot_len &lt; nLen_szLinearCT ) {</a>
+<a name="ln1368">            memcpy( szLinearCT+nLen, szValue, tot_len+1 );</a>
+<a name="ln1369">            nLen += tot_len;</a>
+<a name="ln1370">        } else {</a>
+<a name="ln1371">            bOvfl = 1;</a>
+<a name="ln1372">        }</a>
+<a name="ln1373">    }</a>
+<a name="ln1374">    *bOverflow |= bOvfl;</a>
+<a name="ln1375">    return nLen;</a>
+<a name="ln1376">}</a>
+<a name="ln1377">/**********************************************************************************************/</a>
+<a name="ln1378">int MakeStereoString( AT_NUMB *at1, AT_NUMB *at2, S_CHAR *parity, int bAddDelim, int nLenCT,</a>
+<a name="ln1379">                  char *szLinearCT, int nLen_szLinearCT, int nCtMode, int *bOverflow)</a>
+<a name="ln1380">{</a>
+<a name="ln1381">    /*  produce output string; */</a>
+<a name="ln1382">    int nLen = 0, len, tot_len, i, j, bOvfl = *bOverflow;</a>
+<a name="ln1383">    char szValue[32];</a>
+<a name="ln1384">    char *p;</a>
+<a name="ln1385">    int   nValue;</a>
+<a name="ln1386">    static const char parity_char[] = &quot;!-+u?&quot;;</a>
+<a name="ln1387">    bAddDelim = 0;</a>
+<a name="ln1388">    if ( !bOvfl ) {</a>
+<a name="ln1389">        for ( i = 0; i &lt; nLenCT &amp;&amp; nLen &lt; nLen_szLinearCT; i ++ ) {</a>
+<a name="ln1390">            p = szValue;</a>
+<a name="ln1391">            tot_len = 0;</a>
+<a name="ln1392">            for ( j = 0; j &lt; 3; j ++ ) {</a>
+<a name="ln1393">                if ( j == 0 &amp;&amp; at1 )</a>
+<a name="ln1394">                    nValue = (int)at1[i];</a>
+<a name="ln1395">                else</a>
+<a name="ln1396">                if ( j == 1 &amp;&amp; at2 )</a>
+<a name="ln1397">                    nValue = (int)at2[i];</a>
+<a name="ln1398">                else</a>
+<a name="ln1399">                if ( j == 2 &amp;&amp; parity )</a>
+<a name="ln1400">                    nValue = (int)parity[i];</a>
+<a name="ln1401">                else</a>
+<a name="ln1402">                    continue;</a>
+<a name="ln1403">                if ( nCtMode &amp; CT_MODE_ABC_NUMBERS ) {</a>
+<a name="ln1404">                    len = (j==2? MakeDecNumber : MakeAbcNumber)( p, (int)sizeof(szValue)-tot_len, NULL, nValue );</a>
+<a name="ln1405">                } else {</a>
+<a name="ln1406">                    if ( j &lt; 2 ) {</a>
+<a name="ln1407">                        len = MakeDecNumber( p, (int)sizeof(szValue)-tot_len, tot_len?&quot;-&quot;:(i||bAddDelim)?ITEM_DELIMETER:NULL, nValue );</a>
+<a name="ln1408">                    } else</a>
+<a name="ln1409">                    if ( tot_len + 1 &lt; (int)sizeof(szValue) ) {</a>
+<a name="ln1410">                        *p ++ = (0&lt;=nValue &amp;&amp; nValue&lt;=4)? parity_char[nValue]:parity_char[0];</a>
+<a name="ln1411">                        *p    = '\0';</a>
+<a name="ln1412">                        len   = 1;</a>
+<a name="ln1413">                    } else {</a>
+<a name="ln1414">                        len = -1; /*  Overflow */</a>
+<a name="ln1415">                    }</a>
+<a name="ln1416">                }</a>
+<a name="ln1417">                if ( len &lt; 0 ) {</a>
+<a name="ln1418">                    bOvfl = 1;</a>
+<a name="ln1419">                    break;</a>
+<a name="ln1420">                }</a>
+<a name="ln1421">                p += len;</a>
+<a name="ln1422">                tot_len += len;</a>
+<a name="ln1423">            }</a>
+<a name="ln1424">            if ( nLen+tot_len &lt; nLen_szLinearCT ) {</a>
+<a name="ln1425">                memcpy( szLinearCT+nLen, szValue, tot_len+1 );</a>
+<a name="ln1426">                nLen += tot_len;</a>
+<a name="ln1427">            } else {</a>
+<a name="ln1428">                bOvfl = 1;</a>
+<a name="ln1429">                break;</a>
+<a name="ln1430">            }</a>
+<a name="ln1431">        }</a>
+<a name="ln1432">    }</a>
+<a name="ln1433">    *bOverflow |= bOvfl;</a>
+<a name="ln1434">    return nLen;</a>
+<a name="ln1435">}</a>
+<a name="ln1436">#ifdef ALPHA_BASE</a>
+<a name="ln1437"> </a>
+<a name="ln1438">#if ( ALPHA_BASE != 27 )</a>
+<a name="ln1439">#error ALPHA_BASE definitions mismatch</a>
+<a name="ln1440">#endif</a>
+<a name="ln1441"> </a>
+<a name="ln1442">#else</a>
+<a name="ln1443"> </a>
+<a name="ln1444">#define ALPHA_BASE     27</a>
+<a name="ln1445"> </a>
+<a name="ln1446">#endif</a>
+<a name="ln1447"> </a>
+<a name="ln1448">#define ALPHA_MINUS    '-'</a>
+<a name="ln1449">#define ALPHA_ZERO_VAL '.'</a>
+<a name="ln1450">#define ALPHA_ONE      'a'</a>
+<a name="ln1451">#define ALPHA_ZERO     '@'</a>
+<a name="ln1452">/**********************************************************************************************/</a>
+<a name="ln1453">/*  Produce an &quot;Alphabetic&quot; number, base 27 (27 digits: 0, a, b, ..., z) */</a>
+<a name="ln1454">/*  The leading &quot;digit&quot; uppercase, the rest -- lowercase */</a>
+<a name="ln1455">/*  szString length nStringLen includes 1 byte for zero termination */</a>
+<a name="ln1456">/*  Return Value: length without zero termination; -1 means not enough room */</a>
+<a name="ln1457">/*  Note: ASCII-encoding specific implementation */</a>
+<a name="ln1458">int MakeAbcNumber( char *szString, int nStringLen, const char *szLeadingDelim, int nValue )</a>
+<a name="ln1459">{</a>
+<a name="ln1460">    char *p = szString;</a>
+<a name="ln1461">    char *q;</a>
+<a name="ln1462">    int  nChar;</a>
+<a name="ln1463"> </a>
+<a name="ln1464">    if ( nStringLen &lt; 2 )</a>
+<a name="ln1465">        return -1;</a>
+<a name="ln1466">    while ( szLeadingDelim &amp;&amp; *szLeadingDelim &amp;&amp; --nStringLen ) {</a>
+<a name="ln1467">        *p ++ = *szLeadingDelim ++;</a>
+<a name="ln1468">    }</a>
+<a name="ln1469">    if ( nStringLen &lt; 2 )</a>
+<a name="ln1470">        return -1;</a>
+<a name="ln1471">    if ( !nValue ) {</a>
+<a name="ln1472">        *p++ = ALPHA_ZERO_VAL;  /*  zero value (cannot use 0) */</a>
+<a name="ln1473">        *p   = '\0';</a>
+<a name="ln1474">        return 1;</a>
+<a name="ln1475">    }</a>
+<a name="ln1476">    if ( nValue &lt; 0 ) {</a>
+<a name="ln1477">        *p++ = ALPHA_MINUS;</a>
+<a name="ln1478">        nStringLen --;</a>
+<a name="ln1479">        nValue = -nValue;</a>
+<a name="ln1480">    }</a>
+<a name="ln1481">    for ( q = p; nValue &amp;&amp; --nStringLen; nValue /= ALPHA_BASE ) {</a>
+<a name="ln1482">        if ( (nChar = nValue % ALPHA_BASE) ) {</a>
+<a name="ln1483">            nChar = ALPHA_ONE + nChar - 1;</a>
+<a name="ln1484">        } else {</a>
+<a name="ln1485">            nChar = ALPHA_ZERO;</a>
+<a name="ln1486">        }</a>
+<a name="ln1487">        *q++ = nChar;</a>
+<a name="ln1488">    }</a>
+<a name="ln1489">    if ( nStringLen &lt;= 0 )</a>
+<a name="ln1490">        return -1;</a>
+<a name="ln1491">    *q = '\0';</a>
+<a name="ln1492">    mystrrev( p );</a>
+<a name="ln1493">    p[0] = toupper(p[0]);</a>
+<a name="ln1494">    return (q - szString);</a>
+<a name="ln1495">}</a>
+<a name="ln1496">#if ( READ_INCHI_STRING == 1 )</a>
+<a name="ln1497">/*****************************************************/</a>
+<a name="ln1498">static long abctol( const char *szString, char **q ); /* keep compiler happy */</a>
+<a name="ln1499"> </a>
+<a name="ln1500">long abctol( const char *szString, char **q )</a>
+<a name="ln1501">{</a>
+<a name="ln1502">#define __MYTOLOWER(c) ( ((c) &gt;= 'A') &amp;&amp; ((c) &lt;= 'Z') ? ((c) - 'A' + 'a') : (c) )</a>
+<a name="ln1503"> </a>
+<a name="ln1504">    long        val  = 0;</a>
+<a name="ln1505">    long        sign = 1;</a>
+<a name="ln1506">    const char *p = szString;</a>
+<a name="ln1507">    if ( *p == ALPHA_MINUS ) {</a>
+<a name="ln1508">        p ++;</a>
+<a name="ln1509">        sign = -1;</a>
+<a name="ln1510">    }</a>
+<a name="ln1511">    if ( *p == ALPHA_ZERO ) {</a>
+<a name="ln1512">        p ++;</a>
+<a name="ln1513">        goto exit_function;</a>
+<a name="ln1514">    }</a>
+<a name="ln1515">    if ( !isupper(UCINT *p) ) {</a>
+<a name="ln1516">        p = szString;</a>
+<a name="ln1517">        goto exit_function; /* not an abc-number */</a>
+<a name="ln1518">    }</a>
+<a name="ln1519">    val = __MYTOLOWER(*p) - ALPHA_ONE + 1;</a>
+<a name="ln1520">    p ++;</a>
+<a name="ln1521">    while ( *p ) {</a>
+<a name="ln1522">        if ( islower( UCINT *p ) ) {</a>
+<a name="ln1523">            val *= ALPHA_BASE;</a>
+<a name="ln1524">            val += *p - ALPHA_ONE + 1;</a>
+<a name="ln1525">        } else</a>
+<a name="ln1526">        if ( *p == ALPHA_ZERO ) {</a>
+<a name="ln1527">            val *= ALPHA_BASE;</a>
+<a name="ln1528">        } else {</a>
+<a name="ln1529">            break;</a>
+<a name="ln1530">        }</a>
+<a name="ln1531">        p ++;</a>
+<a name="ln1532">    }</a>
+<a name="ln1533">exit_function:</a>
+<a name="ln1534">    if ( q ) {</a>
+<a name="ln1535">        *q = (char *)p;  /* cast deliberately discards const qualifier */</a>
+<a name="ln1536">    }</a>
+<a name="ln1537">    return val;</a>
+<a name="ln1538">#undef __MYTOLOWER</a>
+<a name="ln1539">}</a>
+<a name="ln1540">/********************************************************/</a>
+<a name="ln1541">long inchi_strtol( const char *str, const char **p, int base)</a>
+<a name="ln1542">{</a>
+<a name="ln1543">    if ( base == ALPHA_BASE ) {</a>
+<a name="ln1544">        return abctol( str, (char **)p ); /* cast deliberately discards const qualifier */</a>
+<a name="ln1545">    } else {</a>
+<a name="ln1546">        return strtol( str, (char **)p, base ); /* cast deliberately discards const qualifier */</a>
+<a name="ln1547">    }</a>
+<a name="ln1548">}</a>
+<a name="ln1549">#endif</a>
+<a name="ln1550">#undef ALPHA_BASE</a>
+<a name="ln1551">#undef ALPHA_MINUS</a>
+<a name="ln1552">#undef ALPHA_ZERO_VAL</a>
+<a name="ln1553">#undef ALPHA_ONE</a>
+<a name="ln1554">#undef ALPHA_ZERO</a>
+<a name="ln1555"> </a>
+<a name="ln1556">/********************************************************/</a>
+<a name="ln1557">double inchi_strtod( const char *str, const char **p )</a>
+<a name="ln1558">{</a>
+<a name="ln1559">        return strtod( str, (char **)p );</a>
+<a name="ln1560">}</a>
+<a name="ln1561"> </a>
+<a name="ln1562">/**********************************************************************************************/</a>
+<a name="ln1563">/*  Produce a decimal number */</a>
+<a name="ln1564">/*  szString length nStringLen includes 1 byte for zero termination */</a>
+<a name="ln1565">/*  Return Value: length without zero termination; -1 means not enough room */</a>
+<a name="ln1566">int MakeDecNumber( char *szString, int nStringLen, const char *szLeadingDelim, int nValue )</a>
+<a name="ln1567">{</a>
+<a name="ln1568">#define DECIMAL_BASE     10</a>
+<a name="ln1569">#define DECIMAL_MINUS    '-'</a>
+<a name="ln1570">#define DECIMAL_ZERO_VAL '0'</a>
+<a name="ln1571">#define DECIMAL_ONE      '1'</a>
+<a name="ln1572">#define DECIMAL_ZERO     '0'</a>
+<a name="ln1573">    char *p = szString;</a>
+<a name="ln1574">    char *q;</a>
+<a name="ln1575">    int  nChar;</a>
+<a name="ln1576"> </a>
+<a name="ln1577">    if ( nStringLen &lt; 2 )</a>
+<a name="ln1578">        return -1;</a>
+<a name="ln1579">    while ( szLeadingDelim &amp;&amp; *szLeadingDelim &amp;&amp; --nStringLen ) {</a>
+<a name="ln1580">        *p ++ = *szLeadingDelim ++;</a>
+<a name="ln1581">    }</a>
+<a name="ln1582">    if ( nStringLen &lt; 2 )</a>
+<a name="ln1583">        return -1;</a>
+<a name="ln1584">    if ( !nValue ) {</a>
+<a name="ln1585">        *p++ = DECIMAL_ZERO_VAL;  /*  zero value (cannot use 0) */</a>
+<a name="ln1586">        *p   = '\0';</a>
+<a name="ln1587">        return p-szString;</a>
+<a name="ln1588">    }</a>
+<a name="ln1589">    if ( nValue &lt; 0 ) {</a>
+<a name="ln1590">        *p++ = DECIMAL_MINUS;</a>
+<a name="ln1591">        nStringLen --;</a>
+<a name="ln1592">        nValue = -nValue;</a>
+<a name="ln1593">    }</a>
+<a name="ln1594">    for ( q = p; nValue &amp;&amp; --nStringLen; nValue /= DECIMAL_BASE ) {</a>
+<a name="ln1595">        if ( (nChar = nValue % DECIMAL_BASE) ) {</a>
+<a name="ln1596">            nChar = DECIMAL_ONE + nChar - 1;</a>
+<a name="ln1597">        } else {</a>
+<a name="ln1598">            nChar = DECIMAL_ZERO;</a>
+<a name="ln1599">        }</a>
+<a name="ln1600">        *q++ = nChar;</a>
+<a name="ln1601">    }</a>
+<a name="ln1602">    if ( nStringLen &lt;= 0 )</a>
+<a name="ln1603">        return -1;</a>
+<a name="ln1604">    *q = '\0';</a>
+<a name="ln1605">    mystrrev( p );</a>
+<a name="ln1606">    return (q - szString);</a>
+<a name="ln1607">#undef DECIMAL_BASE</a>
+<a name="ln1608">#undef DECIMAL_MINUS</a>
+<a name="ln1609">#undef DECIMAL_ZERO_VAL</a>
+<a name="ln1610">#undef DECIMAL_ONE</a>
+<a name="ln1611">#undef DECIMAL_ZERO</a>
+<a name="ln1612">}</a>
+
+</code></pre>
+<div class="balloon" rel="95"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'bRelRac' is always false.</p></div>
+<div class="balloon" rel="326"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v781/" target="_blank">V781</a> The value of the 'i' variable is checked after it was used. Perhaps there is a mistake in program logic. Check lines: 326, 328.</p></div>
+<div class="balloon" rel="500"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'nDfsOrderCT' is always true.</p></div>
+<div class="balloon" rel="694"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v773/" target="_blank">V773</a> Visibility scope of the 'nNumH' pointer was exited without releasing the memory. A memory leak is possible.</p></div>
+<div class="balloon" rel="1407"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always false: bAddDelim.</p></div>
+<div class="balloon" rel="1387"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v763/" target="_blank">V763</a> Parameter 'bAddDelim' is always rewritten in function body before being used.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

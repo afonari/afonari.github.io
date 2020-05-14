@@ -1,0 +1,521 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>groformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Copyright (C) 2010 by Reinis Danne</a>
+<a name="ln3">Some portions Copyright (C) 2004 by Chris Morley</a>
+<a name="ln4"> </a>
+<a name="ln5">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln6">it under the terms of the GNU General Public License as published by</a>
+<a name="ln7">the Free Software Foundation version 2 of the License.</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is distributed in the hope that it will be useful,</a>
+<a name="ln10">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln11">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln12">GNU General Public License for more details.</a>
+<a name="ln13">***********************************************************************/</a>
+<a name="ln14"> </a>
+<a name="ln15">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln16">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln17">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln18">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln22"> </a>
+<a name="ln23"> </a>
+<a name="ln24">#include &lt;sstream&gt;</a>
+<a name="ln25">#include &lt;iomanip&gt;</a>
+<a name="ln26"> </a>
+<a name="ln27">using namespace std;</a>
+<a name="ln28">namespace OpenBabel</a>
+<a name="ln29">{</a>
+<a name="ln30"> </a>
+<a name="ln31">class GROFormat : public OBMoleculeFormat</a>
+<a name="ln32">{</a>
+<a name="ln33">public:</a>
+<a name="ln34">  //Register this format type ID in the constructor</a>
+<a name="ln35">  GROFormat()</a>
+<a name="ln36">  {</a>
+<a name="ln37">    /* GRO is the file extension and is case insensitive. A MIME type can be</a>
+<a name="ln38">       added as an optional third parameter.</a>
+<a name="ln39">       Multiple file extensions can be registered by adding extra statements.*/</a>
+<a name="ln40">    OBConversion::RegisterFormat(&quot;gro&quot;,this);</a>
+<a name="ln41"> </a>
+<a name="ln42">    /* If there are any format specific options they should be registered here</a>
+<a name="ln43">       so that the commandline interface works properly.</a>
+<a name="ln44">       The first parameter is the option name. If it is a single letter it can</a>
+<a name="ln45">       be concatinated with other single letter options. For output options it</a>
+<a name="ln46">       can be multicharcter and is then written as --optionname on the command</a>
+<a name="ln47">       line. The third parameter is the number of parameters the option takes.</a>
+<a name="ln48">       Currently this is either 1 or 0 and if it is 0 can be omitted for output</a>
+<a name="ln49">       options. The parameter is always text and needs to be parsed to extract</a>
+<a name="ln50">       a number.</a>
+<a name="ln51"> </a>
+<a name="ln52">       Options can apply when writing - 4th parameter is</a>
+<a name="ln53">       OBConversion::OUTOPTIONS or can be omitted as shown. A single letter</a>
+<a name="ln54">       output option is preceded by -x on the command line.</a>
+<a name="ln55">       Or options can apply to the input format - the 4th parameter is</a>
+<a name="ln56">       OBConversion::INOPTIONS. They are then preceded by -a on the command</a>
+<a name="ln57">       line.</a>
+<a name="ln58"> </a>
+<a name="ln59">       Each option letter may be reused in other formats, but within the same</a>
+<a name="ln60">       group, INOPTIONS or OUTOPTIONS, must take the same number of parameters</a>
+<a name="ln61">       (0 or 1). There will be an error message when OpenBabel  runs if there</a>
+<a name="ln62">       are conflicts between formats. A list of formats currently used (which</a>
+<a name="ln63">       may not be comprehensive) is in docs/options.html.</a>
+<a name="ln64">    */</a>
+<a name="ln65">    OBConversion::RegisterOptionParam(&quot;f&quot;, this, 1);</a>
+<a name="ln66">    OBConversion::RegisterOptionParam(&quot;n&quot;, this);</a>
+<a name="ln67">    OBConversion::RegisterOptionParam(&quot;s&quot;, this, 0, OBConversion::INOPTIONS);</a>
+<a name="ln68"> </a>
+<a name="ln69">  }</a>
+<a name="ln70"> </a>
+<a name="ln71">  /* The first line of the description should be a brief identifier, &lt;40 chars,</a>
+<a name="ln72">     because it is used in dropdown lists, etc. in some user interfaces.</a>
+<a name="ln73">     The rest is optional.</a>
+<a name="ln74"> </a>
+<a name="ln75">     Describe any format specific options here. This text is parsed to provide</a>
+<a name="ln76">     checkboxes, etc for the GUI (for details click the control menu),</a>
+<a name="ln77">     so please try to keep to a similar form.</a>
+<a name="ln78"> </a>
+<a name="ln79">     Write options are the most common, and the &quot;Write&quot; is optional.</a>
+<a name="ln80">     The option f takes a text parameter, so that it is essential that the</a>
+<a name="ln81">     option is registered in the constructor of the class.</a>
+<a name="ln82">     Finish the options with a blank line as shown, if there are more than one</a>
+<a name="ln83">     group of options, or if there are further comments after them.</a>
+<a name="ln84">  */</a>
+<a name="ln85">  virtual const char* Description() //required</a>
+<a name="ln86">  {</a>
+<a name="ln87">    return</a>
+<a name="ln88">    &quot;GRO format\n&quot;</a>
+<a name="ln89">    &quot;This is GRO file format as used in Gromacs.\n&quot;</a>
+<a name="ln90">    &quot;Right now there is only limited support for element perception. It works &quot;</a>
+<a name="ln91">    &quot;for \nelements with one letter symbols if the atomtype starts with the &quot;</a>
+<a name="ln92">    &quot;same letter.\n\n&quot;</a>
+<a name="ln93"> </a>
+<a name="ln94">    &quot;Read Options e.g. -as\n&quot;</a>
+<a name="ln95">    &quot; s  Consider single bonds only\n&quot;</a>
+<a name="ln96">    &quot; b  Disable bonding entierly\n&quot;</a>
+<a name="ln97">    ;</a>
+<a name="ln98">  };</a>
+<a name="ln99"> </a>
+<a name="ln100">  //Optional URL where the file format is specified</a>
+<a name="ln101">  virtual const char* SpecificationURL()</a>
+<a name="ln102">  {</a>
+<a name="ln103">    return &quot;http://manual.gromacs.org/documentation/current/reference-manual/file-formats.html#gro&quot;;</a>
+<a name="ln104">  }</a>
+<a name="ln105"> </a>
+<a name="ln106">  /* This optional function is for formats which can contain more than one</a>
+<a name="ln107">     molecule. It is used to quickly position the input stream after the nth</a>
+<a name="ln108">     molecule without requiring to convert and discard all the n molecules.</a>
+<a name="ln109">     See obconversion.cpp for details.*/</a>
+<a name="ln110">  virtual int SkipObjects(int n, OBConversion* pConv)</a>
+<a name="ln111">  {</a>
+<a name="ln112">    string line = &quot;&quot;;</a>
+<a name="ln113">    int natoms = 0;</a>
+<a name="ln114">    int nlines = 0;</a>
+<a name="ln115"> </a>
+<a name="ln116">    if (n == 0)</a>
+<a name="ln117">      n++;</a>
+<a name="ln118">    istream&amp; ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln119">    getline(ifs, line);</a>
+<a name="ln120">    ifs &gt;&gt; natoms;</a>
+<a name="ln121">    nlines = (natoms+3)*n;</a>
+<a name="ln122">    while (ifs &amp;&amp; --nlines) {</a>
+<a name="ln123">      getline(ifs, line);</a>
+<a name="ln124">    }</a>
+<a name="ln125"> </a>
+<a name="ln126">    return ifs.good() ? 1 : -1;</a>
+<a name="ln127">  };</a>
+<a name="ln128"> </a>
+<a name="ln129">  ////////////////////////////////////////////////////</a>
+<a name="ln130">  /// Declarations for the &quot;API&quot; interface functions. Definitions are below</a>
+<a name="ln131">  virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln132">  virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln133">};</a>
+<a name="ln134">  ////////////////////////////////////////////////////</a>
+<a name="ln135">//Make an instance of the format class</a>
+<a name="ln136">GROFormat theGROFormat;</a>
+<a name="ln137"> </a>
+<a name="ln138">/////////////////////////////////////////////////////////////////</a>
+<a name="ln139"> </a>
+<a name="ln140">bool GROFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln141">{</a>
+<a name="ln142">  OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln143">  if (pmol == nullptr)</a>
+<a name="ln144">      return false;</a>
+<a name="ln145"> </a>
+<a name="ln146">  istream&amp; ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln147"> </a>
+<a name="ln148">  pmol-&gt;BeginModify();</a>
+<a name="ln149"> </a>
+<a name="ln150">  /** Parse the input stream and use the OpenBabel API to populate the OBMol **/</a>
+<a name="ln151"> </a>
+<a name="ln152">  char buffer[BUFF_SIZE];</a>
+<a name="ln153">  string line = &quot;&quot;;</a>
+<a name="ln154">  stringstream errorMsg;</a>
+<a name="ln155"> </a>
+<a name="ln156">  int natoms = 0;</a>
+<a name="ln157">  string title = &quot;&quot;;</a>
+<a name="ln158">  long int resid = 0; // 5</a>
+<a name="ln159">  string resname = &quot;&quot;; //5</a>
+<a name="ln160">  string atomtype = &quot;&quot;; //5</a>
+<a name="ln161">  //long int atomid = 0; //5</a>
+<a name="ln162">  double x = 0.0; // 8.3</a>
+<a name="ln163">  double y = 0.0; // 8.3</a>
+<a name="ln164">  double z = 0.0; // 8.3</a>
+<a name="ln165">  double vx = 0.0; // 8.4</a>
+<a name="ln166">  double vy = 0.0; // 8.4</a>
+<a name="ln167">  double vz = 0.0; // 8.4</a>
+<a name="ln168">  string tempstr = &quot;&quot;;</a>
+<a name="ln169">  long int residx = 0;</a>
+<a name="ln170">  OBAtom* atom;</a>
+<a name="ln171">  OBResidue* res;</a>
+<a name="ln172">  OBVectorData* velocity;</a>
+<a name="ln173"> </a>
+<a name="ln174">  if (!ifs || ifs.peek() == EOF) {</a>
+<a name="ln175">    return false; // Trying to read past end of the file</a>
+<a name="ln176">  }</a>
+<a name="ln177"> </a>
+<a name="ln178">  if (!ifs.getline(buffer, BUFF_SIZE)) {</a>
+<a name="ln179">    errorMsg &lt;&lt; &quot;Problems reading a GRO file: &quot;</a>
+<a name="ln180">             &lt;&lt; &quot;Cannot read the first line!&quot;;</a>
+<a name="ln181">    obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obWarning);</a>
+<a name="ln182">    return false;</a>
+<a name="ln183">  }</a>
+<a name="ln184"> </a>
+<a name="ln185">  // Get the title</a>
+<a name="ln186">  title.assign(buffer);</a>
+<a name="ln187">  if (title.size() &lt; 1) {</a>
+<a name="ln188">    title = pConv-&gt;GetTitle();</a>
+<a name="ln189">    pmol-&gt;SetTitle(title);</a>
+<a name="ln190">  } else {</a>
+<a name="ln191">    pmol-&gt;SetTitle(title);</a>
+<a name="ln192">  }</a>
+<a name="ln193"> </a>
+<a name="ln194">  if (!ifs.getline(buffer, BUFF_SIZE)) {</a>
+<a name="ln195">    errorMsg &lt;&lt; &quot;Problems reading a GRO file: &quot;</a>
+<a name="ln196">             &lt;&lt; &quot;Cannot read the second line!&quot;;</a>
+<a name="ln197">    obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obWarning);</a>
+<a name="ln198">    return false;</a>
+<a name="ln199">  }</a>
+<a name="ln200"> </a>
+<a name="ln201">  // Get the number of atoms</a>
+<a name="ln202">  stringstream(buffer) &gt;&gt; natoms;</a>
+<a name="ln203">  if (natoms &lt; 1) {</a>
+<a name="ln204">    errorMsg &lt;&lt; &quot;Problems reading a GRO file: &quot;</a>
+<a name="ln205">             &lt;&lt; &quot;There are no atoms in the file or the second line is&quot;</a>
+<a name="ln206">             &lt;&lt; &quot; incorrectly written.&quot;;</a>
+<a name="ln207">    obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obWarning);</a>
+<a name="ln208">    return false;</a>
+<a name="ln209">  }</a>
+<a name="ln210">  pmol-&gt;ReserveAtoms(natoms);</a>
+<a name="ln211"> </a>
+<a name="ln212">  // Read all atom records</a>
+<a name="ln213">  for (int i=1; i&lt;=natoms; i++) {</a>
+<a name="ln214">    if (!ifs.getline(buffer,BUFF_SIZE)) {</a>
+<a name="ln215">      errorMsg &lt;&lt; &quot;Problems reading a GRO file: &quot;</a>
+<a name="ln216">               &lt;&lt; &quot;Could not read line #&quot; &lt;&lt; i+2 &lt;&lt; &quot;, file error.&quot; &lt;&lt; endl</a>
+<a name="ln217">               &lt;&lt; &quot; According to the second line, there should be &quot; &lt;&lt; natoms</a>
+<a name="ln218">               &lt;&lt; &quot; atoms, and therefore &quot; &lt;&lt; natoms+3 &lt;&lt; &quot; lines in the file.&quot;;</a>
+<a name="ln219">      obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obWarning);</a>
+<a name="ln220">      return false;</a>
+<a name="ln221">    }</a>
+<a name="ln222"> </a>
+<a name="ln223">    line = buffer;</a>
+<a name="ln224"> </a>
+<a name="ln225">    // Get atom</a>
+<a name="ln226">    atom  = pmol-&gt;NewAtom();</a>
+<a name="ln227"> </a>
+<a name="ln228">    tempstr.assign(line,0,5);</a>
+<a name="ln229">    stringstream(tempstr) &gt;&gt; resid;</a>
+<a name="ln230"> </a>
+<a name="ln231">    resname.assign(line,5,5);</a>
+<a name="ln232">    Trim(resname);</a>
+<a name="ln233"> </a>
+<a name="ln234">    atomtype.assign(line,10,5);</a>
+<a name="ln235">    Trim(atomtype);</a>
+<a name="ln236"> </a>
+<a name="ln237">    // Not used, OB assigns its own indizes</a>
+<a name="ln238">    //tempstr.assign(line,15,5);</a>
+<a name="ln239">    //stringstream(tempstr) &gt;&gt; atomid;</a>
+<a name="ln240"> </a>
+<a name="ln241">    tempstr.assign(line,20,8);</a>
+<a name="ln242">    stringstream(tempstr) &gt;&gt; x;</a>
+<a name="ln243"> </a>
+<a name="ln244">    tempstr.assign(line,28,8);</a>
+<a name="ln245">    stringstream(tempstr) &gt;&gt; y;</a>
+<a name="ln246"> </a>
+<a name="ln247">    tempstr.assign(line,36,8);</a>
+<a name="ln248">    stringstream(tempstr) &gt;&gt; z;</a>
+<a name="ln249"> </a>
+<a name="ln250">    if (line.size() &gt; 44) {</a>
+<a name="ln251">      tempstr.assign(line,44,8);</a>
+<a name="ln252">      stringstream(tempstr) &gt;&gt; vx;</a>
+<a name="ln253"> </a>
+<a name="ln254">      tempstr.assign(line,52,8);</a>
+<a name="ln255">      stringstream(tempstr) &gt;&gt; vy;</a>
+<a name="ln256"> </a>
+<a name="ln257">      tempstr.assign(line,60,8);</a>
+<a name="ln258">      stringstream(tempstr) &gt;&gt; vz;</a>
+<a name="ln259"> </a>
+<a name="ln260">      velocity = new OBVectorData();</a>
+<a name="ln261">      velocity-&gt;SetData(vx, vy, vz);</a>
+<a name="ln262">      velocity-&gt;SetAttribute(&quot;Velocity&quot;);</a>
+<a name="ln263">      velocity-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln264">      atom-&gt;SetData(velocity);</a>
+<a name="ln265">    }</a>
+<a name="ln266"> </a>
+<a name="ln267">    // OB translates this and, e.g., OW1 turns into O3</a>
+<a name="ln268">    // Type conversion should be done explicitly if that needs to be</a>
+<a name="ln269">    // controlled.</a>
+<a name="ln270">    atom-&gt;SetType(atomtype);</a>
+<a name="ln271"> </a>
+<a name="ln272">    // Set coordinates of the atom, multiply by 10 to convert from nm to</a>
+<a name="ln273">    // angstrom</a>
+<a name="ln274">    atom-&gt;SetVector(x*10, y*10, z*10);</a>
+<a name="ln275"> </a>
+<a name="ln276">    if (resid == residx) {</a>
+<a name="ln277">      // Add atom to an existing residue</a>
+<a name="ln278">      res-&gt;AddAtom(atom);</a>
+<a name="ln279">    } else {</a>
+<a name="ln280">      // Create new residue and use that</a>
+<a name="ln281">      res = pmol-&gt;NewResidue();</a>
+<a name="ln282">      res-&gt;SetName(resname);</a>
+<a name="ln283">      res-&gt;SetNum(resid);</a>
+<a name="ln284">      res-&gt;AddAtom(atom);</a>
+<a name="ln285">      residx = resid;</a>
+<a name="ln286">    }</a>
+<a name="ln287"> </a>
+<a name="ln288">    // Atom type has to be set in residues as AtomID</a>
+<a name="ln289">    res-&gt;SetAtomID(atom, atomtype);</a>
+<a name="ln290"> </a>
+<a name="ln291">    // For determining the element this doesn't work:</a>
+<a name="ln292">    // atom-&gt;SetAtomicNum(OBElements::GetAtomicNum(atom-&gt;GetType()));</a>
+<a name="ln293">    //</a>
+<a name="ln294">    // So the element simbol should be found while reading in the file. It</a>
+<a name="ln295">    // could be possible to provide an option for external atomtype&lt;-&gt;element</a>
+<a name="ln296">    // simbol map. Now such functionality is not implemented.</a>
+<a name="ln297"> </a>
+<a name="ln298">    // TODO: Make element perception optional and improve it</a>
+<a name="ln299">    string element = &quot;&quot;;</a>
+<a name="ln300">    if (atomtype[0] == 'C') {</a>
+<a name="ln301">      if (atomtype.find_first_of(&quot;aloru&quot;,1) == 1) {</a>
+<a name="ln302">        element.assign(atomtype,0,2);</a>
+<a name="ln303">      } else {</a>
+<a name="ln304">        element.assign(atomtype,0,1);</a>
+<a name="ln305">      }</a>
+<a name="ln306">    } else if (atomtype[0] == 'N') {</a>
+<a name="ln307">      if (atomtype.find_first_of(&quot;abei&quot;,1) == 1) {</a>
+<a name="ln308">        element.assign(atomtype,0,2);</a>
+<a name="ln309">      } else {</a>
+<a name="ln310">        element.assign(atomtype,0,1);</a>
+<a name="ln311">      }</a>
+<a name="ln312">    } else {</a>
+<a name="ln313">      element.assign(atomtype,0,1);</a>
+<a name="ln314">    }</a>
+<a name="ln315">    atom-&gt;SetAtomicNum(OBElements::GetAtomicNum(element.data()));</a>
+<a name="ln316">  }</a>
+<a name="ln317"> </a>
+<a name="ln318">  // Get periodic box</a>
+<a name="ln319">  if (!ifs.getline(buffer,BUFF_SIZE)) {</a>
+<a name="ln320">    errorMsg &lt;&lt; &quot;Problems reading a GRO file: &quot;</a>
+<a name="ln321">             &lt;&lt; &quot;Could not read box vectors!&quot; &lt;&lt; endl;</a>
+<a name="ln322">    obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obWarning);</a>
+<a name="ln323">    return false;</a>
+<a name="ln324">  }</a>
+<a name="ln325"> </a>
+<a name="ln326">  double v1x=0.0, v2y=0.0, v3z=0.0;</a>
+<a name="ln327">  double v1y=0.0, v1z=0.0, v2x=0.0;</a>
+<a name="ln328">  double v2z=0.0, v3x=0.0, v3y=0.0;</a>
+<a name="ln329"> </a>
+<a name="ln330">  stringstream ss(buffer);</a>
+<a name="ln331">  if (!ss) {</a>
+<a name="ln332">    errorMsg &lt;&lt; &quot;Problems reading a GRO file: &quot;</a>
+<a name="ln333">             &lt;&lt; &quot;Could not read box vectors!&quot; &lt;&lt; endl;</a>
+<a name="ln334">    obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obWarning);</a>
+<a name="ln335">    return false;</a>
+<a name="ln336">  }</a>
+<a name="ln337"> </a>
+<a name="ln338">  ss &gt;&gt; v1x &gt;&gt; v2y &gt;&gt; v3z;</a>
+<a name="ln339">  if (ss) {</a>
+<a name="ln340">    ss &gt;&gt; v1y &gt;&gt; v1z &gt;&gt; v2x;</a>
+<a name="ln341">    ss &gt;&gt; v2z &gt;&gt; v3x &gt;&gt; v3y;</a>
+<a name="ln342">  }</a>
+<a name="ln343"> </a>
+<a name="ln344">  if (!(v1x == 0.0 &amp;&amp; v2y == 0.0 &amp;&amp; v3z == 0.0 &amp;&amp;</a>
+<a name="ln345">        v1y == 0.0 &amp;&amp; v1z == 0.0 &amp;&amp; v2x == 0.0 &amp;&amp;</a>
+<a name="ln346">        v2z == 0.0 &amp;&amp; v3x == 0.0 &amp;&amp; v3y == 0.0)) {</a>
+<a name="ln347">  // Set box vectors and convert nm to angstroms</a>
+<a name="ln348">  const vector3 v1(v1x*10,v1y*10,v1z*10);</a>
+<a name="ln349">  const vector3 v2(v2x*10,v2y*10,v2z*10);</a>
+<a name="ln350">  const vector3 v3(v3x*10,v3y*10,v3z*10);</a>
+<a name="ln351"> </a>
+<a name="ln352">  OBUnitCell* cell = new OBUnitCell();</a>
+<a name="ln353">  cell-&gt;SetData(v1, v2, v3);</a>
+<a name="ln354">  pmol-&gt;SetData(cell);</a>
+<a name="ln355">  }</a>
+<a name="ln356"> </a>
+<a name="ln357">  pmol-&gt;EndModify();</a>
+<a name="ln358"> </a>
+<a name="ln359">  // Input options -as and -ab</a>
+<a name="ln360">  if (!pConv-&gt;IsOption(&quot;b&quot;, OBConversion::INOPTIONS)) {</a>
+<a name="ln361">    pmol-&gt;ConnectTheDots();</a>
+<a name="ln362">    if (!pConv-&gt;IsOption(&quot;s&quot;, OBConversion::INOPTIONS)) {</a>
+<a name="ln363">      pmol-&gt;PerceiveBondOrders();</a>
+<a name="ln364">    }</a>
+<a name="ln365">  }</a>
+<a name="ln366">  pmol-&gt;SetChainsPerceived();</a>
+<a name="ln367"> </a>
+<a name="ln368">  /* For multi-molecule formats, leave the input stream at the start of the</a>
+<a name="ln369">     next molecule, ready for this routine to be called again.</a>
+<a name="ln370"> </a>
+<a name="ln371">   * Return true if ok. Returning false means discard the OBMol and stop</a>
+<a name="ln372">     converting, unless the -e option is set. With a multi-molecule inputstream</a>
+<a name="ln373">     this will skip the current molecule and continue with the next, if</a>
+<a name="ln374">     SkipObjects() has been defined. If it has not, and continuation after</a>
+<a name="ln375">     errors is still required, it is necessary to leave the input stream at the</a>
+<a name="ln376">     beginning of next object when returning false;*/</a>
+<a name="ln377">  return true;</a>
+<a name="ln378">}</a>
+<a name="ln379"> </a>
+<a name="ln380">////////////////////////////////////////////////////////////////</a>
+<a name="ln381"> </a>
+<a name="ln382">bool GROFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln383">{</a>
+<a name="ln384">  OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln385">  if (pmol == nullptr)</a>
+<a name="ln386">      return false; // Stop converting</a>
+<a name="ln387"> </a>
+<a name="ln388">  ostream&amp; ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln389"> </a>
+<a name="ln390">  /** Write the representation of the OBMol molecule to the output stream **/</a>
+<a name="ln391"> </a>
+<a name="ln392">  OBVectorData* vector;</a>
+<a name="ln393">  vector3 v;</a>
+<a name="ln394">  OBResidue* res;</a>
+<a name="ln395">  string tempstr = &quot;&quot;;</a>
+<a name="ln396">  long int atIdx = 0;</a>
+<a name="ln397">  long int resIdx = 0;</a>
+<a name="ln398"> </a>
+<a name="ln399">  ofs &lt;&lt; pmol-&gt;GetTitle() &lt;&lt; endl;</a>
+<a name="ln400">  ofs &lt;&lt; pmol-&gt;NumAtoms() &lt;&lt; endl;</a>
+<a name="ln401">  ofs.setf(ios::fixed);</a>
+<a name="ln402"> </a>
+<a name="ln403">  FOR_ATOMS_OF_MOL(atom, pmol) {</a>
+<a name="ln404">    res = atom-&gt;GetResidue();</a>
+<a name="ln405">    resIdx = res-&gt;GetNum();</a>
+<a name="ln406">    // Check if residue index excedes the field width and should be wrapped</a>
+<a name="ln407">    if (resIdx &gt; 99999) {</a>
+<a name="ln408">      ofs &lt;&lt; setw(5) &lt;&lt; resIdx - 100000*int(resIdx/100000);</a>
+<a name="ln409">    } else {</a>
+<a name="ln410">      ofs &lt;&lt; setw(5) &lt;&lt; res-&gt;GetNum();</a>
+<a name="ln411">    }</a>
+<a name="ln412">    ofs &lt;&lt; setw(5) &lt;&lt; left  &lt;&lt; res-&gt;GetName();</a>
+<a name="ln413">    // Remove whitespace from AtomID left by other formats</a>
+<a name="ln414">    tempstr = res-&gt;GetAtomID(&amp;(*atom));</a>
+<a name="ln415">    ofs &lt;&lt; setw(5) &lt;&lt; right &lt;&lt; Trim(tempstr);</a>
+<a name="ln416">    atIdx = atom-&gt;GetIdx();</a>
+<a name="ln417">    // Check if atom index excedes the field width and should be wrapped</a>
+<a name="ln418">    if (atIdx &gt; 99999) {</a>
+<a name="ln419">      ofs &lt;&lt; setw(5) &lt;&lt; atIdx - 100000*int(atIdx/100000);</a>
+<a name="ln420">    } else {</a>
+<a name="ln421">      ofs &lt;&lt; setw(5) &lt;&lt; atIdx;</a>
+<a name="ln422">    }</a>
+<a name="ln423">    ofs.precision(3);</a>
+<a name="ln424">    // OpenBabel uses angstrom, so converting to nm by dividing by 10</a>
+<a name="ln425">    ofs &lt;&lt; setw(8) &lt;&lt; atom-&gt;x()/10</a>
+<a name="ln426">        &lt;&lt; setw(8) &lt;&lt; atom-&gt;y()/10</a>
+<a name="ln427">        &lt;&lt; setw(8) &lt;&lt; atom-&gt;z()/10;</a>
+<a name="ln428">    if (atom-&gt;GetData(&quot;Velocity&quot;)) {</a>
+<a name="ln429">      vector = (OBVectorData*) atom-&gt;GetData(&quot;Velocity&quot;);</a>
+<a name="ln430">      v = vector-&gt;GetData();</a>
+<a name="ln431">      ofs.precision(4);</a>
+<a name="ln432">      ofs &lt;&lt; setw(8) &lt;&lt; v.x()</a>
+<a name="ln433">          &lt;&lt; setw(8) &lt;&lt; v.y()</a>
+<a name="ln434">          &lt;&lt; setw(8) &lt;&lt; v.z();</a>
+<a name="ln435">    }</a>
+<a name="ln436">    ofs &lt;&lt; endl;</a>
+<a name="ln437">  }</a>
+<a name="ln438"> </a>
+<a name="ln439">  // On the last line of the file goes periodic box specification</a>
+<a name="ln440">  if (pmol-&gt;HasData(OBGenericDataType::UnitCell)) {</a>
+<a name="ln441">    OBUnitCell* cell = (OBUnitCell*) pmol-&gt;GetData(OBGenericDataType::UnitCell);</a>
+<a name="ln442">    matrix3x3 m = cell-&gt;GetCellMatrix();</a>
+<a name="ln443">    vector3 v1 = m.GetRow(0);</a>
+<a name="ln444">    vector3 v2 = m.GetRow(1);</a>
+<a name="ln445">    vector3 v3 = m.GetRow(2);</a>
+<a name="ln446"> </a>
+<a name="ln447">    // Gromacs itself uses precision of 5, so it should be fine</a>
+<a name="ln448">    ofs.precision(5);</a>
+<a name="ln449">    ofs &lt;&lt; &quot;   &quot; &lt;&lt; v1.x()/10</a>
+<a name="ln450">        &lt;&lt; &quot;   &quot; &lt;&lt; v2.y()/10</a>
+<a name="ln451">        &lt;&lt; &quot;   &quot; &lt;&lt; v3.z()/10;</a>
+<a name="ln452"> </a>
+<a name="ln453">    // If there is any non-zero value among others, then write them all</a>
+<a name="ln454">    const double TRESHOLD = 1.0e-8;</a>
+<a name="ln455">    if (fabs(v1.y()) &gt; TRESHOLD || fabs(v1.z()) &gt; TRESHOLD ||</a>
+<a name="ln456">        fabs(v2.x()) &gt; TRESHOLD || fabs(v2.z()) &gt; TRESHOLD ||</a>
+<a name="ln457">        fabs(v3.x()) &gt; TRESHOLD || fabs(v3.y()) &gt; TRESHOLD) {</a>
+<a name="ln458">      ofs &lt;&lt; &quot;   &quot; &lt;&lt; v1.y()/10</a>
+<a name="ln459">          &lt;&lt; &quot;   &quot; &lt;&lt; v1.z()/10</a>
+<a name="ln460">          &lt;&lt; &quot;   &quot; &lt;&lt; v2.x()/10</a>
+<a name="ln461">          &lt;&lt; &quot;   &quot; &lt;&lt; v2.z()/10</a>
+<a name="ln462">          &lt;&lt; &quot;   &quot; &lt;&lt; v3.x()/10</a>
+<a name="ln463">          &lt;&lt; &quot;   &quot; &lt;&lt; v3.y()/10;</a>
+<a name="ln464">    }</a>
+<a name="ln465">  } else {</a>
+<a name="ln466">    // Set to zero if there is no box data in the molecule</a>
+<a name="ln467">    ofs &lt;&lt; &quot;   0.00000   0.00000   0.00000&quot;;</a>
+<a name="ln468">  }</a>
+<a name="ln469">  ofs &lt;&lt; endl;</a>
+<a name="ln470"> </a>
+<a name="ln471">  return true;</a>
+<a name="ln472">}</a>
+<a name="ln473"> </a>
+<a name="ln474">} //namespace OpenBabel</a>
+<a name="ln475"> </a>
+
+</code></pre>
+<div class="balloon" rel="278"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v614/" target="_blank">V614</a> Uninitialized pointer 'res' used.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

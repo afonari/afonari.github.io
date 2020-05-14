@@ -1,0 +1,721 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>isomorphism.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln2">#include &lt;openbabel/isomorphism.h&gt;</a>
+<a name="ln3">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln4">#include &lt;openbabel/oberror.h&gt;</a>
+<a name="ln5">#include &lt;openbabel/query.h&gt;</a>
+<a name="ln6">#include &lt;openbabel/graphsym.h&gt;</a>
+<a name="ln7">#include &lt;ctime&gt;</a>
+<a name="ln8">#include &lt;cassert&gt;</a>
+<a name="ln9">#include &lt;algorithm&gt;</a>
+<a name="ln10"> </a>
+<a name="ln11">#define DEBUG 0</a>
+<a name="ln12"> </a>
+<a name="ln13">using namespace std;</a>
+<a name="ln14"> </a>
+<a name="ln15">namespace OpenBabel {</a>
+<a name="ln16"> </a>
+<a name="ln17">  template&lt;typename T&gt;</a>
+<a name="ln18">    void print_vector(const std::string &amp;label, const std::vector&lt;T&gt; &amp;v)</a>
+<a name="ln19">    {</a>
+<a name="ln20">      std::cout &lt;&lt; label &lt;&lt; &quot;: &quot;;</a>
+<a name="ln21">      for (std::size_t i = 0; i &lt; v.size(); ++i)</a>
+<a name="ln22">        if (v[i] &lt; 10)</a>
+<a name="ln23">          std::cout &lt;&lt; &quot; &quot; &lt;&lt; v[i] &lt;&lt; &quot; &quot;;</a>
+<a name="ln24">        else</a>
+<a name="ln25">          std::cout &lt;&lt; v[i] &lt;&lt; &quot; &quot;;</a>
+<a name="ln26"> </a>
+<a name="ln27">      std::cout &lt;&lt; endl;</a>
+<a name="ln28">    }</a>
+<a name="ln29"> </a>
+<a name="ln30">  static const char *red    = &quot;\033[1;31m&quot;;</a>
+<a name="ln31">  static const char *green  = &quot;\033[1;32m&quot;;</a>
+<a name="ln32">  static const char *yellow = &quot;\033[1;33m&quot;;</a>
+<a name="ln33">  static const char *blue   = &quot;\033[1;34m&quot;;</a>
+<a name="ln34">  static const char *normal = &quot;\033[0m&quot;;</a>
+<a name="ln35"> </a>
+<a name="ln36">  class MapAllFunctor : public OBIsomorphismMapper::Functor</a>
+<a name="ln37">  {</a>
+<a name="ln38">    private:</a>
+<a name="ln39">      OBIsomorphismMapper::Mappings &amp;m_maps;</a>
+<a name="ln40">      std::size_t m_memory, m_maxMemory;</a>
+<a name="ln41">    public:</a>
+<a name="ln42">      MapAllFunctor(OBIsomorphismMapper::Mappings &amp;maps, std::size_t maxMemory)</a>
+<a name="ln43">        : m_maps(maps), m_memory(0), m_maxMemory(maxMemory)</a>
+<a name="ln44">      {</a>
+<a name="ln45">      }</a>
+<a name="ln46">      bool operator()(OBIsomorphismMapper::Mapping &amp;map)</a>
+<a name="ln47">      {</a>
+<a name="ln48">        m_maps.push_back(map);</a>
+<a name="ln49">        m_memory += 2 * sizeof(unsigned int) * map.size();</a>
+<a name="ln50"> </a>
+<a name="ln51">        if (m_memory &gt; m_maxMemory) {</a>
+<a name="ln52">          obErrorLog.ThrowError(__FUNCTION__, &quot;memory limit exceeded...&quot;, obError);</a>
+<a name="ln53">          // stop mapping</a>
+<a name="ln54">          return true;</a>
+<a name="ln55">        }</a>
+<a name="ln56"> </a>
+<a name="ln57">        // continue mapping</a>
+<a name="ln58">        return false;</a>
+<a name="ln59">      }</a>
+<a name="ln60">  };</a>
+<a name="ln61"> </a>
+<a name="ln62"> </a>
+<a name="ln63">  class VF2Mapper : public OBIsomorphismMapper</a>
+<a name="ln64">  {</a>
+<a name="ln65">    time_t m_startTime;</a>
+<a name="ln66"> </a>
+<a name="ln67">    public:</a>
+<a name="ln68">      VF2Mapper(OBQuery *query) : OBIsomorphismMapper(query)</a>
+<a name="ln69">      {</a>
+<a name="ln70">      }</a>
+<a name="ln71"> </a>
+<a name="ln72">      struct Candidate {</a>
+<a name="ln73">        Candidate() : queryAtom(nullptr), queriedAtom(nullptr) {}</a>
+<a name="ln74">        Candidate(OBQueryAtom *_queryAtom, OBAtom *_queriedAtom)</a>
+<a name="ln75">            : queryAtom(_queryAtom), queriedAtom(_queriedAtom) {}</a>
+<a name="ln76"> </a>
+<a name="ln77">        bool operator==(const Candidate &amp;other)</a>
+<a name="ln78">        {</a>
+<a name="ln79">          if (queryAtom != other.queryAtom)</a>
+<a name="ln80">            return false;</a>
+<a name="ln81">          if (queriedAtom != other.queriedAtom)</a>
+<a name="ln82">            return false;</a>
+<a name="ln83">          return true;</a>
+<a name="ln84">        }</a>
+<a name="ln85"> </a>
+<a name="ln86">        OBQueryAtom *queryAtom;</a>
+<a name="ln87">        OBAtom *queriedAtom;</a>
+<a name="ln88">      };</a>
+<a name="ln89"> </a>
+<a name="ln90">      struct State {</a>
+<a name="ln91">        State(Functor &amp;_functor, const OBQuery *_query, const OBMol *_queried, const OBBitVec &amp;mask)</a>
+<a name="ln92">            : functor(_functor), query(_query), queried(_queried), queriedMask(mask)</a>
+<a name="ln93">        {</a>
+<a name="ln94">          abort = false;</a>
+<a name="ln95">          mapping.resize(query-&gt;NumAtoms(), nullptr);</a>
+<a name="ln96">          queryDepths.resize(query-&gt;NumAtoms(), 0);</a>
+<a name="ln97">          queriedDepths.resize(queried-&gt;NumAtoms(), 0);</a>
+<a name="ln98">        }</a>
+<a name="ln99">        bool abort;</a>
+<a name="ln100">        Functor &amp;functor;</a>
+<a name="ln101">        const OBQuery *query; // the query</a>
+<a name="ln102">        const OBMol *queried; // the queried molecule</a>
+<a name="ln103">        OBBitVec queriedMask; // the queriedMask</a>
+<a name="ln104">        std::vector&lt;unsigned int&gt; queryPath; // the path in the query</a>
+<a name="ln105">        std::vector&lt;unsigned int&gt; queriedPath; // the path in the queried molecule</a>
+<a name="ln106"> </a>
+<a name="ln107">        std::vector&lt;OBAtom*&gt; mapping;</a>
+<a name="ln108"> </a>
+<a name="ln109">        OBBitVec queryPathBits, queriedPathBits; // the terminal sets</a>
+<a name="ln110">        std::vector&lt;unsigned int&gt; queryDepths, queriedDepths; // the terminal sets</a>
+<a name="ln111">      };</a>
+<a name="ln112"> </a>
+<a name="ln113">      bool isInTerminalSet(const std::vector&lt;unsigned int&gt; &amp;depths,</a>
+<a name="ln114">          const OBBitVec &amp;path, std::size_t i)</a>
+<a name="ln115">      {</a>
+<a name="ln116">        if (!depths[i])</a>
+<a name="ln117">          return false;</a>
+<a name="ln118"> </a>
+<a name="ln119">        if (path.BitIsSet(i))</a>
+<a name="ln120">          return false;</a>
+<a name="ln121"> </a>
+<a name="ln122">        return true;</a>
+<a name="ln123">      }</a>
+<a name="ln124"> </a>
+<a name="ln125">      /**</a>
+<a name="ln126">       * Check bonds around newly mapped atom.</a>
+<a name="ln127">       */</a>
+<a name="ln128">      bool checkBonds(State &amp;state, OBQueryAtom *queryAtom)</a>
+<a name="ln129">      {</a>
+<a name="ln130">        const std::vector&lt;OBQueryBond*&gt; &amp;bonds = queryAtom-&gt;GetBonds();</a>
+<a name="ln131">        for (unsigned int i = 0; i &lt; bonds.size(); ++i) {</a>
+<a name="ln132">          OBQueryBond *qbond = bonds[i];</a>
+<a name="ln133">          unsigned int beginIndex = qbond-&gt;GetBeginAtom()-&gt;GetIndex();</a>
+<a name="ln134">          unsigned int endIndex = qbond-&gt;GetEndAtom()-&gt;GetIndex();</a>
+<a name="ln135"> </a>
+<a name="ln136">          OBAtom *begin = state.mapping[beginIndex];</a>
+<a name="ln137">          OBAtom *end = state.mapping[endIndex];</a>
+<a name="ln138">          if (!begin || !end)</a>
+<a name="ln139">            continue;</a>
+<a name="ln140">          OBBond *bond = state.queried-&gt;GetBond(begin, end);</a>
+<a name="ln141">          if (!bond)</a>
+<a name="ln142">            return false;</a>
+<a name="ln143">          if (!qbond-&gt;Matches(bond))</a>
+<a name="ln144">            return false;</a>
+<a name="ln145">        }</a>
+<a name="ln146">        return true;</a>
+<a name="ln147">      }</a>
+<a name="ln148"> </a>
+<a name="ln149"> </a>
+<a name="ln150">      /**</a>
+<a name="ln151">       * Check if the current state is a full mapping of the query.</a>
+<a name="ln152">       */</a>
+<a name="ln153">      bool checkForMap(State &amp;state)</a>
+<a name="ln154">      {</a>
+<a name="ln155">        // store the mapping if all atoms are mapped</a>
+<a name="ln156">        if (state.queryPath.size() != state.query-&gt;NumAtoms())</a>
+<a name="ln157">          return false;</a>
+<a name="ln158"> </a>
+<a name="ln159">        if (DEBUG)</a>
+<a name="ln160">          std::cout &lt;&lt; green &lt;&lt; &quot;-----------------&gt; MATCH&quot; &lt;&lt; normal &lt;&lt; std::endl;</a>
+<a name="ln161"> </a>
+<a name="ln162">        // create the map</a>
+<a name="ln163">        Mapping map;</a>
+<a name="ln164">        map.reserve(state.queryPath.size());</a>
+<a name="ln165">        for (unsigned int k = 0; k &lt; state.queryPath.size(); ++k)</a>
+<a name="ln166">          map.push_back(std::make_pair(state.queryPath[k], state.queriedPath[k]));</a>
+<a name="ln167"> </a>
+<a name="ln168">        return state.functor(map);</a>
+<a name="ln169">      }</a>
+<a name="ln170"> </a>
+<a name="ln171">      /**</a>
+<a name="ln172">       * Match the candidate atoms and bonds.</a>
+<a name="ln173">       */</a>
+<a name="ln174">      bool matchCandidate(State &amp;state, OBQueryAtom *queryAtom, OBAtom *queriedAtom)</a>
+<a name="ln175">      {</a>
+<a name="ln176">        if (!queryAtom-&gt;Matches(queriedAtom))</a>
+<a name="ln177">          return false;</a>
+<a name="ln178"> </a>
+<a name="ln179">        // add the neighbors to the paths</a>
+<a name="ln180">        state.queryPath.push_back(queryAtom-&gt;GetIndex());</a>
+<a name="ln181">        state.queriedPath.push_back(queriedAtom-&gt;GetIndex());</a>
+<a name="ln182">        // update the terminal sets</a>
+<a name="ln183">        state.queryPathBits.SetBitOn(queryAtom-&gt;GetIndex());</a>
+<a name="ln184">        state.queriedPathBits.SetBitOn(queriedAtom-&gt;GetIndex());</a>
+<a name="ln185">        // update mapping</a>
+<a name="ln186">        state.mapping[queryAtom-&gt;GetIndex()] = queriedAtom;</a>
+<a name="ln187"> </a>
+<a name="ln188">        //</a>
+<a name="ln189">        // update queryDepths</a>
+<a name="ln190">        //</a>
+<a name="ln191">        if (!state.queryDepths[queryAtom-&gt;GetIndex()])</a>
+<a name="ln192">          state.queryDepths[queryAtom-&gt;GetIndex()] = state.queryPath.size();</a>
+<a name="ln193"> </a>
+<a name="ln194">        std::vector&lt;OBQueryAtom*&gt; queryNbrs = queryAtom-&gt;GetNbrs();</a>
+<a name="ln195">        for (unsigned int i = 0; i &lt; queryNbrs.size(); ++i) {</a>
+<a name="ln196">          unsigned int index = queryNbrs[i]-&gt;GetIndex();</a>
+<a name="ln197">          if (!state.queryDepths[index])</a>
+<a name="ln198">            state.queryDepths[index] = state.queryPath.size();</a>
+<a name="ln199">        }</a>
+<a name="ln200"> </a>
+<a name="ln201">        //</a>
+<a name="ln202">        // update queriedDepths</a>
+<a name="ln203">        //</a>
+<a name="ln204">        if (!state.queriedDepths[queriedAtom-&gt;GetIndex()])</a>
+<a name="ln205">          state.queriedDepths[queriedAtom-&gt;GetIndex()] = state.queriedPath.size();</a>
+<a name="ln206"> </a>
+<a name="ln207">        FOR_NBORS_OF_ATOM (nbr, queriedAtom) {</a>
+<a name="ln208">          unsigned int index = nbr-&gt;GetIndex();</a>
+<a name="ln209">          // skip atoms not in the mask</a>
+<a name="ln210">          if (!state.queriedMask.BitIsSet(index + 1))</a>
+<a name="ln211">            continue;</a>
+<a name="ln212">          if (!state.queriedDepths[index])</a>
+<a name="ln213">            state.queriedDepths[index] = state.queriedPath.size();</a>
+<a name="ln214">        }</a>
+<a name="ln215"> </a>
+<a name="ln216">        // check if the bonds match</a>
+<a name="ln217">        if (!checkBonds(state, queryAtom)) {</a>
+<a name="ln218">          if (DEBUG)</a>
+<a name="ln219">            cout &lt;&lt; &quot;    bonds do not match...&quot; &lt;&lt; endl;</a>
+<a name="ln220">          Backtrack(state);</a>
+<a name="ln221">          return false;</a>
+<a name="ln222">        }</a>
+<a name="ln223"> </a>
+<a name="ln224">        if (DEBUG) {</a>
+<a name="ln225">          cout &lt;&lt; &quot;FOUND:  &quot; &lt;&lt; queryAtom-&gt;GetIndex() &lt;&lt; &quot; -&gt; &quot; &lt;&lt; queriedAtom-&gt;GetIndex() &lt;&lt; &quot;       &quot; &lt;&lt; state.queryPath.size() &lt;&lt; endl;</a>
+<a name="ln226">          cout &lt;&lt; &quot;queryDepths:   &quot;;</a>
+<a name="ln227">          for (unsigned int i = 0; i &lt; state.query-&gt;NumAtoms(); ++i)</a>
+<a name="ln228">            cout &lt;&lt; state.queryDepths[i] &lt;&lt; &quot; &quot;;</a>
+<a name="ln229">          cout &lt;&lt;endl;</a>
+<a name="ln230">          cout &lt;&lt; &quot;queriedDepths: &quot;;</a>
+<a name="ln231">          for (unsigned int i = 0; i &lt; state.queried-&gt;NumAtoms(); ++i)</a>
+<a name="ln232">            cout &lt;&lt; state.queriedDepths[i] &lt;&lt; &quot; &quot;;</a>
+<a name="ln233">          cout &lt;&lt;endl;</a>
+<a name="ln234">        }</a>
+<a name="ln235"> </a>
+<a name="ln236">        //</a>
+<a name="ln237">        // Feasibility rules for the VF2 algorithm:</a>
+<a name="ln238">        //</a>
+<a name="ln239">        //  size( T1(s) ) &lt;= size( T2(s) )</a>
+<a name="ln240">        //</a>
+<a name="ln241">        //  size( N1 - M1(s) - T1(s) ) &lt;= size( N2 - M2(s) - T2(s) )</a>
+<a name="ln242">        //</a>
+<a name="ln243"> </a>
+<a name="ln244">        // compute T1(s) size</a>
+<a name="ln245">        unsigned int numT1 = 0;</a>
+<a name="ln246">        for (unsigned int i = 0; i &lt; state.query-&gt;NumAtoms(); ++i)</a>
+<a name="ln247">          if (isInTerminalSet(state.queryDepths, state.queryPathBits, i))</a>
+<a name="ln248">              numT1++;</a>
+<a name="ln249">        // compute T2(s) size</a>
+<a name="ln250">        unsigned int numT2 = 0;</a>
+<a name="ln251">        for (unsigned int i = 0; i &lt; state.queried-&gt;NumAtoms(); ++i)</a>
+<a name="ln252">          if (isInTerminalSet(state.queriedDepths, state.queriedPathBits, i))</a>
+<a name="ln253">              numT2++;</a>
+<a name="ln254"> </a>
+<a name="ln255">        // T1(s) &gt; T()</a>
+<a name="ln256">        if (numT1 &gt; numT2) {</a>
+<a name="ln257">          Backtrack(state);</a>
+<a name="ln258">          return false;</a>
+<a name="ln259">        }</a>
+<a name="ln260">        //  N1 - M1(s) - T1(s) &gt; N2 - M2(s) - T2(s)</a>
+<a name="ln261">        if ((state.query-&gt;NumAtoms() - state.queryPath.size() - numT1) &gt; (state.queried-&gt;NumAtoms() - state.queriedPath.size() - numT2)) {</a>
+<a name="ln262">          Backtrack(state);</a>
+<a name="ln263">          return false;</a>
+<a name="ln264">        }</a>
+<a name="ln265"> </a>
+<a name="ln266">        // Check if there is a mapping found</a>
+<a name="ln267">        state.abort = checkForMap(state);</a>
+<a name="ln268"> </a>
+<a name="ln269">        return true;</a>
+<a name="ln270">      }</a>
+<a name="ln271"> </a>
+<a name="ln272"> </a>
+<a name="ln273">      Candidate NextCandidate(State &amp;state, const Candidate &amp;lastCandidate)</a>
+<a name="ln274">      {</a>
+<a name="ln275">        std::size_t lastQueryAtom = lastCandidate.queryAtom ? lastCandidate.queryAtom-&gt;GetIndex() : 0;</a>
+<a name="ln276">        std::size_t lastQueriedAtom = lastCandidate.queriedAtom ? lastCandidate.queriedAtom-&gt;GetIndex() + 1 : 0;</a>
+<a name="ln277"> </a>
+<a name="ln278">        std::size_t querySize = state.query-&gt;NumAtoms();</a>
+<a name="ln279">        std::size_t queriedSize = state.queried-&gt;NumAtoms();</a>
+<a name="ln280"> </a>
+<a name="ln281">        std::size_t queryTerminalSize = state.queryDepths.size() - std::count(state.queryDepths.begin(), state.queryDepths.end(), 0);</a>
+<a name="ln282">        std::size_t queriedTerminalSize = state.queriedDepths.size() - std::count(state.queriedDepths.begin(), state.queriedDepths.end(), 0);</a>
+<a name="ln283"> </a>
+<a name="ln284">        std::size_t mappingSize = state.queryPath.size();</a>
+<a name="ln285"> </a>
+<a name="ln286">        if (queryTerminalSize &gt; mappingSize &amp;&amp; queriedTerminalSize &gt; mappingSize) {</a>
+<a name="ln287">          while (lastQueryAtom &lt; querySize &amp;&amp; (state.queryPathBits.BitIsSet(lastQueryAtom) || !state.queryDepths[lastQueryAtom])) {</a>
+<a name="ln288">            lastQueryAtom++;</a>
+<a name="ln289">            lastQueriedAtom = 0;</a>
+<a name="ln290">          }</a>
+<a name="ln291">        } else {</a>
+<a name="ln292">          while(lastQueryAtom &lt; querySize &amp;&amp; state.queryPathBits.BitIsSet(lastQueryAtom)) {</a>
+<a name="ln293">            lastQueryAtom++;</a>
+<a name="ln294">            lastQueriedAtom = 0;</a>
+<a name="ln295">          }</a>
+<a name="ln296">        }</a>
+<a name="ln297"> </a>
+<a name="ln298">        if (queryTerminalSize &gt; mappingSize &amp;&amp; queriedTerminalSize &gt; mappingSize) {</a>
+<a name="ln299">          while (lastQueriedAtom &lt; queriedSize &amp;&amp; (state.queriedPathBits.BitIsSet(lastQueriedAtom) || !state.queriedDepths[lastQueriedAtom]))</a>
+<a name="ln300">            lastQueriedAtom++;</a>
+<a name="ln301">        } else {</a>
+<a name="ln302">          while(lastQueriedAtom &lt; queriedSize &amp;&amp; state.queriedPathBits[lastQueriedAtom])</a>
+<a name="ln303">            lastQueriedAtom++;</a>
+<a name="ln304">        }</a>
+<a name="ln305"> </a>
+<a name="ln306">        if (lastQueryAtom &lt; querySize &amp;&amp; lastQueriedAtom &lt; queriedSize)</a>
+<a name="ln307">          return Candidate(state.query-&gt;GetAtoms()[lastQueryAtom], state.queried-&gt;GetAtom(lastQueriedAtom + 1));</a>
+<a name="ln308"> </a>
+<a name="ln309">        return Candidate();</a>
+<a name="ln310">      }</a>
+<a name="ln311"> </a>
+<a name="ln312">      /**</a>
+<a name="ln313">       * The depth-first isomorphism algorithm.</a>
+<a name="ln314">       */</a>
+<a name="ln315">      void MapNext(State &amp;state, OBQueryAtom *queryAtom, OBAtom *queriedAtom)</a>
+<a name="ln316">      {</a>
+<a name="ln317">        if (time(nullptr) - m_startTime &gt; m_timeout)</a>
+<a name="ln318">          return;</a>
+<a name="ln319">        if (state.abort)</a>
+<a name="ln320">          return;</a>
+<a name="ln321"> </a>
+<a name="ln322">        Candidate candidate;</a>
+<a name="ln323">        while (!state.abort) {</a>
+<a name="ln324">          candidate = NextCandidate(state, candidate);</a>
+<a name="ln325"> </a>
+<a name="ln326">          if (!candidate.queryAtom)</a>
+<a name="ln327">            return;</a>
+<a name="ln328"> </a>
+<a name="ln329">          if (DEBUG)</a>
+<a name="ln330">            cout &lt;&lt; yellow &lt;&lt; &quot;candidate: &quot; &lt;&lt; candidate.queryAtom-&gt;GetIndex() &lt;&lt; &quot; -&gt; &quot; &lt;&lt; candidate.queriedAtom-&gt;GetIndex() &lt;&lt; normal &lt;&lt; endl;</a>
+<a name="ln331"> </a>
+<a name="ln332"> </a>
+<a name="ln333">          if (matchCandidate(state, candidate.queryAtom, candidate.queriedAtom)) {</a>
+<a name="ln334">            MapNext(state, candidate.queryAtom, candidate.queriedAtom);</a>
+<a name="ln335">            Backtrack(state);</a>
+<a name="ln336">          }</a>
+<a name="ln337">        }</a>
+<a name="ln338"> </a>
+<a name="ln339">      }</a>
+<a name="ln340"> </a>
+<a name="ln341">      void Backtrack(State &amp;state)</a>
+<a name="ln342">      {</a>
+<a name="ln343">        if (DEBUG)</a>
+<a name="ln344">          cout &lt;&lt; red &lt;&lt; &quot;backtrack... &quot; &lt;&lt; normal &lt;&lt; state.queryPath.size()-1 &lt;&lt; endl;</a>
+<a name="ln345">        // remove last atoms from the mapping</a>
+<a name="ln346">        if (state.queryPath.size()) {</a>
+<a name="ln347">          state.mapping[state.queryPath.back()] = nullptr;</a>
+<a name="ln348">          state.queryPathBits.SetBitOff(state.queryPath.back());</a>
+<a name="ln349">          state.queryPath.pop_back();</a>
+<a name="ln350">        }</a>
+<a name="ln351">        if (state.queriedPath.size()) {</a>
+<a name="ln352">          state.queriedPathBits.SetBitOff(state.queriedPath.back());</a>
+<a name="ln353">          state.queriedPath.pop_back();</a>
+<a name="ln354">        }</a>
+<a name="ln355">        // restore queryDepths and queriedDepths</a>
+<a name="ln356">        unsigned int depth = state.queryPath.size() + 1;</a>
+<a name="ln357">        std::replace(state.queryDepths.begin(), state.queryDepths.end(), depth, static_cast&lt;unsigned int&gt;(0));</a>
+<a name="ln358">        std::replace(state.queriedDepths.begin(), state.queriedDepths.end(), depth, static_cast&lt;unsigned int&gt;(0)); // O(n)  n = # vertices in the queried</a>
+<a name="ln359">      }</a>
+<a name="ln360"> </a>
+<a name="ln361">      /**</a>
+<a name="ln362">       * Get the first mappings of the query on the queried molecule.</a>
+<a name="ln363">       * @param queried The queried molecule.</a>
+<a name="ln364">       * @return The mapping.</a>
+<a name="ln365">       */</a>
+<a name="ln366">      void MapFirst(const OBMol *queried, Mapping &amp;map, const OBBitVec &amp;mask)</a>
+<a name="ln367">      {</a>
+<a name="ln368">        class MapFirstFunctor : public Functor</a>
+<a name="ln369">        {</a>
+<a name="ln370">          private:</a>
+<a name="ln371">            Mapping &amp;m_map;</a>
+<a name="ln372">          public:</a>
+<a name="ln373">            MapFirstFunctor(Mapping &amp;map) : m_map(map)</a>
+<a name="ln374">            {</a>
+<a name="ln375">            }</a>
+<a name="ln376">            bool operator()(Mapping &amp;map)</a>
+<a name="ln377">            {</a>
+<a name="ln378">              m_map = map;</a>
+<a name="ln379">              // stop mapping</a>
+<a name="ln380">              return true;</a>
+<a name="ln381">            }</a>
+<a name="ln382">        };</a>
+<a name="ln383"> </a>
+<a name="ln384">        MapFirstFunctor functor(map);</a>
+<a name="ln385">        MapGeneric(functor, queried, mask);</a>
+<a name="ln386">      }</a>
+<a name="ln387"> </a>
+<a name="ln388">      /**</a>
+<a name="ln389">       * Get all unique mappings of the query on the queried molecule.</a>
+<a name="ln390">       * @param queried The queried molecule.</a>
+<a name="ln391">       * @return The unique mappings</a>
+<a name="ln392">       */</a>
+<a name="ln393">      void MapUnique(const OBMol *queried, Mappings &amp;maps, const OBBitVec &amp;mask)</a>
+<a name="ln394">      {</a>
+<a name="ln395">        class MapUniqueFunctor : public OBIsomorphismMapper::Functor</a>
+<a name="ln396">        {</a>
+<a name="ln397">          private:</a>
+<a name="ln398">            OBIsomorphismMapper::Mappings &amp;m_maps;</a>
+<a name="ln399">          public:</a>
+<a name="ln400">            MapUniqueFunctor(OBIsomorphismMapper::Mappings &amp;maps) : m_maps(maps)</a>
+<a name="ln401">            {</a>
+<a name="ln402">            }</a>
+<a name="ln403">            bool operator()(OBIsomorphismMapper::Mapping &amp;map)</a>
+<a name="ln404">            {</a>
+<a name="ln405">              // get the values from the map</a>
+<a name="ln406">              std::vector&lt;unsigned int&gt; values;</a>
+<a name="ln407">              for (OBIsomorphismMapper::Mapping::const_iterator it = map.begin(); it != map.end(); ++it)</a>
+<a name="ln408">                values.push_back(it-&gt;second);</a>
+<a name="ln409">              std::sort(values.begin(), values.end());</a>
+<a name="ln410">               // print_vector(&quot;values &quot;, values);</a>
+<a name="ln411"> </a>
+<a name="ln412">              bool isUnique = true;</a>
+<a name="ln413">              for (unsigned int k = 0; k &lt; m_maps.size(); ++k) {</a>
+<a name="ln414">                std::vector&lt;unsigned int&gt; kValues;</a>
+<a name="ln415">                for (OBIsomorphismMapper::Mapping::iterator it = m_maps[k].begin(); it != m_maps[k].end(); ++it)</a>
+<a name="ln416">                  kValues.push_back(it-&gt;second);</a>
+<a name="ln417">                std::sort(kValues.begin(), kValues.end());</a>
+<a name="ln418"> </a>
+<a name="ln419">              //  print_vector(&quot;kValues&quot;, kValues);</a>
+<a name="ln420">                if (values == kValues)</a>
+<a name="ln421">                  isUnique = false;</a>
+<a name="ln422">              }</a>
+<a name="ln423"> </a>
+<a name="ln424">              if (isUnique)</a>
+<a name="ln425">                m_maps.push_back(map);</a>
+<a name="ln426"> </a>
+<a name="ln427">              // continue mapping</a>
+<a name="ln428">              return false;</a>
+<a name="ln429">            }</a>
+<a name="ln430">        };</a>
+<a name="ln431"> </a>
+<a name="ln432"> </a>
+<a name="ln433">        maps.clear();</a>
+<a name="ln434">        MapUniqueFunctor functor(maps);</a>
+<a name="ln435">        MapGeneric(functor, queried, mask);</a>
+<a name="ln436"> </a>
+<a name="ln437">        if (DEBUG)</a>
+<a name="ln438">          for (unsigned int i =0; i &lt; maps.size(); ++i) {</a>
+<a name="ln439">            cout &lt;&lt; &quot;mapping:&quot; &lt;&lt; endl;</a>
+<a name="ln440">            for (Mapping::iterator it = maps[i].begin(); it != maps[i].end(); ++it)</a>
+<a name="ln441">              cout &lt;&lt; &quot;    &quot; &lt;&lt; it-&gt;first &lt;&lt; &quot; -&gt; &quot; &lt;&lt; it-&gt;second &lt;&lt; endl;</a>
+<a name="ln442">          }</a>
+<a name="ln443">      }</a>
+<a name="ln444"> </a>
+<a name="ln445">      /**</a>
+<a name="ln446">       * Get all mappings of the query on the queried molecule. Duplicates are</a>
+<a name="ln447">       * ignored but unlinke MapUnique, multiple mappings of the query on the same</a>
+<a name="ln448">       * part of the queried structure are allowed. This makes it possible to use</a>
+<a name="ln449">       * MapAll for finding the automorphism group.</a>
+<a name="ln450">       * @param queried The queried molecule.</a>
+<a name="ln451">       * @return The mappings.</a>
+<a name="ln452">       */</a>
+<a name="ln453">      void MapAll(const OBMol *queried, Mappings &amp;maps, const OBBitVec &amp;mask, std::size_t maxMemory)</a>
+<a name="ln454">      {</a>
+<a name="ln455">        maps.clear();</a>
+<a name="ln456">        MapAllFunctor functor(maps, maxMemory);</a>
+<a name="ln457">        MapGeneric(functor, queried, mask);</a>
+<a name="ln458"> </a>
+<a name="ln459">        if (DEBUG)</a>
+<a name="ln460">          for (unsigned int i =0; i &lt; maps.size(); ++i) {</a>
+<a name="ln461">            cout &lt;&lt; &quot;mapping:&quot; &lt;&lt; endl;</a>
+<a name="ln462">            for (Mapping::iterator it = maps[i].begin(); it != maps[i].end(); ++it)</a>
+<a name="ln463">              cout &lt;&lt; &quot;    &quot; &lt;&lt; it-&gt;first &lt;&lt; &quot; -&gt; &quot; &lt;&lt; it-&gt;second &lt;&lt; endl;</a>
+<a name="ln464">          }</a>
+<a name="ln465"> </a>
+<a name="ln466">      }</a>
+<a name="ln467"> </a>
+<a name="ln468">      void MapGeneric(Functor &amp;functor, const OBMol *queried, const OBBitVec &amp;mask)</a>
+<a name="ln469">      {</a>
+<a name="ln470">        m_startTime = time(nullptr);</a>
+<a name="ln471">        if(m_query-&gt;NumAtoms() == 0) return;</a>
+<a name="ln472">        // set all atoms to 1 if the mask is empty</a>
+<a name="ln473">        OBBitVec queriedMask = mask;</a>
+<a name="ln474">        if (!queriedMask.CountBits())</a>
+<a name="ln475">          for (unsigned int i = 0; i &lt; queried-&gt;NumAtoms(); ++i)</a>
+<a name="ln476">            queriedMask.SetBitOn(i + 1);</a>
+<a name="ln477"> </a>
+<a name="ln478">        OBQueryAtom *queryAtom = m_query-&gt;GetAtoms()[0];</a>
+<a name="ln479">        for (unsigned int i = 0; i &lt; queried-&gt;NumAtoms(); ++i) {</a>
+<a name="ln480">          if (!queriedMask.BitIsSet(i + 1)) {</a>
+<a name="ln481">            continue;</a>
+<a name="ln482">          }</a>
+<a name="ln483">          State state(functor, m_query, queried, queriedMask);</a>
+<a name="ln484">          OBAtom *queriedAtom = queried-&gt;GetAtom(i+1);</a>
+<a name="ln485">          if (!queryAtom-&gt;Matches(queriedAtom)) {</a>
+<a name="ln486">            continue;</a>
+<a name="ln487">          }</a>
+<a name="ln488">          if (DEBUG)</a>
+<a name="ln489">            std::cout &lt;&lt; blue &lt;&lt; &quot;START: 0 -&gt; &quot; &lt;&lt; queriedAtom-&gt;GetIndex() &lt;&lt; normal &lt;&lt; std::endl;</a>
+<a name="ln490"> </a>
+<a name="ln491">          if (m_query-&gt;NumAtoms() &gt; 1) {</a>
+<a name="ln492">            if (matchCandidate(state, queryAtom, queriedAtom))</a>
+<a name="ln493">              MapNext(state, queryAtom, queriedAtom);</a>
+<a name="ln494">          } else {</a>
+<a name="ln495">            Mapping map;</a>
+<a name="ln496">            map.push_back(std::make_pair(queryAtom-&gt;GetIndex(), queriedAtom-&gt;GetIndex()));</a>
+<a name="ln497">            functor(map);</a>
+<a name="ln498">          }</a>
+<a name="ln499">        }</a>
+<a name="ln500"> </a>
+<a name="ln501">        if (time(nullptr) - m_startTime &gt; m_timeout)</a>
+<a name="ln502">          obErrorLog.ThrowError(__FUNCTION__, &quot;time limit exceeded...&quot;, obError);</a>
+<a name="ln503"> </a>
+<a name="ln504">      }</a>
+<a name="ln505"> </a>
+<a name="ln506">  };</a>
+<a name="ln507"> </a>
+<a name="ln508">  OBIsomorphismMapper::OBIsomorphismMapper(OBQuery *query) : m_query(query), m_timeout(60)</a>
+<a name="ln509">  {</a>
+<a name="ln510">  }</a>
+<a name="ln511"> </a>
+<a name="ln512">  OBIsomorphismMapper::~OBIsomorphismMapper()</a>
+<a name="ln513">  {</a>
+<a name="ln514">  }</a>
+<a name="ln515"> </a>
+<a name="ln516">  OBIsomorphismMapper* OBIsomorphismMapper::GetInstance(OBQuery *query, const std::string &amp;algorithm)</a>
+<a name="ln517">  {</a>
+<a name="ln518">    if (algorithm == &quot;VF2&quot;)</a>
+<a name="ln519">      return new VF2Mapper(query);</a>
+<a name="ln520">    // return VF2 mapper as default</a>
+<a name="ln521">    return new VF2Mapper(query);</a>
+<a name="ln522">  }</a>
+<a name="ln523"> </a>
+<a name="ln524"> </a>
+<a name="ln525"> </a>
+<a name="ln526"> </a>
+<a name="ln527"> </a>
+<a name="ln528"> </a>
+<a name="ln529"> </a>
+<a name="ln530">  class OBAutomorphismQueryAtom : public OBQueryAtom</a>
+<a name="ln531">  {</a>
+<a name="ln532">    public:</a>
+<a name="ln533">      OBAutomorphismQueryAtom(unsigned int _symClass, const std::vector&lt;unsigned int&gt; &amp;_symClasses)</a>
+<a name="ln534">          : OBQueryAtom(), symClass(_symClass), symClasses(_symClasses)</a>
+<a name="ln535">      {</a>
+<a name="ln536">      }</a>
+<a name="ln537"> </a>
+<a name="ln538">      bool Matches(const OBAtom *atom) const</a>
+<a name="ln539">      {</a>
+<a name="ln540">        return (symClasses[atom-&gt;GetIndex()] == symClass);</a>
+<a name="ln541">      }</a>
+<a name="ln542">      unsigned int symClass;</a>
+<a name="ln543">      std::vector&lt;unsigned int&gt; symClasses;</a>
+<a name="ln544">  };</a>
+<a name="ln545"> </a>
+<a name="ln546">  bool isFerroceneBond(OBBond *bond);</a>
+<a name="ln547"> </a>
+<a name="ln548">  OBQuery* CompileAutomorphismQuery(OBMol *mol, const OBBitVec &amp;mask, const std::vector&lt;unsigned int&gt; &amp;symClasses)</a>
+<a name="ln549">  {</a>
+<a name="ln550">    OBQuery *query = new OBQuery;</a>
+<a name="ln551">    unsigned int offset = 0;</a>
+<a name="ln552">    std::vector&lt;unsigned int&gt; indexes;</a>
+<a name="ln553">    FOR_ATOMS_OF_MOL (obatom, mol) {</a>
+<a name="ln554">      indexes.push_back(obatom-&gt;GetIndex() - offset);</a>
+<a name="ln555">      if (!mask.BitIsSet(obatom-&gt;GetIndex() + 1)) {</a>
+<a name="ln556">        offset++;</a>
+<a name="ln557">        continue;</a>
+<a name="ln558">      }</a>
+<a name="ln559">      query-&gt;AddAtom(new OBAutomorphismQueryAtom(symClasses[obatom-&gt;GetIndex()], symClasses));</a>
+<a name="ln560">    }</a>
+<a name="ln561">    FOR_BONDS_OF_MOL (obbond, mol) {</a>
+<a name="ln562">      if (isFerroceneBond(&amp;*obbond))</a>
+<a name="ln563">        continue;</a>
+<a name="ln564">      unsigned int beginIndex = obbond-&gt;GetBeginAtom()-&gt;GetIndex();</a>
+<a name="ln565">      unsigned int endIndex = obbond-&gt;GetEndAtom()-&gt;GetIndex();</a>
+<a name="ln566">      if (!mask.BitIsSet(beginIndex + 1) || !mask.BitIsSet(endIndex + 1))</a>
+<a name="ln567">        continue;</a>
+<a name="ln568">      query-&gt;AddBond(new OBQueryBond(query-&gt;GetAtoms()[indexes[beginIndex]], query-&gt;GetAtoms()[indexes[endIndex]],</a>
+<a name="ln569">            obbond-&gt;GetBondOrder(), obbond-&gt;IsAromatic()));</a>
+<a name="ln570">    }</a>
+<a name="ln571"> </a>
+<a name="ln572">    return query;</a>
+<a name="ln573">  }</a>
+<a name="ln574"> </a>
+<a name="ln575">  bool FindAutomorphisms(OBMol *mol, Automorphisms &amp;maps, const OBBitVec &amp;mask, std::size_t maxMemory)</a>
+<a name="ln576">  {</a>
+<a name="ln577">    // set all atoms to 1 if the mask is empty</a>
+<a name="ln578">    OBBitVec queriedMask = mask;</a>
+<a name="ln579">    if (!queriedMask.CountBits())</a>
+<a name="ln580">      for (unsigned int i = 0; i &lt; mol-&gt;NumAtoms(); ++i)</a>
+<a name="ln581">        queriedMask.SetBitOn(i + 1);</a>
+<a name="ln582"> </a>
+<a name="ln583">    // get the symmetry classes</a>
+<a name="ln584">    OBGraphSym gs(mol, &amp;queriedMask);</a>
+<a name="ln585">    std::vector&lt;unsigned int&gt; symClasses;</a>
+<a name="ln586">    gs.GetSymmetry(symClasses);</a>
+<a name="ln587"> </a>
+<a name="ln588">    return FindAutomorphisms(mol, maps, symClasses, mask, maxMemory);</a>
+<a name="ln589">  }</a>
+<a name="ln590"> </a>
+<a name="ln591"> </a>
+<a name="ln592">  bool FindAutomorphisms(OBMol *mol, Automorphisms &amp;maps, const std::vector&lt;unsigned int&gt; &amp;symClasses, const OBBitVec &amp;mask, std::size_t maxMemory)</a>
+<a name="ln593">  {</a>
+<a name="ln594">    maps.clear();</a>
+<a name="ln595">    MapAllFunctor functor(maps, maxMemory);</a>
+<a name="ln596">    FindAutomorphisms(functor, mol, symClasses, mask);</a>
+<a name="ln597">    return maps.size();</a>
+<a name="ln598">  }</a>
+<a name="ln599"> </a>
+<a name="ln600">  OBBitVec getFragment(OBAtom *atom, const OBBitVec &amp;mask, const std::vector&lt;OBBond*&gt; &amp;metalloceneBonds = std::vector&lt;OBBond*&gt;());</a>
+<a name="ln601"> </a>
+<a name="ln602">  void FindAutomorphisms(OBIsomorphismMapper::Functor &amp;functor, OBMol *mol,</a>
+<a name="ln603">      const std::vector&lt;unsigned int&gt; &amp;symClasses, const OBBitVec &amp;mask)</a>
+<a name="ln604">  {</a>
+<a name="ln605">    class AutomorphismFunctor : public OBIsomorphismMapper::Functor</a>
+<a name="ln606">    {</a>
+<a name="ln607">      private:</a>
+<a name="ln608">        OBIsomorphismMapper::Functor &amp;m_functor;</a>
+<a name="ln609">        const OBBitVec &amp;m_fragment;</a>
+<a name="ln610">        std::vector&lt;unsigned int&gt; m_indexes;</a>
+<a name="ln611">      public:</a>
+<a name="ln612">        AutomorphismFunctor(OBIsomorphismMapper::Functor &amp;functor, const OBBitVec &amp;fragment, unsigned int numAtoms)</a>
+<a name="ln613">            : m_functor(functor), m_fragment(fragment)</a>
+<a name="ln614">        {</a>
+<a name="ln615">          for (unsigned int j = 0; j &lt; numAtoms; ++j)</a>
+<a name="ln616">            if (m_fragment.BitIsSet(j + 1))</a>
+<a name="ln617">              m_indexes.push_back(j);</a>
+<a name="ln618">        }</a>
+<a name="ln619">        bool operator()(Automorphism &amp;map)</a>
+<a name="ln620">        {</a>
+<a name="ln621">          // convert the continuous mapping map to a mapping with gaps (considering key values)</a>
+<a name="ln622">          for (Automorphism::iterator it = map.begin(); it != map.end(); ++it)</a>
+<a name="ln623">            it-&gt;first = m_indexes[it-&gt;first];</a>
+<a name="ln624">          return m_functor(map);</a>
+<a name="ln625">        }</a>
+<a name="ln626">    };</a>
+<a name="ln627"> </a>
+<a name="ln628">    // set all atoms to 1 if the mask is empty</a>
+<a name="ln629">    OBBitVec queriedMask = mask;</a>
+<a name="ln630">    if (!queriedMask.CountBits())</a>
+<a name="ln631">      for (unsigned int i = 0; i &lt; mol-&gt;NumAtoms(); ++i)</a>
+<a name="ln632">        queriedMask.SetBitOn(i + 1);</a>
+<a name="ln633"> </a>
+<a name="ln634">    if (DEBUG)</a>
+<a name="ln635">    for (unsigned int i = 0; i &lt; symClasses.size(); ++i)</a>
+<a name="ln636">      cout &lt;&lt; i &lt;&lt; &quot;: &quot; &lt;&lt; symClasses[i] &lt;&lt; endl;</a>
+<a name="ln637"> </a>
+<a name="ln638">    // compute the connected fragments</a>
+<a name="ln639">    OBBitVec visited;</a>
+<a name="ln640">    std::vector&lt;OBBitVec&gt; fragments;</a>
+<a name="ln641">    for (std::size_t i = 0; i &lt; mol-&gt;NumAtoms(); ++i) {</a>
+<a name="ln642">      if (!queriedMask.BitIsSet(i+1) || visited.BitIsSet(i+1))</a>
+<a name="ln643">        continue;</a>
+<a name="ln644">      fragments.push_back(getFragment(mol-&gt;GetAtom(i+1), queriedMask));</a>
+<a name="ln645">      visited |= fragments.back();</a>
+<a name="ln646">    }</a>
+<a name="ln647"> </a>
+<a name="ln648">    // count the symmetry classes</a>
+<a name="ln649">    std::vector&lt;int&gt; symClassCounts(symClasses.size() + 1, 0);</a>
+<a name="ln650">    for (unsigned int i = 0; i &lt; symClasses.size(); ++i) {</a>
+<a name="ln651">      if (!queriedMask.BitIsSet(i + 1))</a>
+<a name="ln652">        continue;</a>
+<a name="ln653">      unsigned int symClass = symClasses[i];</a>
+<a name="ln654">      symClassCounts[symClass]++;</a>
+<a name="ln655">    }</a>
+<a name="ln656"> </a>
+<a name="ln657">    for (std::size_t i = 0; i &lt; fragments.size(); ++i) {</a>
+<a name="ln658">      OBQuery *query = CompileAutomorphismQuery(mol, fragments[i], symClasses);</a>
+<a name="ln659">      OBIsomorphismMapper *mapper = OBIsomorphismMapper::GetInstance(query);</a>
+<a name="ln660"> </a>
+<a name="ln661">      AutomorphismFunctor autFunctor(functor, fragments[i], mol-&gt;NumAtoms());</a>
+<a name="ln662">      mapper-&gt;MapGeneric(autFunctor, mol, fragments[i]);</a>
+<a name="ln663">      delete mapper;</a>
+<a name="ln664">      delete query;</a>
+<a name="ln665">    }</a>
+<a name="ln666"> </a>
+<a name="ln667">  }</a>
+<a name="ln668"> </a>
+<a name="ln669"> </a>
+<a name="ln670"> </a>
+<a name="ln671"> </a>
+<a name="ln672">}</a>
+<a name="ln673"> </a>
+<a name="ln674">/// @file isomorphism.cpp</a>
+<a name="ln675">/// @brief OBIsomorphismMapper class for finding isomorphisms.</a>
+
+</code></pre>
+<div class="balloon" rel="68"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v730/" target="_blank">V730</a> Not all members of a class are initialized inside the constructor. Consider inspecting: m_startTime.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

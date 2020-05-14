@@ -1,0 +1,206 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>buildertest.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">#include &quot;obtest.h&quot;</a>
+<a name="ln2">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln3">#include &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln4">#include &lt;openbabel/builder.h&gt;</a>
+<a name="ln5">#include &lt;openbabel/forcefield.h&gt;</a>
+<a name="ln6"> </a>
+<a name="ln7">#include &lt;iostream&gt;</a>
+<a name="ln8">#include &lt;string&gt;</a>
+<a name="ln9">#include &lt;vector&gt;</a>
+<a name="ln10">#include &lt;algorithm&gt;</a>
+<a name="ln11"> </a>
+<a name="ln12">using namespace std;</a>
+<a name="ln13">using namespace OpenBabel;</a>
+<a name="ln14"> </a>
+<a name="ln15">static unsigned int failed = 0;</a>
+<a name="ln16">static unsigned int testCount = 0;</a>
+<a name="ln17"> </a>
+<a name="ln18">void clearMolFlags(OBMol &amp;mol)</a>
+<a name="ln19">{</a>
+<a name="ln20">  // Both of these are needed or there's a crash.</a>
+<a name="ln21">  mol.UnsetFlag(OB_SSSR_MOL);</a>
+<a name="ln22">  mol.UnsetFlag(OB_AROMATIC_MOL);</a>
+<a name="ln23"> </a>
+<a name="ln24">  // Not needed, doesn't cause crash</a>
+<a name="ln25">  //  mol.UnsetFlag(OB_RINGFLAGS_MOL);</a>
+<a name="ln26">  //  mol.UnsetFlag(OB_LSSR_MOL);</a>
+<a name="ln27">  //  mol.UnsetFlag(OB_KEKULE_MOL);</a>
+<a name="ln28">  //  mol.UnsetFlag(OB_CLOSURE_MOL);</a>
+<a name="ln29">  //  mol.UnsetFlag(OB_AROM_CORRECTED_MOL);</a>
+<a name="ln30">  //  mol.UnsetFlag(OB_RINGTYPES_MOL);</a>
+<a name="ln31">}</a>
+<a name="ln32"> </a>
+<a name="ln33">bool doBuildMoleculeTest(OBMol &amp;mol)</a>
+<a name="ln34">{</a>
+<a name="ln35">  testCount++;</a>
+<a name="ln36"> </a>
+<a name="ln37">  OBBuilder builder;</a>
+<a name="ln38">  OB_REQUIRE(builder.Build(mol, false));</a>
+<a name="ln39">  // Does not need clearMolFlags -- crash still happens if you clear here</a>
+<a name="ln40">  // and not after AddHydrogens()</a>
+<a name="ln41">  OB_REQUIRE(mol.AddHydrogens());</a>
+<a name="ln42">  OB_REQUIRE(mol.HasAromaticPerceived() == 0);</a>
+<a name="ln43">  OB_REQUIRE(mol.HasSSSRPerceived() == 0);</a>
+<a name="ln44">  //  clearMolFlags(mol); // must clear here or you crash</a>
+<a name="ln45">  // Should now be handled by AddHydrogens()</a>
+<a name="ln46"> </a>
+<a name="ln47">  OBForceField* pff = OBForceField::FindType(&quot;mmff94&quot;);</a>
+<a name="ln48">  OB_REQUIRE(pff != nullptr);</a>
+<a name="ln49">  cout &lt;&lt; mol.GetTitle() &lt;&lt; endl;</a>
+<a name="ln50">  OB_REQUIRE(pff-&gt;Setup(mol));</a>
+<a name="ln51">  // Check for explosions -- PR#3016479</a>
+<a name="ln52">  pff-&gt;SteepestDescent(100);</a>
+<a name="ln53">  OB_REQUIRE(!pff-&gt;DetectExplosion()); // no explosions please!</a>
+<a name="ln54"> </a>
+<a name="ln55">  return true;</a>
+<a name="ln56">}</a>
+<a name="ln57"> </a>
+<a name="ln58">bool doMultiMoleculeFile(const std::string &amp;filename)</a>
+<a name="ln59">{</a>
+<a name="ln60">  cout &lt;&lt; &quot; Starting &quot; &lt;&lt; filename &lt;&lt; endl;</a>
+<a name="ln61"> </a>
+<a name="ln62">  std::string file = OBTestUtil::GetFilename(filename);</a>
+<a name="ln63">  std::ifstream ifs;</a>
+<a name="ln64">  ifs.open(file.c_str());</a>
+<a name="ln65">  OB_REQUIRE( ifs );</a>
+<a name="ln66"> </a>
+<a name="ln67">  OBMol mol;</a>
+<a name="ln68">  OBConversion conv(&amp;ifs, &amp;cout);</a>
+<a name="ln69">  OBFormat *format = conv.FormatFromExt(file.c_str());</a>
+<a name="ln70">  OB_REQUIRE(format);</a>
+<a name="ln71">  OB_REQUIRE(conv.SetInFormat(format));</a>
+<a name="ln72"> </a>
+<a name="ln73">  bool result = true;</a>
+<a name="ln74">  while (conv.Read(&amp;mol, &amp;ifs)) {</a>
+<a name="ln75">    bool res = doBuildMoleculeTest(mol);</a>
+<a name="ln76">    if (!res)</a>
+<a name="ln77">      result = res;</a>
+<a name="ln78">  }</a>
+<a name="ln79"> </a>
+<a name="ln80">  return result;</a>
+<a name="ln81">}</a>
+<a name="ln82"> </a>
+<a name="ln83">bool doSMILESBuilderTest(string smiles)</a>
+<a name="ln84">{</a>
+<a name="ln85">  cout &lt;&lt; &quot; SMILES &quot; &lt;&lt; smiles &lt;&lt; endl;</a>
+<a name="ln86"> </a>
+<a name="ln87">  testCount++;</a>
+<a name="ln88"> </a>
+<a name="ln89">  OBMol mol;</a>
+<a name="ln90">  OBConversion conv;</a>
+<a name="ln91">  OBFormat *smilesFormat = conv.FindFormat(&quot;smi&quot;);</a>
+<a name="ln92">  OB_REQUIRE(smilesFormat);</a>
+<a name="ln93">  OB_REQUIRE(conv.SetInFormat(smilesFormat));</a>
+<a name="ln94"> </a>
+<a name="ln95">  OB_REQUIRE(conv.ReadString(&amp;mol, smiles));</a>
+<a name="ln96"> </a>
+<a name="ln97">  OBBuilder builder;</a>
+<a name="ln98">  OB_REQUIRE(builder.Build(mol, false)); // some stereo errors are known</a>
+<a name="ln99">  return (mol.Has3D() &amp;&amp; mol.HasNonZeroCoords());</a>
+<a name="ln100">}</a>
+<a name="ln101"> </a>
+<a name="ln102">int buildertest(int argc, char* argv[])</a>
+<a name="ln103">{</a>
+<a name="ln104">  int defaultchoice = 1;</a>
+<a name="ln105"> </a>
+<a name="ln106">  int choice = defaultchoice;</a>
+<a name="ln107"> </a>
+<a name="ln108">  if (argc &gt; 1) {</a>
+<a name="ln109">    if(sscanf(argv[1], &quot;%d&quot;, &amp;choice) != 1) {</a>
+<a name="ln110">      printf(&quot;Couldn't parse that input as a number\n&quot;);</a>
+<a name="ln111">      return -1;</a>
+<a name="ln112">    }</a>
+<a name="ln113">  }</a>
+<a name="ln114"> </a>
+<a name="ln115">  // Define location of file formats for testing</a>
+<a name="ln116">  #ifdef FORMATDIR</a>
+<a name="ln117">    char env[BUFF_SIZE];</a>
+<a name="ln118">    snprintf(env, BUFF_SIZE, &quot;BABEL_LIBDIR=%s&quot;, FORMATDIR);</a>
+<a name="ln119">    putenv(env);</a>
+<a name="ln120">  #endif</a>
+<a name="ln121"> </a>
+<a name="ln122"> </a>
+<a name="ln123"> </a>
+<a name="ln124">  // fails because of selenium</a>
+<a name="ln125">  //  OB_ASSERT( doMultiMoleculeFile(&quot;aromatics.smi&quot;) );</a>
+<a name="ln126">  // fails because of stereo crash</a>
+<a name="ln127">  //  OB_ASSERT( doMultiMoleculeFile(&quot;nci.smi&quot;) );</a>
+<a name="ln128">  // fails because of &quot;organometallic&quot; entries</a>
+<a name="ln129">  //  OB_ASSERT( doMultiMoleculeFile(&quot;attype.00.smi&quot;) );</a>
+<a name="ln130"> </a>
+<a name="ln131">  switch(choice) {</a>
+<a name="ln132">  case 1:</a>
+<a name="ln133">    OB_ASSERT( doMultiMoleculeFile(&quot;forcefield.sdf&quot;) );</a>
+<a name="ln134">    break;</a>
+<a name="ln135">  case 2:</a>
+<a name="ln136">    OB_ASSERT( doMultiMoleculeFile(&quot;filterset.sdf&quot;) );</a>
+<a name="ln137">    break;</a>
+<a name="ln138">  case 3:</a>
+<a name="ln139">    // from Martin Guetlein to mailing list on July 14, 2010</a>
+<a name="ln140">    OB_ASSERT( doSMILESBuilderTest(&quot;OC1=CC3=C([C@@]2([H])CC[C@@]4(C)[C@](CC[C@@H]4O)([H])[C@@]([H])2[C@H](CCCCCCCCCS(CCCC(F)(F)C(F)(F)F)=O)C3)C=C1&quot;) );</a>
+<a name="ln141">    break;</a>
+<a name="ln142">  case 4:</a>
+<a name="ln143">    // from Thomas Womack -- PR#3016479</a>
+<a name="ln144">    OB_ASSERT( doSMILESBuilderTest(&quot;O1C[C@H]2O[C@H]2c2ccc(Oc3c(O)ccc(CCC1=O)c3)cc2&quot;) );</a>
+<a name="ln145">    break;</a>
+<a name="ln146">  case 5:</a>
+<a name="ln147">    // from Martin Guetlein -- PR#3107218 (&quot;OBBuilder terminates while building 3d&quot;)</a>
+<a name="ln148">    OB_ASSERT( doSMILESBuilderTest(&quot;N12[C@@H]([C@@H](NC([C@@H](c3ccsc3)C(=O)O)=O)C2=O)SC(C)(C)[C@@-]1C(=O)O&quot;) );</a>
+<a name="ln149">    break;</a>
+<a name="ln150">  case 6:</a>
+<a name="ln151">    // from Hubertus van Dam -- #2144</a>
+<a name="ln152">    OB_ASSERT( doSMILESBuilderTest(&quot;OC1(C2=CN(CC3=CC=CC=C3F)N=N2)CCOC1&quot;) );</a>
+<a name="ln153">    break;</a>
+<a name="ln154">  default:</a>
+<a name="ln155">    cout &lt;&lt; &quot;Test number &quot; &lt;&lt; choice &lt;&lt; &quot; does not exist!\n&quot;;</a>
+<a name="ln156">    return -1;</a>
+<a name="ln157">  }</a>
+<a name="ln158"> </a>
+<a name="ln159">  return 0;</a>
+<a name="ln160">}</a>
+
+</code></pre>
+<div class="balloon" rel="50"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1004/" target="_blank">V1004</a> The 'pff' pointer was used unsafely after it was verified against nullptr. Check lines: 48, 50.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

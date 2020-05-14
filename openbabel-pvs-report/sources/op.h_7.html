@@ -1,0 +1,191 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>op.h</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">op.h - plugin options or operations</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 2007 by Chris Morley</a>
+<a name="ln5"> </a>
+<a name="ln6">This file is part of the Open Babel project.</a>
+<a name="ln7">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln10">it under the terms of the GNU General Public License as published by</a>
+<a name="ln11">the Free Software Foundation version 2 of the License.</a>
+<a name="ln12"> </a>
+<a name="ln13">This program is distributed in the hope that it will be useful, but</a>
+<a name="ln14">WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln15">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</a>
+<a name="ln16">General Public License for more details.</a>
+<a name="ln17">***********************************************************************/</a>
+<a name="ln18"> </a>
+<a name="ln19">#ifndef OB_OP_H</a>
+<a name="ln20">#define OB_OP_H</a>
+<a name="ln21"> </a>
+<a name="ln22">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln23">#include &lt;string&gt;</a>
+<a name="ln24">#include &lt;map&gt;</a>
+<a name="ln25">#include &lt;openbabel/plugin.h&gt;</a>
+<a name="ln26"> </a>
+<a name="ln27">namespace OpenBabel</a>
+<a name="ln28">{</a>
+<a name="ln29">  class OBConversion; //used only as a pointer</a>
+<a name="ln30">  class OBBase;</a>
+<a name="ln31"> </a>
+<a name="ln32">// Class introduction below</a>
+<a name="ln33">class OBAPI OBOp : public OBPlugin</a>
+<a name="ln34">{</a>
+<a name="ln35">  MAKE_PLUGIN(OBOp);</a>
+<a name="ln36"> </a>
+<a name="ln37">public:</a>
+<a name="ln38">  typedef const std::map&lt;std::string, std::string&gt; OpMap ;</a>
+<a name="ln39"> </a>
+<a name="ln40">  ///Provides the name of this kind of plugin. Use -L &quot;ops&quot; to list from commandline.</a>
+<a name="ln41">  virtual const char* TypeID(){ return &quot;ops&quot;; }</a>
+<a name="ln42"> </a>
+<a name="ln43">  ///Required function that does the work. Normally return true, unless object is not to be output.</a>
+<a name="ln44">  //NOTE: the parameters were changed in r3532</a>
+<a name="ln45">  virtual bool Do(OBBase* pOb, const char* OptionText=nullptr, OpMap* pOptions=nullptr, OBConversion* pConv=nullptr)=0;</a>
+<a name="ln46"> </a>
+<a name="ln47">  /// \return true if this op is designed to work with the class of pOb, e.g. OBMol</a>
+<a name="ln48">  virtual bool WorksWith(OBBase* pOb)const=0;</a>
+<a name="ln49"> </a>
+<a name="ln50">  /// Do something with an array of objects. Used a a callback routine in OpSort, etc.</a>
+<a name="ln51">  virtual bool ProcessVec(std::vector&lt;OBBase*&gt;&amp; /* vec */){ return false; }</a>
+<a name="ln52"> </a>
+<a name="ln53">  /// \return string describing options, for display with -H and to make checkboxes in GUI</a>
+<a name="ln54">  static std::string OpOptions(OBBase* pOb)</a>
+<a name="ln55">  {</a>
+<a name="ln56">    std::string s;</a>
+<a name="ln57">    OBPlugin::PluginIterator itr;</a>
+<a name="ln58">    for(itr=OBPlugin::Begin(&quot;ops&quot;);itr!=OBPlugin::End(&quot;ops&quot;);++itr)</a>
+<a name="ln59">    {</a>
+<a name="ln60">      OBOp* pOp = dynamic_cast&lt;OBOp*&gt;(itr-&gt;second);</a>
+<a name="ln61">       //ignore ops with IDs that begin with '_' or have &quot;not displayed in GUI&quot; in their first line of description</a>
+<a name="ln62">      if(*(itr-&gt;first)=='_'</a>
+<a name="ln63">        || OBPlugin::FirstLine(pOp-&gt;Description()).find(&quot;not displayed in GUI&quot;)!=std::string::npos)</a>
+<a name="ln64">        continue;</a>
+<a name="ln65">      if(pOp &amp;&amp; pOp-&gt;WorksWith(pOb))</a>
+<a name="ln66">      {</a>
+<a name="ln67">        s += &quot;--&quot;;</a>
+<a name="ln68">        s += itr-&gt;first; //ID</a>
+<a name="ln69">        s += ' ';</a>
+<a name="ln70">        s += OBPlugin::FirstLine(pOp-&gt;Description()) + '\n';</a>
+<a name="ln71">      }</a>
+<a name="ln72">    }</a>
+<a name="ln73">    s += '\n';</a>
+<a name="ln74">    return s;</a>
+<a name="ln75">  }</a>
+<a name="ln76"> </a>
+<a name="ln77">  ///Call Do() of all the OBOps whose ID is a key in the map.</a>
+<a name="ln78">  ///Called from DoTransformations(). The map has general options like -x or --multicharoption</a>
+<a name="ln79">  ///The key is the option name and the value, if any, is text which follows the option name.</a>
+<a name="ln80">  /// In some cases, there may be several parameters, space separated)</a>
+<a name="ln81">  /// \return false indicating object should not be output, if any Do() returns false</a>
+<a name="ln82">  static bool DoOps(OBBase* pOb, OpMap* pOptions, OBConversion* pConv)</a>
+<a name="ln83">  {</a>
+<a name="ln84">    OpMap::const_iterator itr;</a>
+<a name="ln85">    for(itr=pOptions-&gt;begin();itr!=pOptions-&gt;end();++itr)</a>
+<a name="ln86">    {</a>
+<a name="ln87">      OBOp* pOp = FindType(itr-&gt;first.c_str());</a>
+<a name="ln88">      if(pOp)</a>
+<a name="ln89">        if(!pOp-&gt;Do(pOb, itr-&gt;second.c_str(), pOptions, pConv))</a>
+<a name="ln90">          return false; //Op has decided molecule should not be output</a>
+<a name="ln91">    }</a>
+<a name="ln92">    return true;</a>
+<a name="ln93">  }</a>
+<a name="ln94">};</a>
+<a name="ln95"> </a>
+<a name="ln96">/** \class OBOp op.h &lt;openbabel/op.h&gt;</a>
+<a name="ln97">      \brief Operations to modify molecules before output</a>
+<a name="ln98">      \since version 2.2</a>
+<a name="ln99"> </a>
+<a name="ln100">Classes derived from OBOp implement options for the obabel program (for both</a>
+<a name="ln101">its commandline and GUI interfaces). It is intended for options that carry out some</a>
+<a name="ln102">modification on the molecule(or reaction) after it has been input, but before</a>
+<a name="ln103">it is output. An example is the --center option implemented in the OpCenter class</a>
+<a name="ln104">in ops.cpp, which is a duplicate of the built in -c option for centering coordinates.</a>
+<a name="ln105"> </a>
+<a name="ln106">The advantage of plugin classes is that no existing code has to be modified</a>
+<a name="ln107">when a new class is added. You can list those that are present by</a>
+<a name="ln108">obabel -L ops</a>
+<a name="ln109">or from a menu item in the GUI.</a>
+<a name="ln110"> </a>
+<a name="ln111">Any OBOp derived class has to have a constructor, a function returning a short description,</a>
+<a name="ln112">and a Do() function which does the work. It also needs a WorksWith() function</a>
+<a name="ln113">which is always the same when operating on OBMol objects. (It is not made a default</a>
+<a name="ln114">to reducecode dependencies.) A single global instance of the class needs to be</a>
+<a name="ln115">instantiated to define the ID, by which the class is subsequently accessed.</a>
+<a name="ln116"> </a>
+<a name="ln117">OBOp works by two of its static functions being called from code in transform.cpp:</a>
+<a name="ln118"> - OpOptions(OBBase* pOb, OpMap* pOptions) returns a string describing each of the</a>
+<a name="ln119">derivated classes relevant to objects of the class of the OBBase parameter,</a>
+<a name="ln120">for use in the help text and to set checkboxes in the GUI;</a>
+<a name="ln121"> - DoOps(OBBase* pOb) applies each option whose ID is listed in the  Opmap parameter</a>
+<a name="ln122">to the object (ususally an OBMol) in the OBBase parameter.</a>
+<a name="ln123"> </a>
+<a name="ln124">Options which need parameters are passed these (space delimited) in the text parameter</a>
+<a name="ln125">of the Do() function. They can also access other general options specified on the</a>
+<a name="ln126">command line by examining the the OpMap parameter.</a>
+<a name="ln127"> </a>
+<a name="ln128">To use an OBOp class from the API it is necessary to use an extra step in case it isn't</a>
+<a name="ln129">present. So to apply the OBOp class with ID gen3D to your mol</a>
+<a name="ln130"> </a>
+<a name="ln131">\code</a>
+<a name="ln132">OBOp* pOp = OBOp::FindType(&quot;gen3D&quot;);</a>
+<a name="ln133">if(!pOp)</a>
+<a name="ln134">  ...report error</a>
+<a name="ln135">pOp-&gt;Do(mol);</a>
+<a name="ln136">\endcode</a>
+<a name="ln137"> </a>
+<a name="ln138">  */</a>
+<a name="ln139"> </a>
+<a name="ln140">}//namespace</a>
+<a name="ln141"> </a>
+<a name="ln142">#endif</a>
+<a name="ln143"> </a>
+<a name="ln144">//! \file op.h</a>
+<a name="ln145">//! \brief Base plugin class for operations on molecules</a>
+
+</code></pre>
+<div class="balloon" rel="63"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v595/" target="_blank">V595</a> The 'pOp' pointer was utilized before it was verified against nullptr. Check lines: 63, 65.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

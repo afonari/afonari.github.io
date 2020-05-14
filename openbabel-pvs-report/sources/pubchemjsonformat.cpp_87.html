@@ -1,0 +1,1105 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>pubchemjsonformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Copyright (C) 2013, 2017, 2018 by Matt Swain &lt;m.swain@me.com&gt;</a>
+<a name="ln3"> </a>
+<a name="ln4">This file is part of the Open Babel project.</a>
+<a name="ln5">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln6"> </a>
+<a name="ln7">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln8">it under the terms of the GNU General Public License as published by</a>
+<a name="ln9">the Free Software Foundation version 2 of the License.</a>
+<a name="ln10"> </a>
+<a name="ln11">This program is distributed in the hope that it will be useful,</a>
+<a name="ln12">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln13">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln14">GNU General Public License for more details.</a>
+<a name="ln15">***********************************************************************/</a>
+<a name="ln16"> </a>
+<a name="ln17">#include &lt;map&gt;</a>
+<a name="ln18">#include &lt;algorithm&gt;</a>
+<a name="ln19">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/json.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln24">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln25">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln26">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln27">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln28">#include &lt;openbabel/stereo/stereo.h&gt;</a>
+<a name="ln29">#include &lt;openbabel/stereo/cistrans.h&gt;</a>
+<a name="ln30">#include &lt;openbabel/stereo/tetrahedral.h&gt;</a>
+<a name="ln31">#include &lt;openbabel/stereo/squareplanar.h&gt;</a>
+<a name="ln32"> </a>
+<a name="ln33">using namespace std;</a>
+<a name="ln34">namespace OpenBabel</a>
+<a name="ln35">{</a>
+<a name="ln36"> </a>
+<a name="ln37">typedef OBPairTemplate&lt; vector&lt;string&gt; &gt; AnnotationData;</a>
+<a name="ln38"> </a>
+<a name="ln39">class PubChemJSONFormat : public OBMoleculeFormat</a>
+<a name="ln40">{</a>
+<a name="ln41">  public:</a>
+<a name="ln42">    PubChemJSONFormat()</a>
+<a name="ln43">    {</a>
+<a name="ln44">      OBConversion::RegisterFormat(&quot;pcjson&quot;,this);</a>
+<a name="ln45">    }</a>
+<a name="ln46"> </a>
+<a name="ln47">    virtual const char* Description()</a>
+<a name="ln48">    {</a>
+<a name="ln49">      return</a>
+<a name="ln50">      &quot;PubChem JSON\n&quot;</a>
+<a name="ln51">      &quot;The JSON format returned by the PubChem PUG REST service\n\n&quot;</a>
+<a name="ln52"> </a>
+<a name="ln53">      &quot;The data contained in this format closely resembles PubChem's internal data structure.\n\n&quot;</a>
+<a name="ln54"> </a>
+<a name="ln55">      &quot;Read Options, e.g. -as\n&quot;</a>
+<a name="ln56">      &quot; s  disable stereo perception and just read stereo information from input\n\n&quot;</a>
+<a name="ln57"> </a>
+<a name="ln58">      &quot;Write Options, e.g. -xm\n&quot;</a>
+<a name="ln59">      &quot; m  minified output, with no line breaks or indents\n&quot;</a>
+<a name="ln60">      &quot; w  use bond styles from input instead of perceived stereochemistry\n\n&quot;</a>
+<a name="ln61">      ;</a>
+<a name="ln62">    };</a>
+<a name="ln63"> </a>
+<a name="ln64">    virtual const char* SpecificationURL()</a>
+<a name="ln65">    { return &quot;http://www.ncbi.nlm.nih.gov/data_specs/asn/pcsubstance.asn&quot;; };</a>
+<a name="ln66">    // http://pubchem.ncbi.nlm.nih.gov/pug_rest/PUG_REST.html also useful</a>
+<a name="ln67"> </a>
+<a name="ln68">    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln69">    virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln70"> </a>
+<a name="ln71">  private:</a>
+<a name="ln72">    rapidjson::Document inRoot;</a>
+<a name="ln73">    rapidjson::Document outRoot;</a>
+<a name="ln74">    int currentMolIndex;</a>
+<a name="ln75"> </a>
+<a name="ln76">  };</a>
+<a name="ln77">  </a>
+<a name="ln78">  PubChemJSONFormat thePubChemJSONFormat;</a>
+<a name="ln79">  </a>
+<a name="ln80">  bool PubChemJSONFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln81">  {</a>
+<a name="ln82">    OBMol *pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln83">    if (pmol == nullptr) return false;</a>
+<a name="ln84">    istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln85"> </a>
+<a name="ln86">    if (!ifs.good())</a>
+<a name="ln87">      return false;</a>
+<a name="ln88"> </a>
+<a name="ln89">    map&lt;OBBond *, OBStereo::BondDirection&gt; updown;</a>
+<a name="ln90"> </a>
+<a name="ln91">    pmol-&gt;BeginModify();</a>
+<a name="ln92"> </a>
+<a name="ln93">    // Parse entire file into memory once, then reuse inRoot for subsequent molecules</a>
+<a name="ln94">    // (It's really tricky to stream json)</a>
+<a name="ln95">    if (ifs.peek() != EOF) {</a>
+<a name="ln96">      rapidjson::IStreamWrapper isw(ifs);</a>
+<a name="ln97">      inRoot.ParseStream(isw);</a>
+<a name="ln98">      if (inRoot.HasParseError()) {</a>
+<a name="ln99">        stringstream msg;</a>
+<a name="ln100">        msg &lt;&lt; &quot;JSON parse error at offset &quot; &lt;&lt; inRoot.GetErrorOffset() &lt;&lt; &quot;: &quot;</a>
+<a name="ln101">            &lt;&lt; rapidjson::GetParseError_En(inRoot.GetParseError());</a>
+<a name="ln102">        obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, msg.str(), obError);</a>
+<a name="ln103">        return false;</a>
+<a name="ln104">      }</a>
+<a name="ln105">      // Clear ifs flags so it is &quot;good&quot; and any subsequent mols are read, but leave it at EOF position.</a>
+<a name="ln106">      // Therefore, when not at EOF position we know to parse next file and reset currentMolIndex</a>
+<a name="ln107">      ifs.clear();</a>
+<a name="ln108">      currentMolIndex = 0;</a>
+<a name="ln109">    }</a>
+<a name="ln110"> </a>
+<a name="ln111">    if (!inRoot.IsObject()) {</a>
+<a name="ln112">      obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;JSON file should be a single object&quot;, obError);</a>
+<a name="ln113">      return false;</a>
+<a name="ln114">    }</a>
+<a name="ln115"> </a>
+<a name="ln116">    // Get the root level of the molecule</a>
+<a name="ln117">    rapidjson::Value molRoot;</a>
+<a name="ln118">    rapidjson::Value subsRoot;</a>
+<a name="ln119">    if (inRoot.HasMember(&quot;PC_Compounds&quot;) &amp;&amp; inRoot[&quot;PC_Compounds&quot;].IsArray()) {</a>
+<a name="ln120">      // File is a PC_Compounds array</a>
+<a name="ln121">      if (inRoot[&quot;PC_Compounds&quot;].Size() &gt; currentMolIndex) {</a>
+<a name="ln122">        molRoot = inRoot[&quot;PC_Compounds&quot;][currentMolIndex];</a>
+<a name="ln123">        currentMolIndex++;</a>
+<a name="ln124">      } else {</a>
+<a name="ln125">        // Finished the last molecule</a>
+<a name="ln126">        ifs.seekg(0, ios::end);</a>
+<a name="ln127">        return false;</a>
+<a name="ln128">      }</a>
+<a name="ln129">    } else if (inRoot.HasMember(&quot;PC_Substances&quot;) &amp;&amp; inRoot[&quot;PC_Substances&quot;].IsArray()) {</a>
+<a name="ln130">      // File is a PC_Substances array</a>
+<a name="ln131">      if (inRoot[&quot;PC_Substances&quot;].Size() &gt; currentMolIndex) {</a>
+<a name="ln132">        subsRoot = inRoot[&quot;PC_Substances&quot;][currentMolIndex];</a>
+<a name="ln133">        // We are assuming the first item in compound array is the deposited entry</a>
+<a name="ln134">        molRoot = subsRoot[&quot;compound&quot;][0];</a>
+<a name="ln135">        currentMolIndex++;</a>
+<a name="ln136">      } else {</a>
+<a name="ln137">        // Finished the last molecule</a>
+<a name="ln138">        ifs.seekg(0, ios::end);</a>
+<a name="ln139">        return false;</a>
+<a name="ln140">      }</a>
+<a name="ln141">    } else {</a>
+<a name="ln142">      obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;JSON file must contain a PC_Compounds or PC_Substances array&quot;,</a>
+<a name="ln143">                            obError);</a>
+<a name="ln144">    }</a>
+<a name="ln145"> </a>
+<a name="ln146">    // CID or SID</a>
+<a name="ln147">    if (molRoot.HasMember(&quot;id&quot;) &amp;&amp; molRoot[&quot;id&quot;].HasMember(&quot;id&quot;) &amp;&amp;</a>
+<a name="ln148">        molRoot[&quot;id&quot;][&quot;id&quot;].HasMember(&quot;cid&quot;) &amp;&amp; molRoot[&quot;id&quot;][&quot;id&quot;][&quot;cid&quot;].IsInt()) {</a>
+<a name="ln149">      // PC_Compound</a>
+<a name="ln150">      ostringstream s;</a>
+<a name="ln151">      s &lt;&lt; molRoot[&quot;id&quot;][&quot;id&quot;][&quot;cid&quot;].GetInt();</a>
+<a name="ln152">      std::string title(s.str());</a>
+<a name="ln153">      pmol-&gt;SetTitle(title);</a>
+<a name="ln154">      OBPairData *cid = new OBPairData;</a>
+<a name="ln155">      cid-&gt;SetAttribute(&quot;cid&quot;);</a>
+<a name="ln156">      cid-&gt;SetValue(title);</a>
+<a name="ln157">      cid-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln158">      pmol-&gt;SetData(cid);</a>
+<a name="ln159">    } else if (!subsRoot.IsNull() &amp;&amp; subsRoot.HasMember(&quot;sid&quot;) &amp;&amp;</a>
+<a name="ln160">               subsRoot[&quot;sid&quot;].HasMember(&quot;id&quot;) &amp;&amp; subsRoot[&quot;sid&quot;][&quot;id&quot;].IsInt()) {</a>
+<a name="ln161">      // PC_Substance</a>
+<a name="ln162">      ostringstream s;</a>
+<a name="ln163">      s &lt;&lt; subsRoot[&quot;sid&quot;][&quot;id&quot;].GetInt();</a>
+<a name="ln164">      std::string title(s.str());</a>
+<a name="ln165">      pmol-&gt;SetTitle(title);</a>
+<a name="ln166">      OBPairData *sid = new OBPairData;</a>
+<a name="ln167">      sid-&gt;SetAttribute(&quot;sid&quot;);</a>
+<a name="ln168">      sid-&gt;SetValue(title);</a>
+<a name="ln169">      sid-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln170">      pmol-&gt;SetData(sid);</a>
+<a name="ln171">    } else {</a>
+<a name="ln172">      obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;Did not find CID or SID in PubChem JSON&quot;, obWarning);</a>
+<a name="ln173">    }</a>
+<a name="ln174"> </a>
+<a name="ln175">    // Atom elements</a>
+<a name="ln176">    if (!molRoot.HasMember(&quot;atoms&quot;) || !molRoot[&quot;atoms&quot;].HasMember(&quot;aid&quot;) || !molRoot[&quot;atoms&quot;].HasMember(&quot;element&quot;)) {</a>
+<a name="ln177">      obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;Could not read atom data&quot;, obError);</a>
+<a name="ln178">    }</a>
+<a name="ln179">    const rapidjson::Value &amp;eAids = molRoot[&quot;atoms&quot;][&quot;aid&quot;];</a>
+<a name="ln180">    const rapidjson::Value &amp;elements = molRoot[&quot;atoms&quot;][&quot;element&quot;];</a>
+<a name="ln181">    pmol-&gt;ReserveAtoms(eAids.Size());</a>
+<a name="ln182">    for (rapidjson::SizeType i = 0; i &lt; eAids.Size(); i++) {</a>
+<a name="ln183">      if (eAids[i].IsInt() &amp;&amp; elements[i].IsInt()) {</a>
+<a name="ln184">        // Element provided as integer atomic number</a>
+<a name="ln185">        int atomicNum = elements[i].GetInt();</a>
+<a name="ln186">        OBAtom *patom = pmol-&gt;NewAtom(eAids[i].GetUint());</a>
+<a name="ln187">        if (atomicNum == 255 || atomicNum == 254 || atomicNum == 253 || atomicNum == 252) {</a>
+<a name="ln188">          patom-&gt;SetAtomicNum(0);</a>
+<a name="ln189">        } else {</a>
+<a name="ln190">          patom-&gt;SetAtomicNum(atomicNum);</a>
+<a name="ln191">        }</a>
+<a name="ln192">      } else if (eAids[i].IsInt() &amp;&amp; elements[i].IsString()) {</a>
+<a name="ln193">        // Element provided as string (old format)</a>
+<a name="ln194">        string elementstring = elements[i].GetString();</a>
+<a name="ln195">        OBAtom *patom = pmol-&gt;NewAtom(eAids[i].GetUint());</a>
+<a name="ln196">        if (elementstring == &quot;a&quot; || elementstring == &quot;d&quot; || elementstring == &quot;r&quot; || elementstring == &quot;lp&quot;) {</a>
+<a name="ln197">          patom-&gt;SetAtomicNum(0);</a>
+<a name="ln198">        } else {</a>
+<a name="ln199">          // Ensure first letter is uppercase</a>
+<a name="ln200">          elementstring[0] = toupper(elementstring[0]);</a>
+<a name="ln201">          patom-&gt;SetAtomicNum(OBElements::GetAtomicNum(elementstring.c_str()));</a>
+<a name="ln202">        }</a>
+<a name="ln203">      } else {</a>
+<a name="ln204">        obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;Invalid atom&quot;, obWarning);</a>
+<a name="ln205">      }</a>
+<a name="ln206">    }</a>
+<a name="ln207"> </a>
+<a name="ln208">    // Atom charges</a>
+<a name="ln209">    if (molRoot[&quot;atoms&quot;].HasMember(&quot;charge&quot;) &amp;&amp; molRoot[&quot;atoms&quot;][&quot;charge&quot;].IsArray()) {</a>
+<a name="ln210">      const rapidjson::Value &amp;charges = molRoot[&quot;atoms&quot;][&quot;charge&quot;];</a>
+<a name="ln211">      for (rapidjson::SizeType i = 0; i &lt; charges.Size(); i++) {</a>
+<a name="ln212">        const rapidjson::Value &amp;charge = charges[i];</a>
+<a name="ln213">        if (charge[&quot;aid&quot;].IsInt() &amp;&amp; charge[&quot;value&quot;].IsInt()) {</a>
+<a name="ln214">          OBAtom *patom = pmol-&gt;GetAtomById(charge[&quot;aid&quot;].GetUint());</a>
+<a name="ln215">          if (patom) {</a>
+<a name="ln216">            patom-&gt;SetFormalCharge(charge[&quot;value&quot;].GetInt());</a>
+<a name="ln217">          } else {</a>
+<a name="ln218">            obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;Invalid atom charge&quot;, obWarning);</a>
+<a name="ln219">          }</a>
+<a name="ln220">        } else {</a>
+<a name="ln221">          obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;Invalid atom charge&quot;, obWarning);</a>
+<a name="ln222">        }</a>
+<a name="ln223">      }</a>
+<a name="ln224">    }</a>
+<a name="ln225"> </a>
+<a name="ln226">    // Atom radicals</a>
+<a name="ln227">    if (molRoot[&quot;atoms&quot;].HasMember(&quot;radical&quot;) &amp;&amp; molRoot[&quot;atoms&quot;][&quot;radical&quot;].IsArray()) {</a>
+<a name="ln228">      rapidjson::Value &amp;radicals = molRoot[&quot;atoms&quot;][&quot;radical&quot;];</a>
+<a name="ln229">      for (rapidjson::SizeType i = 0; i &lt; radicals.Size(); i++) {</a>
+<a name="ln230">        rapidjson::Value &amp;radical = radicals[i];</a>
+<a name="ln231">        if (radical[&quot;aid&quot;].IsInt() &amp;&amp; radical[&quot;type&quot;].IsInt()) {</a>
+<a name="ln232">          // Radical provided as integer</a>
+<a name="ln233">          OBAtom *patom = pmol-&gt;GetAtomById(radical[&quot;aid&quot;].GetUint());</a>
+<a name="ln234">          if (patom) {</a>
+<a name="ln235">            int sm = radical[&quot;type&quot;].GetInt();</a>
+<a name="ln236">            if (sm == 255) {</a>
+<a name="ln237">              sm = 0;</a>
+<a name="ln238">            }</a>
+<a name="ln239">            patom-&gt;SetSpinMultiplicity(sm);</a>
+<a name="ln240">          } else {</a>
+<a name="ln241">            obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;Invalid atom radical&quot;, obWarning);</a>
+<a name="ln242">          }</a>
+<a name="ln243">        } else if (radical[&quot;aid&quot;].IsInt() &amp;&amp; radical[&quot;type&quot;].IsString()) {</a>
+<a name="ln244">          // Radical provided as string (old format)</a>
+<a name="ln245">          OBAtom *patom = pmol-&gt;GetAtomById(radical[&quot;aid&quot;].GetUint());</a>
+<a name="ln246">          if (patom) {</a>
+<a name="ln247">            string radicalstring = radical[&quot;type&quot;].GetString();</a>
+<a name="ln248">            if (radicalstring == &quot;singlet&quot;) {</a>
+<a name="ln249">              patom-&gt;SetSpinMultiplicity(1);</a>
+<a name="ln250">            } else if (radicalstring == &quot;doublet&quot;) {</a>
+<a name="ln251">              patom-&gt;SetSpinMultiplicity(2);</a>
+<a name="ln252">            } else if (radicalstring == &quot;triplet&quot;) {</a>
+<a name="ln253">              patom-&gt;SetSpinMultiplicity(3);</a>
+<a name="ln254">            } else if (radicalstring == &quot;quartet&quot;) {</a>
+<a name="ln255">              patom-&gt;SetSpinMultiplicity(4);</a>
+<a name="ln256">            } else if (radicalstring == &quot;quintet&quot;) {</a>
+<a name="ln257">              patom-&gt;SetSpinMultiplicity(5);</a>
+<a name="ln258">            } else if (radicalstring == &quot;hextet&quot;) {</a>
+<a name="ln259">              patom-&gt;SetSpinMultiplicity(6);</a>
+<a name="ln260">            } else if (radicalstring == &quot;heptet&quot;) {</a>
+<a name="ln261">              patom-&gt;SetSpinMultiplicity(7);</a>
+<a name="ln262">            } else if (radicalstring == &quot;octet&quot;) {</a>
+<a name="ln263">              patom-&gt;SetSpinMultiplicity(8);</a>
+<a name="ln264">            } else if (radicalstring == &quot;none&quot;) {</a>
+<a name="ln265">              patom-&gt;SetSpinMultiplicity(0);</a>
+<a name="ln266">            } else {</a>
+<a name="ln267">              obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;Invalid atom radical&quot;, obWarning);</a>
+<a name="ln268">            }</a>
+<a name="ln269">          } else {</a>
+<a name="ln270">            obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;Invalid atom radical&quot;, obWarning);</a>
+<a name="ln271">          }</a>
+<a name="ln272">        } else {</a>
+<a name="ln273">          obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;Invalid atom radical&quot;, obWarning);</a>
+<a name="ln274">        }</a>
+<a name="ln275">      }</a>
+<a name="ln276">    }</a>
+<a name="ln277"> </a>
+<a name="ln278">    // Atom isotopes</a>
+<a name="ln279">    if (molRoot[&quot;atoms&quot;].HasMember(&quot;isotope&quot;) &amp;&amp; molRoot[&quot;atoms&quot;][&quot;isotope&quot;].IsArray()) {</a>
+<a name="ln280">      rapidjson::Value &amp;isotopes = molRoot[&quot;atoms&quot;][&quot;isotope&quot;];</a>
+<a name="ln281">      for (rapidjson::SizeType i = 0; i &lt; isotopes.Size(); i++) {</a>
+<a name="ln282">        rapidjson::Value &amp;isotope = isotopes[i];</a>
+<a name="ln283">        if (isotope[&quot;aid&quot;].IsInt() &amp;&amp; isotope[&quot;value&quot;].IsInt()) {</a>
+<a name="ln284">          OBAtom *patom = pmol-&gt;GetAtomById(isotope[&quot;aid&quot;].GetUint());</a>
+<a name="ln285">          if (patom) {</a>
+<a name="ln286">            patom-&gt;SetIsotope(isotope[&quot;value&quot;].GetUint());</a>
+<a name="ln287">          } else {</a>
+<a name="ln288">            obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;Invalid atom isotope&quot;, obWarning);</a>
+<a name="ln289">          }</a>
+<a name="ln290">        } else {</a>
+<a name="ln291">          obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;Invalid atom isotope&quot;, obWarning);</a>
+<a name="ln292">        }</a>
+<a name="ln293">      }</a>
+<a name="ln294">    }</a>
+<a name="ln295"> </a>
+<a name="ln296">    // TODO: atom label, atom comment</a>
+<a name="ln297">    // array of (aid, value&lt;string&gt;)</a>
+<a name="ln298"> </a>
+<a name="ln299">    // Bond orders</a>
+<a name="ln300">    if (molRoot.HasMember(&quot;bonds&quot;) &amp;&amp; molRoot[&quot;bonds&quot;].HasMember(&quot;aid1&quot;) &amp;&amp; molRoot[&quot;bonds&quot;].HasMember(&quot;aid2&quot;) &amp;&amp;</a>
+<a name="ln301">        molRoot[&quot;bonds&quot;].HasMember(&quot;order&quot;)) {</a>
+<a name="ln302">      rapidjson::Value &amp;oAid1s = molRoot[&quot;bonds&quot;][&quot;aid1&quot;];</a>
+<a name="ln303">      rapidjson::Value &amp;oAid2s = molRoot[&quot;bonds&quot;][&quot;aid2&quot;];</a>
+<a name="ln304">      rapidjson::Value &amp;orders = molRoot[&quot;bonds&quot;][&quot;order&quot;];</a>
+<a name="ln305">      for (rapidjson::SizeType i = 0; i &lt; oAid1s.Size(); i++) {</a>
+<a name="ln306">        if (oAid1s[i].IsInt() &amp;&amp; oAid2s[i].IsInt() &amp;&amp; orders[i].IsInt()) {</a>
+<a name="ln307">          // Bond order provided as integer</a>
+<a name="ln308">          OBAtom *beginAtom = pmol-&gt;GetAtomById(oAid1s[i].GetUint());</a>
+<a name="ln309">          OBAtom *endAtom = pmol-&gt;GetAtomById(oAid2s[i].GetUint());</a>
+<a name="ln310">          if (beginAtom &amp;&amp; endAtom) {</a>
+<a name="ln311">            OBBond *pbond = pmol-&gt;NewBond();</a>
+<a name="ln312">            pbond-&gt;SetBegin(beginAtom);</a>
+<a name="ln313">            pbond-&gt;SetEnd(endAtom);</a>
+<a name="ln314">            int order = orders[i].GetInt();</a>
+<a name="ln315">            // Other bond types: dative (5), complex (6), ionic (7), unknown (255)</a>
+<a name="ln316">            if (order &gt; 4) {</a>
+<a name="ln317">              // Save type string as generic data on bond for non-standard bonds</a>
+<a name="ln318">              string orderstring = &quot;unknown&quot;;</a>
+<a name="ln319">              if (order == 5) {</a>
+<a name="ln320">                orderstring = &quot;dative&quot;;</a>
+<a name="ln321">              } else if (order == 6) {</a>
+<a name="ln322">                orderstring = &quot;complex&quot;;</a>
+<a name="ln323">              } else if (order == 7) {</a>
+<a name="ln324">                orderstring = &quot;ionic&quot;;</a>
+<a name="ln325">              }</a>
+<a name="ln326">              OBPairData *bondType = new OBPairData;</a>
+<a name="ln327">              bondType-&gt;SetAttribute(&quot;type&quot;);</a>
+<a name="ln328">              bondType-&gt;SetValue(orderstring);</a>
+<a name="ln329">              bondType-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln330">              pbond-&gt;SetData(bondType);</a>
+<a name="ln331">              // Use zero bond order for non-standard bonds</a>
+<a name="ln332">              order = 0;</a>
+<a name="ln333">            }</a>
+<a name="ln334">            pbond-&gt;SetBondOrder(order);</a>
+<a name="ln335">            beginAtom-&gt;AddBond(pbond);</a>
+<a name="ln336">            endAtom-&gt;AddBond(pbond);</a>
+<a name="ln337">          } else {</a>
+<a name="ln338">            obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;Invalid bond&quot;, obWarning);</a>
+<a name="ln339">          }</a>
+<a name="ln340">        } else if (oAid1s[i].IsInt() &amp;&amp; oAid2s[i].IsInt() &amp;&amp; orders[i].IsString()) {</a>
+<a name="ln341">          // Bond order provided as string (old format)</a>
+<a name="ln342">          int order = 0; // Use zero bond order for other bond types (complex, ionic, dative, unknown)</a>
+<a name="ln343">          string orderstring = orders[i].GetString();</a>
+<a name="ln344">          if (orderstring == &quot;single&quot;) {</a>
+<a name="ln345">            order = 1;</a>
+<a name="ln346">          } else if (orderstring == &quot;double&quot;) {</a>
+<a name="ln347">            order = 2;</a>
+<a name="ln348">          } else if (orderstring == &quot;triple&quot;) {</a>
+<a name="ln349">            order = 3;</a>
+<a name="ln350">          } else if (orderstring == &quot;quadruple&quot;) {</a>
+<a name="ln351">            order = 4;</a>
+<a name="ln352">          }</a>
+<a name="ln353">          OBAtom *beginAtom = pmol-&gt;GetAtomById(oAid1s[i].GetUint());</a>
+<a name="ln354">          OBAtom *endAtom = pmol-&gt;GetAtomById(oAid2s[i].GetUint());</a>
+<a name="ln355">          if (beginAtom &amp;&amp; endAtom) {</a>
+<a name="ln356">            OBBond *pbond = pmol-&gt;NewBond();</a>
+<a name="ln357">            pbond-&gt;SetBegin(beginAtom);</a>
+<a name="ln358">            pbond-&gt;SetEnd(endAtom);</a>
+<a name="ln359">            pbond-&gt;SetBondOrder(order);</a>
+<a name="ln360">            beginAtom-&gt;AddBond(pbond);</a>
+<a name="ln361">            endAtom-&gt;AddBond(pbond);</a>
+<a name="ln362">            // Save type string as generic data on bond (useful for non-standard bonds)</a>
+<a name="ln363">            OBPairData *bondType = new OBPairData;</a>
+<a name="ln364">            bondType-&gt;SetAttribute(&quot;type&quot;);</a>
+<a name="ln365">            bondType-&gt;SetValue(orderstring);</a>
+<a name="ln366">            bondType-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln367">            pbond-&gt;SetData(bondType);</a>
+<a name="ln368">          } else {</a>
+<a name="ln369">            obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;Invalid bond&quot;, obWarning);</a>
+<a name="ln370">          }</a>
+<a name="ln371">        } else {</a>
+<a name="ln372">          obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;Invalid bond&quot;, obWarning);</a>
+<a name="ln373">        }</a>
+<a name="ln374">      }</a>
+<a name="ln375">    }</a>
+<a name="ln376"> </a>
+<a name="ln377">    unsigned short dim = 0;    // Set dimension to 0 unless coordinates are found</a>
+<a name="ln378"> </a>
+<a name="ln379">    // Atom coordinates</a>
+<a name="ln380">    if (molRoot.HasMember(&quot;coords&quot;) &amp;&amp; molRoot[&quot;coords&quot;].IsArray() &amp;&amp; molRoot[&quot;coords&quot;].Size() &gt; 0 &amp;&amp;</a>
+<a name="ln381">        molRoot[&quot;coords&quot;][0].HasMember(&quot;aid&quot;)) {</a>
+<a name="ln382">      rapidjson::Value &amp;coords = molRoot[&quot;coords&quot;][0];</a>
+<a name="ln383">      rapidjson::Value &amp;cAids = coords[&quot;aid&quot;];</a>
+<a name="ln384">      if (coords.HasMember(&quot;conformers&quot;) &amp;&amp; coords[&quot;conformers&quot;].IsArray() &amp;&amp; coords[&quot;conformers&quot;].Size() &gt; 0) {</a>
+<a name="ln385">        rapidjson::Value &amp;conf = coords[&quot;conformers&quot;][0];</a>
+<a name="ln386">        if (conf.HasMember(&quot;x&quot;) &amp;&amp; conf[&quot;x&quot;].IsArray() &amp;&amp; conf[&quot;x&quot;].Size() &gt;= cAids.Size() &amp;&amp; conf.HasMember(&quot;y&quot;) &amp;&amp;</a>
+<a name="ln387">            conf[&quot;y&quot;].IsArray() &amp;&amp; conf[&quot;y&quot;].Size() &gt;= cAids.Size()) {</a>
+<a name="ln388">          dim = 2;</a>
+<a name="ln389">          if (conf.HasMember(&quot;z&quot;) &amp;&amp; conf[&quot;z&quot;].IsArray() &amp;&amp; conf[&quot;z&quot;].Size() &gt;= cAids.Size()) {</a>
+<a name="ln390">            dim = 3;</a>
+<a name="ln391">          }</a>
+<a name="ln392">          for (rapidjson::SizeType i = 0; i &lt; cAids.Size(); i++) {</a>
+<a name="ln393">            double x, y, z = 0;</a>
+<a name="ln394">            x = conf[&quot;x&quot;][i].GetDouble();</a>
+<a name="ln395">            y = conf[&quot;y&quot;][i].GetDouble();</a>
+<a name="ln396">            if (dim == 3) {</a>
+<a name="ln397">              z = conf[&quot;z&quot;][i].GetDouble();</a>
+<a name="ln398">            }</a>
+<a name="ln399">            OBAtom *patom = pmol-&gt;GetAtomById(cAids[i].GetUint());</a>
+<a name="ln400">            if (patom) {</a>
+<a name="ln401">              patom-&gt;SetVector(x, y, z);</a>
+<a name="ln402">            } else {</a>
+<a name="ln403">              obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;Invalid coordinates&quot;, obWarning);</a>
+<a name="ln404">            }</a>
+<a name="ln405">          }</a>
+<a name="ln406">        }</a>
+<a name="ln407"> </a>
+<a name="ln408">        // TODO: Coordinates type</a>
+<a name="ln409">        // rapidjson::Value &amp;type = coords[&quot;type&quot;];</a>
+<a name="ln410">        // Generic data? An array of strings</a>
+<a name="ln411">        // twod, threed, submitted, experimental, computed, standardized, augmented, aligned, compact,</a>
+<a name="ln412">        // units-unknown, units-angstroms, units-nanometers, units-pixel, units-points, units-stdbonds</a>
+<a name="ln413"> </a>
+<a name="ln414">        // Bond styles and annotations</a>
+<a name="ln415">        if (conf.HasMember(&quot;style&quot;) &amp;&amp; conf[&quot;style&quot;].IsObject() &amp;&amp; conf[&quot;style&quot;].HasMember(&quot;aid1&quot;) &amp;&amp;</a>
+<a name="ln416">            conf[&quot;style&quot;][&quot;aid1&quot;].IsArray() &amp;&amp;</a>
+<a name="ln417">            conf[&quot;style&quot;].HasMember(&quot;aid2&quot;) &amp;&amp; conf[&quot;style&quot;][&quot;aid2&quot;].IsArray() &amp;&amp;</a>
+<a name="ln418">            conf[&quot;style&quot;].HasMember(&quot;annotation&quot;) &amp;&amp; conf[&quot;style&quot;][&quot;annotation&quot;].IsArray()) {</a>
+<a name="ln419">          rapidjson::Value &amp;aid1s = conf[&quot;style&quot;][&quot;aid1&quot;];</a>
+<a name="ln420">          rapidjson::Value &amp;aid2s = conf[&quot;style&quot;][&quot;aid2&quot;];</a>
+<a name="ln421">          rapidjson::Value &amp;styles = conf[&quot;style&quot;][&quot;annotation&quot;];</a>
+<a name="ln422">          for (rapidjson::SizeType i = 0; i &lt; aid1s.Size(); i++) {</a>
+<a name="ln423">            if (aid1s[i].IsInt() &amp;&amp; aid2s[i].IsInt()) {</a>
+<a name="ln424">              OBAtom *beginAtom = pmol-&gt;GetAtomById(aid1s[i].GetUint());</a>
+<a name="ln425">              OBAtom *endAtom = pmol-&gt;GetAtomById(aid2s[i].GetUint());</a>
+<a name="ln426">              if (beginAtom &amp;&amp; endAtom) {</a>
+<a name="ln427">                OBBond *pbond = pmol-&gt;GetBond(beginAtom, endAtom);</a>
+<a name="ln428">                if (!pbond) {</a>
+<a name="ln429">                  // Create zero order bond if none exists</a>
+<a name="ln430">                  pbond = pmol-&gt;NewBond();</a>
+<a name="ln431">                  pbond-&gt;SetBondOrder(0);</a>
+<a name="ln432">                  beginAtom-&gt;AddBond(pbond);</a>
+<a name="ln433">                  endAtom-&gt;AddBond(pbond);</a>
+<a name="ln434">                }</a>
+<a name="ln435">                // Use annotations to add stereo information</a>
+<a name="ln436">                unsigned int flags = pbond-&gt;GetFlags();</a>
+<a name="ln437"> </a>
+<a name="ln438">                if (styles[i].IsInt()) {</a>
+<a name="ln439">                  // Bond style provided as integer</a>
+<a name="ln440">                  int style = styles[i].GetInt();</a>
+<a name="ln441">                  if (style == 8) {</a>
+<a name="ln442">                    flags |= OBBond::Aromatic;</a>
+<a name="ln443">                  } else if (style == 5) {</a>
+<a name="ln444">                    flags |= OBBond::Wedge;</a>
+<a name="ln445">                  } else if (style == 6) {</a>
+<a name="ln446">                    flags |= OBBond::Hash;</a>
+<a name="ln447">                  } else if (style == 1) {</a>
+<a name="ln448">                    flags |= OBBond::CisOrTrans;</a>
+<a name="ln449">                  } else if (style == 3) {</a>
+<a name="ln450">                    flags |= OBBond::WedgeOrHash;</a>
+<a name="ln451">                  } else {</a>
+<a name="ln452">                    // Save non-standard annotations as generic data on bond (multiple possible)</a>
+<a name="ln453">                    vector&lt;string&gt; val;</a>
+<a name="ln454">                    if (pbond-&gt;HasData(&quot;style&quot;)) {</a>
+<a name="ln455">                      AnnotationData *data = dynamic_cast&lt;AnnotationData *&gt;(pbond-&gt;GetData(&quot;style&quot;));</a>
+<a name="ln456">                      val = data-&gt;GetGenericValue();</a>
+<a name="ln457">                      pbond-&gt;DeleteData(&quot;style&quot;);</a>
+<a name="ln458">                    }</a>
+<a name="ln459">                    AnnotationData *data = new AnnotationData;</a>
+<a name="ln460">                    data-&gt;SetAttribute(&quot;style&quot;);</a>
+<a name="ln461">                    data-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln462">                    string stylestring = &quot;unknown&quot;;</a>
+<a name="ln463">                    if (style == 2) {</a>
+<a name="ln464">                      stylestring = &quot;dashed&quot;;</a>
+<a name="ln465">                    } else if (style == 4) {</a>
+<a name="ln466">                      stylestring = &quot;dotted&quot;;</a>
+<a name="ln467">                    } else if (style == 7) {</a>
+<a name="ln468">                      stylestring = &quot;arrow&quot;;</a>
+<a name="ln469">                    } else if (style == 9) {</a>
+<a name="ln470">                      stylestring = &quot;resonance&quot;;</a>
+<a name="ln471">                    } else if (style == 10) {</a>
+<a name="ln472">                      stylestring = &quot;bold&quot;;</a>
+<a name="ln473">                    } else if (style == 11) {</a>
+<a name="ln474">                      stylestring = &quot;fischer&quot;;</a>
+<a name="ln475">                    } else if (style == 12) {</a>
+<a name="ln476">                      stylestring = &quot;closeContact&quot;;</a>
+<a name="ln477">                    }</a>
+<a name="ln478">                    val.push_back(stylestring);</a>
+<a name="ln479">                    data-&gt;SetValue(val);</a>
+<a name="ln480">                    pbond-&gt;SetData(data);</a>
+<a name="ln481">                  }</a>
+<a name="ln482">                } else if (styles[i].IsString()) {</a>
+<a name="ln483">                  // Bond style provided as string (old format)</a>
+<a name="ln484">                  string stylestring = styles[i].GetString();</a>
+<a name="ln485">                  if (stylestring == &quot;aromatic&quot;) {</a>
+<a name="ln486">                    flags |= OBBond::Aromatic;</a>
+<a name="ln487">                  } else if (stylestring == &quot;wedge-up&quot;) {</a>
+<a name="ln488">                    flags |= OBBond::Wedge;</a>
+<a name="ln489">                  } else if (stylestring == &quot;wedge-down&quot;) {</a>
+<a name="ln490">                    flags |= OBBond::Hash;</a>
+<a name="ln491">                  } else if (stylestring == &quot;crossed&quot;) {</a>
+<a name="ln492">                    flags |= OBBond::CisOrTrans;</a>
+<a name="ln493">                  } else if (stylestring == &quot;wavy&quot;) {</a>
+<a name="ln494">                    flags |= OBBond::WedgeOrHash;</a>
+<a name="ln495">                  } else if (stylestring == &quot;dashed&quot; || stylestring == &quot;dotted&quot; ||</a>
+<a name="ln496">                             stylestring == &quot;arrow&quot; || stylestring == &quot;resonance&quot; ||</a>
+<a name="ln497">                             stylestring == &quot;bold&quot; || stylestring == &quot;fischer&quot; ||</a>
+<a name="ln498">                             stylestring == &quot;closeContact&quot; || stylestring == &quot;unknown&quot;) {</a>
+<a name="ln499">                    // Save non-standard annotations as generic data on bond (multiple possible)</a>
+<a name="ln500">                    vector&lt;string&gt; val;</a>
+<a name="ln501">                    if (pbond-&gt;HasData(&quot;style&quot;)) {</a>
+<a name="ln502">                      AnnotationData *data = dynamic_cast&lt;AnnotationData *&gt;(pbond-&gt;GetData(&quot;style&quot;));</a>
+<a name="ln503">                      val = data-&gt;GetGenericValue();</a>
+<a name="ln504">                      pbond-&gt;DeleteData(&quot;style&quot;);</a>
+<a name="ln505">                    }</a>
+<a name="ln506">                    AnnotationData *data = new AnnotationData;</a>
+<a name="ln507">                    data-&gt;SetAttribute(&quot;style&quot;);</a>
+<a name="ln508">                    data-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln509">                    val.push_back(stylestring);</a>
+<a name="ln510">                    data-&gt;SetValue(val);</a>
+<a name="ln511">                    pbond-&gt;SetData(data);</a>
+<a name="ln512">                  }</a>
+<a name="ln513">                }</a>
+<a name="ln514">                pbond-&gt;Set(pbond-&gt;GetIdx(), beginAtom, endAtom, pbond-&gt;GetBondOrder(), flags);</a>
+<a name="ln515">              } else {</a>
+<a name="ln516">                obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;Invalid bond style&quot;, obWarning);</a>
+<a name="ln517">              }</a>
+<a name="ln518">            }</a>
+<a name="ln519">          }</a>
+<a name="ln520">        }</a>
+<a name="ln521">        pmol-&gt;SetDimension(dim);</a>
+<a name="ln522">      }</a>
+<a name="ln523">    }</a>
+<a name="ln524"> </a>
+<a name="ln525">    // Total molecular charge (redundant due to atom charges?)</a>
+<a name="ln526">    if (molRoot.HasMember(&quot;charge&quot;) &amp;&amp; molRoot[&quot;charge&quot;].IsInt()) {</a>
+<a name="ln527">      pmol-&gt;SetTotalCharge(molRoot[&quot;charge&quot;].GetInt());</a>
+<a name="ln528">    }</a>
+<a name="ln529"> </a>
+<a name="ln530">    // Set up the updown map we are going to use to derive stereo info</a>
+<a name="ln531">    FOR_BONDS_OF_MOL(pbond, pmol) {</a>
+<a name="ln532">      OBStereo::BondDirection bd = OBStereo::NotStereo;</a>
+<a name="ln533">      unsigned int flag = pbond-&gt;GetFlags();</a>
+<a name="ln534">      if (flag &amp; OBBond::Wedge)</a>
+<a name="ln535">        bd = OBStereo::UpBond;</a>
+<a name="ln536">      if (flag &amp; OBBond::Hash)</a>
+<a name="ln537">        bd = OBStereo::DownBond;</a>
+<a name="ln538">      if (flag &amp; OBBond::WedgeOrHash)</a>
+<a name="ln539">        bd = OBStereo::UnknownDir;</a>
+<a name="ln540">      if (flag &amp; OBBond::CisOrTrans &amp;&amp; pbond-&gt;GetBondOrder() == 2)</a>
+<a name="ln541">        bd = OBStereo::UnknownDir;</a>
+<a name="ln542">      if (bd != OBStereo::NotStereo)</a>
+<a name="ln543">        updown[&amp;*pbond] = bd;</a>
+<a name="ln544">    }</a>
+<a name="ln545"> </a>
+<a name="ln546">    pmol-&gt;EndModify();</a>
+<a name="ln547"> </a>
+<a name="ln548">    if (pConv-&gt;IsOption(&quot;s&quot;, OBConversion::INOPTIONS)) {</a>
+<a name="ln549">      // Use the stereo information in the input file</a>
+<a name="ln550">      pmol-&gt;DeleteData(OBGenericDataType::StereoData);</a>
+<a name="ln551">      if (molRoot.HasMember(&quot;stereo&quot;) &amp;&amp; molRoot[&quot;stereo&quot;].IsArray()) {</a>
+<a name="ln552">        for (rapidjson::SizeType i = 0; i &lt; molRoot[&quot;stereo&quot;].Size(); i++) {</a>
+<a name="ln553">          rapidjson::Value &amp;stereo = molRoot[&quot;stereo&quot;][i];</a>
+<a name="ln554">          if (stereo.HasMember(&quot;tetrahedral&quot;)) {</a>
+<a name="ln555">            rapidjson::Value &amp;tet = stereo[&quot;tetrahedral&quot;];</a>
+<a name="ln556">            OBTetrahedralStereo::Config config;</a>
+<a name="ln557">            config.center = tet[&quot;center&quot;].GetUint();</a>
+<a name="ln558">            config.from = (tet[&quot;top&quot;].GetInt() == -1) ? OBStereo::ImplicitRef : tet[&quot;top&quot;].GetInt();</a>
+<a name="ln559">            config.refs.push_back((tet[&quot;below&quot;].GetInt() == -1) ? OBStereo::ImplicitRef : tet[&quot;below&quot;].GetInt());</a>
+<a name="ln560">            if ((tet[&quot;parity&quot;].IsInt() &amp;&amp; tet[&quot;parity&quot;].GetInt() == 1) ||</a>
+<a name="ln561">                (tet[&quot;parity&quot;].IsString() &amp;&amp; strcmp(tet[&quot;parity&quot;].GetString(), &quot;clockwise&quot;) == 0)) {</a>
+<a name="ln562">              config.specified = true;</a>
+<a name="ln563">              config.winding = OBStereo::Clockwise;</a>
+<a name="ln564">              config.refs.push_back((tet[&quot;bottom&quot;].GetInt() == -1) ? OBStereo::ImplicitRef : tet[&quot;bottom&quot;].GetInt());</a>
+<a name="ln565">              config.refs.push_back((tet[&quot;above&quot;].GetInt() == -1) ? OBStereo::ImplicitRef : tet[&quot;above&quot;].GetInt());</a>
+<a name="ln566">            } else if ((tet[&quot;parity&quot;].IsInt() &amp;&amp; tet[&quot;parity&quot;].GetInt() == 2) ||</a>
+<a name="ln567">                       (tet[&quot;parity&quot;].IsString() &amp;&amp; strcmp(tet[&quot;parity&quot;].GetString(), &quot;counterclockwise&quot;) == 0)) {</a>
+<a name="ln568">              config.specified = true;</a>
+<a name="ln569">              config.winding = OBStereo::AntiClockwise;</a>
+<a name="ln570">              config.refs.push_back((tet[&quot;above&quot;].GetInt() == -1) ? OBStereo::ImplicitRef : tet[&quot;above&quot;].GetInt());</a>
+<a name="ln571">              config.refs.push_back((tet[&quot;bottom&quot;].GetInt() == -1) ? OBStereo::ImplicitRef : tet[&quot;bottom&quot;].GetInt());</a>
+<a name="ln572">            } else {</a>
+<a name="ln573">              config.specified = false;</a>
+<a name="ln574">              config.winding = OBStereo::UnknownWinding;</a>
+<a name="ln575">              config.refs.push_back((tet[&quot;bottom&quot;].GetInt() == -1) ? OBStereo::ImplicitRef : tet[&quot;bottom&quot;].GetInt());</a>
+<a name="ln576">              config.refs.push_back((tet[&quot;above&quot;].GetInt() == -1) ? OBStereo::ImplicitRef : tet[&quot;above&quot;].GetInt());</a>
+<a name="ln577">            }</a>
+<a name="ln578">            OBTetrahedralStereo *ts = new OBTetrahedralStereo(pmol);</a>
+<a name="ln579">            ts-&gt;SetConfig(config);</a>
+<a name="ln580">            pmol-&gt;SetData(ts);</a>
+<a name="ln581">          } else if (stereo.HasMember(&quot;planar&quot;)) {</a>
+<a name="ln582">            rapidjson::Value &amp;pl = stereo[&quot;planar&quot;];</a>
+<a name="ln583">            OBCisTransStereo::Config config;</a>
+<a name="ln584">            config.begin = pl[&quot;left&quot;].GetUint();</a>
+<a name="ln585">            config.end = pl[&quot;right&quot;].GetUint();</a>
+<a name="ln586">            config.refs.push_back((pl[&quot;ltop&quot;].GetInt() == -1) ? OBStereo::ImplicitRef : pl[&quot;ltop&quot;].GetInt());</a>
+<a name="ln587">            config.refs.push_back((pl[&quot;rtop&quot;].GetInt() == -1) ? OBStereo::ImplicitRef : pl[&quot;rtop&quot;].GetInt());</a>
+<a name="ln588">            config.refs.push_back((pl[&quot;rbottom&quot;].GetInt() == -1) ? OBStereo::ImplicitRef : pl[&quot;rbottom&quot;].GetInt());</a>
+<a name="ln589">            config.refs.push_back((pl[&quot;lbottom&quot;].GetInt() == -1) ? OBStereo::ImplicitRef : pl[&quot;lbottom&quot;].GetInt());</a>
+<a name="ln590">            if ((pl[&quot;parity&quot;].IsInt() &amp;&amp; (pl[&quot;parity&quot;].GetInt() == 3 || pl[&quot;parity&quot;].GetInt() == 255)) ||</a>
+<a name="ln591">                (pl[&quot;parity&quot;].IsString() &amp;&amp;</a>
+<a name="ln592">                 (strcmp(pl[&quot;parity&quot;].GetString(), &quot;any&quot;) == 0 || strcmp(pl[&quot;parity&quot;].GetString(), &quot;unknown&quot;) == 0))) {</a>
+<a name="ln593">              config.specified = false;</a>
+<a name="ln594">            } else {</a>
+<a name="ln595">              config.specified = true;</a>
+<a name="ln596">              config.shape = OBStereo::ShapeU;</a>
+<a name="ln597">            }</a>
+<a name="ln598">            OBCisTransStereo *ct = new OBCisTransStereo(pmol);</a>
+<a name="ln599">            ct-&gt;SetConfig(config);</a>
+<a name="ln600">            pmol-&gt;SetData(ct);</a>
+<a name="ln601">          } else if (stereo.HasMember(&quot;squareplanar&quot;)) {</a>
+<a name="ln602">            rapidjson::Value &amp;sq = stereo[&quot;squareplanar&quot;];</a>
+<a name="ln603">            OBSquarePlanarStereo::Config config;</a>
+<a name="ln604">            config.center = sq[&quot;center&quot;].GetUint();</a>
+<a name="ln605">            config.refs.push_back((sq[&quot;lbelow&quot;].GetInt() == -1) ? OBStereo::ImplicitRef : sq[&quot;lbelow&quot;].GetInt());</a>
+<a name="ln606">            config.refs.push_back((sq[&quot;rbelow&quot;].GetInt() == -1) ? OBStereo::ImplicitRef : sq[&quot;rbelow&quot;].GetInt());</a>
+<a name="ln607">            config.refs.push_back((sq[&quot;rabove&quot;].GetInt()) ? OBStereo::ImplicitRef : sq[&quot;rabove&quot;].GetInt());</a>
+<a name="ln608">            config.refs.push_back((sq[&quot;labove&quot;].GetInt() == -1) ? OBStereo::ImplicitRef : sq[&quot;labove&quot;].GetInt());</a>
+<a name="ln609">            if ((sq[&quot;parity&quot;].IsInt() &amp;&amp; (sq[&quot;parity&quot;].GetInt() == 4 || sq[&quot;parity&quot;].GetInt() == 255)) ||</a>
+<a name="ln610">                (sq[&quot;parity&quot;].IsString() &amp;&amp;</a>
+<a name="ln611">                 (strcmp(sq[&quot;parity&quot;].GetString(), &quot;any&quot;) == 0 || strcmp(sq[&quot;parity&quot;].GetString(), &quot;unknown&quot;) == 0))) {</a>
+<a name="ln612">              config.specified = false;</a>
+<a name="ln613">            } else {</a>
+<a name="ln614">              config.specified = true;</a>
+<a name="ln615">              config.shape = OBStereo::ShapeU;</a>
+<a name="ln616">            }</a>
+<a name="ln617">            OBSquarePlanarStereo *ss = new OBSquarePlanarStereo(pmol);</a>
+<a name="ln618">            ss-&gt;SetConfig(config);</a>
+<a name="ln619">            pmol-&gt;SetData(ss);</a>
+<a name="ln620">          } else if (stereo.HasMember(&quot;octahedral&quot;)) {</a>
+<a name="ln621">            obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;Octahedral stereochemistry not implemented&quot;, obWarning);</a>
+<a name="ln622">            // aids: center, top, bottom, lbelow, rbelow, labove, rabove</a>
+<a name="ln623">          } else if (stereo.HasMember(&quot;bipyramid&quot;)) {</a>
+<a name="ln624">            obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;Bipyramidal stereochemistry not implemented&quot;, obWarning);</a>
+<a name="ln625">            // aids: above, below, bottom, center, top, right</a>
+<a name="ln626">          } else if (stereo.HasMember(&quot;tshape&quot;)) {</a>
+<a name="ln627">            obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;T shape stereochemistry not implemented&quot;, obWarning);</a>
+<a name="ln628">            // aids: center, top, bottom, above</a>
+<a name="ln629">          } else if (stereo.HasMember(&quot;pentagonal&quot;)) {</a>
+<a name="ln630">            obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;Pentagonal stereochemistry not implemented&quot;, obWarning);</a>
+<a name="ln631">            // aids: center, top, bottom, left, lbelow, rbelow, labove, rabove</a>
+<a name="ln632">          }</a>
+<a name="ln633">        }</a>
+<a name="ln634">        pmol-&gt;SetChiralityPerceived();</a>
+<a name="ln635">      }</a>
+<a name="ln636">    } else {</a>
+<a name="ln637">      // Use OB stereo perception to get stereo from coordinates and bond styles</a>
+<a name="ln638">      if (pmol-&gt;Has3D()) {</a>
+<a name="ln639">        // Use 3D coordinates to determine stereochemistry</a>
+<a name="ln640">        StereoFrom3D(pmol);</a>
+<a name="ln641">        // For unspecified cis/trans stereos, set their Configs to unspecified</a>
+<a name="ln642">        map&lt;OBBond *, OBStereo::BondDirection&gt;::const_iterator bd_it;</a>
+<a name="ln643">        OpenBabel::OBStereoFacade facade(pmol);</a>
+<a name="ln644">        for (bd_it = updown.begin(); bd_it != updown.end(); ++bd_it) {</a>
+<a name="ln645">          OBBond *bond = bd_it-&gt;first;</a>
+<a name="ln646">          if (bond-&gt;GetBondOrder() != 2 || bd_it-&gt;second != OBStereo::UnknownDir)</a>
+<a name="ln647">            continue; // Only continue for those double bonds with UnknownDir</a>
+<a name="ln648">          OBCisTransStereo *ct = facade.GetCisTransStereo(bond-&gt;GetId());</a>
+<a name="ln649">          if (ct) {</a>
+<a name="ln650">            OBCisTransStereo::Config config = ct-&gt;GetConfig();</a>
+<a name="ln651">            config.specified = false;</a>
+<a name="ln652">            ct-&gt;SetConfig(config);</a>
+<a name="ln653">          }</a>
+<a name="ln654">        }</a>
+<a name="ln655">      } else if (pmol-&gt;Has2D()) {</a>
+<a name="ln656">        // Use 2D coordinates + hash/wedge to determine stereochemistry</a>
+<a name="ln657">        StereoFrom2D(pmol, &amp;updown);</a>
+<a name="ln658">      }</a>
+<a name="ln659">    }</a>
+<a name="ln660"> </a>
+<a name="ln661">    // TODO: Properties</a>
+<a name="ln662"> </a>
+<a name="ln663">    // Increment currentMolIndex for next run</a>
+<a name="ln664">    currentMolIndex++;</a>
+<a name="ln665"> </a>
+<a name="ln666">    return true;</a>
+<a name="ln667">  }</a>
+<a name="ln668"> </a>
+<a name="ln669">  bool PubChemJSONFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln670">  {</a>
+<a name="ln671">    OBMol *pmol = dynamic_cast&lt;OBMol *&gt;(pOb);</a>
+<a name="ln672">    if (pmol == nullptr)</a>
+<a name="ln673">      return false;</a>
+<a name="ln674">    ostream &amp;ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln675"> </a>
+<a name="ln676">    if (pmol-&gt;GetDimension() == 0) {</a>
+<a name="ln677">      obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;No 2D or 3D coordinates exist. &quot;</a>
+<a name="ln678">          &quot;To generate 2D or 3D coordinates use --gen2D or --gen3D.&quot;, obError);</a>
+<a name="ln679">      return false;</a>
+<a name="ln680">    }</a>
+<a name="ln681"> </a>
+<a name="ln682">    // Make all hydrogens explicit by default, unless -d option set</a>
+<a name="ln683">    if (pConv-&gt;IsOption(&quot;d&quot;, OBConversion::GENOPTIONS)) {</a>
+<a name="ln684">      obErrorLog.ThrowError(&quot;PubChemJSONFormat&quot;, &quot;Stereo output may be invalid due to implicit hydrogens&quot;, obWarning);</a>
+<a name="ln685">    } else {</a>
+<a name="ln686">      pmol-&gt;AddHydrogens();</a>
+<a name="ln687">    }</a>
+<a name="ln688"> </a>
+<a name="ln689">    PerceiveStereo(pmol);</a>
+<a name="ln690"> </a>
+<a name="ln691">    // Set up all the stereochemistry information</a>
+<a name="ln692">    set&lt;OBBond *&gt; unspec_ctstereo = GetUnspecifiedCisTrans(*pmol);</a>
+<a name="ln693">    map&lt;OBBond *, OBStereo::BondDirection&gt; updown;</a>
+<a name="ln694">    map&lt;OBBond *, OBStereo::Ref&gt; from;</a>
+<a name="ln695">    map&lt;OBBond *, OBStereo::Ref&gt;::const_iterator from_cit;</a>
+<a name="ln696">    if (!pConv-&gt;IsOption(&quot;w&quot;, pConv-&gt;OUTOPTIONS))</a>
+<a name="ln697">      TetStereoToWedgeHash(*pmol, updown, from);</a>
+<a name="ln698"> </a>
+<a name="ln699">    // Must always pass an allocator when memory may need to be allocated</a>
+<a name="ln700">    rapidjson::Document::AllocatorType &amp;al = outRoot.GetAllocator();</a>
+<a name="ln701"> </a>
+<a name="ln702">    rapidjson::Value doc(rapidjson::kObjectType);  // Root of molecule JSON</a>
+<a name="ln703"> </a>
+<a name="ln704">    // CID</a>
+<a name="ln705">    if (pmol-&gt;HasData(&quot;cid&quot;)) {</a>
+<a name="ln706">      OBPairData *cid = dynamic_cast&lt;OBPairData *&gt;(pmol-&gt;GetData(&quot;cid&quot;));</a>
+<a name="ln707">      rapidjson::Value cidValue(rapidjson::kStringType);</a>
+<a name="ln708">      cidValue.SetString(cid-&gt;GetValue().c_str(), al);</a>
+<a name="ln709">      rapidjson::Value id2(rapidjson::kObjectType);</a>
+<a name="ln710">      id2.AddMember(&quot;cid&quot;, cidValue, al);</a>
+<a name="ln711">      rapidjson::Value id1(rapidjson::kObjectType);</a>
+<a name="ln712">      id1.AddMember(&quot;id&quot;, id2, al);</a>
+<a name="ln713">      doc.AddMember(&quot;id&quot;, id1, al);</a>
+<a name="ln714">    }</a>
+<a name="ln715"> </a>
+<a name="ln716">    // Atoms</a>
+<a name="ln717">    rapidjson::Value aids(rapidjson::kArrayType);</a>
+<a name="ln718">    rapidjson::Value element(rapidjson::kArrayType);</a>
+<a name="ln719">    rapidjson::Value charge(rapidjson::kArrayType);</a>
+<a name="ln720">    rapidjson::Value isotope(rapidjson::kArrayType);</a>
+<a name="ln721">    rapidjson::Value radical(rapidjson::kArrayType);</a>
+<a name="ln722">    rapidjson::Value xcoords(rapidjson::kArrayType);</a>
+<a name="ln723">    rapidjson::Value ycoords(rapidjson::kArrayType);</a>
+<a name="ln724">    rapidjson::Value zcoords(rapidjson::kArrayType);</a>
+<a name="ln725">    unsigned int id = 1;</a>
+<a name="ln726">    FOR_ATOMS_OF_MOL(patom, pmol) {</a>
+<a name="ln727">      // Id (Overwrite Id from input to ensure consecutive integers 1+)</a>
+<a name="ln728">      patom-&gt;SetId(id);</a>
+<a name="ln729">      aids.PushBack(rapidjson::Value(id).Move(), al);</a>
+<a name="ln730">      // Element</a>
+<a name="ln731">      if (patom-&gt;GetAtomicNum()) {</a>
+<a name="ln732">        element.PushBack(rapidjson::Value(patom-&gt;GetAtomicNum()).Move(), al);</a>
+<a name="ln733">      } else {</a>
+<a name="ln734">        element.PushBack(rapidjson::Value(255).Move(), al);</a>
+<a name="ln735">      }</a>
+<a name="ln736">      // Charge</a>
+<a name="ln737">      int c = patom-&gt;GetFormalCharge();</a>
+<a name="ln738">      if (c != 0) {</a>
+<a name="ln739">        rapidjson::Value chg(rapidjson::kObjectType);</a>
+<a name="ln740">        chg.AddMember(&quot;aid&quot;, rapidjson::Value(id).Move(), al);</a>
+<a name="ln741">        chg.AddMember(&quot;value&quot;, rapidjson::Value(c).Move(), al);</a>
+<a name="ln742">        charge.PushBack(chg, al);</a>
+<a name="ln743">      }</a>
+<a name="ln744">      // Isotope</a>
+<a name="ln745">      int m = patom-&gt;GetIsotope();</a>
+<a name="ln746">      if (m != 0) {</a>
+<a name="ln747">        rapidjson::Value iso(rapidjson::kObjectType);</a>
+<a name="ln748">        iso.AddMember(&quot;aid&quot;, rapidjson::Value(id).Move(), al);</a>
+<a name="ln749">        iso.AddMember(&quot;value&quot;, rapidjson::Value(m).Move(), al);</a>
+<a name="ln750">        isotope.PushBack(iso, al);</a>
+<a name="ln751">      }</a>
+<a name="ln752">      // Radical</a>
+<a name="ln753">      int sm = patom-&gt;GetSpinMultiplicity();</a>
+<a name="ln754">      if (sm &gt; 0 &amp;&amp; sm &lt; 9) {</a>
+<a name="ln755">        rapidjson::Value rad(rapidjson::kObjectType);</a>
+<a name="ln756">        rad.AddMember(&quot;aid&quot;, rapidjson::Value(id).Move(), al);</a>
+<a name="ln757">        rad.AddMember(&quot;type&quot;, rapidjson::Value(sm).Move(), al);</a>
+<a name="ln758">        radical.PushBack(rad, al);</a>
+<a name="ln759">      }</a>
+<a name="ln760">      // Coordinates</a>
+<a name="ln761">      // TODO: An option to round coordinates to n decimal places?</a>
+<a name="ln762">      xcoords.PushBack(rapidjson::Value(patom-&gt;GetX()).Move(), al);</a>
+<a name="ln763">      ycoords.PushBack(rapidjson::Value(patom-&gt;GetX()).Move(), al);</a>
+<a name="ln764">      if (pmol-&gt;GetDimension() == 3) {</a>
+<a name="ln765">        zcoords.PushBack(rapidjson::Value(patom-&gt;GetZ()).Move(), al);</a>
+<a name="ln766">      }</a>
+<a name="ln767">      id++;</a>
+<a name="ln768">    }</a>
+<a name="ln769"> </a>
+<a name="ln770">    // Add atoms to doc</a>
+<a name="ln771">    if (aids.Size() &gt; 0) {</a>
+<a name="ln772">      rapidjson::Value atoms(rapidjson::kObjectType);</a>
+<a name="ln773">      atoms.AddMember(&quot;aids&quot;, aids, al);</a>
+<a name="ln774">      atoms.AddMember(&quot;element&quot;, element, al);</a>
+<a name="ln775">      if (charge.Size() &gt; 0) {</a>
+<a name="ln776">        atoms.AddMember(&quot;charge&quot;, charge, al);</a>
+<a name="ln777">      }</a>
+<a name="ln778">      if (isotope.Size() &gt; 0) {</a>
+<a name="ln779">        atoms.AddMember(&quot;isotope&quot;, isotope, al);</a>
+<a name="ln780">      }</a>
+<a name="ln781">      if (radical.Size() &gt; 0) {</a>
+<a name="ln782">        atoms.AddMember(&quot;radical&quot;, radical, al);</a>
+<a name="ln783">      }</a>
+<a name="ln784"> </a>
+<a name="ln785">      doc.AddMember(&quot;atoms&quot;, atoms, al);</a>
+<a name="ln786">    }</a>
+<a name="ln787"> </a>
+<a name="ln788">    rapidjson::Value aid1(rapidjson::kArrayType);</a>
+<a name="ln789">    rapidjson::Value aid2(rapidjson::kArrayType);</a>
+<a name="ln790">    rapidjson::Value order(rapidjson::kArrayType);</a>
+<a name="ln791">    rapidjson::Value annAid1(rapidjson::kArrayType);</a>
+<a name="ln792">    rapidjson::Value annAid2(rapidjson::kArrayType);</a>
+<a name="ln793">    rapidjson::Value annotation(rapidjson::kArrayType);</a>
+<a name="ln794"> </a>
+<a name="ln795">    // Bonds</a>
+<a name="ln796">    FOR_BONDS_OF_MOL(pbond, pmol) {</a>
+<a name="ln797"> </a>
+<a name="ln798">      // Order</a>
+<a name="ln799">      int ord = pbond-&gt;GetBondOrder();</a>
+<a name="ln800">      if (ord == 0) {</a>
+<a name="ln801">        if (pbond-&gt;HasData(&quot;type&quot;)) {</a>
+<a name="ln802">          // Check to see if a &quot;type&quot; string exists</a>
+<a name="ln803">          OBPairData *typeData = dynamic_cast&lt;OBPairData *&gt;(pbond-&gt;GetData(&quot;type&quot;));</a>
+<a name="ln804">          const string &amp;orderstring = typeData-&gt;GetValue();</a>
+<a name="ln805">          if (orderstring == &quot;dative&quot;) {</a>
+<a name="ln806">            ord = 5;</a>
+<a name="ln807">          } else if (orderstring == &quot;complex&quot;) {</a>
+<a name="ln808">            ord = 6;</a>
+<a name="ln809">          } else if (orderstring == &quot;ionic&quot;) {</a>
+<a name="ln810">            ord = 7;</a>
+<a name="ln811">          }</a>
+<a name="ln812">        }</a>
+<a name="ln813">      }</a>
+<a name="ln814">      aid1.PushBack(rapidjson::Value((int) pbond-&gt;GetBeginAtom()-&gt;GetId()).Move(), al);</a>
+<a name="ln815">      aid2.PushBack(rapidjson::Value((int) pbond-&gt;GetEndAtom()-&gt;GetId()).Move(), al);</a>
+<a name="ln816">      order.PushBack(rapidjson::Value(ord).Move(), al);</a>
+<a name="ln817"> </a>
+<a name="ln818">      // Styles and annotations</a>
+<a name="ln819">      vector&lt;int&gt; annotations;</a>
+<a name="ln820">      if (pConv-&gt;IsOption(&quot;w&quot;, pConv-&gt;OUTOPTIONS)) {</a>
+<a name="ln821">        // option w means just use input bond stereo annotations</a>
+<a name="ln822">        if (pbond-&gt;IsWedge()) {</a>
+<a name="ln823">          annotations.push_back(5);</a>
+<a name="ln824">        } else if (pbond-&gt;IsHash()) {</a>
+<a name="ln825">          annotations.push_back(6);</a>
+<a name="ln826">        } else if (pbond-&gt;IsWedgeOrHash()) {</a>
+<a name="ln827">          annotations.push_back(3);</a>
+<a name="ln828">        } else if (pbond-&gt;IsCisOrTrans()) {</a>
+<a name="ln829">          annotations.push_back(1);</a>
+<a name="ln830">        }</a>
+<a name="ln831">      } else {</a>
+<a name="ln832">        // No option w means use stereochemistry information</a>
+<a name="ln833">        from_cit = from.find(&amp;*pbond);</a>
+<a name="ln834">        if (from_cit != from.end() &amp;&amp; from_cit-&gt;second == pbond-&gt;GetEndAtom()-&gt;GetId()) {</a>
+<a name="ln835">          swap(aid1, aid2);  // Swap start and end atom if necessary</a>
+<a name="ln836">        }</a>
+<a name="ln837">        if (unspec_ctstereo.find(&amp;*pbond) != unspec_ctstereo.end()) {</a>
+<a name="ln838">          annotations.push_back(1);</a>
+<a name="ln839">        }</a>
+<a name="ln840">        if (updown.find(&amp;*pbond) != updown.end()) {</a>
+<a name="ln841">          if (updown[&amp;*pbond] == 1) {</a>
+<a name="ln842">            annotations.push_back(5);</a>
+<a name="ln843">          } else if (updown[&amp;*pbond] == 4) {</a>
+<a name="ln844">            annotations.push_back(3);</a>
+<a name="ln845">          } else if (updown[&amp;*pbond] == 6) {</a>
+<a name="ln846">            annotations.push_back(6);</a>
+<a name="ln847">          }</a>
+<a name="ln848">        }</a>
+<a name="ln849">      }</a>
+<a name="ln850">      if (pbond-&gt;IsAromatic()) {</a>
+<a name="ln851">        annotations.push_back(8);</a>
+<a name="ln852">      }</a>
+<a name="ln853">      if (pbond-&gt;HasData(&quot;style&quot;)) {</a>
+<a name="ln854">        AnnotationData *data = dynamic_cast&lt;AnnotationData *&gt;(pbond-&gt;GetData(&quot;style&quot;));</a>
+<a name="ln855">        vector&lt;string&gt; styles = data-&gt;GetGenericValue();</a>
+<a name="ln856">        for (vector&lt;string&gt;::const_iterator i = styles.begin(); i != styles.end(); ++i) {</a>
+<a name="ln857">          string stylestring = *i;</a>
+<a name="ln858">          int style = 255;</a>
+<a name="ln859">          if (stylestring == &quot;dashed&quot;) {</a>
+<a name="ln860">            style = 2;</a>
+<a name="ln861">          } else if (stylestring == &quot;dotted&quot;) {</a>
+<a name="ln862">            style = 4;</a>
+<a name="ln863">          } else if (stylestring == &quot;arrow&quot;) {</a>
+<a name="ln864">            style = 7;</a>
+<a name="ln865">          } else if (stylestring == &quot;resonance&quot;) {</a>
+<a name="ln866">            style = 9;</a>
+<a name="ln867">          } else if (stylestring == &quot;bold&quot;) {</a>
+<a name="ln868">            style = 10;</a>
+<a name="ln869">          } else if (stylestring == &quot;fischer&quot;) {</a>
+<a name="ln870">            style = 11;</a>
+<a name="ln871">          } else if (stylestring == &quot;closeContact&quot;) {</a>
+<a name="ln872">            style = 12;</a>
+<a name="ln873">          }</a>
+<a name="ln874">          annotations.push_back(style);</a>
+<a name="ln875">        }</a>
+<a name="ln876">      }</a>
+<a name="ln877">      annotations.erase(unique(annotations.begin(), annotations.end()), annotations.end());</a>
+<a name="ln878">      for (vector&lt;int&gt;::const_iterator i = annotations.begin(); i != annotations.end(); ++i) {</a>
+<a name="ln879">        annAid1.PushBack(rapidjson::Value((int) pbond-&gt;GetBeginAtom()-&gt;GetId()).Move(), al);</a>
+<a name="ln880">        annAid2.PushBack(rapidjson::Value((int) pbond-&gt;GetEndAtom()-&gt;GetId()).Move(), al);</a>
+<a name="ln881">        annotation.PushBack(rapidjson::Value(*i).Move(), al);</a>
+<a name="ln882">      }</a>
+<a name="ln883">    }</a>
+<a name="ln884"> </a>
+<a name="ln885">    // Add bonds to doc</a>
+<a name="ln886">    if (aid1.Size() &gt; 0) {</a>
+<a name="ln887">      rapidjson::Value bonds(rapidjson::kObjectType);</a>
+<a name="ln888">      bonds.AddMember(&quot;aid1&quot;, aid1, al);</a>
+<a name="ln889">      bonds.AddMember(&quot;aid2&quot;, aid2, al);</a>
+<a name="ln890">      bonds.AddMember(&quot;order&quot;, order, al);</a>
+<a name="ln891">      doc.AddMember(&quot;bonds&quot;, bonds, al);</a>
+<a name="ln892">    }</a>
+<a name="ln893"> </a>
+<a name="ln894">    // Add coords to doc</a>
+<a name="ln895">    if (doc.HasMember(&quot;atoms&quot;)) {</a>
+<a name="ln896">      rapidjson::Value conf(rapidjson::kObjectType);</a>
+<a name="ln897">      conf.AddMember(&quot;x&quot;, xcoords, al);</a>
+<a name="ln898">      conf.AddMember(&quot;y&quot;, ycoords, al);</a>
+<a name="ln899">      if (pmol-&gt;GetDimension() == 3) {</a>
+<a name="ln900">        conf.AddMember(&quot;z&quot;, zcoords, al);</a>
+<a name="ln901">      }</a>
+<a name="ln902">      if (annotation.Size() &gt; 0) {</a>
+<a name="ln903">        rapidjson::Value style(rapidjson::kObjectType);</a>
+<a name="ln904">        style.AddMember(&quot;annotation&quot;, annotation, al);</a>
+<a name="ln905">        style.AddMember(&quot;aid1&quot;, annAid1, al);</a>
+<a name="ln906">        style.AddMember(&quot;aid2&quot;, annAid2, al);</a>
+<a name="ln907">        conf.AddMember(&quot;style&quot;, style, al);</a>
+<a name="ln908">      }</a>
+<a name="ln909">      rapidjson::Value conformers(rapidjson::kArrayType);</a>
+<a name="ln910">      conformers.PushBack(conf, al);</a>
+<a name="ln911">      rapidjson::Value coordType(rapidjson::kArrayType);</a>
+<a name="ln912">      if (pmol-&gt;GetDimension() == 2) {</a>
+<a name="ln913">        coordType.PushBack(rapidjson::Value(1).Move(), al);</a>
+<a name="ln914">      } else if (pmol-&gt;GetDimension() == 3) {</a>
+<a name="ln915">        coordType.PushBack(rapidjson::Value(2).Move(), al);</a>
+<a name="ln916">      }</a>
+<a name="ln917">      rapidjson::Value coord(rapidjson::kObjectType);</a>
+<a name="ln918">      coord.AddMember(&quot;type&quot;, coordType, al);</a>
+<a name="ln919">      coord.AddMember(&quot;aids&quot;, rapidjson::Value(doc[&quot;atoms&quot;][&quot;aids&quot;], al).Move(), al);  // Copy</a>
+<a name="ln920">      coord.AddMember(&quot;conformers&quot;, conformers, al);</a>
+<a name="ln921">      rapidjson::Value coords(rapidjson::kArrayType);</a>
+<a name="ln922">      coords.PushBack(coord, al);</a>
+<a name="ln923">      doc.AddMember(&quot;coords&quot;, coords, al);</a>
+<a name="ln924">    }</a>
+<a name="ln925"> </a>
+<a name="ln926">    // Stereochemistry</a>
+<a name="ln927">    rapidjson::Value stereo(rapidjson::kArrayType);</a>
+<a name="ln928">    OBStereoFacade facade(pmol);</a>
+<a name="ln929">    FOR_ATOMS_OF_MOL(patom, pmol) {</a>
+<a name="ln930">      if (facade.HasTetrahedralStereo(patom-&gt;GetId())) {</a>
+<a name="ln931">        OBTetrahedralStereo::Config config = facade.GetTetrahedralStereo(patom-&gt;GetId())-&gt;GetConfig();</a>
+<a name="ln932">        rapidjson::Value tet(rapidjson::kObjectType);</a>
+<a name="ln933">        tet.AddMember(&quot;type&quot;, rapidjson::Value(1).Move(), al);  // &quot;tetrahedral&quot;</a>
+<a name="ln934">        tet.AddMember(&quot;center&quot;, rapidjson::Value((int) config.center).Move(), al);</a>
+<a name="ln935">        tet.AddMember(&quot;top&quot;, rapidjson::Value((int) config.from).Move(), al);</a>
+<a name="ln936">        tet.AddMember(&quot;below&quot;, rapidjson::Value((int) config.refs[0]).Move(), al);</a>
+<a name="ln937">        tet.AddMember(&quot;bottom&quot;, rapidjson::Value((int) config.refs[1]).Move(), al);</a>
+<a name="ln938">        tet.AddMember(&quot;above&quot;, rapidjson::Value((int) config.refs[2]).Move(), al);</a>
+<a name="ln939">        if (config.winding == OBStereo::UnknownWinding || !config.specified) {</a>
+<a name="ln940">          tet.AddMember(&quot;parity&quot;, rapidjson::Value(3).Move(), al);  // &quot;any&quot;</a>
+<a name="ln941">        } else if (config.winding == OBStereo::Clockwise) {</a>
+<a name="ln942">          tet.AddMember(&quot;parity&quot;, rapidjson::Value(1).Move(), al);  // &quot;clockwise&quot;</a>
+<a name="ln943">        } else if (config.winding == OBStereo::AntiClockwise) {</a>
+<a name="ln944">          tet.AddMember(&quot;parity&quot;, rapidjson::Value(2).Move(), al);  // &quot;counterclockwise&quot;</a>
+<a name="ln945">          tet.AddMember(&quot;bottom&quot;, rapidjson::Value((int) config.refs[2]).Move(), al);</a>
+<a name="ln946">          tet.AddMember(&quot;above&quot;, rapidjson::Value((int) config.refs[1]).Move(), al);</a>
+<a name="ln947">        }</a>
+<a name="ln948">        rapidjson::Value stereoContainer(rapidjson::kObjectType);</a>
+<a name="ln949">        stereoContainer.AddMember(&quot;tetrahedral&quot;, tet, al);</a>
+<a name="ln950">        stereo.PushBack(stereoContainer, al);</a>
+<a name="ln951">      }</a>
+<a name="ln952">      if (facade.HasSquarePlanarStereo(patom-&gt;GetId())) {</a>
+<a name="ln953">        OBSquarePlanarStereo *sqs = facade.GetSquarePlanarStereo(patom-&gt;GetId());</a>
+<a name="ln954">        OBSquarePlanarStereo::Config config = sqs-&gt;GetConfig();</a>
+<a name="ln955">        rapidjson::Value sq(rapidjson::kObjectType);</a>
+<a name="ln956">        sq.AddMember(&quot;center&quot;, rapidjson::Value((int) config.center).Move(), al);</a>
+<a name="ln957">        if (config.specified) {</a>
+<a name="ln958">          if (config.shape == OBStereo::ShapeU) {</a>
+<a name="ln959">            sq.AddMember(&quot;parity&quot;, rapidjson::Value(1).Move(), al);  // &quot;u-shape&quot;</a>
+<a name="ln960">            sq.AddMember(&quot;lbelow&quot;, rapidjson::Value((int) config.refs[0]).Move(), al);</a>
+<a name="ln961">            sq.AddMember(&quot;rbelow&quot;, rapidjson::Value((int) config.refs[1]).Move(), al);</a>
+<a name="ln962">            sq.AddMember(&quot;rabove&quot;, rapidjson::Value((int) config.refs[2]).Move(), al);</a>
+<a name="ln963">            sq.AddMember(&quot;labove&quot;, rapidjson::Value((int) config.refs[3]).Move(), al);</a>
+<a name="ln964">          } else if (config.shape == OBStereo::ShapeZ) {</a>
+<a name="ln965">            sq.AddMember(&quot;parity&quot;, rapidjson::Value(2).Move(), al);  // &quot;z-shape&quot;</a>
+<a name="ln966">            sq.AddMember(&quot;lbelow&quot;, rapidjson::Value((int) config.refs[0]).Move(), al);</a>
+<a name="ln967">            sq.AddMember(&quot;rbelow&quot;, rapidjson::Value((int) config.refs[1]).Move(), al);</a>
+<a name="ln968">            sq.AddMember(&quot;labove&quot;, rapidjson::Value((int) config.refs[2]).Move(), al);</a>
+<a name="ln969">            sq.AddMember(&quot;rabove&quot;, rapidjson::Value((int) config.refs[3]).Move(), al);</a>
+<a name="ln970">          } else if (config.shape == OBStereo::Shape4) {</a>
+<a name="ln971">            sq.AddMember(&quot;parity&quot;, rapidjson::Value(3).Move(), al);  // &quot;x-shape&quot;</a>
+<a name="ln972">            sq.AddMember(&quot;lbelow&quot;, rapidjson::Value((int) config.refs[0]).Move(), al);</a>
+<a name="ln973">            sq.AddMember(&quot;rabove&quot;, rapidjson::Value((int) config.refs[1]).Move(), al);</a>
+<a name="ln974">            sq.AddMember(&quot;rbelow&quot;, rapidjson::Value((int) config.refs[2]).Move(), al);</a>
+<a name="ln975">            sq.AddMember(&quot;labove&quot;, rapidjson::Value((int) config.refs[3]).Move(), al);</a>
+<a name="ln976">          }</a>
+<a name="ln977">        } else {</a>
+<a name="ln978">          sq.AddMember(&quot;parity&quot;, rapidjson::Value(4).Move(), al);  // &quot;any&quot;</a>
+<a name="ln979">          sq.AddMember(&quot;lbelow&quot;, rapidjson::Value((int) config.refs[0]).Move(), al);</a>
+<a name="ln980">          sq.AddMember(&quot;rbelow&quot;, rapidjson::Value((int) config.refs[1]).Move(), al);</a>
+<a name="ln981">          sq.AddMember(&quot;rabove&quot;, rapidjson::Value((int) config.refs[2]).Move(), al);</a>
+<a name="ln982">          sq.AddMember(&quot;labove&quot;, rapidjson::Value((int) config.refs[3]).Move(), al);</a>
+<a name="ln983">        }</a>
+<a name="ln984">        rapidjson::Value stereoContainer(rapidjson::kObjectType);</a>
+<a name="ln985">        stereoContainer.AddMember(&quot;squareplanar&quot;, sq, al);</a>
+<a name="ln986">        stereo.PushBack(stereoContainer, al);</a>
+<a name="ln987">      }</a>
+<a name="ln988">    }</a>
+<a name="ln989">    FOR_BONDS_OF_MOL(pbond, pmol) {</a>
+<a name="ln990">      if (facade.HasCisTransStereo(pbond-&gt;GetId())) {</a>
+<a name="ln991">        OBCisTransStereo *cts = facade.GetCisTransStereo(pbond-&gt;GetId());</a>
+<a name="ln992">        OBCisTransStereo::Config config = cts-&gt;GetConfig();</a>
+<a name="ln993">        rapidjson::Value ct(rapidjson::kObjectType);</a>
+<a name="ln994">        ct.AddMember(&quot;type&quot;, rapidjson::Value(1).Move(), al);  // &quot;planar&quot;</a>
+<a name="ln995">        ct.AddMember(&quot;ltop&quot;, rapidjson::Value((int) config.refs[0]).Move(), al);</a>
+<a name="ln996">        OBAtom *begin = pmol-&gt;GetAtomById(config.begin);</a>
+<a name="ln997">        OBAtom *ltop = pmol-&gt;GetAtomById(config.refs[0]);</a>
+<a name="ln998">        if (begin &amp;&amp; ltop) {</a>
+<a name="ln999">          if (ltop-&gt;IsConnected(begin)) {</a>
+<a name="ln1000">            ct.AddMember(&quot;left&quot;, rapidjson::Value((int) config.begin).Move(), al);</a>
+<a name="ln1001">            ct.AddMember(&quot;right&quot;, rapidjson::Value((int) config.end).Move(), al);</a>
+<a name="ln1002">          } else {</a>
+<a name="ln1003">            ct.AddMember(&quot;left&quot;, rapidjson::Value((int) config.end).Move(), al);</a>
+<a name="ln1004">            ct.AddMember(&quot;right&quot;, rapidjson::Value((int) config.begin).Move(), al);</a>
+<a name="ln1005">          }</a>
+<a name="ln1006">          ct.AddMember(&quot;rbottom&quot;, rapidjson::Value((int) cts-&gt;GetTransRef(config.refs[0])).Move(), al);</a>
+<a name="ln1007">          ct.AddMember(&quot;lbottom&quot;, rapidjson::Value((int) cts-&gt;GetCisRef(cts-&gt;GetTransRef(config.refs[0]))).Move(), al);</a>
+<a name="ln1008">          ct.AddMember(&quot;rtop&quot;, rapidjson::Value(</a>
+<a name="ln1009">              (int) cts-&gt;GetTransRef(cts-&gt;GetCisRef(cts-&gt;GetTransRef(config.refs[0])))).Move(), al);</a>
+<a name="ln1010">          if (config.specified) {</a>
+<a name="ln1011">            // Open babel is not capable of determining parity? (need CIP rules?)</a>
+<a name="ln1012">            ct.AddMember(&quot;parity&quot;, rapidjson::Value(255).Move(), al);  // &quot;unknown&quot;</a>
+<a name="ln1013">          } else {</a>
+<a name="ln1014">            ct.AddMember(&quot;parity&quot;, rapidjson::Value(3).Move(), al);  // &quot;any&quot;</a>
+<a name="ln1015">          }</a>
+<a name="ln1016">          rapidjson::Value stereoContainer(rapidjson::kObjectType);</a>
+<a name="ln1017">          stereoContainer.AddMember(&quot;planar&quot;, ct, al);</a>
+<a name="ln1018">          stereo.PushBack(stereoContainer, al);</a>
+<a name="ln1019">        }</a>
+<a name="ln1020">      }</a>
+<a name="ln1021">    }</a>
+<a name="ln1022"> </a>
+<a name="ln1023">    // Add stereo to doc</a>
+<a name="ln1024">    if (stereo.Size() &gt; 0) {</a>
+<a name="ln1025">      doc.AddMember(&quot;stereo&quot;, stereo, al);</a>
+<a name="ln1026">    }</a>
+<a name="ln1027"> </a>
+<a name="ln1028">    // Add charge to doc</a>
+<a name="ln1029">    doc.AddMember(&quot;charge&quot;, rapidjson::Value(pmol-&gt;GetTotalCharge()).Move(), al);</a>
+<a name="ln1030"> </a>
+<a name="ln1031">    // Create root object and PC_Compounds array if this is the first molecule in the file</a>
+<a name="ln1032">    if (!outRoot.IsObject() || !outRoot.HasMember(&quot;PC_Compounds&quot;)) {</a>
+<a name="ln1033">      outRoot.SetObject();</a>
+<a name="ln1034">      outRoot.AddMember(&quot;PC_Compounds&quot;, rapidjson::Value(rapidjson::kArrayType).Move(), al);</a>
+<a name="ln1035">    }</a>
+<a name="ln1036"> </a>
+<a name="ln1037">    // Add molecule to PC_Compounds array</a>
+<a name="ln1038">    outRoot[&quot;PC_Compounds&quot;].PushBack(doc, al);</a>
+<a name="ln1039"> </a>
+<a name="ln1040">    // Write json to output stream if this is the last molecule in the file</a>
+<a name="ln1041">    if (pConv-&gt;IsLast()) {</a>
+<a name="ln1042">      rapidjson::OStreamWrapper osw(ofs);</a>
+<a name="ln1043">      if (pConv-&gt;IsOption(&quot;m&quot;, pConv-&gt;OUTOPTIONS)) {</a>
+<a name="ln1044">        rapidjson::Writer&lt;rapidjson::OStreamWrapper&gt; writer(osw);</a>
+<a name="ln1045">        outRoot.Accept(writer);</a>
+<a name="ln1046">      } else {</a>
+<a name="ln1047">        rapidjson::PrettyWriter&lt;rapidjson::OStreamWrapper&gt; writer(osw);</a>
+<a name="ln1048">        writer.SetIndent(' ', 2);</a>
+<a name="ln1049">        outRoot.Accept(writer);</a>
+<a name="ln1050">      }</a>
+<a name="ln1051">      // Clear outRoot so it can be re-used</a>
+<a name="ln1052">      rapidjson::Document(rapidjson::kObjectType).Swap(outRoot);</a>
+<a name="ln1053">    }</a>
+<a name="ln1054">    return true;</a>
+<a name="ln1055">  }</a>
+<a name="ln1056">  </a>
+<a name="ln1057">}</a>
+
+</code></pre>
+<div class="balloon" rel="456"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v522/" target="_blank">V522</a> There might be dereferencing of a potential null pointer 'data'.</p></div>
+<div class="balloon" rel="503"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v522/" target="_blank">V522</a> There might be dereferencing of a potential null pointer 'data'.</p></div>
+<div class="balloon" rel="708"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v522/" target="_blank">V522</a> There might be dereferencing of a potential null pointer 'cid'.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

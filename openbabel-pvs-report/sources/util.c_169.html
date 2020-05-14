@@ -1,0 +1,1217 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <title>util.c</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/*</a>
+<a name="ln2"> * International Chemical Identifier (InChI)</a>
+<a name="ln3"> * Version 1</a>
+<a name="ln4"> * Software version 1.04</a>
+<a name="ln5"> * September 9, 2011</a>
+<a name="ln6"> *</a>
+<a name="ln7"> * The InChI library and programs are free software developed under the</a>
+<a name="ln8"> * auspices of the International Union of Pure and Applied Chemistry (IUPAC).</a>
+<a name="ln9"> * Originally developed at NIST. Modifications and additions by IUPAC</a>
+<a name="ln10"> * and the InChI Trust.</a>
+<a name="ln11"> *</a>
+<a name="ln12"> * IUPAC/InChI-Trust Licence for the International Chemical Identifier (InChI)</a>
+<a name="ln13"> * Software version 1.0.</a>
+<a name="ln14"> * Copyright (C) IUPAC and InChI Trust Limited</a>
+<a name="ln15"> *</a>
+<a name="ln16"> * This library is free software; you can redistribute it and/or modify it under the</a>
+<a name="ln17"> * terms of the IUPAC/InChI Trust Licence for the International Chemical Identifier</a>
+<a name="ln18"> * (InChI) Software version 1.0; either version 1.0 of the License, or</a>
+<a name="ln19"> * (at your option) any later version.</a>
+<a name="ln20"> *</a>
+<a name="ln21"> * This library is distributed in the hope that it will be useful,</a>
+<a name="ln22"> * but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln23"> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.</a>
+<a name="ln24"> * See the IUPAC/InChI Trust Licence for the International Chemical Identifier (InChI)</a>
+<a name="ln25"> * Software version 1.0 for more details.</a>
+<a name="ln26"> *</a>
+<a name="ln27"> * You should have received a copy of the IUPAC/InChI Trust Licence for the</a>
+<a name="ln28"> * International Chemical Identifier (InChI) Software version 1.0 along with</a>
+<a name="ln29"> * this library; if not, write to:</a>
+<a name="ln30"> *</a>
+<a name="ln31"> * The InChI Trust</a>
+<a name="ln32"> * c/o FIZ CHEMIE Berlin</a>
+<a name="ln33"> * Franklinstrasse 11</a>
+<a name="ln34"> * 10587 Berlin</a>
+<a name="ln35"> * GERMANY</a>
+<a name="ln36"> *</a>
+<a name="ln37"> */</a>
+<a name="ln38"> </a>
+<a name="ln39"> </a>
+<a name="ln40">#include &lt;stdio.h&gt;</a>
+<a name="ln41">#include &lt;string.h&gt;</a>
+<a name="ln42">#include &lt;stdlib.h&gt;</a>
+<a name="ln43">#include &lt;ctype.h&gt;</a>
+<a name="ln44"> </a>
+<a name="ln45">#include &quot;mode.h&quot;</a>
+<a name="ln46"> </a>
+<a name="ln47">#include &quot;incomdef.h&quot;</a>
+<a name="ln48">#include &quot;inpdef.h&quot;</a>
+<a name="ln49">#include &quot;util.h&quot;</a>
+<a name="ln50">#include &quot;extr_ct.h&quot;</a>
+<a name="ln51"> </a>
+<a name="ln52"> </a>
+<a name="ln53">#include &quot;ichicomp.h&quot;</a>
+<a name="ln54"> </a>
+<a name="ln55">#define MIN_ATOM_CHARGE        (-2)</a>
+<a name="ln56">#define MAX_ATOM_CHARGE         2</a>
+<a name="ln57">#define NEUTRAL_STATE          (-MIN_ATOM_CHARGE)</a>
+<a name="ln58">#define NUM_ATOM_CHARGES       (MAX_ATOM_CHARGE - MIN_ATOM_CHARGE + 1)</a>
+<a name="ln59">#define MAX_NUM_VALENCES        5                /* max. number + 1 to provide zero termination */</a>
+<a name="ln60"> </a>
+<a name="ln61">typedef struct tagElData {</a>
+<a name="ln62">     const char *szElName;</a>
+<a name="ln63">     int     nAtMass;      /* Avg. atomic mass from the Periodic Chart of the Elements (Fisher cat. no. 05-702-10) */</a>
+<a name="ln64">     int     nNormAtMass;  /* Atomic mass of the most abundant isotope */</a>
+<a name="ln65">     double  dAtMass;      /* exact mw of the most abundant isotope */</a>
+<a name="ln66">     int     nType;        /* METAL or METAL2 */</a>
+<a name="ln67">     int     nElNegPauling10; /* Pauling electronegativity x 10; 0 =&gt; unknown */</a>
+<a name="ln68">     int     bDoNotAddH;   /* InChI does not add implicit H to atoms that have bDoNotAddH != 0 */</a>
+<a name="ln69">     S_CHAR  cValence[NUM_ATOM_CHARGES][MAX_NUM_VALENCES];</a>
+<a name="ln70">} ELDATA;</a>
+<a name="ln71"> </a>
+<a name="ln72">/* 2004=05-10: Added valences {1,3,5,7,} for As(2-) */</a>
+<a name="ln73"> </a>
+<a name="ln74">const ELDATA ElData[] = {</a>
+<a name="ln75">/*       avg  norm                      El    No  -------- Valence(s) of an ion or neutral atom -------------*/</a>
+<a name="ln76">/*        mw  mass  exact mw     type   neg   H   -2          -1          0           +1         +2          */</a>
+<a name="ln77">{ &quot;H&quot;,    1,   1,   1.007825035,     0 , 21,  0, {{0,},       {0,},       {1,},       {0,},       {0,}       }},</a>
+<a name="ln78">{ &quot;D&quot;,    2,   2,   2.014101778,     0 , 21,  0, {{0,},       {0,},       {1,},       {0,},       {0,}       }},</a>
+<a name="ln79">{ &quot;T&quot;,    3,   3,   3.016049268,     0 , 21,  0, {{0,},       {0,},       {1,},       {0,},       {0,}       }},</a>
+<a name="ln80">{ &quot;He&quot;,   4,   4,   4.002600000,     0 ,  0,  0, {{0,},       {0,},       {0,},       {0,},       {0,}       }},</a>
+<a name="ln81">{ &quot;Li&quot;,   7,   7,   7.016000000, METAL , 10,  0, {{0,},       {0,},       {1,},       {0,},       {0,}       }},</a>
+<a name="ln82">{ &quot;Be&quot;,   9,   9,   9.012180000, METAL , 15,  0, {{0,},       {0,},       {2,},       {1,},       {0,}       }},</a>
+<a name="ln83">{ &quot;B&quot;,   11,  11,  11.009300000,     0 , 20,  0, {{3,},       {4,},       {3,},       {2,},       {1,}       }},</a>
+<a name="ln84">{ &quot;C&quot;,   12,  12,  12.000000000,     0 , 25,  0, {{2,},       {3,},       {4,},       {3,},       {2,}       }},</a>
+<a name="ln85">{ &quot;N&quot;,   14,  14,  14.003074000,     0 , 30,  0, {{1,},       {2,},       {3,5},      {4,},       {3,}       }},</a>
+<a name="ln86">{ &quot;O&quot;,   16,  16,  15.994914630,     0 , 35,  0, {{0,},       {1,},       {2,},       {3,5,},     {4,}       }},</a>
+<a name="ln87">{ &quot;F&quot;,   19,  19,  18.998403220,     0 , 40,  0, {{0,},       {0,},       {1,},       {2,},       {3,5}      }},</a>
+<a name="ln88">{ &quot;Ne&quot;,  20,  20,  19.992440000,     0 ,  0,  0, {{0,},       {0,},       {0,},       {0,},       {0,}       }},</a>
+<a name="ln89">{ &quot;Na&quot;,  23,  23,  22.989770000, METAL ,  9,  0, {{0,},       {0,},       {1,},       {0,},       {0,}       }},</a>
+<a name="ln90">{ &quot;Mg&quot;,  24,  24,  23.985000000, METAL , 12,  0, {{0,},       {0,},       {2,},       {1,},       {0,}       }},</a>
+<a name="ln91">{ &quot;Al&quot;,  27,  27,  26.981540000, METAL , 15,  0, {{3,5,},     {4,},       {3,},       {2,},       {1,}       }},</a>
+<a name="ln92">{ &quot;Si&quot;,  28,  28,  27.976927100,     0 , 18,  0, {{2,},       {3,5},      {4,},       {3,},       {2,}       }},</a>
+<a name="ln93">{ &quot;P&quot;,   31,  31,  30.973762000,     0 , 21,  0, {{1,3,5,7,}, {2,4,6,},   {3,5,},     {4,},       {3,}       }},</a>
+<a name="ln94">{ &quot;S&quot;,   32,  32,  31.972070700,     0 , 25,  0, {{0,},       {1,3,5,7,}, {2,4,6},    {3,5,},     {4,}       }},</a>
+<a name="ln95">{ &quot;Cl&quot;,  35,  35,  34.968852730,     0 , 30,  0, {{0,},       {0,},       {1,3,5,7},  {2,4,6},    {3,5,}     }},</a>
+<a name="ln96">{ &quot;Ar&quot;,  40,  40,  39.962400000,     0 ,  0,  0, {{0,},       {0,},       {0,},       {0,},       {0,}       }},</a>
+<a name="ln97">{ &quot;K&quot;,   39,  39,  38.963700000, METAL ,  8,  0, {{0,},       {0,},       {1,},       {0,},       {0,}       }},</a>
+<a name="ln98">{ &quot;Ca&quot;,  40,  40,  39.962600000, METAL , 10,  0, {{0,},       {0,},       {2,},       {1,},       {0,}       }},</a>
+<a name="ln99">{ &quot;Sc&quot;,  45,  45,  44.955910000, METAL , 13,  1, {{0,},       {0,},       {3,},       {0,},       {0,}       }},</a>
+<a name="ln100">{ &quot;Ti&quot;,  48,  48,  47.947950000, METAL , 15,  1, {{0,},       {0,},       {3,4},      {0,},       {0,}       }},</a>
+<a name="ln101">{ &quot;V&quot;,   51,  51,  50.943960000, METAL , 16,  1, {{0,},       {0,},       {2,3,4,5,}, {0,},       {0,}       }},</a>
+<a name="ln102">{ &quot;Cr&quot;,  52,  52,  51.940500000, METAL , 16,  1, {{0,},       {0,},       {2,3,6,},   {0,},       {0,}       }},</a>
+<a name="ln103">{ &quot;Mn&quot;,  55,  55,  54.938050000, METAL2, 15,  1, {{0,},       {0,},       {2,3,4,6,}, {0,},       {0,}       }},</a>
+<a name="ln104">{ &quot;Fe&quot;,  56,  56,  55.934900000, METAL2, 18,  1, {{0,},       {0,},       {2,3,4,6,}, {0,},       {0,}       }},</a>
+<a name="ln105">{ &quot;Co&quot;,  59,  59,  58.933200000, METAL2, 18,  1, {{0,},       {0,},       {2,3,},     {0,},       {0,}       }},</a>
+<a name="ln106">{ &quot;Ni&quot;,  59,  58,  57.935300000, METAL2, 18,  1, {{0,},       {0,},       {2,3,},     {0,},       {0,}       }},</a>
+<a name="ln107">{ &quot;Cu&quot;,  64,  63,  62.929600000, METAL , 19,  1, {{0,},       {0,},       {1,2,},     {0,},       {0,}       }},</a>
+<a name="ln108">{ &quot;Zn&quot;,  65,  64,  63.929147000, METAL , 16,  1, {{0,},       {0,},       {2,},       {0,},       {0,}       }},</a>
+<a name="ln109">{ &quot;Ga&quot;,  70,  69,  68.925600000, METAL , 18,  0, {{3,5,},     {4,},       {3,},       {0,},       {1,}       }},</a>
+<a name="ln110">{ &quot;Ge&quot;,  73,  74,  73.921177400,     0 , 18,  0, {{2,4,6,},   {3,5,},     {4,},       {3,},       {0,}       }},</a>
+<a name="ln111">{ &quot;As&quot;,  75,  75,  74.921594200,     0 , 20,  0, {{1,3,5,7,}, {2,4,6,},   {3,5,},     {4,},       {3,}       }},</a>
+<a name="ln112">{ &quot;Se&quot;,  79,  80,  79.916519600,     0 , 24,  0, {{0,},       {1,3,5,7,}, {2,4,6,},   {3,5,},     {4,}       }},</a>
+<a name="ln113">{ &quot;Br&quot;,  80,  79,  78.918336100,     0 , 28,  0, {{0,},       {0,},       {1,3,5,7,}, {2,4,6,},   {3,5,}     }},</a>
+<a name="ln114">{ &quot;Kr&quot;,  84,  84,  83.911500000,     0 ,  0,  0, {{0,},       {0,},       {0,},       {0,},       {0,}       }},</a>
+<a name="ln115">{ &quot;Rb&quot;,  85,  85,  84.911800000, METAL ,  8,  0, {{0,},       {0,},       {1,},       {0,},       {0,}       }},</a>
+<a name="ln116">{ &quot;Sr&quot;,  88,  88,  87.905600000, METAL , 10,  0, {{0,},       {0,},       {2,},       {1,},       {0,}       }},</a>
+<a name="ln117">{ &quot;Y&quot;,   89,  89,  88.905860000, METAL , 12,  1, {{0,},       {0,},       {3,},       {0,},       {0,}       }},</a>
+<a name="ln118">{ &quot;Zr&quot;,  91,  90,  89.904700000, METAL , 14,  1, {{0,},       {0,},       {4,},       {0,},       {0,}       }},</a>
+<a name="ln119">{ &quot;Nb&quot;,  93,  93,  92.906400000, METAL , 16,  1, {{0,},       {0,},       {3,5,},     {0,},       {0,}       }},</a>
+<a name="ln120">{ &quot;Mo&quot;,  96,  98,  97.905400000, METAL , 18,  1, {{0,},       {0,},       {3,4,5,6,}, {0,},       {0,}       }},</a>
+<a name="ln121">{ &quot;Tc&quot;,  98,  98,  97.907200000, METAL , 19,  1, {{0,},       {0,},       {7,},       {0,},       {0,}       }},</a>
+<a name="ln122">{ &quot;Ru&quot;, 101, 102, 101.904300000, METAL , 22,  1, {{0,},       {0,},       {2,3,4,6,}, {0,},       {0,}       }},</a>
+<a name="ln123">{ &quot;Rh&quot;, 103, 103, 102.905500000, METAL , 22,  1, {{0,},       {0,},       {2,3,4,},   {0,},       {0,}       }},</a>
+<a name="ln124">{ &quot;Pd&quot;, 106, 106, 105.903500000, METAL , 22,  1, {{0,},       {0,},       {2,4,},     {0,},       {0,}       }},</a>
+<a name="ln125">{ &quot;Ag&quot;, 108, 107, 106.905100000, METAL , 19,  1, {{0,},       {0,},       {1,},       {0,},       {0,}       }},</a>
+<a name="ln126">{ &quot;Cd&quot;, 112, 114, 113.903400000, METAL , 17,  1, {{0,},       {0,},       {2,},       {0,},       {0,}       }},</a>
+<a name="ln127">{ &quot;In&quot;, 115, 115, 114.903900000, METAL , 17,  0, {{3,5,},     {2,4,},     {3,},       {0,},       {1,}       }},</a>
+<a name="ln128">{ &quot;Sn&quot;, 119, 120, 119.902200000, METAL2, 18,  0, {{2,4,6,},   {3,5},      {2,4,},     {3,},       {0,}       }},</a>
+<a name="ln129">{ &quot;Sb&quot;, 122, 121, 120.903800000, METAL,  19,  0, {{1,3,5,7,}, {2,4,6,},   {3,5,},     {2,4,},     {3,}       }},</a>
+<a name="ln130">{ &quot;Te&quot;, 128, 130, 129.906200000,     0 , 21,  0, {{0,},       {1,3,5,7,}, {2,4,6,},   {3,5,},     {2,4,}     }},</a>
+<a name="ln131">{ &quot;I&quot;,  127, 127, 126.904500000,     0 , 25,  0, {{0,},       {0,},       {1,3,5,7,}, {2,4,6},    {3,5,}     }},</a>
+<a name="ln132">{ &quot;Xe&quot;, 131, 132, 131.904100000,     0 ,  0,  0, {{0,},       {0,},       {0,},       {0,},       {0,}       }},</a>
+<a name="ln133">{ &quot;Cs&quot;, 133, 133, 132.905430000, METAL ,  7,  0, {{0,},       {0,},       {1,},       {0,},       {0,}       }},</a>
+<a name="ln134">{ &quot;Ba&quot;, 137, 138, 137.905200000, METAL ,  9,  0, {{0,},       {0,},       {2,},       {1,},       {0,}       }},</a>
+<a name="ln135">{ &quot;La&quot;, 139, 139, 138.906360000, METAL , 11,  1, {{0,},       {0,},       {3,},       {0,},       {0,}       }},</a>
+<a name="ln136">{ &quot;Ce&quot;, 140, 140, 139.905400000, METAL2,  0,  1, {{0,},       {0,},       {3,4,},     {0,},       {0,}       }},</a>
+<a name="ln137">{ &quot;Pr&quot;, 141, 141, 140.907660000, METAL2,  0,  1, {{0,},       {0,},       {3,4,},     {0,},       {0,}       }},</a>
+<a name="ln138">{ &quot;Nd&quot;, 144, 142, 141.907719000, METAL ,  0,  1, {{0,},       {0,},       {3,},       {0,},       {0,}       }},</a>
+<a name="ln139">{ &quot;Pm&quot;, 145, 145, 144.912800000, METAL ,  0,  1, {{0,},       {0,},       {3,},       {0,},       {0,}       }},</a>
+<a name="ln140">{ &quot;Sm&quot;, 150, 152, 151.919700000, METAL2,  0,  1, {{0,},       {0,},       {2,3,},     {0,},       {0,}       }},</a>
+<a name="ln141">{ &quot;Eu&quot;, 152, 153, 152.921200000, METAL2,  0,  1, {{0,},       {0,},       {2,3,},     {0,},       {0,}       }},</a>
+<a name="ln142">{ &quot;Gd&quot;, 157, 158, 157.924099000, METAL ,  0,  1, {{0,},       {0,},       {3,},       {0,},       {0,}       }},</a>
+<a name="ln143">{ &quot;Tb&quot;, 159, 159, 158.925350000, METAL2,  0,  1, {{0,},       {0,},       {3,4,},     {0,},       {0,}       }},</a>
+<a name="ln144">{ &quot;Dy&quot;, 163, 164, 163.929200000, METAL ,  0,  1, {{0,},       {0,},       {3,},       {0,},       {0,}       }}, /*  mw rounding uncertain */</a>
+<a name="ln145">{ &quot;Ho&quot;, 165, 165, 164.930300000, METAL ,  0,  1, {{0,},       {0,},       {3,},       {0,},       {0,}       }},</a>
+<a name="ln146">{ &quot;Er&quot;, 167, 166, 165.930300000, METAL ,  0,  1, {{0,},       {0,},       {3,},       {0,},       {0,}       }},</a>
+<a name="ln147">{ &quot;Tm&quot;, 169, 169, 168.934230000, METAL2,  0,  1, {{0,},       {0,},       {2,3,},     {0,},       {0,}       }},</a>
+<a name="ln148">{ &quot;Yb&quot;, 173, 174, 173.938900000, METAL2,  0,  1, {{0,},       {0,},       {2,3,},     {0,},       {0,}       }},</a>
+<a name="ln149">{ &quot;Lu&quot;, 175, 175, 174.940800000, METAL ,  0,  1, {{0,},       {0,},       {3,},       {0,},       {0,}       }},</a>
+<a name="ln150">{ &quot;Hf&quot;, 178, 180, 179.946600000, METAL , 13,  1, {{0,},       {0,},       {4,},       {0,},       {0,}       }},</a>
+<a name="ln151">{ &quot;Ta&quot;, 181, 181, 180.948010000, METAL , 15,  1, {{0,},       {0,},       {5,},       {0,},       {0,}       }},</a>
+<a name="ln152">{ &quot;W&quot;,  184, 184, 183.951000000, METAL2, 17,  1, {{0,},       {0,},       {3,4,5,6,}, {0,},       {0,}       }},</a>
+<a name="ln153">{ &quot;Re&quot;, 186, 187, 186.955800000, METAL2, 19,  1, {{0,},       {0,},       {2,4,6,7,}, {0,},       {0,}       }},</a>
+<a name="ln154">{ &quot;Os&quot;, 190, 192, 191.961500000, METAL2, 22,  1, {{0,},       {0,},       {2,3,4,6,}, {0,},       {0,}       }},</a>
+<a name="ln155">{ &quot;Ir&quot;, 192, 193, 192.962900000, METAL2, 22,  1, {{0,},       {0,},       {2,3,4,6,}, {0,},       {0,}       }},</a>
+<a name="ln156">{ &quot;Pt&quot;, 195, 195, 194.964800000, METAL2, 22,  1, {{0,},       {0,},       {2,4,},     {0,},       {0,}       }},</a>
+<a name="ln157">{ &quot;Au&quot;, 197, 197, 196.966560000, METAL , 24,  1, {{0,},       {0,},       {1,3,},     {0,},       {0,}       }},</a>
+<a name="ln158">{ &quot;Hg&quot;, 201, 202, 201.970617000, METAL2, 19,  1, {{0,},       {0,},       {1,2,},     {0,},       {0,}       }},</a>
+<a name="ln159">{ &quot;Tl&quot;, 204, 205, 204.974400000, METAL2, 18,  0, {{3,5,},     {2,4,},     {1,3,},     {0,},       {0,}       }},</a>
+<a name="ln160">{ &quot;Pb&quot;, 207, 208, 207.976627000, METAL2, 18,  0, {{2,4,6,},   {3,5},      {2,4,},     {3,},       {0,}       }},</a>
+<a name="ln161">{ &quot;Bi&quot;, 209, 209, 208.980390000, METAL , 19,  0, {{1,3,5,7,}, {2,4,6,},   {3,5,},     {2,4,},     {3,}       }},</a>
+<a name="ln162">{ &quot;Po&quot;, 209, 209, 208.982400000, METAL2, 20,  0, {{0,},       {1,3,5,7,}, {2,4,6,},   {3,5,},     {2,4,}     }},</a>
+<a name="ln163">{ &quot;At&quot;, 210, 210, 209.987100000,     0 , 22,  0, {{0,},       {0,},       {1,3,5,7,}, {2,4,6},    {3,5,}     }},</a>
+<a name="ln164">{ &quot;Rn&quot;, 222, 222, 222.017500000,     0 ,  0,  0, {{0,},       {0,},       {0,},       {0,},       {0,}       }},</a>
+<a name="ln165">{ &quot;Fr&quot;, 223, 223, 223.019700000, METAL ,  0,  0, {{0,},       {0,},       {1,},       {0,},       {0,}       }},</a>
+<a name="ln166">{ &quot;Ra&quot;, 226, 226, 226.025410000, METAL ,  0,  0, {{0,},       {0,},       {2,},       {1,},       {0,}       }},</a>
+<a name="ln167">{ &quot;Ac&quot;, 227, 227, 227.027750000, METAL ,  0,  1, {{0,},       {0,},       {3,},       {0,},       {0,}       }},</a>
+<a name="ln168">{ &quot;Th&quot;, 232, 232, 232.038050000, METAL2,  0,  1, {{0,},       {0,},       {3,4,},     {0,},       {0,}       }},</a>
+<a name="ln169">{ &quot;Pa&quot;, 231, 231, 231.035880000, METAL2,  0,  1, {{0,},       {0,},       {3,4,5,},   {0,},       {0,}       }},</a>
+<a name="ln170">{ &quot;U&quot;,  238, 238, 238.050790000, METAL2,  0,  1, {{0,},       {0,},       {3,4,5,6,}, {0,},       {0,}       }},</a>
+<a name="ln171">{ &quot;Np&quot;, 237, 237, 237.048170000, METAL2,  0,  1, {{0,},       {0,},       {3,4,5,6,}, {0,},       {0,}       }},</a>
+<a name="ln172">{ &quot;Pu&quot;, 244, 244, 244.064200000, METAL2,  0,  1, {{0,},       {0,},       {3,4,5,6,}, {0,},       {0,}       }},</a>
+<a name="ln173">{ &quot;Am&quot;, 243, 243, 243.061370000, METAL2,  0,  1, {{0,},       {0,},       {3,4,5,6,}, {0,},       {0,}       }},</a>
+<a name="ln174">{ &quot;Cm&quot;, 247, 247, 247.070300000, METAL ,  0,  1, {{0,},       {0,},       {3,},       {0,},       {0,}       }},</a>
+<a name="ln175">{ &quot;Bk&quot;, 247, 247, 247.070300000, METAL ,  0,  1, {{0,},       {0,},       {3,4,},     {0,},       {0,}       }},</a>
+<a name="ln176">{ &quot;Cf&quot;, 251, 251, 251.079600000, METAL ,  0,  1, {{0,},       {0,},       {3,},       {0,},       {0,}       }},</a>
+<a name="ln177">{ &quot;Es&quot;, 252, 252, 252.082800000, METAL ,  0,  1, {{0,},       {0,},       {3,},       {0,},       {0,}       }},</a>
+<a name="ln178">{ &quot;Fm&quot;, 257, 257, 257.095100000, METAL ,  0,  1, {{0,},       {0,},       {3,},       {0,},       {0,}       }},</a>
+<a name="ln179">{ &quot;Md&quot;, 258, 258, 258.098600000, METAL ,  0,  1, {{0,},       {0,},       {3,},       {0,},       {0,}       }},</a>
+<a name="ln180">{ &quot;No&quot;, 259, 259, 259.100900000, METAL ,  0,  1, {{0,},       {0,},       {1,},       {0,},       {0,}       }},</a>
+<a name="ln181">{ &quot;Lr&quot;, 260, 260, 260.105400000, METAL ,  0,  1, {{0,},       {0,},       {1,},       {0,},       {0,}       }},</a>
+<a name="ln182">{ &quot;Rf&quot;, 261, 261, 261.108700000, METAL ,  0,  1, {{0,},       {0,},       {1,},       {0,},       {0,}       }},</a>
+<a name="ln183"> </a>
+<a name="ln184">/*^^^ Added in v. 1.04 */</a>
+<a name="ln185"> </a>
+<a name="ln186">/*</a>
+<a name="ln187">    Reference:</a>
+<a name="ln188">        M. E. WIESER AND T. B. COPLEN.</a>
+<a name="ln189">        Atomic weights of the elements 2009 (IUPAC Technical Report).</a>
+<a name="ln190">        Pure Appl. Chem., Vol. 83, No. 2, pp. 359�396, 2011.</a>
+<a name="ln191">    When available, the mass is given for isotope with the longest half-life.</a>
+<a name="ln192">*/</a>
+<a name="ln193">/* 105 dubnium Db */		/* ? Like: Ta */</a>
+<a name="ln194">{ &quot;Db&quot;, 268, 268, 268.125000000, METAL ,  0,  1, {{0,},       {0,},       {1,},       {0,},       {0,}       }},</a>
+<a name="ln195">/* 106 seaborgium Sg */		/* ? Like: W */</a>
+<a name="ln196">{ &quot;Sg&quot;, 271, 271, 271.133000000, METAL ,  0,  1, {{0,},       {0,},       {1,},       {0,},       {0,}       }},</a>
+<a name="ln197">/* 107 bohrium Bh */		/* ? Like: Re */</a>
+<a name="ln198">{ &quot;Bh&quot;, 267, 267, 267.127700000, METAL ,  0,  1, {{0,},       {0,},       {1,},       {0,},       {0,}       }},</a>
+<a name="ln199">/* 108 hassium Hs */		/* ? Like: Os */</a>
+<a name="ln200">{ &quot;Hs&quot;, 277, 277, 277.150000000, METAL ,  0,  1, {{0,},       {0,},       {1,},       {0,},       {0,}       }},</a>
+<a name="ln201">/* 109 meitnerium Mt */		/* ? Like: Ir */</a>
+<a name="ln202">{ &quot;Mt&quot;, 276, 276, 276.151000000, METAL ,  0,  1, {{0,},       {0,},       {1,},       {0,},       {0,}       }},</a>
+<a name="ln203">/* 110 darmstadtium Ds */	/* ? Like: Pt */</a>
+<a name="ln204">{ &quot;Ds&quot;, 281, 281, 281.162000000, METAL ,  0,  1, {{0,},       {0,},       {1,},       {0,},       {0,}       }},</a>
+<a name="ln205">/* 111 roentgenium Rg */	/* ? Like: Au */</a>
+<a name="ln206">{ &quot;Rg&quot;, 280, 280, 280.164000000, METAL ,  0,  1, {{0,},       {0,},       {1,},       {0,},       {0,}       }},</a>
+<a name="ln207">/* 112 copernicium Cn */	/* ? Like: Hg */</a>
+<a name="ln208">{ &quot;Cn&quot;, 285, 285, 285.174000000, METAL ,  0,  1, {{0,},       {0,},       {1,},       {0,},       {0,}       }},</a>
+<a name="ln209">/*^^^ End of added in v. 1.04 */</a>
+<a name="ln210"> </a>
+<a name="ln211">#ifdef INCHI_ZFRAG</a>
+<a name="ln212">{ &quot;Zu&quot;,   0,   0,   0.000000000,     0 ,  0,  1, {{0,},       {0,},       {1,},       {0,},       {0,}       }}, //single bond fragment</a>
+<a name="ln213">{ &quot;Zv&quot;,   0,   0,   0.000000000,     0 ,  0,  1, {{0,},       {0,},       {2,},       {0,},       {0,}       }}, //double bond fragment</a>
+<a name="ln214">{ &quot;Zw&quot;,   0,   0,   0.000000000,     0 ,  0,  1, {{0,},       {0,},       {3,},       {0,},       {0,}       }}, //triple bond fragment</a>
+<a name="ln215">{ &quot;Zx&quot;,   0,   0,   0.000000000,     0 ,  0,  1, {{0,},       {0,},       {1,2,},     {0,},       {0,}       }}, //aromatic bond fragment</a>
+<a name="ln216">#endif</a>
+<a name="ln217">{ &quot;&quot;,     0,   0,   0.000000000,     0 ,  0,  0, {{0,},       {0,},       {0,},       {0,},       {0,}       }},</a>
+<a name="ln218"> </a>
+<a name="ln219">};</a>
+<a name="ln220"> /*</a>
+<a name="ln221">#ifdef __cplusplus</a>
+<a name="ln222">}</a>
+<a name="ln223">#endif</a>
+<a name="ln224">*/</a>
+<a name="ln225"> </a>
+<a name="ln226">int ERR_ELEM = 255;</a>
+<a name="ln227">int nElDataLen = sizeof(ElData)/sizeof(ElData[0])-1;</a>
+<a name="ln228"> </a>
+<a name="ln229">/***********************************************************************************/</a>
+<a name="ln230">int GetElementFormulaFromAtNum(int nAtNum, char *szElement )</a>
+<a name="ln231">{</a>
+<a name="ln232">    nAtNum -= 1;</a>
+<a name="ln233">    if ( 0 &lt; nAtNum )</a>
+<a name="ln234">        nAtNum += 2; /*  bypass D, T */</a>
+<a name="ln235">    if ( 0 &lt;= nAtNum &amp;&amp; nAtNum &lt; nElDataLen ) {</a>
+<a name="ln236">        strcpy( szElement, ElData[nAtNum].szElName );</a>
+<a name="ln237">        return 0;</a>
+<a name="ln238">    }</a>
+<a name="ln239">    strcpy( szElement, &quot;??&quot; );</a>
+<a name="ln240">    return -1;</a>
+<a name="ln241">}</a>
+<a name="ln242">/***********************************************************************************/</a>
+<a name="ln243">int get_el_number( const char* elname )</a>
+<a name="ln244">{</a>
+<a name="ln245">    int i;</a>
+<a name="ln246">    const char *p;</a>
+<a name="ln247">    for ( i = 0; (p=ElData[i].szElName)[0] &amp;&amp; strcmp( p, elname ); i++ )</a>
+<a name="ln248">        ;</a>
+<a name="ln249">    return p[0]? i : ERR_ELEM;</a>
+<a name="ln250">}</a>
+<a name="ln251">/***********************************************************************************/</a>
+<a name="ln252">int get_periodic_table_number( const char* elname )</a>
+<a name="ln253">{</a>
+<a name="ln254">    int num;</a>
+<a name="ln255">    num = get_el_number( elname );</a>
+<a name="ln256">    if ( num &lt; ERR_ELEM )</a>
+<a name="ln257">        num = inchi_max(1, num-1);</a>
+<a name="ln258">    return num;</a>
+<a name="ln259">}</a>
+<a name="ln260">/***********************************************************************************/</a>
+<a name="ln261">int do_not_add_H( int nPeriodicNum )</a>
+<a name="ln262">{</a>
+<a name="ln263">    return ElData[nPeriodicNum&gt;1? nPeriodicNum+1:0].bDoNotAddH;</a>
+<a name="ln264">}</a>
+<a name="ln265">/***********************************************************************************/</a>
+<a name="ln266">int get_el_valence( int nPeriodicNum, int charge, int val_num )</a>
+<a name="ln267">{</a>
+<a name="ln268">    if ( charge &lt; MIN_ATOM_CHARGE || charge &gt; MAX_ATOM_CHARGE || val_num &gt;= MAX_NUM_VALENCES )</a>
+<a name="ln269">        return 0;</a>
+<a name="ln270">    return ElData[nPeriodicNum&gt;1? nPeriodicNum+1:0].cValence[NEUTRAL_STATE+charge][val_num];</a>
+<a name="ln271">}</a>
+<a name="ln272">/***********************************************************************************</a>
+<a name="ln273"> *  output valence needed to unumbiguosly reconstruct bonds</a>
+<a name="ln274"> ***********************************************************************************/</a>
+<a name="ln275">int get_unusual_el_valence( int nPeriodicNum, int charge, int radical, int bonds_valence, int num_H, int num_bonds )</a>
+<a name="ln276">{</a>
+<a name="ln277">    int i, num_found, chem_valence, rad_adj, known_chem_valence, exact_found;</a>
+<a name="ln278">    if ( !num_bonds &amp;&amp; !num_H )</a>
+<a name="ln279">        return 0;</a>
+<a name="ln280">    if ( charge &lt; MIN_ATOM_CHARGE || charge &gt; MAX_ATOM_CHARGE ) {</a>
+<a name="ln281">        if ( bonds_valence == num_bonds )</a>
+<a name="ln282">            return 0; /* all single bonds */</a>
+<a name="ln283">        return bonds_valence;</a>
+<a name="ln284">    }</a>
+<a name="ln285">    if ( !get_el_valence( nPeriodicNum, charge, 0 ) &amp;&amp; bonds_valence == num_bonds )</a>
+<a name="ln286">        return 0;</a>
+<a name="ln287"> </a>
+<a name="ln288">    chem_valence = bonds_valence + num_H;</a>
+<a name="ln289">    rad_adj     = 0;</a>
+<a name="ln290">    num_found   = 0;</a>
+<a name="ln291">    exact_found = 0;</a>
+<a name="ln292"> </a>
+<a name="ln293">    /* take into account radical */</a>
+<a name="ln294">    if (radical==RADICAL_DOUBLET)</a>
+<a name="ln295">        rad_adj = 1;</a>
+<a name="ln296">    else</a>
+<a name="ln297">    if (radical==RADICAL_TRIPLET )</a>
+<a name="ln298">        rad_adj = 2;</a>
+<a name="ln299"> </a>
+<a name="ln300">    for ( i = 0; i &lt; MAX_NUM_VALENCES; i ++ ) {</a>
+<a name="ln301">        if ( 0 &lt; (known_chem_valence = get_el_valence( nPeriodicNum, charge, i )-rad_adj) &amp;&amp;</a>
+<a name="ln302">             num_bonds &lt;= known_chem_valence &amp;&amp; known_chem_valence &lt;= chem_valence ) {</a>
+<a name="ln303">                num_found ++;</a>
+<a name="ln304">            if ( known_chem_valence == chem_valence ) {</a>
+<a name="ln305">                exact_found = 1;</a>
+<a name="ln306">                break;</a>
+<a name="ln307">            }</a>
+<a name="ln308">        }</a>
+<a name="ln309">    }</a>
+<a name="ln310">    return (exact_found &amp;&amp; 1 == num_found)? 0 : chem_valence;</a>
+<a name="ln311">}</a>
+<a name="ln312">/***********************************************************************************</a>
+<a name="ln313"> *  output valence needed to unumbiguosly reconstruct number of H</a>
+<a name="ln314"> ***********************************************************************************/</a>
+<a name="ln315">int needed_unusual_el_valence( int nPeriodicNum, int charge, int radical, int bonds_valence,</a>
+<a name="ln316">                               int actual_bonds_valence, int num_H, int num_bonds )</a>
+<a name="ln317">{</a>
+<a name="ln318">    int i, num_found, num_found_known, chem_valence, rad_adj, known_chem_valence, exact_found;</a>
+<a name="ln319">    int num_H_expected;</a>
+<a name="ln320">    char szElement[4];</a>
+<a name="ln321">    /*</a>
+<a name="ln322">    if ( !num_bonds &amp;&amp; !num_H )</a>
+<a name="ln323">        return 0;</a>
+<a name="ln324">    */</a>
+<a name="ln325">    if ( num_bonds &amp;&amp; !GetElementFormulaFromAtNum(nPeriodicNum, szElement ) ) {</a>
+<a name="ln326">        num_H_expected = get_num_H( szElement, 0, NULL, charge, radical, actual_bonds_valence, 0,0,0,0 );</a>
+<a name="ln327">    } else {</a>
+<a name="ln328">        num_H_expected = num_H;</a>
+<a name="ln329">    }</a>
+<a name="ln330"> </a>
+<a name="ln331">    chem_valence = bonds_valence + num_H;</a>
+<a name="ln332">    if ( charge &lt; MIN_ATOM_CHARGE || charge &gt; MAX_ATOM_CHARGE ||</a>
+<a name="ln333">         !get_el_valence( nPeriodicNum, charge, 0 ) ||</a>
+<a name="ln334">         do_not_add_H( nPeriodicNum ) || bonds_valence != actual_bonds_valence ||</a>
+<a name="ln335">         num_H_expected != num_H ) {</a>
+<a name="ln336">        if ( !num_H &amp;&amp; !num_H_expected &amp;&amp; bonds_valence == actual_bonds_valence )</a>
+<a name="ln337">            return 0; /* no H */</a>
+<a name="ln338">        return chem_valence; /* needs to add H-atoms */</a>
+<a name="ln339">    }</a>
+<a name="ln340"> </a>
+<a name="ln341">    /* take into account radical */</a>
+<a name="ln342">    if (radical==RADICAL_DOUBLET)</a>
+<a name="ln343">        rad_adj = 1;</a>
+<a name="ln344">    else</a>
+<a name="ln345">    if (radical==RADICAL_TRIPLET )</a>
+<a name="ln346">        rad_adj = 2;</a>
+<a name="ln347">    else</a>
+<a name="ln348">        rad_adj = 0;</a>
+<a name="ln349"> </a>
+<a name="ln350">    num_found_known = 0;</a>
+<a name="ln351">    num_found       = 0;</a>
+<a name="ln352">    exact_found     = 0;</a>
+<a name="ln353"> </a>
+<a name="ln354">    for ( i = 0; i &lt; MAX_NUM_VALENCES; i ++ ) {</a>
+<a name="ln355">        if ( 0 &lt;  (known_chem_valence = get_el_valence( nPeriodicNum, charge, i )) &amp;&amp;</a>
+<a name="ln356">             bonds_valence &lt;= (known_chem_valence -= rad_adj) ) {</a>
+<a name="ln357">            /* found known valence that fits without H */</a>
+<a name="ln358">            num_found_known ++;</a>
+<a name="ln359">            if ( known_chem_valence &lt;= chem_valence ) {</a>
+<a name="ln360">                /* known valence is large enough to accommodate (implicit) H */</a>
+<a name="ln361">                num_found ++;</a>
+<a name="ln362">            }</a>
+<a name="ln363">            if ( known_chem_valence == chem_valence ) {</a>
+<a name="ln364">                exact_found = 1;</a>
+<a name="ln365">                break;</a>
+<a name="ln366">            }</a>
+<a name="ln367">        }</a>
+<a name="ln368">    }</a>
+<a name="ln369">    return (exact_found &amp;&amp; 1 == num_found &amp;&amp; 1 == num_found_known)? 0 : chem_valence? chem_valence : -1 /* needs zero */;</a>
+<a name="ln370">}</a>
+<a name="ln371">/***********************************************************************************</a>
+<a name="ln372"> *  output valence that does not fit any known valences</a>
+<a name="ln373"> ***********************************************************************************/</a>
+<a name="ln374">int detect_unusual_el_valence( int nPeriodicNum, int charge, int radical, int bonds_valence, int num_H, int num_bonds )</a>
+<a name="ln375">{</a>
+<a name="ln376">    int i, chem_valence, rad_adj, known_chem_valence;</a>
+<a name="ln377"> </a>
+<a name="ln378">    if ( !num_bonds &amp;&amp; !num_H )</a>
+<a name="ln379">        return 0;</a>
+<a name="ln380"> </a>
+<a name="ln381">    if ( charge &lt; MIN_ATOM_CHARGE || charge &gt; MAX_ATOM_CHARGE ) {</a>
+<a name="ln382">        if ( bonds_valence == num_bonds )</a>
+<a name="ln383">            return 0; /* all single bonds */</a>
+<a name="ln384">        return bonds_valence;</a>
+<a name="ln385">    }</a>
+<a name="ln386">    if ( !get_el_valence( nPeriodicNum, charge, 0 ) &amp;&amp; bonds_valence == num_bonds )</a>
+<a name="ln387">        return 0;</a>
+<a name="ln388"> </a>
+<a name="ln389">    chem_valence = bonds_valence + num_H;</a>
+<a name="ln390">    rad_adj     = 0;</a>
+<a name="ln391"> </a>
+<a name="ln392">    /* take into account radical */</a>
+<a name="ln393">    if (radical==RADICAL_DOUBLET)</a>
+<a name="ln394">        rad_adj = 1;</a>
+<a name="ln395">    else</a>
+<a name="ln396">    if (radical==RADICAL_TRIPLET || radical==RADICAL_SINGLET )</a>
+<a name="ln397">        rad_adj = 2;</a>
+<a name="ln398"> </a>
+<a name="ln399">    for ( i = 0; i &lt; MAX_NUM_VALENCES; i ++ ) {</a>
+<a name="ln400">        if ( 0 &lt; (known_chem_valence = get_el_valence( nPeriodicNum, charge, i )-rad_adj) ) {</a>
+<a name="ln401">            if ( known_chem_valence == chem_valence ) {</a>
+<a name="ln402">                return 0;</a>
+<a name="ln403">            }</a>
+<a name="ln404">        }</a>
+<a name="ln405">    }</a>
+<a name="ln406">    return chem_valence;</a>
+<a name="ln407">}</a>
+<a name="ln408">/***********************************************************************************/</a>
+<a name="ln409">int get_el_type( int nPeriodicNum )</a>
+<a name="ln410">{</a>
+<a name="ln411">    return ElData[nPeriodicNum+1].nType;</a>
+<a name="ln412">}</a>
+<a name="ln413">/***********************************************************************************/</a>
+<a name="ln414">int is_el_a_metal( int nPeriodicNum )</a>
+<a name="ln415">{</a>
+<a name="ln416">    return 0!=(ElData[nPeriodicNum+1].nType &amp; IS_METAL);</a>
+<a name="ln417">}</a>
+<a name="ln418">/******************************************************************************************************/</a>
+<a name="ln419">/*#ifndef TARGET_API_LIB*/</a>
+<a name="ln420">int extract_ChargeRadical( char *elname, int *pnRadical, int *pnCharge )</a>
+<a name="ln421">{</a>
+<a name="ln422">    char *q, *r, *p;</a>
+<a name="ln423">    int  nCharge=0, nRad = 0, charge_len = 0, k, nVal, nSign, nLastSign=1, len;</a>
+<a name="ln424"> </a>
+<a name="ln425">    p = elname;</a>
+<a name="ln426"> </a>
+<a name="ln427">    /*  extract radicals &amp; charges */</a>
+<a name="ln428">    while ( (q = strpbrk( p, &quot;+-^&quot; )) ) {</a>
+<a name="ln429">        switch ( *q ) {</a>
+<a name="ln430">        case '+':</a>
+<a name="ln431">        case '-':</a>
+<a name="ln432">            for ( k = 0, nVal=0; (nSign = ('+' == q[k])) || (nSign = -('-' == q[k])); k++ ) {</a>
+<a name="ln433">                nVal += (nLastSign = nSign);</a>
+<a name="ln434">                charge_len ++;</a>
+<a name="ln435">            }</a>
+<a name="ln436">            if ( (nSign = (int)strtol( q+k, &amp;r, 10 )) ) { /*  fixed 12-5-2001 */</a>
+<a name="ln437">                nVal += nLastSign * (nSign-1);</a>
+<a name="ln438">            }</a>
+<a name="ln439">            charge_len = r - q;</a>
+<a name="ln440">            nCharge += nVal;</a>
+<a name="ln441">            break;</a>
+<a name="ln442">        /* case '.': */ /*  singlet '.' may be confused with '.' in formulas like CaO.H2O */</a>
+<a name="ln443">        case '^':</a>
+<a name="ln444">            nRad = 1; /* doublet here is 1. See below */</a>
+<a name="ln445">            charge_len = 1;</a>
+<a name="ln446">            for ( k = 1; q[0] == q[k]; k++ ) {</a>
+<a name="ln447">                nRad ++;</a>
+<a name="ln448">                charge_len ++;</a>
+<a name="ln449">            }</a>
+<a name="ln450">            break;</a>
+<a name="ln451">        }</a>
+<a name="ln452">        memmove( q, q+charge_len, strlen(q+charge_len)+1 );</a>
+<a name="ln453">    }</a>
+<a name="ln454">    len = (int) strlen(p);</a>
+<a name="ln455">    /*  radical */</a>
+<a name="ln456">    if ( (q = strrchr( p, ':' )) &amp;&amp; !q[1]) {</a>
+<a name="ln457">        nRad = RADICAL_SINGLET;</a>
+<a name="ln458">        q[0] = '\0';</a>
+<a name="ln459">        len --;</a>
+<a name="ln460">    } else {</a>
+<a name="ln461">        while( (q = strrchr( p, '.' )) &amp;&amp; !q[1] ) {</a>
+<a name="ln462">            nRad ++;</a>
+<a name="ln463">            q[0] = '\0';</a>
+<a name="ln464">            len --;</a>
+<a name="ln465">        }</a>
+<a name="ln466"> </a>
+<a name="ln467">        nRad = nRad == 1? RADICAL_DOUBLET :</a>
+<a name="ln468">               nRad == 2? RADICAL_TRIPLET : 0;</a>
+<a name="ln469">    }</a>
+<a name="ln470">    *pnRadical = nRad;</a>
+<a name="ln471">    *pnCharge  = nCharge;</a>
+<a name="ln472">    return ( nRad || nCharge );</a>
+<a name="ln473"> </a>
+<a name="ln474">}</a>
+<a name="ln475">/*#endif*/</a>
+<a name="ln476">/****************************************************************/</a>
+<a name="ln477">int extract_H_atoms( char *elname, S_CHAR num_iso_H[] )</a>
+<a name="ln478">{</a>
+<a name="ln479">    int i, len, c, k, num_H, val;</a>
+<a name="ln480">    char *q;</a>
+<a name="ln481">    i = 0;</a>
+<a name="ln482">    num_H = 0;</a>
+<a name="ln483">    len = (int)strlen(elname);</a>
+<a name="ln484">    c =  UCINT elname[0];</a>
+<a name="ln485">    while ( i &lt; len ) {</a>
+<a name="ln486">        switch ( c ) {</a>
+<a name="ln487">        case 'H':</a>
+<a name="ln488">            k = 0;</a>
+<a name="ln489">            break;</a>
+<a name="ln490">        case 'D':</a>
+<a name="ln491">            k = 1;</a>
+<a name="ln492">            break;</a>
+<a name="ln493">        case 'T':</a>
+<a name="ln494">            k = 2;</a>
+<a name="ln495">            break;</a>
+<a name="ln496">        default:</a>
+<a name="ln497">            k = -1;</a>
+<a name="ln498">            break;</a>
+<a name="ln499">        }</a>
+<a name="ln500">        q = elname+i+1; /*  pointer to the next to elname[i] character */</a>
+<a name="ln501">        c =  UCINT q[0];</a>
+<a name="ln502">        if ( k &gt;= 0 &amp;&amp; !islower( c ) ) {</a>
+<a name="ln503">            /*  found a hydrogen */</a>
+<a name="ln504">            if ( isdigit( c ) ) {</a>
+<a name="ln505">                val = (int)strtol( q, &amp;q, 10 );</a>
+<a name="ln506">                /*  q = pointer to the next to number of hydrogen atom(s) character */</a>
+<a name="ln507">            } else {</a>
+<a name="ln508">                val = 1;</a>
+<a name="ln509">            }</a>
+<a name="ln510">            if ( k ) {</a>
+<a name="ln511">                num_iso_H[k] += val;</a>
+<a name="ln512">            } else {</a>
+<a name="ln513">                num_H += val;</a>
+<a name="ln514">            }</a>
+<a name="ln515">            /*  remove the hydrogen atom from the string */</a>
+<a name="ln516">            len -= (q-elname)-i;</a>
+<a name="ln517">            memmove( elname+i, q, len + 1 );</a>
+<a name="ln518">            /*  c =  UCINT elname[i]; */</a>
+<a name="ln519">        } else {</a>
+<a name="ln520">            i ++;</a>
+<a name="ln521">        }</a>
+<a name="ln522">        c =  UCINT elname[i]; /*  moved here 11-04-2002 */</a>
+<a name="ln523">    }</a>
+<a name="ln524">    return num_H;</a>
+<a name="ln525">}</a>
+<a name="ln526">/***********************************************************************************/</a>
+<a name="ln527">int get_num_H (const char* elname, int inp_num_H, S_CHAR inp_num_iso_H[],</a>
+<a name="ln528">               int charge, int radical, int chem_bonds_valence, int atom_input_valence,</a>
+<a name="ln529">               int bAliased, int bDoNotAddH, int bHasMetalNeighbor )</a>
+<a name="ln530">{</a>
+<a name="ln531">    int val, i, el_number, num_H = 0, num_iso_H;</a>
+<a name="ln532">    static int el_number_N = 0, el_number_S, el_number_O, el_number_C;</a>
+<a name="ln533">    if ( !el_number_N ) {</a>
+<a name="ln534">        el_number_N = get_el_number( &quot;N&quot; );</a>
+<a name="ln535">        el_number_S = get_el_number( &quot;S&quot; );</a>
+<a name="ln536">        el_number_O = get_el_number( &quot;O&quot; );</a>
+<a name="ln537">        el_number_C = get_el_number( &quot;C&quot; );</a>
+<a name="ln538">    }</a>
+<a name="ln539">    /*  atom_input_valence (cValence) cannot be specified in case of */</a>
+<a name="ln540">    /*  aliased MOLFile atom with known inp_num_H or inp_num_iso_H[] */</a>
+<a name="ln541">    if ( bAliased ) {</a>
+<a name="ln542">        num_H = inp_num_H;</a>
+<a name="ln543">    } else</a>
+<a name="ln544">    if ( atom_input_valence &amp;&amp; (atom_input_valence !=15 || chem_bonds_valence) ) {</a>
+<a name="ln545">        num_H = inchi_max( 0, atom_input_valence - chem_bonds_valence );</a>
+<a name="ln546">    } else</a>
+<a name="ln547">    if ( atom_input_valence == 15 &amp;&amp; !chem_bonds_valence ) {</a>
+<a name="ln548">        num_H = 0;</a>
+<a name="ln549">    } else</a>
+<a name="ln550">    if ( MIN_ATOM_CHARGE &lt;= charge &amp;&amp;</a>
+<a name="ln551">         MAX_ATOM_CHARGE &gt;= charge &amp;&amp;</a>
+<a name="ln552">         ERR_ELEM != (el_number = get_el_number( elname ) ) &amp;&amp;</a>
+<a name="ln553">         !ElData[el_number].bDoNotAddH &amp;&amp; !bDoNotAddH ) {</a>
+<a name="ln554">        /* add hydrogen atoms according to standard element valence */</a>
+<a name="ln555">        if ( radical &amp;&amp; radical != RADICAL_SINGLET ) {</a>
+<a name="ln556">            if ( (val = ElData[el_number].cValence[NEUTRAL_STATE+charge][0]) ) {</a>
+<a name="ln557">                val -= (radical==RADICAL_DOUBLET)? 1 :</a>
+<a name="ln558">                       (radical==RADICAL_SINGLET || radical==RADICAL_TRIPLET )? 2 : val;</a>
+<a name="ln559">                /* if unknown radical then do not add H */</a>
+<a name="ln560">                num_H = inchi_max( 0, val - chem_bonds_valence );</a>
+<a name="ln561">            }</a>
+<a name="ln562">        } else {</a>
+<a name="ln563">            /* find the smallest valence that is greater than the sum of the chemical bond valences */</a>
+<a name="ln564">            for ( i = 0;</a>
+<a name="ln565">                  (val=ElData[el_number].cValence[NEUTRAL_STATE+charge][i]) &amp;&amp;</a>
+<a name="ln566">                   val &lt; chem_bonds_valence;</a>
+<a name="ln567">                   i++ )</a>
+<a name="ln568">                ;</a>
+<a name="ln569">            /* special case: do not add H to N(IV), S(III), S+(II), S-(II) */ /* S ions added 2004-05-10 */</a>
+<a name="ln570">            if ( el_number == el_number_N &amp;&amp; !charge &amp;&amp; !radical &amp;&amp; val == 5 )</a>
+<a name="ln571">                val = 3;</a>
+<a name="ln572">            else</a>
+<a name="ln573">            /*</a>
+<a name="ln574">            if ( el_number == el_number_N &amp;&amp; !charge &amp;&amp; !radical &amp;&amp; val == 3 &amp;&amp;</a>
+<a name="ln575">                 chem_bonds_valence == 2 &amp;&amp; bHasMetalNeighbor )</a>
+<a name="ln576">                val = 2;</a>
+<a name="ln577">            else</a>
+<a name="ln578">            */</a>
+<a name="ln579">            if ( el_number == el_number_S &amp;&amp; !charge &amp;&amp; !radical &amp;&amp; val == 4 &amp;&amp; chem_bonds_valence == 3 )</a>
+<a name="ln580">                val = 3;</a>
+<a name="ln581">            else</a>
+<a name="ln582">            if ( bHasMetalNeighbor &amp;&amp; el_number != el_number_C &amp;&amp; val &gt; 0 ) {</a>
+<a name="ln583">                val --;</a>
+<a name="ln584">            }</a>
+<a name="ln585">            /*</a>
+<a name="ln586">            if ( (el_number == el_number_S || el_number == el_number_O) &amp;&amp;</a>
+<a name="ln587">                 abs(charge)==1 &amp;&amp; !radical &amp;&amp; val == 3 &amp;&amp; chem_bonds_valence == 2 &amp;&amp; bHasMetalNeighbor )</a>
+<a name="ln588">                val = 2;</a>
+<a name="ln589">            else</a>
+<a name="ln590">            */</a>
+<a name="ln591">            num_H = inchi_max( 0, val - chem_bonds_valence );</a>
+<a name="ln592">        }</a>
+<a name="ln593">        num_iso_H = 0;</a>
+<a name="ln594">        if ( inp_num_iso_H ) {</a>
+<a name="ln595">            for ( i = 0; i &lt; NUM_H_ISOTOPES; i ++ ) {</a>
+<a name="ln596">                num_iso_H += inp_num_iso_H[i];</a>
+<a name="ln597">            }</a>
+<a name="ln598">        }</a>
+<a name="ln599">        /*  should not happen because atom here is not aliased */</a>
+<a name="ln600">        if ( num_iso_H ) {</a>
+<a name="ln601">            if ( num_H &gt;= num_iso_H ) {</a>
+<a name="ln602">                num_H -= num_iso_H;</a>
+<a name="ln603">            } else {</a>
+<a name="ln604">                num_H = inp_num_H; /*  as requested in the alias */</a>
+<a name="ln605">                /* num_H = (num_iso_H - num_H) % 2; */ /*  keep unchanged parity of the total number of H atoms */</a>
+<a name="ln606">            }</a>
+<a name="ln607">        }</a>
+<a name="ln608">        /*  should not happen because atom here is not aliased */</a>
+<a name="ln609">        if ( inp_num_H &gt; num_H ) {</a>
+<a name="ln610">            num_H = inp_num_H;  /*  as requested in the alias */</a>
+<a name="ln611">            /* num_H = inp_num_H + (inp_num_H - num_H)%2; */ /*  keep unchanged parity of the number of non-isotopic H atoms */</a>
+<a name="ln612">        }</a>
+<a name="ln613">    } else {</a>
+<a name="ln614">        num_H = inp_num_H;</a>
+<a name="ln615">    }</a>
+<a name="ln616">    return num_H;</a>
+<a name="ln617">}</a>
+<a name="ln618">/***********************************************************************************/</a>
+<a name="ln619">int get_atw_from_elnum( int nAtNum )</a>
+<a name="ln620">{</a>
+<a name="ln621">    nAtNum -= 1;</a>
+<a name="ln622">    if ( 0 &lt; nAtNum )</a>
+<a name="ln623">        nAtNum += 2; /*  bypass D, T */</a>
+<a name="ln624">    if ( 0 &lt;= nAtNum &amp;&amp; nAtNum &lt; nElDataLen ) {</a>
+<a name="ln625">        return (int)ElData[nAtNum].nAtMass;</a>
+<a name="ln626">    }</a>
+<a name="ln627">    return 0;</a>
+<a name="ln628">}</a>
+<a name="ln629">/***********************************************************************************/</a>
+<a name="ln630">/*</a>
+<a name="ln631">int get_mw(char elname[])</a>
+<a name="ln632">{</a>
+<a name="ln633">    int i;</a>
+<a name="ln634"> </a>
+<a name="ln635">    for (i=0; i&lt;NUMEL; i++)</a>
+<a name="ln636">        if (strcmp(elname,elements[i])==0)</a>
+<a name="ln637">            return(atomic_wt[i]);</a>
+<a name="ln638">    return(0);</a>
+<a name="ln639">}</a>
+<a name="ln640">*/</a>
+<a name="ln641">/***********************************************************************************/</a>
+<a name="ln642">#ifndef TARGET_API_LIB</a>
+<a name="ln643">/***********************************************************************************/</a>
+<a name="ln644">int get_atw(const char *elname)</a>
+<a name="ln645">{</a>
+<a name="ln646">    int el_number, atw;</a>
+<a name="ln647">    if ( ERR_ELEM != (el_number = get_el_number( elname )) ) {</a>
+<a name="ln648">        atw = ElData[el_number].nAtMass;</a>
+<a name="ln649">    } else {</a>
+<a name="ln650">        atw = 0;</a>
+<a name="ln651">    }</a>
+<a name="ln652">    return atw;</a>
+<a name="ln653">}</a>
+<a name="ln654">/***********************************************************************************/</a>
+<a name="ln655">int normalize_name( char* name )</a>
+<a name="ln656">{</a>
+<a name="ln657">    /* remove leading &amp; trailing spaces; replace consecutive spaces with a single space */</a>
+<a name="ln658">    /* Treat non-printable characters (Greeks) as spaces. 11-23-99 DCh. */</a>
+<a name="ln659">    int i, len, n;</a>
+<a name="ln660">    len = (int)strlen(name);</a>
+<a name="ln661">    for ( i = 0, n = 0; i &lt; len; i++ ) {</a>
+<a name="ln662">        if ( isspace( UCINT name[i] ) /*|| !isprint( UCINT name[i] )*/ ) {</a>
+<a name="ln663">            name[i] = ' '; /* exterminate tabs !!! */</a>
+<a name="ln664">            n++;</a>
+<a name="ln665">        } else {</a>
+<a name="ln666">            if ( n &gt; 0 ) {</a>
+<a name="ln667">                memmove( (void*) &amp;name[i-n], (void*) &amp;name[i], len-i+1 );</a>
+<a name="ln668">                i   -= n;</a>
+<a name="ln669">                len -= n;</a>
+<a name="ln670">            }</a>
+<a name="ln671">            n = -1;</a>
+<a name="ln672">        }</a>
+<a name="ln673">    }</a>
+<a name="ln674">    if ( n == len ) /* empty line */</a>
+<a name="ln675">        name[len=0] = '\0';</a>
+<a name="ln676">    else</a>
+<a name="ln677">    if ( ++n &amp;&amp; n &lt;= len ) {</a>
+<a name="ln678">        len -= n;</a>
+<a name="ln679">        name[len] = '\0';</a>
+<a name="ln680">    }</a>
+<a name="ln681">    return len;</a>
+<a name="ln682">}</a>
+<a name="ln683">#endif /* ifndef TARGET_API_LIB */</a>
+<a name="ln684">/************************************************/</a>
+<a name="ln685">#ifndef inchi_malloc</a>
+<a name="ln686">void *inchi_malloc(size_t c)</a>
+<a name="ln687">{</a>
+<a name="ln688">    return  malloc(c);</a>
+<a name="ln689">}</a>
+<a name="ln690">#endif</a>
+<a name="ln691">#ifndef inchi_calloc</a>
+<a name="ln692">void *inchi_calloc(size_t c, size_t n)</a>
+<a name="ln693">{</a>
+<a name="ln694">    return calloc(c,n);</a>
+<a name="ln695">}</a>
+<a name="ln696">#endif</a>
+<a name="ln697">#ifndef inchi_free</a>
+<a name="ln698">void inchi_free(void *p)</a>
+<a name="ln699">{</a>
+<a name="ln700">    if(p) {</a>
+<a name="ln701">        free(p); /*added check if zero*/</a>
+<a name="ln702">    }</a>
+<a name="ln703">}</a>
+<a name="ln704">#endif</a>
+<a name="ln705"> </a>
+<a name="ln706"> </a>
+<a name="ln707"> </a>
+<a name="ln708"> </a>
+<a name="ln709"> </a>
+<a name="ln710">#ifndef TARGET_API_LIB</a>
+<a name="ln711">/*************************************************************************/</a>
+<a name="ln712">void remove_trailing_spaces( char* p )</a>
+<a name="ln713">{</a>
+<a name="ln714">    int   len;</a>
+<a name="ln715">    for( len = (int)strlen( p ) - 1; len &gt;= 0 &amp;&amp; isspace( UCINT p[len] ); len-- )</a>
+<a name="ln716">        ;</a>
+<a name="ln717">    p[++len] = '\0';</a>
+<a name="ln718">}</a>
+<a name="ln719">/*************************************************************************/</a>
+<a name="ln720">void remove_one_lf( char* p)</a>
+<a name="ln721">{</a>
+<a name="ln722">    size_t len;</a>
+<a name="ln723">    if ( p &amp;&amp; 0 &lt; (len = strlen(p)) &amp;&amp; p[len-1] == '\n' ){</a>
+<a name="ln724">        p[len-1] = '\0';</a>
+<a name="ln725">        if ( len &gt;= 2 &amp;&amp; p[len-2] == '\r' )</a>
+<a name="ln726">            p[len-2] = '\0';</a>
+<a name="ln727">    }</a>
+<a name="ln728">}</a>
+<a name="ln729">#endif /* ifndef TARGET_API_LIB */</a>
+<a name="ln730"> </a>
+<a name="ln731"> </a>
+<a name="ln732"> </a>
+<a name="ln733">/***************************************************************************/</a>
+<a name="ln734">/* Copies up to maxlen characters INCLUDING end null from source to target */</a>
+<a name="ln735">/* Fills out the rest of the target with null bytes */</a>
+<a name="ln736">int mystrncpy(char *target,const char *source,unsigned maxlen)</a>
+<a name="ln737">{   /*  protected from non-zero-terminated source and overlapped target/source. 7-9-99 DCh. */</a>
+<a name="ln738">    const char  *p;</a>
+<a name="ln739">    unsigned    len;</a>
+<a name="ln740"> </a>
+<a name="ln741">    if (target==NULL || maxlen == 0 || source == NULL)</a>
+<a name="ln742">        return 0;</a>
+<a name="ln743">    if ( (p = (const char*)memchr(source, 0, maxlen)) ) {</a>
+<a name="ln744">        len = p-source; /*  maxlen does not include the found zero termination */</a>
+<a name="ln745">    } else {</a>
+<a name="ln746">        len = maxlen-1; /*  reduced length does not include one more byte for zero termination */</a>
+<a name="ln747">    }</a>
+<a name="ln748">    if ( len )</a>
+<a name="ln749">        memmove( target, source, len );</a>
+<a name="ln750">    /* target[len] = '\0'; */</a>
+<a name="ln751">    memset( target+len, 0, maxlen-len); /*  zero termination */</a>
+<a name="ln752">    return 1;</a>
+<a name="ln753">}</a>
+<a name="ln754">/************************************************************************/</a>
+<a name="ln755">/* Remove leading and trailing white spaces                             */</a>
+<a name="ln756">char* LtrimRtrim( char *p, int* nLen )</a>
+<a name="ln757">{</a>
+<a name="ln758">    int i, len=0;</a>
+<a name="ln759">    if ( p &amp;&amp;  (len = (int) strlen( p )) ) {</a>
+<a name="ln760">        for ( i = 0; i &lt; len &amp;&amp; __isascii( p[i] ) &amp;&amp; isspace( p[i] ); i++ )</a>
+<a name="ln761">            ;</a>
+<a name="ln762">        if ( i )</a>
+<a name="ln763">            (memmove)( p, p+i, (len -= i)+1 );</a>
+<a name="ln764">        for ( ; 0 &lt; len &amp;&amp; __isascii( p[len-1] ) &amp;&amp; isspace( p[len-1] ); len-- )</a>
+<a name="ln765">            ;</a>
+<a name="ln766">        p[len] = '\0';</a>
+<a name="ln767">    }</a>
+<a name="ln768">    if ( nLen )</a>
+<a name="ln769">        *nLen = len;</a>
+<a name="ln770">    return p;</a>
+<a name="ln771">}</a>
+<a name="ln772">/*************************************************************************/</a>
+<a name="ln773">AT_NUMB *is_in_the_list( AT_NUMB *pathAtom, AT_NUMB nNextAtom, int nPathLen )</a>
+<a name="ln774">{</a>
+<a name="ln775">    for ( ; nPathLen &amp;&amp; *pathAtom != nNextAtom; nPathLen--,  pathAtom++ )</a>
+<a name="ln776">        ;</a>
+<a name="ln777">    return nPathLen? pathAtom : NULL;</a>
+<a name="ln778">}</a>
+<a name="ln779">/******************************************************************************************************/</a>
+<a name="ln780">int nBondsValToMetal( inp_ATOM* at, int iat )</a>
+<a name="ln781">{</a>
+<a name="ln782">    int i, neigh, bond_type, nVal2Metal = 0;</a>
+<a name="ln783">    inp_ATOM* a  = at + iat;</a>
+<a name="ln784">    for ( i = 0; i &lt; a-&gt;valence; i ++ ) {</a>
+<a name="ln785">        neigh = a-&gt;neighbor[i];</a>
+<a name="ln786">        if ( is_el_a_metal( at[(int)a-&gt;neighbor[i]].el_number ) ) {</a>
+<a name="ln787">            bond_type = a-&gt;bond_type[i];</a>
+<a name="ln788">            if ( bond_type &lt;= BOND_TYPE_TRIPLE ) {</a>
+<a name="ln789">                nVal2Metal += bond_type;</a>
+<a name="ln790">            } else {</a>
+<a name="ln791">                return -1;  /* bond to metal order is not well defined */</a>
+<a name="ln792">            }</a>
+<a name="ln793">        }</a>
+<a name="ln794">    }</a>
+<a name="ln795">    return nVal2Metal;</a>
+<a name="ln796">}</a>
+<a name="ln797">/************************************************************************/</a>
+<a name="ln798">int num_of_H( inp_ATOM *at, int iat )</a>
+<a name="ln799">{</a>
+<a name="ln800">    static int el_number_H;</a>
+<a name="ln801">    int    i, n, num_explicit_H = 0;</a>
+<a name="ln802">    inp_ATOM *a = at + iat;</a>
+<a name="ln803">    if ( !el_number_H )</a>
+<a name="ln804">        el_number_H = get_periodic_table_number( &quot;H&quot; );</a>
+<a name="ln805">    for ( i = 0; i &lt; a-&gt;valence; i ++ ) {</a>
+<a name="ln806">        n = a-&gt;neighbor[i];</a>
+<a name="ln807">        num_explicit_H += ( 1 == at[n].valence &amp;&amp; el_number_H == at[n].el_number );</a>
+<a name="ln808">    }</a>
+<a name="ln809">    return num_explicit_H+NUMH(at,iat);</a>
+<a name="ln810">}</a>
+<a name="ln811">/************************************************************************/</a>
+<a name="ln812">int has_other_ion_neigh( inp_ATOM *at, int iat, int iat_ion_neigh, const char *el, int el_len )</a>
+<a name="ln813">{</a>
+<a name="ln814">    int charge = at[iat_ion_neigh].charge;</a>
+<a name="ln815">    int i, neigh;</a>
+<a name="ln816">    for ( i = 0; i &lt; at[iat].valence; i ++ ) {</a>
+<a name="ln817">        neigh = at[iat].neighbor[i];</a>
+<a name="ln818">        if ( neigh != iat_ion_neigh &amp;&amp; at[neigh].charge == charge &amp;&amp;</a>
+<a name="ln819">             NULL != memchr( el, at[neigh].el_number, el_len ) ) {</a>
+<a name="ln820">            return 1;</a>
+<a name="ln821">        }</a>
+<a name="ln822">    }</a>
+<a name="ln823">    return 0;</a>
+<a name="ln824">}</a>
+<a name="ln825">/************************************************************************/</a>
+<a name="ln826">/* BFS r=2 */</a>
+<a name="ln827">int has_other_ion_in_sphere_2(inp_ATOM *at, int iat, int iat_ion_neigh, const char *el, int el_len )</a>
+<a name="ln828">{</a>
+<a name="ln829">#define MAXQ 16</a>
+<a name="ln830">    AT_NUMB q[MAXQ];</a>
+<a name="ln831">    int lenq=0, lenq2, dist = 0, i = 0, iq, neigh, j, nRet=0;</a>
+<a name="ln832">    q[lenq++] = iat;</a>
+<a name="ln833">    at[iat].cFlags = 1;</a>
+<a name="ln834"> </a>
+<a name="ln835">    iq  = 0;</a>
+<a name="ln836">    dist = 1;</a>
+<a name="ln837">    /* use at-&gt;cFlags as an indicator */</a>
+<a name="ln838">    while ( dist &lt;= 2 ) {</a>
+<a name="ln839">        for ( lenq2 = lenq; iq &lt; lenq2; iq ++ ) {</a>
+<a name="ln840">            i = q[iq];</a>
+<a name="ln841">            for ( j = 0; j &lt; at[i].valence; j ++ ) {</a>
+<a name="ln842">                neigh = at[i].neighbor[j];</a>
+<a name="ln843">                if ( !at[neigh].cFlags &amp;&amp;</a>
+<a name="ln844">                     at[neigh].valence &lt;= 3 &amp;&amp;</a>
+<a name="ln845">                     NULL != memchr( el, at[neigh].el_number, el_len ) ) {</a>
+<a name="ln846">                    q[lenq ++] = neigh;</a>
+<a name="ln847">                    at[neigh].cFlags = 1;</a>
+<a name="ln848">                    if ( neigh != iat_ion_neigh &amp;&amp;</a>
+<a name="ln849">                         at[iat_ion_neigh].charge == at[neigh].charge ) {</a>
+<a name="ln850">                        nRet ++;</a>
+<a name="ln851">                    }</a>
+<a name="ln852">                }</a>
+<a name="ln853">            }</a>
+<a name="ln854">        }</a>
+<a name="ln855">        dist ++;</a>
+<a name="ln856">    }</a>
+<a name="ln857">    for ( iq = 0; iq &lt; lenq; iq ++ ) {</a>
+<a name="ln858">        i = q[iq];</a>
+<a name="ln859">        at[i].cFlags = 0;</a>
+<a name="ln860">    }</a>
+<a name="ln861">    return nRet;</a>
+<a name="ln862">}</a>
+<a name="ln863">/************************************************************************/</a>
+<a name="ln864">int nNoMetalNumBonds( inp_ATOM *at, int at_no )</a>
+<a name="ln865">{</a>
+<a name="ln866">    inp_ATOM *a = at + at_no;</a>
+<a name="ln867">    int num_H = NUMH(a, 0);</a>
+<a name="ln868">    int std_chem_bonds_valence = get_el_valence( a-&gt;el_number, a-&gt;charge, 0 );</a>
+<a name="ln869">    int i;</a>
+<a name="ln870">    if ( a-&gt;chem_bonds_valence + num_H &gt; std_chem_bonds_valence ) {</a>
+<a name="ln871">        int valence_to_metal = 0;</a>
+<a name="ln872">        int num_bonds_to_metal = 0;</a>
+<a name="ln873">        for ( i = 0; i &lt; a-&gt;valence; i ++ ) {</a>
+<a name="ln874">            if ( is_el_a_metal( at[(int)a-&gt;neighbor[i]].el_number ) ) {</a>
+<a name="ln875">                if ( (a-&gt;bond_type[i] &amp; BOND_TYPE_MASK) &gt;= BOND_TYPE_ALTERN ) {</a>
+<a name="ln876">                    return a-&gt;valence; /* fall back */</a>
+<a name="ln877">                }</a>
+<a name="ln878">                num_bonds_to_metal ++;</a>
+<a name="ln879">                valence_to_metal += (a-&gt;bond_type[i] &amp; BOND_TYPE_MASK);</a>
+<a name="ln880">            }</a>
+<a name="ln881">        }</a>
+<a name="ln882">        if ( a-&gt;chem_bonds_valence + num_H - valence_to_metal == std_chem_bonds_valence ) {</a>
+<a name="ln883">            /* removing bonds to metal produces standard valence */</a>
+<a name="ln884">            return a-&gt;valence - num_bonds_to_metal;</a>
+<a name="ln885">        }</a>
+<a name="ln886">    }</a>
+<a name="ln887">#if ( S_VI_O_PLUS_METAL_FIX_BOND == 1 )</a>
+<a name="ln888">    else</a>
+<a name="ln889">    if ( 1 == a-&gt;charge &amp;&amp; 2 == get_endpoint_valence(a-&gt;el_number) &amp;&amp;</a>
+<a name="ln890">         a-&gt;chem_bonds_valence + num_H == std_chem_bonds_valence ) {</a>
+<a name="ln891">        int valence_to_metal = 0;</a>
+<a name="ln892">        int num_bonds_to_metal = 0;</a>
+<a name="ln893">        for ( i = 0; i &lt; a-&gt;valence; i ++ ) {</a>
+<a name="ln894">            if ( is_el_a_metal( at[(int)a-&gt;neighbor[i]].el_number ) ) {</a>
+<a name="ln895">                if ( (a-&gt;bond_type[i] &amp; BOND_TYPE_MASK) &gt;= BOND_TYPE_ALTERN ) {</a>
+<a name="ln896">                    return a-&gt;valence; /* fall back */</a>
+<a name="ln897">                }</a>
+<a name="ln898">                num_bonds_to_metal ++;</a>
+<a name="ln899">                valence_to_metal += (a-&gt;bond_type[i] &amp; BOND_TYPE_MASK);</a>
+<a name="ln900">            }</a>
+<a name="ln901">        }</a>
+<a name="ln902">        if ( 1 == valence_to_metal ) {</a>
+<a name="ln903">            /* removing bonds to metal produces standard valence */</a>
+<a name="ln904">            return a-&gt;valence - num_bonds_to_metal;</a>
+<a name="ln905">        }</a>
+<a name="ln906">    }</a>
+<a name="ln907">#endif</a>
+<a name="ln908"> </a>
+<a name="ln909">    return a-&gt;valence;</a>
+<a name="ln910">}</a>
+<a name="ln911">/************************************************************************/</a>
+<a name="ln912">int nNoMetalBondsValence( inp_ATOM *at, int at_no )</a>
+<a name="ln913">{</a>
+<a name="ln914">    inp_ATOM *a = at + at_no;</a>
+<a name="ln915">    int num_H = NUMH(a, 0);</a>
+<a name="ln916">    int std_chem_bonds_valence = get_el_valence( a-&gt;el_number, a-&gt;charge, 0 );</a>
+<a name="ln917">    int i;</a>
+<a name="ln918">    if ( a-&gt;chem_bonds_valence + num_H &gt; std_chem_bonds_valence ) {</a>
+<a name="ln919">        int valence_to_metal = 0;</a>
+<a name="ln920">        /*int num_bonds_to_metal = 0;*/</a>
+<a name="ln921">        for ( i = 0; i &lt; a-&gt;valence; i ++ ) {</a>
+<a name="ln922">            if ( is_el_a_metal( at[(int)a-&gt;neighbor[i]].el_number ) ) {</a>
+<a name="ln923">                if ( (a-&gt;bond_type[i] &amp; BOND_TYPE_MASK) &gt;= BOND_TYPE_ALTERN ) {</a>
+<a name="ln924">                    return a-&gt;valence; /* fall back */</a>
+<a name="ln925">                }</a>
+<a name="ln926">                /*num_bonds_to_metal ++;*/</a>
+<a name="ln927">                valence_to_metal += (a-&gt;bond_type[i] &amp; BOND_TYPE_MASK);</a>
+<a name="ln928">            }</a>
+<a name="ln929">        }</a>
+<a name="ln930">        if ( a-&gt;chem_bonds_valence + num_H - valence_to_metal == std_chem_bonds_valence ) {</a>
+<a name="ln931">            /* removing bonds to metal produces standard valence */</a>
+<a name="ln932">            return a-&gt;chem_bonds_valence - valence_to_metal;</a>
+<a name="ln933">        }</a>
+<a name="ln934">    }</a>
+<a name="ln935">#if ( S_VI_O_PLUS_METAL_FIX_BOND == 1 )</a>
+<a name="ln936">    else</a>
+<a name="ln937">    if ( 1 == a-&gt;charge &amp;&amp; 2 == get_endpoint_valence(a-&gt;el_number) &amp;&amp;</a>
+<a name="ln938">         a-&gt;chem_bonds_valence + num_H == std_chem_bonds_valence ) {</a>
+<a name="ln939">        int valence_to_metal = 0;</a>
+<a name="ln940">        /*int num_bonds_to_metal = 0;*/</a>
+<a name="ln941">        for ( i = 0; i &lt; a-&gt;valence; i ++ ) {</a>
+<a name="ln942">            if ( is_el_a_metal( at[(int)a-&gt;neighbor[i]].el_number ) ) {</a>
+<a name="ln943">                if ( (a-&gt;bond_type[i] &amp; BOND_TYPE_MASK) &gt;= BOND_TYPE_ALTERN ) {</a>
+<a name="ln944">                    return a-&gt;valence; /* fall back */</a>
+<a name="ln945">                }</a>
+<a name="ln946">                /*num_bonds_to_metal ++;*/</a>
+<a name="ln947">                valence_to_metal += (a-&gt;bond_type[i] &amp; BOND_TYPE_MASK);</a>
+<a name="ln948">            }</a>
+<a name="ln949">        }</a>
+<a name="ln950">        if ( 1 == valence_to_metal ) {</a>
+<a name="ln951">            /* removing bonds to metal produces standard valence */</a>
+<a name="ln952">            return a-&gt;chem_bonds_valence - valence_to_metal;</a>
+<a name="ln953">        }</a>
+<a name="ln954">    }</a>
+<a name="ln955">#endif</a>
+<a name="ln956">    return a-&gt;chem_bonds_valence;</a>
+<a name="ln957">}</a>
+<a name="ln958">/************************************************************************/</a>
+<a name="ln959">int nNoMetalNeighIndex( inp_ATOM *at, int at_no )</a>
+<a name="ln960">{</a>
+<a name="ln961">    inp_ATOM *a = at + at_no;</a>
+<a name="ln962">    int i;</a>
+<a name="ln963">    for ( i = 0; i &lt; a-&gt;valence; i ++ ) {</a>
+<a name="ln964">        if ( !is_el_a_metal( at[(int)a-&gt;neighbor[i]].el_number ) ) {</a>
+<a name="ln965">            return i;</a>
+<a name="ln966">        }</a>
+<a name="ln967">    }</a>
+<a name="ln968">    return -1;</a>
+<a name="ln969">}</a>
+<a name="ln970">/************************************************************************/</a>
+<a name="ln971">int nNoMetalOtherNeighIndex( inp_ATOM *at, int at_no, int cur_neigh )</a>
+<a name="ln972">{</a>
+<a name="ln973">    inp_ATOM *a = at + at_no;</a>
+<a name="ln974">    int i, neigh;</a>
+<a name="ln975">    for ( i = 0; i &lt; a-&gt;valence; i ++ ) {</a>
+<a name="ln976">        neigh = (int)a-&gt;neighbor[i];</a>
+<a name="ln977">        if ( neigh != cur_neigh &amp;&amp; !is_el_a_metal( at[neigh].el_number ) ) {</a>
+<a name="ln978">            return i;</a>
+<a name="ln979">        }</a>
+<a name="ln980">    }</a>
+<a name="ln981">    return -1;</a>
+<a name="ln982">}</a>
+<a name="ln983">/************************************************************************/</a>
+<a name="ln984">int nNoMetalOtherNeighIndex2( inp_ATOM *at, int at_no, int cur_neigh, int cur_neigh2 )</a>
+<a name="ln985">{</a>
+<a name="ln986">    inp_ATOM *a = at + at_no;</a>
+<a name="ln987">    int i, neigh;</a>
+<a name="ln988">    for ( i = 0; i &lt; a-&gt;valence; i ++ ) {</a>
+<a name="ln989">        neigh = (int)a-&gt;neighbor[i];</a>
+<a name="ln990">        if ( neigh != cur_neigh &amp;&amp; neigh != cur_neigh2 &amp;&amp; !is_el_a_metal( at[neigh].el_number ) ) {</a>
+<a name="ln991">            return i;</a>
+<a name="ln992">        }</a>
+<a name="ln993">    }</a>
+<a name="ln994">    return -1;</a>
+<a name="ln995">}</a>
+<a name="ln996"> </a>
+<a name="ln997"> </a>
+<a name="ln998">#ifndef COMPILE_ANSI_ONLY</a>
+<a name="ln999">/**************************************************************************/</a>
+<a name="ln1000">int MakeRemovedProtonsString( int nNumRemovedProtons, NUM_H *nNumExchgIsotopicH, NUM_H *nNumRemovedProtonsIsotopic,</a>
+<a name="ln1001">                              int bIsotopic, char *szRemovedProtons, int *num_removed_iso_H )</a>
+<a name="ln1002">{</a>
+<a name="ln1003">    int i, j, len, num;</a>
+<a name="ln1004">    len = 0;</a>
+<a name="ln1005">    if ( nNumRemovedProtons ) {</a>
+<a name="ln1006">        len = sprintf ( szRemovedProtons, &quot;Proton balance: %c %d H+&quot;,</a>
+<a name="ln1007">                        nNumRemovedProtons&gt;=0? '+':'-', abs(nNumRemovedProtons) );</a>
+<a name="ln1008">    }</a>
+<a name="ln1009">    if ( bIsotopic &amp;&amp; (nNumRemovedProtonsIsotopic || nNumExchgIsotopicH) ) {</a>
+<a name="ln1010">        for ( i = 0, j = 0; i &lt; NUM_H_ISOTOPES; i ++ ) {</a>
+<a name="ln1011">            num = (nNumExchgIsotopicH? nNumExchgIsotopicH[i]:0) +</a>
+<a name="ln1012">                  (nNumRemovedProtonsIsotopic? nNumRemovedProtonsIsotopic[i]:0);</a>
+<a name="ln1013">            if ( num ) {</a>
+<a name="ln1014">                len += sprintf( szRemovedProtons+len, &quot;%s %d^%dH&quot;,</a>
+<a name="ln1015">                                j? &quot;, &quot;:&quot;  [ removed &quot;, num, i+1);</a>
+<a name="ln1016">                j ++;</a>
+<a name="ln1017">            }</a>
+<a name="ln1018">        }</a>
+<a name="ln1019">        if ( j ) {</a>
+<a name="ln1020">            len += sprintf( szRemovedProtons+len, &quot; ]&quot; );</a>
+<a name="ln1021">            if ( num_removed_iso_H )</a>
+<a name="ln1022">                *num_removed_iso_H = j;</a>
+<a name="ln1023">        }</a>
+<a name="ln1024">    }</a>
+<a name="ln1025">    if ( !len ) {</a>
+<a name="ln1026">        szRemovedProtons[0] = '\0';</a>
+<a name="ln1027">    }</a>
+<a name="ln1028">    return len;</a>
+<a name="ln1029">}</a>
+<a name="ln1030">#endif</a>
+<a name="ln1031"> </a>
+<a name="ln1032">/*</a>
+<a name="ln1033">    According to</a>
+<a name="ln1034">    http://info-uri.info/registry/OAIHandler?verb=GetRecord&amp;metadataPrefix=reg&amp;identifier=info:inchi/</a>
+<a name="ln1035"> </a>
+<a name="ln1036">    An InChI identifier may contain the following characters:</a>
+<a name="ln1037"> </a>
+<a name="ln1038">    A-Z</a>
+<a name="ln1039">    a-z</a>
+<a name="ln1040">    0-9</a>
+<a name="ln1041">    ()*+,-./;=?@</a>
+<a name="ln1042"> </a>
+<a name="ln1043"> </a>
+<a name="ln1044">    Here we consider any character not conforming this specification as a whitespace</a>
+<a name="ln1045">    which marks the end of the InChI string.</a>
+<a name="ln1046">    For example:</a>
+<a name="ln1047">    &quot;InChI=1/Ar%&quot;</a>
+<a name="ln1048">    &quot;InChI=1/Ar\n&quot;</a>
+<a name="ln1049">    &quot;InChI=1/Ar\r\t&quot;</a>
+<a name="ln1050">    all will be trimmed to</a>
+<a name="ln1051">    &quot;InChI=1/Ar&quot;</a>
+<a name="ln1052"> </a>
+<a name="ln1053">*/</a>
+<a name="ln1054"> </a>
+<a name="ln1055">/**************************************************************************/</a>
+<a name="ln1056">void extract_inchi_substring(char ** buf, const char *str, size_t slen)</a>
+<a name="ln1057">{</a>
+<a name="ln1058">size_t i;</a>
+<a name="ln1059">char *p, pp;</a>
+<a name="ln1060"> </a>
+<a name="ln1061">    *buf = NULL;</a>
+<a name="ln1062">    if (str==NULL)</a>
+<a name="ln1063">        return;</a>
+<a name="ln1064">    if (strlen(str)&lt;1)</a>
+<a name="ln1065">        return;</a>
+<a name="ln1066"> </a>
+<a name="ln1067">    p = strstr(str, &quot;InChI=&quot;);</a>
+<a name="ln1068">    if (NULL==p)</a>
+<a name="ln1069">        return;</a>
+<a name="ln1070"> </a>
+<a name="ln1071">    for (i=0; i&lt;slen; i++)</a>
+<a name="ln1072">    {</a>
+<a name="ln1073">        pp = p[i];</a>
+<a name="ln1074"> </a>
+<a name="ln1075">        if (pp &gt;= 'A' &amp;&amp; pp &lt;='Z')   continue;</a>
+<a name="ln1076">        if (pp &gt;= 'a' &amp;&amp; pp &lt;='z')   continue;</a>
+<a name="ln1077">        if (pp &gt;= '0' &amp;&amp; pp &lt;='9')   continue;</a>
+<a name="ln1078">        switch ( pp )</a>
+<a name="ln1079">        {</a>
+<a name="ln1080">            case '(':</a>
+<a name="ln1081">            case ')':</a>
+<a name="ln1082">            case '*':</a>
+<a name="ln1083">            case '+':</a>
+<a name="ln1084">            case ',':</a>
+<a name="ln1085">            case '-':</a>
+<a name="ln1086">            case '.':</a>
+<a name="ln1087">            case '/':</a>
+<a name="ln1088">            case ';':</a>
+<a name="ln1089">            case '=':</a>
+<a name="ln1090">            case '?':</a>
+<a name="ln1091">            case '@': continue;</a>
+<a name="ln1092"> </a>
+<a name="ln1093">            default:            break;</a>
+<a name="ln1094">        }</a>
+<a name="ln1095">        break;</a>
+<a name="ln1096">    }</a>
+<a name="ln1097"> </a>
+<a name="ln1098">    *buf = (char*) inchi_calloc(i+1, sizeof(char));</a>
+<a name="ln1099">    memcpy(*buf, p, i);</a>
+<a name="ln1100">    (*buf)[i] = '\0';</a>
+<a name="ln1101"> </a>
+<a name="ln1102">    return;</a>
+<a name="ln1103">}</a>
+<a name="ln1104"> </a>
+<a name="ln1105"> </a>
+<a name="ln1106"> </a>
+<a name="ln1107"> </a>
+<a name="ln1108"> </a>
+<a name="ln1109">#ifdef COMPILE_ANSI_ONLY</a>
+<a name="ln1110">/*************************************************************************/</a>
+<a name="ln1111">/*************          non-ANSI functions                ****************/</a>
+<a name="ln1112">/*************************************************************************/</a>
+<a name="ln1113">#define __MYTOLOWER(c) ( ((c) &gt;= 'A') &amp;&amp; ((c) &lt;= 'Z') ? ((c) - 'A' + 'a') : (c) )</a>
+<a name="ln1114"> </a>
+<a name="ln1115">#if ( defined(COMPILE_ADD_NON_ANSI_FUNCTIONS) || defined(__STDC__) &amp;&amp; __STDC__ == 1 )</a>
+<a name="ln1116">/* support (VC++ Language extensions) = OFF &amp;&amp; defined(COMPILE_ANSI_ONLY) */</a>
+<a name="ln1117">int memicmp ( const void * p1, const void * p2, size_t length )</a>
+<a name="ln1118">{</a>
+<a name="ln1119">    const U_CHAR *s1 = (const U_CHAR*)p1;</a>
+<a name="ln1120">    const U_CHAR *s2  = (const U_CHAR*)p2;</a>
+<a name="ln1121">    while ( length-- ) {</a>
+<a name="ln1122">        if ( *s1 == *s2 ||</a>
+<a name="ln1123">              __MYTOLOWER( (int)*s1 ) == __MYTOLOWER( (int)*s2 )) {</a>
+<a name="ln1124">            s1 ++;</a>
+<a name="ln1125">            s2  ++;</a>
+<a name="ln1126">        } else {</a>
+<a name="ln1127">            return __MYTOLOWER( (int)*s1 ) - __MYTOLOWER( (int)*s2 );</a>
+<a name="ln1128">        }</a>
+<a name="ln1129">    }</a>
+<a name="ln1130">    return 0;</a>
+<a name="ln1131">}</a>
+<a name="ln1132">/*************************************************************************/</a>
+<a name="ln1133">int stricmp( const char *s1, const char *s2 )</a>
+<a name="ln1134">{</a>
+<a name="ln1135">    while ( *s1 ) {</a>
+<a name="ln1136">        if ( *s1 == *s2 ||</a>
+<a name="ln1137">              __MYTOLOWER( (int)*s1 ) == __MYTOLOWER( (int)*s2 )) {</a>
+<a name="ln1138">            s1 ++;</a>
+<a name="ln1139">            s2  ++;</a>
+<a name="ln1140">        } else {</a>
+<a name="ln1141">            return __MYTOLOWER( (int)*s1 ) - __MYTOLOWER( (int)*s2 );</a>
+<a name="ln1142">        }</a>
+<a name="ln1143">    }</a>
+<a name="ln1144">    if ( *s2 )</a>
+<a name="ln1145">        return -1;</a>
+<a name="ln1146">    return 0;</a>
+<a name="ln1147">}</a>
+<a name="ln1148">/*************************************************************************/</a>
+<a name="ln1149">char *_strnset( char *s, int val, size_t length )</a>
+<a name="ln1150">{</a>
+<a name="ln1151">    char *ps = s;</a>
+<a name="ln1152">    while (length-- &amp;&amp; *ps)</a>
+<a name="ln1153">        *ps++ = (char)val;</a>
+<a name="ln1154">    return s;</a>
+<a name="ln1155">}</a>
+<a name="ln1156">/*************************************************************************/</a>
+<a name="ln1157">char *_strdup( const char *string )</a>
+<a name="ln1158">{</a>
+<a name="ln1159">    char *p = NULL;</a>
+<a name="ln1160">    if ( string ) {</a>
+<a name="ln1161">        size_t length = strlen( string );</a>
+<a name="ln1162">        p = (char *) inchi_malloc( length + 1 );</a>
+<a name="ln1163">        if ( p ) {</a>
+<a name="ln1164">            strcpy( p, string );</a>
+<a name="ln1165">        }</a>
+<a name="ln1166">    }</a>
+<a name="ln1167">    return p;</a>
+<a name="ln1168">}</a>
+<a name="ln1169">#endif</a>
+<a name="ln1170">#endif</a>
+
+</code></pre>
+<div class="balloon" rel="558"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always false: radical == 1.</p></div>
+<div class="balloon" rel="572"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v705/" target="_blank">V705</a> It is possible that 'else' block was forgotten or commented out, thus altering the program's operation logics.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

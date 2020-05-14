@@ -1,0 +1,379 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>crystal09format.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Copyright (C) 2012 Barry Moore &lt;moore0557@gmail.com&gt;</a>
+<a name="ln3"> </a>
+<a name="ln4">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln5">it under the terms of the GNU General Public License as published by</a>
+<a name="ln6">the Free Software Foundation version 2 of the License.</a>
+<a name="ln7"> </a>
+<a name="ln8">This program is distributed in the hope that it will be useful,</a>
+<a name="ln9">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln10">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln11">GNU General Public License for more details.</a>
+<a name="ln12">***********************************************************************/</a>
+<a name="ln13"> </a>
+<a name="ln14">#include &lt;algorithm&gt;</a>
+<a name="ln15">#include &lt;fstream&gt;</a>
+<a name="ln16">#include &lt;sstream&gt;</a>
+<a name="ln17">#include &lt;string&gt;</a>
+<a name="ln18">#include &lt;vector&gt;</a>
+<a name="ln19"> </a>
+<a name="ln20">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln24">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln25">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln26">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln27">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln28"> </a>
+<a name="ln29">#include &lt;openbabel/math/vector3.h&gt;</a>
+<a name="ln30"> </a>
+<a name="ln31">using namespace std;</a>
+<a name="ln32">bool isParentheses (char c)</a>
+<a name="ln33">{</a>
+<a name="ln34">  switch(c)</a>
+<a name="ln35">  {</a>
+<a name="ln36">    case '(':</a>
+<a name="ln37">    case ')':</a>
+<a name="ln38">      return true;</a>
+<a name="ln39">    default:</a>
+<a name="ln40">      return false;</a>
+<a name="ln41">  }</a>
+<a name="ln42">}</a>
+<a name="ln43"> </a>
+<a name="ln44">namespace OpenBabel</a>
+<a name="ln45">{</a>
+<a name="ln46"> </a>
+<a name="ln47">class Crystal09Format : public OBMoleculeFormat</a>
+<a name="ln48">{</a>
+<a name="ln49">public:</a>
+<a name="ln50"> </a>
+<a name="ln51">  //Register this format type ID in the constructor</a>
+<a name="ln52">  Crystal09Format()</a>
+<a name="ln53">  {</a>
+<a name="ln54">    OBConversion::RegisterFormat(&quot;c09out&quot;,this);</a>
+<a name="ln55">    OBConversion::RegisterOptionParam(&quot;b&quot;, this, 0, OBConversion::INOPTIONS);</a>
+<a name="ln56">    OBConversion::RegisterOptionParam(&quot;s&quot;, this, 0, OBConversion::INOPTIONS);</a>
+<a name="ln57">  }</a>
+<a name="ln58"> </a>
+<a name="ln59">  virtual const char* Description() //required</a>
+<a name="ln60">  {</a>
+<a name="ln61">    return</a>
+<a name="ln62">        &quot;Crystal 09 output format\n&quot;</a>
+<a name="ln63"> </a>
+<a name="ln64">        &quot;Read Options e.g. -as \n&quot;</a>
+<a name="ln65">        &quot;  s  Consider single bonds only\n&quot;</a>
+<a name="ln66">        &quot;  b  Disable bonding entirely\n&quot; ;</a>
+<a name="ln67">  }</a>
+<a name="ln68"> </a>
+<a name="ln69">  //Optional URL where the file format is specified</a>
+<a name="ln70">  virtual const char* SpecificationURL()</a>
+<a name="ln71">  {</a>
+<a name="ln72">    return &quot;http://www.crystal.unito.it/&quot;;</a>
+<a name="ln73">  }</a>
+<a name="ln74"> </a>
+<a name="ln75">  /* Flags() can return be any of the following combined by |</a>
+<a name="ln76">     or be omitted if none apply</a>
+<a name="ln77">     NOTREADABLE  READONEONLY  NOTWRITABLE  WRITEONEONLY  DEFAULTFORMAT</a>
+<a name="ln78">     READBINARY  WRITEBINARY  READXML  ZEROATOMSOK*/</a>
+<a name="ln79">  virtual unsigned int Flags()</a>
+<a name="ln80">  {</a>
+<a name="ln81">    return READONEONLY | NOTWRITABLE;</a>
+<a name="ln82">  }</a>
+<a name="ln83"> </a>
+<a name="ln84">  /// Declarations for the &quot;API&quot; interface functions</a>
+<a name="ln85">  virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln86">};</a>
+<a name="ln87"> </a>
+<a name="ln88">//Make an instance of the format class</a>
+<a name="ln89">Crystal09Format theCrystal09Format;</a>
+<a name="ln90"> </a>
+<a name="ln91">////////////////-&gt; READ FUNCTIONALITY &lt;-///////////////////////////</a>
+<a name="ln92"> </a>
+<a name="ln93">bool Crystal09Format::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln94">{</a>
+<a name="ln95">  OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln96">  istream&amp; ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln97">  pmol-&gt;BeginModify();</a>
+<a name="ln98">  pmol-&gt;SetDimension(3);</a>
+<a name="ln99"> </a>
+<a name="ln100">  int numAtoms = 0;</a>
+<a name="ln101">  int checkAtoms = 0;</a>
+<a name="ln102">  string line;</a>
+<a name="ln103">  vector &lt;string&gt; vs;</a>
+<a name="ln104">  vector &lt;vector3&gt; one;</a>
+<a name="ln105">  vector &lt;vector3&gt; two;</a>
+<a name="ln106">  vector &lt;vector3&gt; three;</a>
+<a name="ln107">  vector &lt;vector3&gt; four;</a>
+<a name="ln108">  vector &lt;vector3&gt; five;</a>
+<a name="ln109">  vector &lt;vector3&gt; six;</a>
+<a name="ln110">  vector &lt;vector &lt;vector3&gt; &gt; displacements;</a>
+<a name="ln111">  vector &lt;double&gt; xtmp;</a>
+<a name="ln112">  vector &lt;double&gt; ytmp;</a>
+<a name="ln113">  vector &lt;double&gt; ztmp;</a>
+<a name="ln114">  vector &lt;double&gt; freq;</a>
+<a name="ln115">  vector &lt;double&gt; intensity;</a>
+<a name="ln116">  int Iter = 0;</a>
+<a name="ln117">  int extraIter = 0;</a>
+<a name="ln118"> </a>
+<a name="ln119"> </a>
+<a name="ln120"> </a>
+<a name="ln121">  while(!getline(ifs,line).eof()){</a>
+<a name="ln122">    // IF Statement to find number of atoms in asymmetric unit</a>
+<a name="ln123">    if ( line.find(&quot;ATOMS IN THE ASYMMETRIC UNIT&quot;) != string::npos &amp;&amp;</a>
+<a name="ln124">         checkAtoms == 0 ){</a>
+<a name="ln125">      vector&lt;string&gt; vs;</a>
+<a name="ln126">      tokenize(vs,line);</a>
+<a name="ln127">      int numTokens = vs.size();</a>
+<a name="ln128">      checkAtoms = atoi(vs[(numTokens-1)].c_str());</a>
+<a name="ln129">    }</a>
+<a name="ln130">    // IF statement to input cartesian coordinates of primitive cell</a>
+<a name="ln131">    if ( line.find(&quot;CARTESIAN COORDINATES - PRIMITIVE CELL&quot;) != string::npos &amp;&amp;</a>
+<a name="ln132">         numAtoms == 0){</a>
+<a name="ln133">      double x,y,z;</a>
+<a name="ln134">      // Skip Three Lines after match</a>
+<a name="ln135">      getline(ifs,line);</a>
+<a name="ln136">      getline(ifs,line);</a>
+<a name="ln137">      getline(ifs,line);</a>
+<a name="ln138"> </a>
+<a name="ln139">      while (getline(ifs,line)){</a>
+<a name="ln140">        tokenize(vs,line);</a>
+<a name="ln141"> </a>
+<a name="ln142">        if ( vs.size() &lt; 6 ){</a>
+<a name="ln143">          if ( vs.size() &gt; 0 ){</a>
+<a name="ln144">            //Implies input is missing for some reason</a>
+<a name="ln145">            cerr &lt;&lt; &quot;Error with line: &quot; &lt;&lt; line &lt;&lt; endl;</a>
+<a name="ln146">            cerr &lt;&lt; &quot;Structure should be: AtomNumber AtomicNumber Element &quot;</a>
+<a name="ln147">                    &quot;XCoord YCoord ZCoord&quot; &lt;&lt; endl;</a>
+<a name="ln148">            break; //Missing Input</a>
+<a name="ln149">          }</a>
+<a name="ln150">          else{</a>
+<a name="ln151">            //Implies end of block i.e. a blank line, checked against</a>
+<a name="ln152">            //checkAtoms for equal numbers</a>
+<a name="ln153">            break;</a>
+<a name="ln154">          }</a>
+<a name="ln155">        }</a>
+<a name="ln156">        else {</a>
+<a name="ln157">          OBAtom * atom = pmol-&gt;NewAtom();</a>
+<a name="ln158">          atom-&gt;SetAtomicNum(atoi(vs[1].c_str()));</a>
+<a name="ln159">          x = strtod ((char*)vs[3].c_str(), nullptr);</a>
+<a name="ln160">          y = strtod ((char*)vs[4].c_str(), nullptr);</a>
+<a name="ln161">          z = strtod ((char*)vs[5].c_str(), nullptr);</a>
+<a name="ln162">          atom-&gt;SetVector(x,y,z);</a>
+<a name="ln163">          numAtoms++;</a>
+<a name="ln164">        }</a>
+<a name="ln165">      }</a>
+<a name="ln166">    }</a>
+<a name="ln167">    //////-&gt; Unit Cell Vector Parser-&lt;///////////</a>
+<a name="ln168">    if (line.find(&quot;DIRECT LATTICE VECTORS CARTESIAN COMPONENTS&quot;) != string::npos){</a>
+<a name="ln169">      vector3 xvec,yvec,zvec; //vector3 classes to handle lattice vectors</a>
+<a name="ln170">      getline(ifs,line); //skip one line</a>
+<a name="ln171">      </a>
+<a name="ln172">      //First Line to Parse use SetX</a>
+<a name="ln173">      getline(ifs,line);</a>
+<a name="ln174">      tokenize(vs,line);</a>
+<a name="ln175">      xvec.SetX(strtod((char*)vs[0].c_str(), nullptr));</a>
+<a name="ln176">      yvec.SetX(strtod((char*)vs[1].c_str(), nullptr));</a>
+<a name="ln177">      zvec.SetX(strtod((char*)vs[2].c_str(), nullptr));</a>
+<a name="ln178"> </a>
+<a name="ln179">      //Second Line to Parse use SetY</a>
+<a name="ln180">      getline(ifs,line);</a>
+<a name="ln181">      tokenize(vs,line);</a>
+<a name="ln182">      xvec.SetY(strtod((char*)vs[0].c_str(), nullptr));</a>
+<a name="ln183">      yvec.SetY(strtod((char*)vs[1].c_str(), nullptr));</a>
+<a name="ln184">      zvec.SetY(strtod((char*)vs[2].c_str(), nullptr));</a>
+<a name="ln185"> </a>
+<a name="ln186">      //Third Line to Parse use SetZ</a>
+<a name="ln187">      getline(ifs,line);</a>
+<a name="ln188">      tokenize(vs,line);</a>
+<a name="ln189">      xvec.SetZ(strtod((char*)vs[0].c_str(), nullptr));</a>
+<a name="ln190">      yvec.SetZ(strtod((char*)vs[1].c_str(), nullptr));</a>
+<a name="ln191">      zvec.SetZ(strtod((char*)vs[2].c_str(), nullptr));</a>
+<a name="ln192"> </a>
+<a name="ln193">      //Declare a pointer for the UnitCell Data. Set the Unit Cell for</a>
+<a name="ln194">      //OBUnitCell and OBMol</a>
+<a name="ln195">      OBUnitCell *cell = new OBUnitCell;</a>
+<a name="ln196">      cell-&gt;SetData(xvec,yvec,zvec);</a>
+<a name="ln197">      pmol-&gt;SetData(cell);</a>
+<a name="ln198"> </a>
+<a name="ln199">    }</a>
+<a name="ln200">    ///////////////-&gt; VIBRATIONAL FREQUENCIES HERE &lt;-/////////////////</a>
+<a name="ln201">    if ( line.find(&quot;MODES         EIGV          FREQUENCIES&quot;) != string::npos) {</a>
+<a name="ln202"> </a>
+<a name="ln203">      double tmp1,tmp2;</a>
+<a name="ln204"> </a>
+<a name="ln205">      getline(ifs,line);//Skip First line</a>
+<a name="ln206"> </a>
+<a name="ln207">      while (getline(ifs,line)) {</a>
+<a name="ln208">        // Strip out parenthesis, as these may or may not have whitespace</a>
+<a name="ln209">        // around them and can make the tokenize output unpredictable:</a>
+<a name="ln210">        line.erase(remove_if(line.begin(), line.end(), isParentheses), line.end());</a>
+<a name="ln211">        tokenize(vs,line);</a>
+<a name="ln212"> </a>
+<a name="ln213">        if ( vs.size() &lt; 11 ){</a>
+<a name="ln214">          if ( vs.size() &gt; 0 ){</a>
+<a name="ln215">            //Implies input is missing for some reason</a>
+<a name="ln216">            cerr &lt;&lt; &quot;Error with line: &quot; &lt;&lt; line &lt;&lt; endl;</a>
+<a name="ln217">            break; //Missing Input</a>
+<a name="ln218">          }</a>
+<a name="ln219">          else{</a>
+<a name="ln220">            break; //Implies end of block i.e. a blank line</a>
+<a name="ln221">          }</a>
+<a name="ln222">        }</a>
+<a name="ln223">        else {</a>
+<a name="ln224">          tmp1 = strtod((char*)vs[3].c_str(), nullptr);</a>
+<a name="ln225">          tmp2 = strtod((char*)vs[7].c_str(), nullptr);</a>
+<a name="ln226">          freq.push_back(tmp1);</a>
+<a name="ln227">          intensity.push_back(tmp2);</a>
+<a name="ln228">        }</a>
+<a name="ln229">      }</a>
+<a name="ln230">      //while Still in this loop we need to skip to the displacement vectors</a>
+<a name="ln231">      int numFreq = freq.size();</a>
+<a name="ln232">      if(numFreq &gt; 0){</a>
+<a name="ln233">        Iter = numFreq / 6;</a>
+<a name="ln234">        extraIter = numFreq % 6;</a>
+<a name="ln235">      }</a>
+<a name="ln236">      else{</a>
+<a name="ln237">        cerr &lt;&lt; &quot;Couldn't Parse Frequencies, Check Input&quot; &lt;&lt; endl;</a>
+<a name="ln238">        break;</a>
+<a name="ln239">      }</a>
+<a name="ln240">      //Skip two lines to get to displacements</a>
+<a name="ln241">      getline(ifs,line);</a>
+<a name="ln242">      getline(ifs,line);</a>
+<a name="ln243"> </a>
+<a name="ln244">      for(int i=0; i&lt;Iter; i++){</a>
+<a name="ln245">        getline(ifs,line);</a>
+<a name="ln246">        getline(ifs,line);</a>
+<a name="ln247">        for(int j=0; j&lt;numAtoms ;j++){</a>
+<a name="ln248">          //First we need to construct the vector3 for each frequency and</a>
+<a name="ln249">          //store vector of vector3 in displacements</a>
+<a name="ln250">          getline(ifs,line);</a>
+<a name="ln251">          tokenize(vs,line);</a>
+<a name="ln252">          for(int l=0; l&lt;6; l++){</a>
+<a name="ln253">            xtmp.push_back(strtod((char*)vs[l+4].c_str(), nullptr));</a>
+<a name="ln254">          }</a>
+<a name="ln255"> </a>
+<a name="ln256">          getline(ifs,line);</a>
+<a name="ln257">          tokenize(vs,line);</a>
+<a name="ln258">          for(int l=0; l&lt;6; l++){</a>
+<a name="ln259">            ytmp.push_back(strtod((char*)vs[l+1].c_str(), nullptr));</a>
+<a name="ln260">          }</a>
+<a name="ln261"> </a>
+<a name="ln262">          getline(ifs,line);</a>
+<a name="ln263">          tokenize(vs,line);</a>
+<a name="ln264">          for(int l=0; l&lt;6; l++){</a>
+<a name="ln265">            ztmp.push_back(strtod((char*)vs[l+1].c_str(), nullptr));</a>
+<a name="ln266">          }</a>
+<a name="ln267"> </a>
+<a name="ln268">          one.push_back(vector3(xtmp[0],ytmp[0],ztmp[0]));</a>
+<a name="ln269">          two.push_back(vector3(xtmp[1],ytmp[1],ztmp[1]));</a>
+<a name="ln270">          three.push_back(vector3(xtmp[2],ytmp[2],ztmp[2]));</a>
+<a name="ln271">          four.push_back(vector3(xtmp[3],ytmp[3],ztmp[3]));</a>
+<a name="ln272">          five.push_back(vector3(xtmp[4],ytmp[4],ztmp[4]));</a>
+<a name="ln273">          six.push_back(vector3(xtmp[5],ytmp[5],ztmp[5]));</a>
+<a name="ln274"> </a>
+<a name="ln275">          xtmp.clear();</a>
+<a name="ln276">          ytmp.clear();</a>
+<a name="ln277">          ztmp.clear();</a>
+<a name="ln278">        }</a>
+<a name="ln279"> </a>
+<a name="ln280">        displacements.push_back(one);</a>
+<a name="ln281">        displacements.push_back(two);</a>
+<a name="ln282">        displacements.push_back(three);</a>
+<a name="ln283">        displacements.push_back(four);</a>
+<a name="ln284">        displacements.push_back(five);</a>
+<a name="ln285">        displacements.push_back(six);</a>
+<a name="ln286"> </a>
+<a name="ln287">        one.clear();</a>
+<a name="ln288">        two.clear();</a>
+<a name="ln289">        three.clear();</a>
+<a name="ln290">        four.clear();</a>
+<a name="ln291">        five.clear();</a>
+<a name="ln292">        six.clear();</a>
+<a name="ln293"> </a>
+<a name="ln294">        getline(ifs,line);</a>
+<a name="ln295">      }</a>
+<a name="ln296"> </a>
+<a name="ln297">      if(extraIter &gt; 0){</a>
+<a name="ln298">        for(int l=0; l &lt; extraIter; l++){</a>
+<a name="ln299">          displacements.pop_back();</a>
+<a name="ln300">        }</a>
+<a name="ln301">      }</a>
+<a name="ln302"> </a>
+<a name="ln303">      OBVibrationData* vd = new OBVibrationData;</a>
+<a name="ln304">      vd-&gt;SetData(displacements, freq, intensity);</a>
+<a name="ln305">      pmol-&gt;SetData(vd);</a>
+<a name="ln306">    }</a>
+<a name="ln307">  }</a>
+<a name="ln308"> </a>
+<a name="ln309">  //Now We have the frequencies, intensities, and a vector of vector3 (Linear</a>
+<a name="ln310">  //Blocks of numAtoms) and we need to set the vibration data for pmol</a>
+<a name="ln311">  if ( checkAtoms != numAtoms ){</a>
+<a name="ln312">    cerr &lt;&lt; &quot;Number of Atoms Specified in Input Does Not Equal Number of &quot;</a>
+<a name="ln313">            &quot;Atoms Read From File!&quot; &lt;&lt; endl;</a>
+<a name="ln314">    pmol-&gt;EndModify();</a>
+<a name="ln315">    return false;</a>
+<a name="ln316">  }</a>
+<a name="ln317">  else{</a>
+<a name="ln318">    //Input Options</a>
+<a name="ln319">    if( !pConv-&gt;IsOption( &quot;b&quot;, OBConversion::INOPTIONS ) )</a>
+<a name="ln320">      pmol-&gt;ConnectTheDots();</a>
+<a name="ln321"> </a>
+<a name="ln322">    if( !pConv-&gt;IsOption( &quot;s&quot;, OBConversion::INOPTIONS) &amp;&amp;</a>
+<a name="ln323">        !pConv-&gt;IsOption( &quot;b&quot;, OBConversion::INOPTIONS ) ) {</a>
+<a name="ln324">      pmol-&gt;PerceiveBondOrders();</a>
+<a name="ln325">    }</a>
+<a name="ln326"> </a>
+<a name="ln327">    pmol-&gt;EndModify();</a>
+<a name="ln328">    return true;</a>
+<a name="ln329">  }</a>
+<a name="ln330">}</a>
+<a name="ln331">}</a>
+<a name="ln332"> </a>
+<a name="ln333"> </a>
+
+</code></pre>
+<div class="balloon" rel="121"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v663/" target="_blank">V663</a> Infinite loop is possible. The 'cin.eof()' condition is insufficient to break from the loop. Consider adding the 'cin.fail()' function call to the conditional expression.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

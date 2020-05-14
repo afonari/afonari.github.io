@@ -1,0 +1,763 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>fastsearchformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">fastsearchformat.cpp: Preparation and searching of fingerprint-based index files</a>
+<a name="ln3">Copyright (C) 2005-2006 by Chris Morley</a>
+<a name="ln4"> </a>
+<a name="ln5">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln6">it under the terms of the GNU General Public License as published by</a>
+<a name="ln7">the Free Software Foundation version 2 of the License.</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is distributed in the hope that it will be useful,</a>
+<a name="ln10">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln11">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln12">GNU General Public License for more details.</a>
+<a name="ln13">***********************************************************************/</a>
+<a name="ln14">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln15"> </a>
+<a name="ln16">#include &lt;sstream&gt;</a>
+<a name="ln17">#include &lt;iostream&gt;</a>
+<a name="ln18">#include &lt;fstream&gt;</a>
+<a name="ln19"> </a>
+<a name="ln20">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/fingerprint.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/op.h&gt;</a>
+<a name="ln24">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln25">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln26">#include &lt;openbabel/obutil.h&gt;</a>
+<a name="ln27">#include &lt;cstdlib&gt;</a>
+<a name="ln28">#include &lt;algorithm&gt;</a>
+<a name="ln29"> </a>
+<a name="ln30"> </a>
+<a name="ln31">using namespace std;</a>
+<a name="ln32">namespace OpenBabel {</a>
+<a name="ln33"> </a>
+<a name="ln34">/// \brief Prepares and searches of fingerprint-based index files. See FastSearch class for details</a>
+<a name="ln35">class FastSearchFormat : public OBFormat</a>
+<a name="ln36">{</a>
+<a name="ln37">public:</a>
+<a name="ln38">//Register this format type ID</a>
+<a name="ln39">FastSearchFormat() : fsi(nullptr)</a>
+<a name="ln40">{</a>
+<a name="ln41">  OBConversion::RegisterFormat(&quot;fs&quot;,this);</a>
+<a name="ln42">  //Specify the number of option taken by options</a>
+<a name="ln43">  OBConversion::RegisterOptionParam(&quot;S&quot;, this, 1, OBConversion::GENOPTIONS);</a>
+<a name="ln44">  OBConversion::RegisterOptionParam(&quot;S&quot;, this, 1, OBConversion::INOPTIONS);</a>
+<a name="ln45">  OBConversion::RegisterOptionParam(&quot;f&quot;, this, 1);</a>
+<a name="ln46">  OBConversion::RegisterOptionParam(&quot;N&quot;, this, 1);</a>
+<a name="ln47">  OBConversion::RegisterOptionParam(&quot;u&quot;, this, 0);</a>
+<a name="ln48">  OBConversion::RegisterOptionParam(&quot;t&quot;, this, 1, OBConversion::INOPTIONS);</a>
+<a name="ln49">  OBConversion::RegisterOptionParam(&quot;l&quot;, this, 1, OBConversion::INOPTIONS);</a>
+<a name="ln50">  OBConversion::RegisterOptionParam(&quot;a&quot;, this, 0, OBConversion::INOPTIONS);</a>
+<a name="ln51">  OBConversion::RegisterOptionParam(&quot;e&quot;, this, 0, OBConversion::INOPTIONS);</a>
+<a name="ln52">}</a>
+<a name="ln53"> </a>
+<a name="ln54">virtual const char* Description() //required</a>
+<a name="ln55">{ return</a>
+<a name="ln56">  &quot;Fastsearch format\n&quot;</a>
+<a name="ln57">  &quot;Fingerprint-aided substructure and similarity searching\n\n&quot;</a>
+<a name="ln58"> </a>
+<a name="ln59">  &quot;Writing to the fs format makes an index of a multi-molecule datafile::\n\n&quot;</a>
+<a name="ln60">  &quot;      obabel dataset.sdf -ofs\n\n&quot;</a>
+<a name="ln61">  &quot;This prepares an index :file:`dataset.fs` with default parameters, and is slow\n&quot;</a>
+<a name="ln62">  &quot;(~30 minutes for a 250,000 molecule file).\n\n&quot;</a>
+<a name="ln63"> </a>
+<a name="ln64">  &quot;However, when reading from the fs format searches are much faster, a few seconds,\n&quot;</a>
+<a name="ln65">  &quot;and so can be done interactively.\n\n&quot;</a>
+<a name="ln66">  &quot;The search target is the parameter of the ``-s`` option and can be\n&quot;</a>
+<a name="ln67">  &quot;slightly extended SMILES (with ``[#n]`` atoms and ``~`` bonds) or\n&quot;</a>
+<a name="ln68">  &quot;the name of a file containing a molecule.\n\n&quot;</a>
+<a name="ln69"> </a>
+<a name="ln70">  &quot;Several types of searches are possible:\n\n&quot;</a>
+<a name="ln71">  &quot;- Identical molecule::\n\n&quot;</a>
+<a name="ln72">  &quot;      obabel index.fs -O outfile.yyy -s SMILES exact\n\n&quot;</a>
+<a name="ln73">  &quot;- Substructure::\n\n&quot;</a>
+<a name="ln74">  &quot;      obabel index.fs -O outfile.yyy  -s SMILES   or\n&quot;</a>
+<a name="ln75">  &quot;      obabel index.fs -O outfile.yyy  -s filename.xxx\n\n&quot;</a>
+<a name="ln76">  &quot;  where ``xxx`` is a format id known to OpenBabel, e.g. sdf\n&quot;</a>
+<a name="ln77">  &quot;- Molecular similarity based on Tanimoto coefficient::\n\n&quot;</a>
+<a name="ln78">  &quot;      obabel index.fs -O outfile.yyy -at15  -sSMILES  # best 15 molecules\n&quot;</a>
+<a name="ln79">  &quot;      obabel index.fs -O outfile.yyy -at0.7 -sSMILES  # Tanimoto &gt;0.7\n&quot;</a>
+<a name="ln80">  &quot;      obabel index.fs -O outfile.yyy -at0.7,0.9 -sSMILES\n&quot;</a>
+<a name="ln81">  &quot;      #     Tanimoto &gt;0.7 &amp;&amp; Tanimoto &lt; 0.9\n\n&quot;</a>
+<a name="ln82">  &quot;The datafile plus the ``-ifs`` option can be used instead of the index file.\n\n&quot;</a>
+<a name="ln83">  &quot;NOTE on 32-bit systems the datafile MUST NOT be larger than 4GB.\n\n&quot;</a>
+<a name="ln84">  &quot;Dative bonds like -[N+][O-](=O) are indexed as -N(=O)(=O), and when searching\n&quot;</a>
+<a name="ln85">  &quot;the target molecule should be in the second form.\n\n&quot;</a>
+<a name="ln86"> </a>
+<a name="ln87">  &quot;.. seealso::\n\n&quot;</a>
+<a name="ln88"> </a>
+<a name="ln89">  &quot;    :ref:`fingerprints`\n\n&quot;</a>
+<a name="ln90"> </a>
+<a name="ln91">  &quot;Write Options (when making index) e.g. -xfFP3\n&quot;</a>
+<a name="ln92">  &quot; f# Fingerprint type\n&quot;</a>
+<a name="ln93">  &quot;     If not specified, the default fingerprint (currently FP2) is used\n&quot;</a>
+<a name="ln94">  &quot; N# Fold fingerprint to # bits\n&quot;</a>
+<a name="ln95">  &quot; u  Update an existing index\n\n&quot;</a>
+<a name="ln96"> </a>
+<a name="ln97">  &quot;Read Options (when searching) e.g. -at0.7\n&quot;</a>
+<a name="ln98">  &quot; t# Do similarity search:#mols or # as min Tanimoto\n&quot;</a>
+<a name="ln99">  &quot; a  Add Tanimoto coeff to title in similarity search\n&quot;</a>
+<a name="ln100">  &quot; l# Maximum number of candidates. Default&lt;4000&gt;\n&quot;</a>
+<a name="ln101">  &quot; e  Exact match\n&quot;</a>
+<a name="ln102">  &quot;     Alternative to using exact in ``-s`` parameter, see above\n&quot;</a>
+<a name="ln103">  &quot; n  No further SMARTS filtering after fingerprint phase\n\n&quot;</a>
+<a name="ln104">  ;</a>
+<a name="ln105">};</a>
+<a name="ln106"> </a>
+<a name="ln107">  virtual unsigned int Flags(){return READBINARY | READONEONLY | WRITEBINARY;};</a>
+<a name="ln108"> </a>
+<a name="ln109">  public:</a>
+<a name="ln110">    virtual bool ReadChemObject(OBConversion* pConv);</a>
+<a name="ln111">    virtual bool WriteChemObject(OBConversion* pConv);</a>
+<a name="ln112"> </a>
+<a name="ln113">  private:</a>
+<a name="ln114">    bool ObtainTarget(OBConversion* pConv, std::vector&lt;OBMol&gt;&amp; patternMols, const std::string&amp; indexname);</a>
+<a name="ln115">    void AddPattern(vector&lt;OBMol&gt;&amp; patternMols, OBMol patternMol, int idx);</a>
+<a name="ln116"> </a>
+<a name="ln117">  private:</a>
+<a name="ln118">    ///big data structure which will remain in memory after it is loaded</a>
+<a name="ln119">    //until the program ends.</a>
+<a name="ln120">    FastSearch fs;</a>
+<a name="ln121">    FastSearchIndexer* fsi;</a>
+<a name="ln122">    streampos LastSeekpos; //used during update</a>
+<a name="ln123">    OBStopwatch sw; //used when preparing index</a>
+<a name="ln124">    int nmols; //number mols in data file</a>
+<a name="ln125">  };</a>
+<a name="ln126"> </a>
+<a name="ln127">  ///////////////////////////////////////////////////////////////</a>
+<a name="ln128">  //Make an instance of the format class</a>
+<a name="ln129">  FastSearchFormat theFastSearchFormat;</a>
+<a name="ln130"> </a>
+<a name="ln131">  ///////////////////////////////////////////////////////////////</a>
+<a name="ln132">  bool FastSearchFormat::ReadChemObject(OBConversion* pConv)</a>
+<a name="ln133">  {</a>
+<a name="ln134">    //Searches index file for structural matches</a>
+<a name="ln135">    //This function is called only once per search</a>
+<a name="ln136"> </a>
+<a name="ln137">    std::string auditMsg = &quot;OpenBabel::Read fastsearch index &quot;;</a>
+<a name="ln138">    std::string description(Description());</a>
+<a name="ln139">    auditMsg += description.substr(0,description.find('\n'));</a>
+<a name="ln140">    obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln141">                          auditMsg,</a>
+<a name="ln142">                          obAuditMsg);</a>
+<a name="ln143"> </a>
+<a name="ln144">    //Derive index name</a>
+<a name="ln145">    string indexname = pConv-&gt;GetInFilename();</a>
+<a name="ln146">    string::size_type pos=indexname.find_last_of('.');</a>
+<a name="ln147">    if(pos!=string::npos)</a>
+<a name="ln148">      {</a>
+<a name="ln149">        indexname.erase(pos);</a>
+<a name="ln150">        indexname += &quot;.fs&quot;;</a>
+<a name="ln151">      }</a>
+<a name="ln152"> </a>
+<a name="ln153">    //Have to open input stream again because needs to be in binary mode</a>
+<a name="ln154">    ifstream ifs;</a>
+<a name="ln155">    stringstream errorMsg;</a>
+<a name="ln156">    if(!indexname.empty())</a>
+<a name="ln157">      ifs.open(indexname.c_str(),ios::binary);</a>
+<a name="ln158">    if(!ifs)</a>
+<a name="ln159">      {</a>
+<a name="ln160">        errorMsg &lt;&lt; &quot;Couldn't open &quot; &lt;&lt; indexname &lt;&lt; endl;</a>
+<a name="ln161">        obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obError);</a>
+<a name="ln162">        return false;</a>
+<a name="ln163">      }</a>
+<a name="ln164"> </a>
+<a name="ln165">    string datafilename = fs.ReadIndex(&amp;ifs);</a>
+<a name="ln166">    if(datafilename.empty())</a>
+<a name="ln167">      {</a>
+<a name="ln168">        errorMsg &lt;&lt; &quot;Difficulty reading from index &quot; &lt;&lt; indexname &lt;&lt; endl;</a>
+<a name="ln169">        obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obError);</a>
+<a name="ln170">        return false;</a>
+<a name="ln171">      }</a>
+<a name="ln172"> </a>
+<a name="ln173">    vector&lt;OBMol&gt; patternMols;</a>
+<a name="ln174">    if(!ObtainTarget(pConv, patternMols, indexname))</a>
+<a name="ln175">      return false;</a>
+<a name="ln176"> </a>
+<a name="ln177">    bool exactmatch = pConv-&gt;IsOption(&quot;e&quot;, OBConversion::INOPTIONS) != nullptr; // -ae option</a>
+<a name="ln178"> </a>
+<a name="ln179">    //Open the datafile and put it in pConv</a>
+<a name="ln180">    //datafile name derived from index file probably won't have a file path</a>
+<a name="ln181">    //but indexname may. Derive a full datafile name</a>
+<a name="ln182">    string path;</a>
+<a name="ln183">    pos = indexname.find_last_of(&quot;/\\&quot;);</a>
+<a name="ln184">    if(pos==string::npos)</a>
+<a name="ln185">      path = datafilename;</a>
+<a name="ln186">    else</a>
+<a name="ln187">      path = indexname.substr(0,pos+1) + datafilename;</a>
+<a name="ln188"> </a>
+<a name="ln189">    ifstream datastream(path.c_str());</a>
+<a name="ln190">    if(!datastream)</a>
+<a name="ln191">      {</a>
+<a name="ln192">        errorMsg &lt;&lt; &quot;Difficulty opening &quot; &lt;&lt; path &lt;&lt; endl;</a>
+<a name="ln193">        obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obError);</a>
+<a name="ln194">        return false;</a>
+<a name="ln195">      }</a>
+<a name="ln196">    pConv-&gt;SetInStream(&amp;datastream);</a>
+<a name="ln197"> </a>
+<a name="ln198">    //Input format is currently fs; set it appropriately</a>
+<a name="ln199">    bool isgzip = false;</a>
+<a name="ln200">    if(!pConv-&gt;SetInAndOutFormats(pConv-&gt;FormatFromExt(datafilename.c_str(), isgzip), pConv-&gt;GetOutFormat()))</a>
+<a name="ln201">      return false;</a>
+<a name="ln202"> </a>
+<a name="ln203">    if (isgzip)</a>
+<a name="ln204">      {</a>
+<a name="ln205">	errorMsg &lt;&lt; &quot;Index datafile must not be in gzip format: &quot; &lt;&lt; path &lt;&lt; endl;</a>
+<a name="ln206">        obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obError);</a>
+<a name="ln207">        return false;</a>
+<a name="ln208">      }</a>
+<a name="ln209">    // If target has dative bonds like -[N+](=O)[O-] convert it to the uncharged form</a>
+<a name="ln210">    // (-N(=O)=O and add uncharged form to vector of mols which are sent to</a>
+<a name="ln211">    // the -s (SMARTS)filter.</a>
+<a name="ln212">    // Also check whether the target has dative bonds in the uncharged form and supply</a>
+<a name="ln213">    // the charged form to the -s filter.</a>
+<a name="ln214">    // Together with the automatic conversion to the uncharged form when the fs index is made,</a>
+<a name="ln215">    // this ensures that both forms are found however they occur in the datafile or the taget.</a>
+<a name="ln216">    vector&lt;OBBase*&gt; extraSMARTSMols;</a>
+<a name="ln217">    vector&lt;OBMol&gt;extraUnchargedMols;</a>
+<a name="ln218">    for(unsigned i=0;i&lt;patternMols.size();++i)</a>
+<a name="ln219">    {</a>
+<a name="ln220">      if(patternMols[i].ConvertDativeBonds())</a>
+<a name="ln221">        extraSMARTSMols.push_back(&amp;patternMols[i]);</a>
+<a name="ln222">      else </a>
+<a name="ln223">      {</a>
+<a name="ln224">        // If target has uncharged dative bonds, still use it for fastsearching,</a>
+<a name="ln225">        // but add the charged form for -s filter.</a>
+<a name="ln226">        extraUnchargedMols.push_back(patternMols[i]);</a>
+<a name="ln227">        if(extraUnchargedMols.back().MakeDativeBonds())</a>
+<a name="ln228">          extraSMARTSMols.push_back(&amp;extraUnchargedMols.back());</a>
+<a name="ln229">      }</a>
+<a name="ln230">    }</a>
+<a name="ln231">    OBOp* sFilter = OBOp::FindType(&quot;s&quot;);</a>
+<a name="ln232">    if(sFilter)</a>
+<a name="ln233">      sFilter-&gt;ProcessVec(extraSMARTSMols);</a>
+<a name="ln234"> </a>
+<a name="ln235">    //Now do searching</a>
+<a name="ln236">    const char* p = pConv-&gt;IsOption(&quot;t&quot;,OBConversion::INOPTIONS);</a>
+<a name="ln237">    if(p)</a>
+<a name="ln238">      {</a>
+<a name="ln239">        //Do a similarity search</a>
+<a name="ln240">        multimap&lt;double, unsigned long&gt; SeekposMap;</a>
+<a name="ln241">        string txt=p;</a>
+<a name="ln242">        if(txt.find('.')==string::npos)</a>
+<a name="ln243">          {</a>
+<a name="ln244">            //Finds n molecules with largest Tanimoto</a>
+<a name="ln245">            int n = atoi(p);</a>
+<a name="ln246">            fs.FindSimilar(&amp;patternMols[0], SeekposMap, n);</a>
+<a name="ln247">          }</a>
+<a name="ln248">        else</a>
+<a name="ln249">          {</a>
+<a name="ln250">            //Finds molecules with Tanimoto &gt; MinTani</a>
+<a name="ln251">            double MaxTani = 1.1;</a>
+<a name="ln252">            size_t pos = txt.find(',');</a>
+<a name="ln253">            if( pos != string::npos ) {</a>
+<a name="ln254">              MaxTani = atof( txt.substr( pos + 1 ).c_str() );</a>
+<a name="ln255">            }</a>
+<a name="ln256">            double MinTani = atof( txt.substr( 0, pos ).c_str() );</a>
+<a name="ln257">            fs.FindSimilar(&amp;patternMols[0], SeekposMap, MinTani, MaxTani);</a>
+<a name="ln258">          }</a>
+<a name="ln259"> </a>
+<a name="ln260">        //Don't want to filter through SMARTS filter</a>
+<a name="ln261">        pConv-&gt;RemoveOption(&quot;s&quot;, OBConversion::GENOPTIONS);</a>
+<a name="ln262">        //also because op names are case independent</a>
+<a name="ln263">        pConv-&gt;RemoveOption(&quot;S&quot;, OBConversion::GENOPTIONS);</a>
+<a name="ln264"> </a>
+<a name="ln265">        multimap&lt;double, unsigned long&gt;::reverse_iterator itr;</a>
+<a name="ln266">        for(itr=SeekposMap.rbegin();itr!=SeekposMap.rend();++itr)</a>
+<a name="ln267">          {</a>
+<a name="ln268">            datastream.seekg(itr-&gt;second);</a>
+<a name="ln269"> </a>
+<a name="ln270">            if(pConv-&gt;IsOption(&quot;a&quot;, OBConversion::INOPTIONS))</a>
+<a name="ln271">              {</a>
+<a name="ln272">                //Adds Tanimoto coeff to title</a>
+<a name="ln273">                //First remove any previous value</a>
+<a name="ln274">                pConv-&gt;RemoveOption(&quot;addtotitle&quot;, OBConversion::GENOPTIONS);</a>
+<a name="ln275">                stringstream ss;</a>
+<a name="ln276">                ss &lt;&lt; &quot; &quot; &lt;&lt; itr-&gt;first;</a>
+<a name="ln277">                pConv-&gt;AddOption(&quot;addtotitle&quot;,OBConversion::GENOPTIONS, ss.str().c_str());</a>
+<a name="ln278"> </a>
+<a name="ln279">              }</a>
+<a name="ln280">            pConv-&gt;SetOneObjectOnly();</a>
+<a name="ln281">            if(itr != --SeekposMap.rend())</a>
+<a name="ln282">              pConv-&gt;SetMoreFilesToCome();//so that not seen as last on output</a>
+<a name="ln283">            pConv-&gt;Convert(nullptr, nullptr);</a>
+<a name="ln284">          }</a>
+<a name="ln285">      }</a>
+<a name="ln286"> </a>
+<a name="ln287">    else</a>
+<a name="ln288">    {</a>
+<a name="ln289">      //Structure search</a>
+<a name="ln290">      int MaxCandidates = 4000;</a>
+<a name="ln291">      p = pConv-&gt;IsOption(&quot;l&quot;,OBConversion::INOPTIONS);</a>
+<a name="ln292">      if(p &amp;&amp; atoi(p))</a>
+<a name="ln293">        MaxCandidates = atoi(p);</a>
+<a name="ln294"> </a>
+<a name="ln295">      vector&lt;unsigned long&gt; SeekPositions;</a>
+<a name="ln296"> </a>
+<a name="ln297">      if(exactmatch)</a>
+<a name="ln298">      {</a>
+<a name="ln299">        //Find mols where all fingerprint bits are the same as the target</a>
+<a name="ln300">        fs.FindMatch(&amp;patternMols[0], SeekPositions, MaxCandidates);</a>
+<a name="ln301">        // ensure that SMARTS filter in transform.cpp looks only for an exact match</a>
+<a name="ln302">        // by setting an option with the number of heavy atoms in the pattern mol included.</a>
+<a name="ln303">        stringstream ss;</a>
+<a name="ln304">        ss &lt;&lt; patternMols[0].NumHvyAtoms();</a>
+<a name="ln305">        pConv-&gt;AddOption(&quot;exactmatch&quot;, OBConversion::GENOPTIONS, ss.str().c_str());</a>
+<a name="ln306">      }</a>
+<a name="ln307"> </a>
+<a name="ln308">      else</a>
+<a name="ln309">      {</a>
+<a name="ln310">        //Do a substructure search for each target</a>
+<a name="ln311">        vector&lt;OBMol&gt;::iterator iter;</a>
+<a name="ln312">        for(iter=patternMols.begin();iter!=patternMols.end();++iter)</a>
+<a name="ln313">          fs.Find(&amp;*iter, SeekPositions, MaxCandidates);</a>
+<a name="ln314">        clog &lt;&lt; SeekPositions.size() &lt;&lt; &quot; candidates from fingerprint search phase&quot; &lt;&lt; endl;</a>
+<a name="ln315">      }</a>
+<a name="ln316"> </a>
+<a name="ln317">      vector&lt;unsigned long&gt;::iterator seekitr,</a>
+<a name="ln318">          begin = SeekPositions.begin(), end = SeekPositions.end();</a>
+<a name="ln319"> </a>
+<a name="ln320">      if(patternMols.size()&gt;1)//only sort and eliminate duplicates if necessary</a>
+<a name="ln321">      {</a>
+<a name="ln322">        sort(begin, end);</a>
+<a name="ln323">        end = unique(begin, end); //removed duplicates are after new end</a>
+<a name="ln324">      }</a>
+<a name="ln325"> </a>
+<a name="ln326">      //Output the candidate molecules, filtering through s filter, unless it was not requested</a>
+<a name="ln327">      if(pConv-&gt;IsOption(&quot;n&quot;, OBConversion::INOPTIONS) )</a>
+<a name="ln328">        pConv-&gt;RemoveOption(&quot;s&quot;,OBConversion::GENOPTIONS);</a>
+<a name="ln329"> </a>
+<a name="ln330">      pConv-&gt;SetLast(false);</a>
+<a name="ln331">      for(seekitr=begin; seekitr!=end; ++seekitr)</a>
+<a name="ln332">      {</a>
+<a name="ln333">        datastream.seekg(*seekitr);</a>
+<a name="ln334">        if(!pConv-&gt;GetInFormat()-&gt;ReadChemObject(pConv))</a>
+<a name="ln335">          return false;</a>
+<a name="ln336">        pConv-&gt;SetFirstInput(false); //needed for OpSort</a>
+<a name="ln337">      }</a>
+<a name="ln338">    }</a>
+<a name="ln339">    return false;	//To finish</a>
+<a name="ln340">  }</a>
+<a name="ln341"> </a>
+<a name="ln342">  /////////////////////////////////////////////////////</a>
+<a name="ln343">  bool FastSearchFormat::WriteChemObject(OBConversion* pConv)</a>
+<a name="ln344">  {</a>
+<a name="ln345">    //Prepares or updates an index file. Called for each molecule indexed</a>
+<a name="ln346">    bool update = pConv-&gt;IsOption(&quot;u&quot;) != nullptr;</a>
+<a name="ln347"> </a>
+<a name="ln348">    static ostream* pOs;</a>
+<a name="ln349">    static bool NewOstreamUsed;</a>
+<a name="ln350">    if (fsi == nullptr)</a>
+<a name="ln351">      {</a>
+<a name="ln352">	// Warn that compressed files cannot be used. It's hard to seek</a>
+<a name="ln353">	// inside of a gzip file.</a>
+<a name="ln354">	if(pConv-&gt;GetInGzipped())</a>
+<a name="ln355">	  {</a>
+<a name="ln356">	    obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln357">	      &quot;Fastindex search requires an uncompressed input file so it can quickly seek to a record.&quot;,</a>
+<a name="ln358">	      obWarning);</a>
+<a name="ln359">	  }</a>
+<a name="ln360">	</a>
+<a name="ln361">        //First pass sets up FastSearchIndexer object</a>
+<a name="ln362">        pOs = pConv-&gt;GetOutStream();// with named index it is already open</a>
+<a name="ln363">        NewOstreamUsed=false;</a>
+<a name="ln364">        string mes(&quot;prepare an&quot;);</a>
+<a name="ln365">        if(update)</a>
+<a name="ln366">          mes = &quot;update the&quot;;</a>
+<a name="ln367">        clog &lt;&lt; &quot;This will &quot; &lt;&lt; mes &lt;&lt; &quot; index of &quot; &lt;&lt; pConv-&gt;GetInFilename()</a>
+<a name="ln368">             &lt;&lt;  &quot; and may take some time...&quot; &lt;&lt; flush;</a>
+<a name="ln369"> </a>
+<a name="ln370">        if(!pConv-&gt;IsLastFile())</a>
+<a name="ln371">        {</a>
+<a name="ln372">          obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln373">            &quot;There should not be multiple input files. A .fs file is an index of a single datafile.&quot;,</a>
+<a name="ln374">            obError);</a>
+<a name="ln375">          return false;</a>
+<a name="ln376">        }</a>
+<a name="ln377"> </a>
+<a name="ln378">        std::string auditMsg = &quot;OpenBabel::Write fastsearch index &quot;;</a>
+<a name="ln379">        std::string description(Description());</a>
+<a name="ln380">        auditMsg += description.substr( 0, description.find('\n') );</a>
+<a name="ln381">        obErrorLog.ThrowError(__FUNCTION__,auditMsg,obAuditMsg);</a>
+<a name="ln382"> </a>
+<a name="ln383">        FptIndex* pidx = nullptr; //used with update</a>
+<a name="ln384"> </a>
+<a name="ln385">        //if(pOs==&amp;cout) did not work with GUI</a>
+<a name="ln386">        if(!dynamic_cast&lt;ofstream*&gt;(pOs))</a>
+<a name="ln387">          {</a>
+<a name="ln388">            //No index filename specified</a>
+<a name="ln389">            //Derive index name from datafile name</a>
+<a name="ln390">            string indexname=pConv-&gt;GetInFilename();</a>
+<a name="ln391">            string::size_type pos=indexname.find_last_of('.');</a>
+<a name="ln392">            if(pos!=string::npos)</a>
+<a name="ln393">              indexname.erase(pos);</a>
+<a name="ln394">            indexname += &quot;.fs&quot;;</a>
+<a name="ln395"> </a>
+<a name="ln396">            bool idxok=true;</a>
+<a name="ln397">            if(update)</a>
+<a name="ln398">              {</a>
+<a name="ln399">                LastSeekpos = 0;</a>
+<a name="ln400"> </a>
+<a name="ln401">                //Read in existing index</a>
+<a name="ln402">                idxok=false;</a>
+<a name="ln403">                ifstream ifs(indexname.c_str(),ifstream::binary);</a>
+<a name="ln404">                if(ifs.good())</a>
+<a name="ln405">                  {</a>
+<a name="ln406">                    pidx = new FptIndex;</a>
+<a name="ln407">                    idxok = pidx-&gt;Read(&amp;ifs);</a>
+<a name="ln408">                  }</a>
+<a name="ln409">              }//ifs closed here</a>
+<a name="ln410"> </a>
+<a name="ln411">            pOs = new ofstream(indexname.c_str(),ofstream::binary);</a>
+<a name="ln412"> </a>
+<a name="ln413">            if(!pOs-&gt;good() || !idxok)</a>
+<a name="ln414">              {</a>
+<a name="ln415">                stringstream errorMsg;</a>
+<a name="ln416">                errorMsg &lt;&lt; &quot;Trouble opening or reading &quot; &lt;&lt; indexname &lt;&lt; endl;</a>
+<a name="ln417">                obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obError);</a>
+<a name="ln418">                static_cast&lt;ofstream *&gt;(pOs)-&gt;close(); // close the file before quitting</a>
+<a name="ln419">                delete pOs;</a>
+<a name="ln420">                delete pidx; // remove possible memory leak</a>
+<a name="ln421">                return false;</a>
+<a name="ln422">              }</a>
+<a name="ln423">            NewOstreamUsed=true;</a>
+<a name="ln424">          }</a>
+<a name="ln425">        else // not cout</a>
+<a name="ln426">          {</a>
+<a name="ln427">            if(update)</a>
+<a name="ln428">              {</a>
+<a name="ln429">                obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln430">                  &quot;Currently, updating is only done on index files that&quot;</a>
+<a name="ln431">                  &quot;have the same name as the datafile.\n&quot;</a>
+<a name="ln432">                  &quot;Do not specify an output file; use the form:\n&quot;</a>
+<a name="ln433">	                &quot;   babel datafile.xxx -ofs -xu&quot;, obError);</a>
+<a name="ln434">                return false;</a>
+<a name="ln435">              }</a>
+<a name="ln436">          }</a>
+<a name="ln437"> </a>
+<a name="ln438">        int nbits = 0;</a>
+<a name="ln439">        const char* p = pConv-&gt;IsOption(&quot;N&quot;);</a>
+<a name="ln440">        if(p)</a>
+<a name="ln441">          nbits = atoi(p);</a>
+<a name="ln442"> </a>
+<a name="ln443">        string fpid; //fingerprint type</a>
+<a name="ln444">        p=pConv-&gt;IsOption(&quot;f&quot;);</a>
+<a name="ln445">        if(p)</a>
+<a name="ln446">          fpid=p;</a>
+<a name="ln447"> </a>
+<a name="ln448">        //Prepare name without path</a>
+<a name="ln449">        string datafilename = pConv-&gt;GetInFilename();</a>
+<a name="ln450">        if(datafilename.empty())</a>
+<a name="ln451">          {</a>
+<a name="ln452">            obErrorLog.ThrowError(__FUNCTION__, &quot;No datafile!&quot;, obError);</a>
+<a name="ln453">            delete pidx;</a>
+<a name="ln454">            return false;</a>
+<a name="ln455">          }</a>
+<a name="ln456">        string::size_type pos = datafilename.find_last_of(&quot;/\\&quot;);</a>
+<a name="ln457">        if(pos!=string::npos)</a>
+<a name="ln458">          datafilename=datafilename.substr(pos+1);</a>
+<a name="ln459"> </a>
+<a name="ln460">        nmols = pConv-&gt;NumInputObjects();</a>
+<a name="ln461">        if(nmols&gt;0)</a>
+<a name="ln462">          clog &lt;&lt; &quot;\nIt contains &quot; &lt;&lt; nmols &lt;&lt; &quot; molecules&quot; &lt;&lt; flush;</a>
+<a name="ln463">        if(nmols&gt;500000)</a>
+<a name="ln464">        {</a>
+<a name="ln465">          istream* is = pConv-&gt;GetInStream();</a>
+<a name="ln466">          streampos origpos = is-&gt;tellg();</a>
+<a name="ln467">          is-&gt;seekg(0,ios_base::end);</a>
+<a name="ln468">          long long filesize = is-&gt;tellg();</a>
+<a name="ln469">          if(sizeof(void*) &lt; 8 &amp;&amp; filesize &gt; 4294967295u)</a>
+<a name="ln470">          {</a>
+<a name="ln471">            obErrorLog.ThrowError(__FUNCTION__, &quot;The datafile must not be larger than 4GB&quot;, obError);</a>
+<a name="ln472">            return false;</a>
+<a name="ln473">          }</a>
+<a name="ln474">          is-&gt;seekg(origpos);</a>
+<a name="ln475">        }</a>
+<a name="ln476">        sw.Start();</a>
+<a name="ln477"> </a>
+<a name="ln478">        if(update)</a>
+<a name="ln479">          {</a>
+<a name="ln480">            fsi = new FastSearchIndexer(pidx, pOs, nmols);//using existing index</a>
+<a name="ln481"> </a>
+<a name="ln482">            //Seek to position in datafile of last of old objects</a>
+<a name="ln483">            LastSeekpos = *(pidx-&gt;seekdata.end()-1);</a>
+<a name="ln484">            pConv-&gt;GetInStream()-&gt;seekg(LastSeekpos);</a>
+<a name="ln485">          }</a>
+<a name="ln486">        else</a>
+<a name="ln487">          fsi = new FastSearchIndexer(datafilename, pOs, fpid, nbits, nmols);</a>
+<a name="ln488"> </a>
+<a name="ln489">        obErrorLog.StopLogging();</a>
+<a name="ln490">      }</a>
+<a name="ln491"> </a>
+<a name="ln492">    //All passes provide an object for indexing</a>
+<a name="ln493">    OBBase* pOb = pConv-&gt;GetChemObject();</a>
+<a name="ln494">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt; (pOb);</a>
+<a name="ln495">    if(pmol)</a>
+<a name="ln496">      pmol-&gt;ConvertDativeBonds();//use standard form for dative bonds</a>
+<a name="ln497"> </a>
+<a name="ln498">    streampos seekpos = pConv-&gt;GetInPos();</a>
+<a name="ln499">    if(!update || seekpos&gt;LastSeekpos)</a>
+<a name="ln500">    {</a>
+<a name="ln501">      fsi-&gt;Add(pOb, seekpos );</a>
+<a name="ln502">      if(pConv-&gt;GetOutputIndex()==400 &amp;&amp; nmols&gt;1000)</a>
+<a name="ln503">      {</a>
+<a name="ln504">        clog &lt;&lt; &quot; Estimated completion time &quot;;</a>
+<a name="ln505">        double secs = sw.Elapsed() * nmols / 400; //</a>
+<a name="ln506">        if(secs&gt;150)</a>
+<a name="ln507">          clog &lt;&lt; secs/60 &lt;&lt; &quot; minutes&quot; &lt;&lt; endl;</a>
+<a name="ln508">    else</a>
+<a name="ln509">          clog &lt;&lt; secs &lt;&lt; &quot; seconds&quot; &lt;&lt; endl;</a>
+<a name="ln510">      }</a>
+<a name="ln511">    }</a>
+<a name="ln512">    else</a>
+<a name="ln513">      //Don't index old objects during update. Don't increment pConv-&gt;Index.</a>
+<a name="ln514">      pConv-&gt;SetOutputIndex(pConv-&gt;GetOutputIndex()-1);</a>
+<a name="ln515"> </a>
+<a name="ln516">    if(pConv-&gt;IsLast())</a>
+<a name="ln517">      {</a>
+<a name="ln518">        //Last pass</a>
+<a name="ln519">        delete fsi; //saves index file</a>
+<a name="ln520">        if(NewOstreamUsed)</a>
+<a name="ln521">          delete pOs;</a>
+<a name="ln522"> </a>
+<a name="ln523">        //return to starting conditions</a>
+<a name="ln524">        fsi=nullptr;</a>
+<a name="ln525"> </a>
+<a name="ln526">        obErrorLog.StartLogging();</a>
+<a name="ln527"> </a>
+<a name="ln528">        double secs = sw.Elapsed();</a>
+<a name="ln529">        if(secs&gt;150)</a>
+<a name="ln530">          clog &lt;&lt; &quot;\n It took &quot; &lt;&lt; secs/60 &lt;&lt; &quot; minutes&quot; &lt;&lt; endl;</a>
+<a name="ln531">        else</a>
+<a name="ln532">          clog &lt;&lt; &quot;\n It took &quot; &lt;&lt; secs &lt;&lt; &quot; seconds&quot; &lt;&lt; endl;</a>
+<a name="ln533">      }</a>
+<a name="ln534">    delete pOb;</a>
+<a name="ln535">    return true;</a>
+<a name="ln536">  }</a>
+<a name="ln537"> </a>
+<a name="ln538">///////////////////////////////////////////////////////////////</a>
+<a name="ln539">  bool FastSearchFormat::ObtainTarget(OBConversion* pConv, vector&lt;OBMol&gt;&amp; patternMols, const string&amp; indexname)</a>
+<a name="ln540">  {</a>
+<a name="ln541">    //Obtains an OBMol from:</a>
+<a name="ln542">    // the filename in the -s option or</a>
+<a name="ln543">    // the SMARTS string in the -s option or</a>
+<a name="ln544">    // by converting the file in the -S or -aS options (deprecated).</a>
+<a name="ln545">    // If there is no -s -S or -aS option, information on the index file is displayed.</a>
+<a name="ln546"> </a>
+<a name="ln547">    OBMol patternMol;</a>
+<a name="ln548">    patternMol.SetIsPatternStructure();</a>
+<a name="ln549"> </a>
+<a name="ln550">    const char* p = pConv-&gt;IsOption(&quot;s&quot;,OBConversion::GENOPTIONS);</a>
+<a name="ln551"> </a>
+<a name="ln552">    bool OldSOption=false;</a>
+<a name="ln553">    //If no -s option, make OBMol from file in -S option or -aS option (both deprecated)</a>
+<a name="ln554">    if(!p)</a>
+<a name="ln555">    {</a>
+<a name="ln556">      p = pConv-&gt;IsOption(&quot;S&quot;,OBConversion::GENOPTIONS);</a>
+<a name="ln557">      if(!p)</a>
+<a name="ln558">        p = pConv-&gt;IsOption(&quot;S&quot;,OBConversion::INOPTIONS);//for GUI mainly</a>
+<a name="ln559">      OldSOption = true;</a>
+<a name="ln560">    }</a>
+<a name="ln561">    if(p)</a>
+<a name="ln562">    {</a>
+<a name="ln563">      vector&lt;string&gt; vec;</a>
+<a name="ln564">      tokenize(vec, p);</a>
+<a name="ln565"> </a>
+<a name="ln566">      if(vec.size() == 0)</a>
+<a name="ln567">      {</a>
+<a name="ln568">    	  obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln569">    			  &quot;Missing argument for -s/-S&quot;, obError);</a>
+<a name="ln570">          return false;</a>
+<a name="ln571">      }</a>
+<a name="ln572"> </a>
+<a name="ln573">      //ignore leading ~ (not relevant to fastsearch)</a>
+<a name="ln574">      if(vec[0][0]=='~')</a>
+<a name="ln575">        vec[0].erase(0,1);</a>
+<a name="ln576"> </a>
+<a name="ln577">      if(vec.size()&gt;1 &amp;&amp; vec[1]==&quot;exact&quot;)</a>
+<a name="ln578">        pConv-&gt;AddOption(&quot;e&quot;, OBConversion::INOPTIONS);</a>
+<a name="ln579"> </a>
+<a name="ln580">      OBConversion patternConv;</a>
+<a name="ln581">      OBFormat* pFormat;</a>
+<a name="ln582">      //Interpret as a filename if possible</a>
+<a name="ln583">      string&amp; txt =vec [0];</a>
+<a name="ln584">      if( txt.empty() ||</a>
+<a name="ln585">          txt.find('.')==string::npos ||</a>
+<a name="ln586">          !(pFormat = patternConv.FormatFromExt(txt.c_str())) ||</a>
+<a name="ln587">          !patternConv.SetInFormat(pFormat) ||</a>
+<a name="ln588">          !patternConv.ReadFile(&amp;patternMol, txt) ||</a>
+<a name="ln589">          patternMol.NumAtoms()==0)</a>
+<a name="ln590">        //if false, have a valid patternMol from a file</a>
+<a name="ln591">      {</a>
+<a name="ln592">        //is SMARTS/SMILES</a>
+<a name="ln593">        //Replace e.g. [#6] in SMARTS by C so that it can be converted as SMILES</a>
+<a name="ln594">        //for the fingerprint phase, but allow more generality in the SMARTS phase.</a>
+<a name="ln595">        for(;;)</a>
+<a name="ln596">        {</a>
+<a name="ln597">          string::size_type pos1, pos2;</a>
+<a name="ln598">          pos1 = txt.find(&quot;[#&quot;);</a>
+<a name="ln599">          if(pos1==string::npos)</a>
+<a name="ln600">            break;</a>
+<a name="ln601">          pos2 = txt.find(']');</a>
+<a name="ln602">          int atno;</a>
+<a name="ln603">          if(pos2!=string::npos &amp;&amp;  (atno = atoi(txt.substr(pos1+2, pos2-pos1-2).c_str())) &amp;&amp; atno&gt;0)</a>
+<a name="ln604">            txt.replace(pos1, pos2-pos1+1, OBElements::GetSymbol(atno));</a>
+<a name="ln605">          else</a>
+<a name="ln606">          {</a>
+<a name="ln607">            obErrorLog.ThrowError(__FUNCTION__,&quot;Ill-formed [#n] atom in SMARTS&quot;, obError);</a>
+<a name="ln608">            return false;</a>
+<a name="ln609">          }</a>
+<a name="ln610">        }</a>
+<a name="ln611"> </a>
+<a name="ln612">        bool hasTildeBond;</a>
+<a name="ln613">        if( (hasTildeBond = (txt.find('~')!=string::npos)) ) // extra parens to indicate truth value</a>
+<a name="ln614">        {</a>
+<a name="ln615">          //Find ~ bonds and make versions of query molecule with a single and aromatic bonds</a>
+<a name="ln616">          //To avoid having to parse the SMILES here, replace ~ by $ (quadruple bond)</a>
+<a name="ln617">          //and then replace this in patternMol. Check first that there are no $ already</a>
+<a name="ln618">          //Sadly, isocynanides may have $ bonds.</a>
+<a name="ln619">          if(txt.find('$')!=string::npos)</a>
+<a name="ln620">          {</a>
+<a name="ln621">            obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln622">              &quot;Cannot use ~ bonds in patterns with $ (quadruple) bonds.)&quot;, obError);</a>
+<a name="ln623">            return false;</a>
+<a name="ln624">          }</a>
+<a name="ln625">          replace(txt.begin(),txt.end(), '~' , '$');</a>
+<a name="ln626">        }</a>
+<a name="ln627"> </a>
+<a name="ln628">        //read as standard SMILES</a>
+<a name="ln629">        patternConv.SetInFormat(&quot;smi&quot;);</a>
+<a name="ln630">        if(!patternConv.ReadString(&amp;patternMol, vec[0]))</a>
+<a name="ln631">        {</a>
+<a name="ln632">          obErrorLog.ThrowError(__FUNCTION__,&quot;Cannot read the SMILES string&quot;,obError);</a>
+<a name="ln633">          return false;</a>
+<a name="ln634">        }</a>
+<a name="ln635">        if(hasTildeBond)</a>
+<a name="ln636">        {</a>
+<a name="ln637">          AddPattern(patternMols, patternMol, 0); //recursively add all combinations of tilde bond values</a>
+<a name="ln638">          return true;</a>
+<a name="ln639">        }</a>
+<a name="ln640">      }</a>
+<a name="ln641">      else</a>
+<a name="ln642">      {</a>
+<a name="ln643">        // target(s) are in a file</a>
+<a name="ln644">        patternMols.push_back(patternMol);</a>
+<a name="ln645">        while(patternConv.Read(&amp;patternMol))</a>
+<a name="ln646">          patternMols.push_back(patternMol);</a>
+<a name="ln647">        return true;</a>
+<a name="ln648">      }</a>
+<a name="ln649">    }</a>
+<a name="ln650"> </a>
+<a name="ln651">    if(OldSOption) //only when using deprecated -S and -aS options</a>
+<a name="ln652">    {</a>
+<a name="ln653">      //make -s option for later SMARTS test</a>
+<a name="ln654">      OBConversion conv;</a>
+<a name="ln655">      if(conv.SetOutFormat(&quot;smi&quot;))</a>
+<a name="ln656">      {</a>
+<a name="ln657">        string optiontext = conv.WriteString(&amp;patternMol, true);</a>
+<a name="ln658">        pConv-&gt;AddOption(&quot;s&quot;, OBConversion::GENOPTIONS, optiontext.c_str());</a>
+<a name="ln659">      }</a>
+<a name="ln660">    }</a>
+<a name="ln661"> </a>
+<a name="ln662">    if(!p)</a>
+<a name="ln663">    {</a>
+<a name="ln664">      //neither -s or -S options provided. Output info rather than doing search</a>
+<a name="ln665">      const FptIndexHeader&amp; header = fs.GetIndexHeader();</a>
+<a name="ln666">      string id(header.fpid);</a>
+<a name="ln667">      if(id.empty())</a>
+<a name="ln668">        id = &quot;default&quot;;</a>
+<a name="ln669">      clog &lt;&lt; indexname &lt;&lt; &quot; is an index of\n &quot; &lt;&lt; header.datafilename</a>
+<a name="ln670">           &lt;&lt; &quot;.\n It contains &quot; &lt;&lt; header.nEntries</a>
+<a name="ln671">           &lt;&lt; &quot; molecules. The fingerprint type is &quot; &lt;&lt; id &lt;&lt; &quot; with &quot;</a>
+<a name="ln672">           &lt;&lt; OBFingerprint::Getbitsperint() * header.words &lt;&lt; &quot; bits.\n&quot;</a>
+<a name="ln673">           &lt;&lt; &quot;Typical usage for a substructure search:\n&quot;</a>
+<a name="ln674">           &lt;&lt; &quot;obabel indexfile.fs -osmi -sSMILES\n&quot;</a>
+<a name="ln675">           &lt;&lt; &quot;(-s option in GUI is 'Convert only if match SMARTS or mols in file')&quot; &lt;&lt; endl;</a>
+<a name="ln676">      return false;</a>
+<a name="ln677">    }</a>
+<a name="ln678"> </a>
+<a name="ln679">    patternMols.push_back(patternMol);</a>
+<a name="ln680">    return true;</a>
+<a name="ln681">  }</a>
+<a name="ln682"> </a>
+<a name="ln683">  void FastSearchFormat::AddPattern(vector&lt;OBMol&gt;&amp; patternMols, OBMol patternMol, int idx)</a>
+<a name="ln684">  {</a>
+<a name="ln685">    //Recursive function to generate all combinations of aromatic/single bonds for each tilde bond</a>
+<a name="ln686">    //Copying an OBMol, which happens when adding it to a vector, kekulizes it,</a>
+<a name="ln687">    // changing aromatic (bo=5) bonds. So set order after adding. Should work here,</a>
+<a name="ln688">    // but is dangerous if the vector needs to be reallocated.</a>
+<a name="ln689"> </a>
+<a name="ln690">    if(idx&gt;=patternMol.NumBonds())</a>
+<a name="ln691">      return;</a>
+<a name="ln692">    if(patternMol.GetBond(idx)-&gt;GetBondOrder()==4)</a>
+<a name="ln693">    {</a>
+<a name="ln694">      patternMol.GetBond(idx)-&gt;SetBondOrder(1);</a>
+<a name="ln695">      patternMols.push_back(patternMol);</a>
+<a name="ln696">      AddPattern(patternMols, patternMol,idx+1);</a>
+<a name="ln697"> </a>
+<a name="ln698">      patternMols.push_back(patternMol);</a>
+<a name="ln699">      patternMols.back().GetBond(idx)-&gt;SetBondOrder(5);</a>
+<a name="ln700">    }</a>
+<a name="ln701">    AddPattern(patternMols, patternMol,idx+1);</a>
+<a name="ln702">  }</a>
+<a name="ln703"> </a>
+<a name="ln704">  /* Accept ~ bonds. Need to generate two PatternMols for each '~'</a>
+<a name="ln705">  i.e. '-' or nothing for single and ':' for aromatic</a>
+<a name="ln706">  or 2^n patterns for n bonds. SMILES format will accept : but cannot</a>
+<a name="ln707">  provide an isolated aromatic bond. So need to edit OBMol. Retain the atom</a>
+<a name="ln708">  indices of the bond's atoms and change the bond's order.</a>
+<a name="ln709">  ObtainTarget() will return a vector of OBMol and the Find() in L260 will be done</a>
+<a name="ln710">  for each. All fs matches will go into SeekPositions. At the end this</a>
+<a name="ln711">  will be sorted and duplicates removed with unique.</a>
+<a name="ln712">  */</a>
+<a name="ln713"> </a>
+<a name="ln714">}//Openbabel</a>
+<a name="ln715"> </a>
+<a name="ln716">//! \file fastsearchformat.cpp</a>
+<a name="ln717">//! \brief Preparation and searching of fingerprint-based index files</a>
+
+</code></pre>
+<div class="balloon" rel="274"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v666/" target="_blank">V666</a> Consider inspecting second argument of the function 'RemoveOption'. It is possible that the value does not correspond with the length of a string which was passed with the first argument.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

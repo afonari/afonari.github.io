@@ -1,0 +1,1264 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>mmcifformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">mmcifformat.cpp - Conversion to and from mmCIF format.</a>
+<a name="ln3">Copyright (C) Scarlet Line 2007</a>
+<a name="ln4"> </a>
+<a name="ln5">This file is part of the Open Babel project.</a>
+<a name="ln6">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln7"> </a>
+<a name="ln8">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln9">it under the terms of the GNU General Public License as published by</a>
+<a name="ln10">the Free Software Foundation version 2 of the License.</a>
+<a name="ln11"> </a>
+<a name="ln12">This program is distributed in the hope that it will be useful,</a>
+<a name="ln13">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln14">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln15">GNU General Public License for more details.</a>
+<a name="ln16">***********************************************************************/</a>
+<a name="ln17"> </a>
+<a name="ln18">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln24"> </a>
+<a name="ln25">#include &lt;openbabel/op.h&gt;</a>
+<a name="ln26"> </a>
+<a name="ln27">#include &lt;iostream&gt;</a>
+<a name="ln28">#include &lt;algorithm&gt;</a>
+<a name="ln29">#include &lt;ctype.h&gt;</a>
+<a name="ln30"> </a>
+<a name="ln31">using namespace std;</a>
+<a name="ln32">namespace OpenBabel</a>
+<a name="ln33">{</a>
+<a name="ln34"> static const string UNKNOWN_VALUE = &quot;?&quot;;</a>
+<a name="ln35"> </a>
+<a name="ln36"> class mmCIFFormat : public OBMoleculeFormat</a>
+<a name="ln37"> {</a>
+<a name="ln38"> public:</a>
+<a name="ln39">   //Register this format type ID</a>
+<a name="ln40">   mmCIFFormat()</a>
+<a name="ln41">   { // Copied from the Chemical MIME Page at http://www.ch.ic.ac.uk/chemime/</a>
+<a name="ln42">     OBConversion::RegisterFormat(&quot;mcif&quot;, this, &quot;chemical/x-mmcif&quot;);</a>
+<a name="ln43">     OBConversion::RegisterFormat(&quot;mmcif&quot;, this, &quot;chemical/x-mmcif&quot;);</a>
+<a name="ln44">     // Uncomment the following line, and this file will handle all CIF formats</a>
+<a name="ln45">     // OBConversion::RegisterFormat(&quot;cif&quot;, this, &quot;chemical/x-cif&quot;);</a>
+<a name="ln46"> </a>
+<a name="ln47">     OBConversion::RegisterOptionParam(&quot;s&quot;, this);</a>
+<a name="ln48">     OBConversion::RegisterOptionParam(&quot;p&quot;, this);</a>
+<a name="ln49">     OBConversion::RegisterOptionParam(&quot;b&quot;, this);</a>
+<a name="ln50">     OBConversion::RegisterOptionParam(&quot;w&quot;, this);</a>
+<a name="ln51">   }</a>
+<a name="ln52"> </a>
+<a name="ln53">   virtual const char* Description() //required</a>
+<a name="ln54">   {</a>
+<a name="ln55">     return</a>
+<a name="ln56">       &quot;Macromolecular Crystallographic Info\n &quot;</a>
+<a name="ln57">       &quot;Read Options e.g. -as\n&quot;</a>
+<a name="ln58">       &quot;  s  Output single bonds only\n&quot;</a>
+<a name="ln59">       &quot;  p  Apply periodic boundary conditions for bonds\n&quot;</a>
+<a name="ln60">       &quot;  b  Disable bonding entirely\n&quot;</a>
+<a name="ln61">       &quot;  w  Wrap atomic coordinates into unit cell box\n\n&quot;;</a>
+<a name="ln62">   };</a>
+<a name="ln63"> </a>
+<a name="ln64">   virtual const char* SpecificationURL()</a>
+<a name="ln65">   { return &quot;http://mmcif.pdb.org/&quot;;}; //optional</a>
+<a name="ln66">   // CIF itself is at http://www.iucr.org/iucr-top/cif/index.html</a>
+<a name="ln67"> </a>
+<a name="ln68">   virtual const char* GetMIMEType()</a>
+<a name="ln69">   { return &quot;chemical/x-mmcif&quot;; };</a>
+<a name="ln70"> </a>
+<a name="ln71">   //*** This section identical for most OBMol conversions ***</a>
+<a name="ln72">   ////////////////////////////////////////////////////</a>
+<a name="ln73">   /// The &quot;API&quot; interface functions</a>
+<a name="ln74">   virtual int SkipObjects(int n, OBConversion* pConv);</a>
+<a name="ln75">   virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln76">   virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln77"> };</a>
+<a name="ln78"> </a>
+<a name="ln79"> //Make an instance of the format class</a>
+<a name="ln80"> mmCIFFormat themmCIFFormat;</a>
+<a name="ln81"> </a>
+<a name="ln82"> struct CIFTagID</a>
+<a name="ln83">   {</a>
+<a name="ln84">   enum CIFCatName</a>
+<a name="ln85">     {</a>
+<a name="ln86">     unread_CIFCatName,</a>
+<a name="ln87">     atom_site,</a>
+<a name="ln88">     cell,</a>
+<a name="ln89">     chemical,</a>
+<a name="ln90">     chemical_formula,</a>
+<a name="ln91">     symmetry,</a>
+<a name="ln92">     symmetry_equiv,</a>
+<a name="ln93">     space_group,</a>
+<a name="ln94">     atom_type,</a>
+<a name="ln95">     MAX_CIFCatName</a>
+<a name="ln96">     };</a>
+<a name="ln97">   enum CIFDataName</a>
+<a name="ln98">     {</a>
+<a name="ln99">     unread_CIFDataName,</a>
+<a name="ln100">     _atom_site_fract_x, // The x coordinate specified as a fraction of _cell_length_a</a>
+<a name="ln101">     _atom_site_fract_y, // The y coordinate specified as a fraction of _cell_length_b</a>
+<a name="ln102">     _atom_site_fract_z, // The z coordinate specified as a fraction of _cell_length_c</a>
+<a name="ln103">     _atom_site_Cartn_x, // The x coordinate in angstroms</a>
+<a name="ln104">     _atom_site_Cartn_y, // The y coordinate in angstroms</a>
+<a name="ln105">     _atom_site_Cartn_z, // The z coordinate in angstroms</a>
+<a name="ln106">     _atom_site_label, // The atomic label if more detailed label info unavailable</a>
+<a name="ln107">     _atom_site_label_atom_id, // The atomic label within the residue</a>
+<a name="ln108">     _atom_site_label_comp_id, // The residue abbreviation, e.g. ILE</a>
+<a name="ln109">     _atom_site_label_entity_id, // The chain entity number of the residue, e.g. 2</a>
+<a name="ln110">     _atom_site_label_asym_id, // The unique chain id</a>
+<a name="ln111">     _atom_site_label_seq_id, // The sequence number of the residue, within the chain, e.g. 12</a>
+<a name="ln112">     _atom_site_type_symbol, // Atomic symbol, e.g. C</a>
+<a name="ln113">     _atom_site_occupancy,</a>
+<a name="ln114">     MAX_atom_site,</a>
+<a name="ln115">     _cell_length_a, // Unit-cell length a in Angstroms</a>
+<a name="ln116">     _cell_length_b, // Unit-cell length b in Angstroms</a>
+<a name="ln117">     _cell_length_c, // Unit-cell length c in Angstroms</a>
+<a name="ln118">     _cell_angle_alpha, // Unit-cell angle alpha in degrees</a>
+<a name="ln119">     _cell_angle_beta, // Unit-cell angle beta in degrees</a>
+<a name="ln120">     _cell_angle_gamma, // Unit-cell angle gamma in degrees</a>
+<a name="ln121">     MAX_cell,</a>
+<a name="ln122">     // chemical name organized by increasing desirability</a>
+<a name="ln123">     _chemical_name_common,</a>
+<a name="ln124">     _chemical_name_structure_type,</a>
+<a name="ln125">     _chemical_name_mineral,</a>
+<a name="ln126">     _chemical_name_systematic,</a>
+<a name="ln127">     MAX_chemical,</a>
+<a name="ln128">     // chemical formulae organized by increasing desirability</a>
+<a name="ln129">     _chemical_formula_moiety,</a>
+<a name="ln130">     _chemical_formula_iupac,</a>
+<a name="ln131">     _chemical_formula_structural,</a>
+<a name="ln132">     _chemical_formula_analytical,</a>
+<a name="ln133">     MAX_chemical_formula,</a>
+<a name="ln134">     _symmetry_Int_Tables_number,</a>
+<a name="ln135">     _symmetry_space_group_name_Hall,</a>
+<a name="ln136">     _symmetry_space_group_name_H_M,</a>
+<a name="ln137">     MAX_symmetry,</a>
+<a name="ln138">     _symmetry_equiv_pos_as_xyz,</a>
+<a name="ln139">     MAX_symmetry_equiv,</a>
+<a name="ln140">     _space_group_IT_number,</a>
+<a name="ln141">     _space_group_name_Hall,</a>
+<a name="ln142">     _space_group_name_H_M_alt,</a>
+<a name="ln143">     MAX_space_group,</a>
+<a name="ln144">     _atom_type_symbol,</a>
+<a name="ln145">     _atom_type_oxidation_number,</a>
+<a name="ln146">     MAX_atom_type,</a>
+<a name="ln147">     MAX_CIFDataName</a>
+<a name="ln148">     };</a>
+<a name="ln149">   char  tagname[76];</a>
+<a name="ln150">   CIFDataName tagid;</a>
+<a name="ln151">   };</a>
+<a name="ln152"> typedef vector&lt;CIFTagID::CIFDataName&gt; CIFColumnList;</a>
+<a name="ln153"> typedef map&lt;string, CIFTagID::CIFDataName&gt; CIFtagmap;</a>
+<a name="ln154"> struct CIFResidueID</a>
+<a name="ln155">   {</a>
+<a name="ln156">   unsigned long ChainNum; // The number of the chain</a>
+<a name="ln157">   unsigned long ResNum;  // The number of the residue within the chain</a>
+<a name="ln158">   CIFResidueID()</a>
+<a name="ln159">     {}</a>
+<a name="ln160">   CIFResidueID(unsigned long c, unsigned long r)</a>
+<a name="ln161">   :ChainNum(c), ResNum(r)</a>
+<a name="ln162">     {}</a>
+<a name="ln163">   CIFResidueID(const CIFResidueID &amp; other)</a>
+<a name="ln164">   :ChainNum(other.ChainNum), ResNum(other.ResNum)</a>
+<a name="ln165">     {}</a>
+<a name="ln166">   CIFResidueID &amp; operator=(const CIFResidueID &amp; other)</a>
+<a name="ln167">     {</a>
+<a name="ln168">     ChainNum = other.ChainNum;</a>
+<a name="ln169">     ResNum = other.ResNum;</a>
+<a name="ln170">     return (* this);</a>
+<a name="ln171">     }</a>
+<a name="ln172">   bool operator&lt; (const CIFResidueID &amp; other) const</a>
+<a name="ln173">     {</a>
+<a name="ln174">     return ( ChainNum &lt; other.ChainNum ? true : ( other.ChainNum &lt; ChainNum ? false : ResNum &lt; other.ResNum ) );</a>
+<a name="ln175">     }</a>
+<a name="ln176">   };</a>
+<a name="ln177"> typedef map&lt;CIFResidueID, int&gt; CIFResidueMap;</a>
+<a name="ln178"> CIFtagmap CIFtagLookupTable;</a>
+<a name="ln179"> </a>
+<a name="ln180"> CIFTagID CIFTagsRead[] =</a>
+<a name="ln181">   {</a>
+<a name="ln182">   { &quot;_atom_site_fract_x&quot;, CIFTagID::_atom_site_fract_x },</a>
+<a name="ln183">   { &quot;_atom_site_fract_y&quot;, CIFTagID::_atom_site_fract_y },</a>
+<a name="ln184">   { &quot;_atom_site_fract_z&quot;, CIFTagID::_atom_site_fract_z },</a>
+<a name="ln185">   { &quot;_atom_site_cartn_x&quot;, CIFTagID::_atom_site_Cartn_x },</a>
+<a name="ln186">   { &quot;_atom_site_cartn_y&quot;, CIFTagID::_atom_site_Cartn_y },</a>
+<a name="ln187">   { &quot;_atom_site_cartn_z&quot;, CIFTagID::_atom_site_Cartn_z },</a>
+<a name="ln188">   { &quot;_atom_site_type_symbol&quot;, CIFTagID::_atom_site_type_symbol },</a>
+<a name="ln189">   { &quot;_atom_site_occupancy&quot;, CIFTagID::_atom_site_occupancy},</a>
+<a name="ln190">   { &quot;_atom_site_id&quot;, CIFTagID::_atom_site_label },</a>
+<a name="ln191">   { &quot;_atom_site_label&quot;, CIFTagID::_atom_site_label },</a>
+<a name="ln192">   { &quot;_atom_site_label_atom_id&quot;, CIFTagID::_atom_site_label_atom_id },</a>
+<a name="ln193">   { &quot;_atom_site_label_comp_id&quot;, CIFTagID::_atom_site_label_comp_id },</a>
+<a name="ln194">   { &quot;_atom_site_label_entity_id&quot;, CIFTagID::_atom_site_label_entity_id },</a>
+<a name="ln195">   { &quot;_atom_site_label_seq_id&quot;, CIFTagID::_atom_site_label_seq_id },</a>
+<a name="ln196">   { &quot;_atom_site_label_asym_id&quot;, CIFTagID::_atom_site_label_asym_id },</a>
+<a name="ln197">   { &quot;_cell_length_a&quot;, CIFTagID::_cell_length_a },</a>
+<a name="ln198">   { &quot;_cell_length_b&quot;, CIFTagID::_cell_length_b },</a>
+<a name="ln199">   { &quot;_cell_length_c&quot;, CIFTagID::_cell_length_c },</a>
+<a name="ln200">   { &quot;_cell_angle_alpha&quot;, CIFTagID::_cell_angle_alpha },</a>
+<a name="ln201">   { &quot;_cell_angle_beta&quot;, CIFTagID::_cell_angle_beta },</a>
+<a name="ln202">   { &quot;_cell_angle_gamma&quot;, CIFTagID::_cell_angle_gamma },</a>
+<a name="ln203">   { &quot;_chemical_name_systematic&quot;, CIFTagID::_chemical_name_systematic },</a>
+<a name="ln204">   { &quot;_chemical_name_mineral&quot;, CIFTagID::_chemical_name_mineral },</a>
+<a name="ln205">   { &quot;_chemical_name_structure_type&quot;, CIFTagID::_chemical_name_structure_type },</a>
+<a name="ln206">   { &quot;_chemical_name_common&quot;, CIFTagID::_chemical_name_common },</a>
+<a name="ln207">   { &quot;_chemical_formula_analytical&quot;, CIFTagID::_chemical_formula_analytical },</a>
+<a name="ln208">   { &quot;_chemical_formula_structural&quot;, CIFTagID::_chemical_formula_structural },</a>
+<a name="ln209">   { &quot;_chemical_formula_iupac&quot;, CIFTagID::_chemical_formula_iupac },</a>
+<a name="ln210">   { &quot;_chemical_formula_moiety&quot;, CIFTagID::_chemical_formula_moiety },</a>
+<a name="ln211">   { &quot;_space_group_it_number&quot;, CIFTagID::_space_group_IT_number },</a>
+<a name="ln212">   { &quot;_space_group_name_hall&quot;, CIFTagID::_space_group_name_Hall },</a>
+<a name="ln213">   { &quot;_space_group_name_h-m_alt&quot;, CIFTagID::_space_group_name_H_M_alt },</a>
+<a name="ln214">   { &quot;_symmetry_int_tables_number&quot;, CIFTagID::_symmetry_Int_Tables_number },</a>
+<a name="ln215">   { &quot;_symmetry_space_group_name_hall&quot;, CIFTagID::_symmetry_space_group_name_Hall },</a>
+<a name="ln216">   { &quot;_symmetry_space_group_name_h-m&quot;, CIFTagID::_symmetry_space_group_name_H_M },</a>
+<a name="ln217">   { &quot;_symmetry_equiv_pos_as_xyz&quot;, CIFTagID::_symmetry_equiv_pos_as_xyz },</a>
+<a name="ln218">   { &quot;_space_group_symop_operation_xyz&quot;, CIFTagID::_symmetry_equiv_pos_as_xyz },</a>
+<a name="ln219">   { &quot;_atom_type_symbol&quot;, CIFTagID::_atom_type_symbol },</a>
+<a name="ln220">   { &quot;_atom_type_oxidation_number&quot;,CIFTagID::_atom_type_oxidation_number },</a>
+<a name="ln221">   { &quot;&quot;, CIFTagID::unread_CIFDataName }</a>
+<a name="ln222">   };</a>
+<a name="ln223"> </a>
+<a name="ln224"> class CIFLexer</a>
+<a name="ln225"> {</a>
+<a name="ln226"> public:</a>
+<a name="ln227">   enum TokenType</a>
+<a name="ln228">     {</a>
+<a name="ln229">     UnknownToken,</a>
+<a name="ln230">     KeyDataToken,</a>
+<a name="ln231">     KeyLoopToken,</a>
+<a name="ln232">     KeySaveToken,</a>
+<a name="ln233">     KeySaveEndToken,</a>
+<a name="ln234">     KeyStopToken,</a>
+<a name="ln235">     KeyGlobalToken,</a>
+<a name="ln236">     TagToken,</a>
+<a name="ln237">     ValueToken,</a>
+<a name="ln238">     ValueOrKeyToken,</a>
+<a name="ln239">     MAXTokenType</a>
+<a name="ln240">     };</a>
+<a name="ln241">   struct Token</a>
+<a name="ln242">     {</a>
+<a name="ln243">     TokenType type;</a>
+<a name="ln244">     string as_text;</a>
+<a name="ln245">     double  as_number() const</a>
+<a name="ln246">       { return strtod(as_text.c_str(), nullptr); }</a>
+<a name="ln247">     unsigned long  as_unsigned() const</a>
+<a name="ln248">       { return strtoul(as_text.c_str(), nullptr, 10); }</a>
+<a name="ln249">     };</a>
+<a name="ln250">   CIFLexer(std::istream * in)</a>
+<a name="ln251">   :input(in)</a>
+<a name="ln252">     {</a>
+<a name="ln253">     last_char = 0;</a>
+<a name="ln254">     next_char = input-&gt;get();</a>
+<a name="ln255">     }</a>
+<a name="ln256">   bool next_token(CIFLexer::Token &amp; token);</a>
+<a name="ln257">   static CIFTagID::CIFDataName lookup_tag(const string &amp; tag_name);</a>
+<a name="ln258">   static CIFTagID::CIFCatName lookup_cat(CIFTagID::CIFDataName tagid);</a>
+<a name="ln259">   void advance()</a>
+<a name="ln260">     {</a>
+<a name="ln261">     last_char = next_char;</a>
+<a name="ln262">     next_char = input-&gt;get();</a>
+<a name="ln263">     }</a>
+<a name="ln264">   void backup(size_t count)</a>
+<a name="ln265">     {</a>
+<a name="ln266">     for ( ++ count; count; -- count )</a>
+<a name="ln267">       input-&gt;unget();</a>
+<a name="ln268">     last_char = 0;</a>
+<a name="ln269">     next_char = input-&gt;get();</a>
+<a name="ln270">     }</a>
+<a name="ln271">   void backup(size_t count, char next)</a>
+<a name="ln272">     {</a>
+<a name="ln273">     for ( ; count; -- count )</a>
+<a name="ln274">       input-&gt;unget();</a>
+<a name="ln275">     last_char = 0;</a>
+<a name="ln276">     next_char = next;</a>
+<a name="ln277">     }</a>
+<a name="ln278">   bool good() const</a>
+<a name="ln279">     { return input-&gt;good(); }</a>
+<a name="ln280"> private:</a>
+<a name="ln281">   istream  * input;</a>
+<a name="ln282">   int  last_char, next_char;</a>
+<a name="ln283"> };</a>
+<a name="ln284"> CIFTagID::CIFDataName CIFLexer::lookup_tag(const string &amp; tag_name)</a>
+<a name="ln285"> {</a>
+<a name="ln286">    if (CIFtagLookupTable.empty())</a>
+<a name="ln287">      {</a>
+<a name="ln288">      for (size_t idx = 0; CIFTagsRead[idx].tagid != CIFTagID::unread_CIFDataName; ++ idx)</a>
+<a name="ln289">        {</a>
+<a name="ln290">        CIFtagLookupTable.insert(CIFtagmap::value_type(string(CIFTagsRead[idx].tagname), CIFTagsRead[idx].tagid ));</a>
+<a name="ln291">        }</a>
+<a name="ln292">      }</a>
+<a name="ln293">   CIFTagID::CIFDataName rtn = CIFTagID::unread_CIFDataName;</a>
+<a name="ln294">    CIFtagmap::const_iterator found = CIFtagLookupTable.find(tag_name);</a>
+<a name="ln295">    if (found != CIFtagLookupTable.end())</a>
+<a name="ln296">      rtn = (* found).second;</a>
+<a name="ln297">    return rtn;</a>
+<a name="ln298"> }</a>
+<a name="ln299"> CIFTagID::CIFCatName CIFLexer::lookup_cat(CIFTagID::CIFDataName tagid)</a>
+<a name="ln300"> {</a>
+<a name="ln301">   CIFTagID::CIFCatName catid = CIFTagID::unread_CIFCatName;</a>
+<a name="ln302">   if (tagid &gt; CIFTagID::unread_CIFDataName)</a>
+<a name="ln303">     {</a>
+<a name="ln304">     if (tagid &lt; CIFTagID::MAX_atom_site)</a>
+<a name="ln305">       catid = CIFTagID::atom_site;</a>
+<a name="ln306">     else if (tagid &lt; CIFTagID::MAX_cell)</a>
+<a name="ln307">       catid = CIFTagID::cell;</a>
+<a name="ln308">     else if (tagid &lt; CIFTagID::MAX_chemical)</a>
+<a name="ln309">       catid = CIFTagID::chemical;</a>
+<a name="ln310">     else if (tagid &lt; CIFTagID::MAX_chemical_formula)</a>
+<a name="ln311">       catid = CIFTagID::chemical_formula;</a>
+<a name="ln312">     else if (tagid &lt; CIFTagID::MAX_symmetry)</a>
+<a name="ln313">       catid = CIFTagID::symmetry;</a>
+<a name="ln314">     else if (tagid &lt; CIFTagID::MAX_symmetry_equiv)</a>
+<a name="ln315">       catid = CIFTagID::symmetry_equiv;</a>
+<a name="ln316">     else if (tagid &lt; CIFTagID::MAX_space_group)</a>
+<a name="ln317">       catid = CIFTagID::space_group;</a>
+<a name="ln318">     else if (tagid &lt; CIFTagID::MAX_atom_type)</a>
+<a name="ln319">       catid = CIFTagID::atom_type;</a>
+<a name="ln320">     }</a>
+<a name="ln321">   return catid;</a>
+<a name="ln322"> }</a>
+<a name="ln323"> </a>
+<a name="ln324"> bool CIFLexer::next_token(CIFLexer::Token &amp; token)</a>
+<a name="ln325"> {</a>
+<a name="ln326"> token.type = CIFLexer::UnknownToken;</a>
+<a name="ln327"> token.as_text.clear();</a>
+<a name="ln328"> while (token.type == CIFLexer::UnknownToken &amp;&amp; input-&gt;good())</a>
+<a name="ln329">   {</a>
+<a name="ln330">   if (next_char &lt;= ' ')</a>
+<a name="ln331">     { // whitespace</a>
+<a name="ln332">     advance();</a>
+<a name="ln333">     }</a>
+<a name="ln334">   else</a>
+<a name="ln335">     { // i.e. not WhiteSpace</a>
+<a name="ln336">     switch(next_char)</a>
+<a name="ln337">       {</a>
+<a name="ln338">     // Comment handling</a>
+<a name="ln339">     case '#':</a>
+<a name="ln340">       do // eat comment to the end of the line</a>
+<a name="ln341">         {</a>
+<a name="ln342">         advance();</a>
+<a name="ln343">         } while (next_char != '\n' &amp;&amp; input-&gt;good());</a>
+<a name="ln344">       // We are now pointing at EOL or EOF</a>
+<a name="ln345">       break;</a>
+<a name="ln346">     // Tag handling</a>
+<a name="ln347">     case '_':</a>
+<a name="ln348">       do // read name to the next whitespace</a>
+<a name="ln349">         {</a>
+<a name="ln350">         if (next_char == '.') // combines DDL1 and DDL2 tag names</a>
+<a name="ln351">           next_char = '_';</a>
+<a name="ln352">         else</a>
+<a name="ln353">           next_char = tolower(next_char);</a>
+<a name="ln354">         token.as_text.push_back((char)next_char);</a>
+<a name="ln355">         advance();</a>
+<a name="ln356">         } while (next_char &gt; ' ' &amp;&amp; input-&gt;good());</a>
+<a name="ln357">       // We are now pointing at the next whitespace</a>
+<a name="ln358">       token.type = CIFLexer::TagToken;</a>
+<a name="ln359">       break;</a>
+<a name="ln360">     // Quoted data handling</a>
+<a name="ln361">     case '&quot;':</a>
+<a name="ln362">       do // read name to the next quote-whitespace</a>
+<a name="ln363">         {</a>
+<a name="ln364">         advance();</a>
+<a name="ln365">         if (next_char == '&quot;')</a>
+<a name="ln366">           {</a>
+<a name="ln367">           while (next_char == '&quot;')</a>
+<a name="ln368">             {</a>
+<a name="ln369">             advance();</a>
+<a name="ln370">             if (next_char &lt;= ' ') // whitespace</a>
+<a name="ln371">               break;</a>
+<a name="ln372">             token.as_text.push_back((char)last_char);</a>
+<a name="ln373">             }</a>
+<a name="ln374">           if (next_char &lt;= ' ') // whitespace</a>
+<a name="ln375">             break;</a>
+<a name="ln376">           }</a>
+<a name="ln377">         token.as_text.push_back((char)next_char);</a>
+<a name="ln378">         } while (input-&gt;good());</a>
+<a name="ln379">       // We are now pointing at the next whitespace</a>
+<a name="ln380">       token.type = CIFLexer::ValueToken;</a>
+<a name="ln381">       break;</a>
+<a name="ln382">     case '\'':</a>
+<a name="ln383">       do // read name to the next quote-whitespace</a>
+<a name="ln384">         {</a>
+<a name="ln385">         advance();</a>
+<a name="ln386">         if (next_char == '\'')</a>
+<a name="ln387">           {</a>
+<a name="ln388">           while (next_char == '\'')</a>
+<a name="ln389">             {</a>
+<a name="ln390">             advance();</a>
+<a name="ln391">             if (next_char &lt;= ' ') // whitespace</a>
+<a name="ln392">               break;</a>
+<a name="ln393">             token.as_text.push_back((char)last_char);</a>
+<a name="ln394">             }</a>
+<a name="ln395">           if (next_char &lt;= ' ') // whitespace</a>
+<a name="ln396">             break;</a>
+<a name="ln397">           }</a>
+<a name="ln398">         token.as_text.push_back((char)next_char);</a>
+<a name="ln399">         } while (input-&gt;good());</a>
+<a name="ln400">       // We are now pointing at the next whitespace</a>
+<a name="ln401">       token.type = CIFLexer::ValueToken;</a>
+<a name="ln402">       break;</a>
+<a name="ln403">     case ';':</a>
+<a name="ln404">       if (last_char == '\n')</a>
+<a name="ln405">         {</a>
+<a name="ln406">         do // read name to the next &lt;eol&gt;-;</a>
+<a name="ln407">           {</a>
+<a name="ln408">           advance();</a>
+<a name="ln409">           if (next_char == '\n')</a>
+<a name="ln410">             {</a>
+<a name="ln411">             while (next_char == '\n')</a>
+<a name="ln412">               {</a>
+<a name="ln413">               advance();</a>
+<a name="ln414">               if (next_char == ';') // end</a>
+<a name="ln415">                 break;</a>
+<a name="ln416">               token.as_text.push_back((char)last_char);</a>
+<a name="ln417">               }</a>
+<a name="ln418">             if (next_char == ';') // end</a>
+<a name="ln419">               {</a>
+<a name="ln420">               advance(); // go past the end</a>
+<a name="ln421">               break;</a>
+<a name="ln422">               }</a>
+<a name="ln423">             }</a>
+<a name="ln424">           token.as_text.push_back((char)next_char);</a>
+<a name="ln425">           } while (input-&gt;good());</a>
+<a name="ln426">         // We are now pointing at the next whitespace</a>
+<a name="ln427">         token.type = CIFLexer::ValueToken;</a>
+<a name="ln428">         break;</a>
+<a name="ln429">         }</a>
+<a name="ln430">       // drop through to the default case</a>
+<a name="ln431">     default: // reading an un-quoted text string</a>
+<a name="ln432">       do // read text to the next whitespace</a>
+<a name="ln433">         {</a>
+<a name="ln434">         token.as_text.push_back((char)next_char);</a>
+<a name="ln435">         advance();</a>
+<a name="ln436">         } while (next_char &gt; ' ' &amp;&amp; input-&gt;good());</a>
+<a name="ln437">       token.type = CIFLexer::ValueOrKeyToken;</a>
+<a name="ln438">       // We are now pointing at the next whitespace</a>
+<a name="ln439">       break;</a>
+<a name="ln440">       }</a>
+<a name="ln441">     }</a>
+<a name="ln442">   }</a>
+<a name="ln443"> if (token.type == CIFLexer::ValueOrKeyToken)</a>
+<a name="ln444">   {</a>
+<a name="ln445">   string::size_type len = token.as_text.size();</a>
+<a name="ln446">   if (len == 1 &amp;&amp; token.as_text[0] == '.')</a>
+<a name="ln447">     token.type = CIFLexer::ValueToken;</a>
+<a name="ln448">   else if (!strncasecmp(token.as_text.c_str(), &quot;data_&quot;, 5))</a>
+<a name="ln449">     {</a>
+<a name="ln450">     token.type = CIFLexer::KeyDataToken;</a>
+<a name="ln451">     token.as_text.erase(0, 5);</a>
+<a name="ln452">     }</a>
+<a name="ln453">   else if (!strcasecmp(token.as_text.c_str(), &quot;loop_&quot;))</a>
+<a name="ln454">     token.type = CIFLexer::KeyLoopToken;</a>
+<a name="ln455">   else if (!strncasecmp(token.as_text.c_str(), &quot;save_&quot;, 5))</a>
+<a name="ln456">     {</a>
+<a name="ln457">     if (len == 5)</a>
+<a name="ln458">       {</a>
+<a name="ln459">       token.type = CIFLexer::KeySaveEndToken;</a>
+<a name="ln460">       }</a>
+<a name="ln461">     else</a>
+<a name="ln462">       {</a>
+<a name="ln463">       token.type = CIFLexer::KeySaveToken;</a>
+<a name="ln464">       token.as_text.erase(0, 5);</a>
+<a name="ln465">       }</a>
+<a name="ln466">     }</a>
+<a name="ln467">   else if (!strcasecmp(token.as_text.c_str(), &quot;stop_&quot;))</a>
+<a name="ln468">     token.type = CIFLexer::KeyStopToken;</a>
+<a name="ln469">   else if (!strcasecmp(token.as_text.c_str(), &quot;global_&quot;))</a>
+<a name="ln470">     token.type = CIFLexer::KeyGlobalToken;</a>
+<a name="ln471">   else</a>
+<a name="ln472">     token.type = CIFLexer::ValueToken;</a>
+<a name="ln473">   }</a>
+<a name="ln474"> return token.type != CIFLexer::UnknownToken;</a>
+<a name="ln475"> }</a>
+<a name="ln476"> /////////////////////////////////////////////////////////////////</a>
+<a name="ln477">  int mmCIFFormat::SkipObjects(int n, OBConversion* pConv)</a>
+<a name="ln478"> {</a>
+<a name="ln479">   if (n == 0)</a>
+<a name="ln480">     ++ n;</a>
+<a name="ln481">   CIFLexer lexer(pConv-&gt;GetInStream());</a>
+<a name="ln482">   CIFLexer::Token token;</a>
+<a name="ln483">   while (n &amp;&amp; lexer.good())</a>
+<a name="ln484">     {</a>
+<a name="ln485">     while ( lexer.next_token(token) &amp;&amp; token.type != CIFLexer::KeyDataToken);</a>
+<a name="ln486">     -- n;</a>
+<a name="ln487">     }</a>
+<a name="ln488">   if (lexer.good())</a>
+<a name="ln489">     lexer.backup(5 + token.as_text.size(), 'd'); // length of &quot;data_&lt;name&gt;&quot;</a>
+<a name="ln490"> </a>
+<a name="ln491">   return lexer.good() ? 1 : -1;</a>
+<a name="ln492"> }</a>
+<a name="ln493"> bool mmCIFFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln494"> {</a>
+<a name="ln495">   OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln496">   if (pmol == nullptr)</a>
+<a name="ln497">     return false;</a>
+<a name="ln498"> </a>
+<a name="ln499">   CIFLexer lexer(pConv-&gt;GetInStream());</a>
+<a name="ln500">   CIFLexer::Token token;</a>
+<a name="ln501"> </a>
+<a name="ln502">   typedef map&lt;string, unsigned&gt; CIFasymmap;</a>
+<a name="ln503">   CIFasymmap asym_map;</a>
+<a name="ln504">   string last_asym_id = &quot;&quot;;</a>
+<a name="ln505">   unsigned next_asym_no = 0;</a>
+<a name="ln506">   bool has_residue_information = false;</a>
+<a name="ln507"> </a>
+<a name="ln508">   pmol-&gt;SetChainsPerceived(); // avoid perception if we are setting residues</a>
+<a name="ln509"> </a>
+<a name="ln510">   bool wrap_coords = pConv-&gt;IsOption(&quot;w&quot;,OBConversion::INOPTIONS);</a>
+<a name="ln511"> </a>
+<a name="ln512">   // move to the next data block (i.e. molecule, we hope )</a>
+<a name="ln513">   while (lexer.next_token(token) &amp;&amp; token.type != CIFLexer::KeyDataToken);</a>
+<a name="ln514">   if (token.type == CIFLexer::KeyDataToken)</a>
+<a name="ln515">     { // we have found the next data block:</a>
+<a name="ln516">     pmol-&gt;BeginModify();</a>
+<a name="ln517">     pmol-&gt;SetTitle(token.as_text);</a>
+<a name="ln518">     bool finished = false, token_peeked = false;</a>
+<a name="ln519">     double cell_a = 1.0, cell_b = 1.0, cell_c = 1.0;</a>
+<a name="ln520">     double cell_alpha = 90.0, cell_beta = 90.0, cell_gamma = 90.0;</a>
+<a name="ln521">     CIFTagID::CIFDataName name_tag = CIFTagID::unread_CIFDataName;</a>
+<a name="ln522">     CIFTagID::CIFDataName formula_tag = CIFTagID::unread_CIFDataName;</a>
+<a name="ln523">     int use_cell = 0, use_fract = 0;</a>
+<a name="ln524">     string space_group_name(&quot;P1&quot;);</a>
+<a name="ln525">     SpaceGroup space_group;</a>
+<a name="ln526">     bool space_group_failed = false;</a>
+<a name="ln527">     std::map&lt;string, double&gt; atomic_charges;</a>
+<a name="ln528">     while (!finished &amp;&amp; (token_peeked || lexer.next_token(token)))</a>
+<a name="ln529">       {</a>
+<a name="ln530">       token_peeked = false;</a>
+<a name="ln531">       switch (token.type)</a>
+<a name="ln532">         {</a>
+<a name="ln533">       case CIFLexer::KeyGlobalToken:</a>
+<a name="ln534">         // We have come to the next block:</a>
+<a name="ln535">         if (pmol-&gt;NumAtoms() &gt; 0)</a>
+<a name="ln536">           { // Found a molecule, so finished</a>
+<a name="ln537">           finished = true;</a>
+<a name="ln538">           // move back to the start of the global block:</a>
+<a name="ln539">           lexer.backup(token.as_text.size(), 'g'); // length of &quot;global_&quot;</a>
+<a name="ln540">           }</a>
+<a name="ln541">         else // not yet found a molecule, so go to the next data block</a>
+<a name="ln542">           {</a>
+<a name="ln543">           while (lexer.next_token(token) &amp;&amp; token.type != CIFLexer::KeyDataToken);</a>
+<a name="ln544">           if (token.type == CIFLexer::KeyDataToken)</a>
+<a name="ln545">             { // we have found the next data block:</a>
+<a name="ln546">             pmol-&gt;SetTitle(token.as_text);</a>
+<a name="ln547">             }</a>
+<a name="ln548">           }</a>
+<a name="ln549">         break;</a>
+<a name="ln550">       case CIFLexer::KeyDataToken:</a>
+<a name="ln551">         // We have come to the next data block:</a>
+<a name="ln552">         if (pmol-&gt;NumAtoms() &gt; 0)</a>
+<a name="ln553">           { // Found a molecule, so finished</a>
+<a name="ln554">           finished = true;</a>
+<a name="ln555">           // move back to the start of the data block:</a>
+<a name="ln556">           lexer.backup(5 + token.as_text.size(), 'd'); // length of &quot;data_&lt;name&gt;&quot;</a>
+<a name="ln557">           }</a>
+<a name="ln558">         else // not yet found a molecule, so try again</a>
+<a name="ln559">           pmol-&gt;SetTitle(token.as_text);</a>
+<a name="ln560">         break;</a>
+<a name="ln561">       case CIFLexer::KeySaveToken:</a>
+<a name="ln562">         { // Simply eat tokens until the save_ ending token</a>
+<a name="ln563">         while (lexer.next_token(token) &amp;&amp; token.type != CIFLexer::KeySaveEndToken);</a>
+<a name="ln564">         }</a>
+<a name="ln565">         break;</a>
+<a name="ln566">       case CIFLexer::KeyLoopToken:</a>
+<a name="ln567">         {</a>
+<a name="ln568">         CIFColumnList  columns;</a>
+<a name="ln569">         CIFTagID::CIFCatName catid = CIFTagID::unread_CIFCatName;</a>
+<a name="ln570">         while ( (token_peeked = lexer.next_token(token)) == true &amp;&amp; token.type == CIFLexer::TagToken)</a>
+<a name="ln571">           { // Read in the tags</a>
+<a name="ln572">           CIFTagID::CIFDataName tagid = lexer.lookup_tag(token.as_text);</a>
+<a name="ln573">           columns.push_back(tagid);</a>
+<a name="ln574">           if (catid == CIFTagID::unread_CIFCatName &amp;&amp; tagid != CIFTagID::unread_CIFDataName)</a>
+<a name="ln575">             catid = lexer.lookup_cat(tagid);</a>
+<a name="ln576">           }</a>
+<a name="ln577">         size_t column_count = columns.size();</a>
+<a name="ln578">         switch (catid)</a>
+<a name="ln579">           {</a>
+<a name="ln580">         case CIFTagID::atom_site:</a>
+<a name="ln581">           {</a>
+<a name="ln582">           int use_cartn = 0, use_residue = 0;</a>
+<a name="ln583">           use_fract = 0;</a>
+<a name="ln584">           CIFTagID::CIFDataName atom_type_tag = CIFTagID::unread_CIFDataName;</a>
+<a name="ln585">           for (CIFColumnList::const_iterator colx = columns.begin(), coly = columns.end(); colx != coly; ++ colx)</a>
+<a name="ln586">             {</a>
+<a name="ln587">             switch (* colx)</a>
+<a name="ln588">               {</a>
+<a name="ln589">             case CIFTagID::_atom_site_Cartn_x:</a>
+<a name="ln590">             case CIFTagID::_atom_site_Cartn_y:</a>
+<a name="ln591">             case CIFTagID::_atom_site_Cartn_z:</a>
+<a name="ln592">               ++ use_cartn;</a>
+<a name="ln593">               break;</a>
+<a name="ln594">             case CIFTagID::_atom_site_fract_x:</a>
+<a name="ln595">             case CIFTagID::_atom_site_fract_y:</a>
+<a name="ln596">             case CIFTagID::_atom_site_fract_z:</a>
+<a name="ln597">               ++ use_fract;</a>
+<a name="ln598">               break;</a>
+<a name="ln599">             case CIFTagID::_atom_site_label_comp_id:</a>
+<a name="ln600">             case CIFTagID::_atom_site_label_seq_id:</a>
+<a name="ln601">               ++ use_residue;</a>
+<a name="ln602">               break;</a>
+<a name="ln603">             case CIFTagID::_atom_site_type_symbol:</a>
+<a name="ln604">             case CIFTagID::_atom_site_label_atom_id:</a>
+<a name="ln605">             case CIFTagID::_atom_site_label:</a>
+<a name="ln606">               if (atom_type_tag &lt; (* colx))</a>
+<a name="ln607">                 atom_type_tag = (* colx);</a>
+<a name="ln608">               break;</a>
+<a name="ln609">             default:</a>
+<a name="ln610">               break;</a>
+<a name="ln611">               }</a>
+<a name="ln612">             }</a>
+<a name="ln613">           if (use_cartn)</a>
+<a name="ln614">             {</a>
+<a name="ln615">             for (CIFColumnList::iterator colx = columns.begin(), coly = columns.end(); colx != coly; ++ colx)</a>
+<a name="ln616">               if ( (* colx) &gt;= CIFTagID::_atom_site_fract_x &amp;&amp; (* colx) &lt;= CIFTagID::_atom_site_fract_z)</a>
+<a name="ln617">                 (* colx) = CIFTagID::unread_CIFDataName;</a>
+<a name="ln618">             use_fract = 0;</a>
+<a name="ln619">             }</a>
+<a name="ln620">           size_t column_idx = 0;</a>
+<a name="ln621">           OBAtom * atom = nullptr;</a>
+<a name="ln622">           double x = 0.0, y = 0.0, z = 0.0;</a>
+<a name="ln623">           CIFResidueMap ResidueMap;</a>
+<a name="ln624">           unsigned long chain_num = 1, residue_num = 1;</a>
+<a name="ln625">           unsigned int nbc=0;</a>
+<a name="ln626">           string residue_name, atom_label, atom_mol_label, tmpSymbol;</a>
+<a name="ln627">           int atomicNum;</a>
+<a name="ln628">           OBPairData *label;</a>
+<a name="ln629">           while (token.type == CIFLexer::ValueToken) // Read in the Fields</a>
+<a name="ln630">             {</a>
+<a name="ln631">             if (column_idx == 0)</a>
+<a name="ln632">               {</a>
+<a name="ln633">               atom  = pmol-&gt;NewAtom();</a>
+<a name="ln634">               x = y = z = 0.0;</a>
+<a name="ln635">               }</a>
+<a name="ln636">             switch (columns[column_idx])</a>
+<a name="ln637">               {</a>
+<a name="ln638">             case CIFTagID::_atom_site_label: // The atomic label within the molecule</a>
+<a name="ln639">               label = new OBPairData;</a>
+<a name="ln640">               label-&gt;SetAttribute(&quot;_atom_site_label&quot;);</a>
+<a name="ln641">               label-&gt;SetValue(token.as_text);</a>
+<a name="ln642">               label-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln643">               atom-&gt;SetData(label);</a>
+<a name="ln644">               atom_mol_label.assign(token.as_text);</a>
+<a name="ln645"> </a>
+<a name="ln646">               if (atom_type_tag != CIFTagID::_atom_site_label)</a>
+<a name="ln647">                 break;</a>
+<a name="ln648">               // Else remove everything starting from the first digit</a>
+<a name="ln649">               // and drop through to _atom_site_type_symbol</a>
+<a name="ln650">               if(string::npos != token.as_text.find_first_of(&quot;0123456789&quot;))</a>
+<a name="ln651">                 {token.as_text.erase(token.as_text.find_first_of(&quot;0123456789&quot;), token.as_text.size());}</a>
+<a name="ln652">             case CIFTagID::_atom_site_type_symbol:</a>
+<a name="ln653">               // Problem: posat-&gt;mSymbol is not guaranteed to actually be a</a>
+<a name="ln654">               // symbol see http://www.iucr.org/iucr-top/cif/cifdic_html/1/cif_core.dic/Iatom_type_symbol.html</a>
+<a name="ln655">               // Try to strip the string to have a better chance to have a</a>
+<a name="ln656">               // valid symbol</a>
+<a name="ln657">               // This is not guaranteed to work still, as the CIF standard</a>
+<a name="ln658">               // allows about any string...</a>
+<a name="ln659">               tmpSymbol=token.as_text.c_str();</a>
+<a name="ln660">               if ((tmpSymbol.size()==1) &amp;&amp; isalpha(tmpSymbol[0]))</a>
+<a name="ln661">                 {</a>
+<a name="ln662">                 nbc=1;</a>
+<a name="ln663">                 }</a>
+<a name="ln664">               else if (tmpSymbol.size()&gt;=2)</a>
+<a name="ln665">                 {</a>
+<a name="ln666">                 if (isalpha(tmpSymbol[0]) &amp;&amp; isalpha(tmpSymbol[1]))</a>
+<a name="ln667">                   {</a>
+<a name="ln668">                   nbc=2;</a>
+<a name="ln669">                   }</a>
+<a name="ln670">                 else if (isalpha(tmpSymbol[0]))</a>
+<a name="ln671">                   {</a>
+<a name="ln672">                   nbc=1;</a>
+<a name="ln673">                   }</a>
+<a name="ln674">                 }</a>
+<a name="ln675">               else</a>
+<a name="ln676">                 {</a>
+<a name="ln677">                 nbc = 0;</a>
+<a name="ln678">                 }</a>
+<a name="ln679">               if (tmpSymbol.size()&gt;nbc)</a>
+<a name="ln680">                 {// Try to find a formal charge in the symbol</a>
+<a name="ln681">                 int charge=0;</a>
+<a name="ln682">                 int sign=0;</a>
+<a name="ln683">                 for(unsigned int i=nbc;i&lt;tmpSymbol.size();++i)</a>
+<a name="ln684">                   {// Use first number found as formal charge</a>
+<a name="ln685">                   if (isdigit(tmpSymbol[i]) &amp;&amp; (charge==0))</a>
+<a name="ln686">                     {</a>
+<a name="ln687">                     charge=atoi(tmpSymbol.substr(i,1).c_str());</a>
+<a name="ln688">                     }</a>
+<a name="ln689">                   if ('-'==tmpSymbol[i])</a>
+<a name="ln690">                     {</a>
+<a name="ln691">                     sign-=1;</a>
+<a name="ln692">                     }</a>
+<a name="ln693">                   if ('+'==tmpSymbol[i])</a>
+<a name="ln694">                     {</a>
+<a name="ln695">                     sign+=1;</a>
+<a name="ln696">                     }</a>
+<a name="ln697">                   }</a>
+<a name="ln698">                   if (0!=sign) // no sign, no charge</a>
+<a name="ln699">                     {</a>
+<a name="ln700">                     if (charge==0)</a>
+<a name="ln701">                       {</a>
+<a name="ln702">                       charge=1;</a>
+<a name="ln703">                       }</a>
+<a name="ln704">                     stringstream ss;</a>
+<a name="ln705">                     ss&lt;&lt; tmpSymbol &lt;&lt;&quot; / symbol=&quot;&lt;&lt;tmpSymbol.substr(0,nbc)</a>
+<a name="ln706">                       &lt;&lt;&quot; charge= &quot;&lt;&lt;sign*charge;</a>
+<a name="ln707">                     obErrorLog.ThrowError(__FUNCTION__, ss.str(), obDebug);</a>
+<a name="ln708">                     atom-&gt;SetFormalCharge(sign*charge);</a>
+<a name="ln709">                     }</a>
+<a name="ln710">                 }</a>
+<a name="ln711">               if (nbc&gt;0)</a>
+<a name="ln712">                 {</a>
+<a name="ln713">                 tmpSymbol=tmpSymbol.substr(0,nbc);</a>
+<a name="ln714">                 }</a>
+<a name="ln715">               else</a>
+<a name="ln716">                 {</a>
+<a name="ln717">                 stringstream ss;</a>
+<a name="ln718">                 ss&lt;&lt; tmpSymbol &lt;&lt;&quot; / could not derive a symbol&quot;</a>
+<a name="ln719">                   &lt;&lt;&quot; for atomic number. Setting it to default &quot;</a>
+<a name="ln720">                   &lt;&lt;&quot; Xx(atomic number 0)&quot;;</a>
+<a name="ln721">                 obErrorLog.ThrowError(__FUNCTION__, ss.str(), obDebug);</a>
+<a name="ln722">                 tmpSymbol=&quot;Xx&quot;;//Something went wrong, no symbol ! Default to Xx</a>
+<a name="ln723">                 }</a>
+<a name="ln724">               atomicNum = OBElements::GetAtomicNum(tmpSymbol.c_str());</a>
+<a name="ln725">               // Test for some oxygens with subscripts</a>
+<a name="ln726">               if (atomicNum == 0 &amp;&amp; tmpSymbol[0] == 'O')</a>
+<a name="ln727">                 {</a>
+<a name="ln728">                 atomicNum = 8; // e.g. Ob, OH, etc.</a>
+<a name="ln729">                 }</a>
+<a name="ln730"> </a>
+<a name="ln731">               atom-&gt;SetAtomicNum(atomicNum); //set atomic number, or '0' if the atom type is not recognized</a>
+<a name="ln732">               atom-&gt;SetType(tmpSymbol);</a>
+<a name="ln733">               break;</a>
+<a name="ln734">             case CIFTagID::_atom_site_fract_x:</a>
+<a name="ln735">             case CIFTagID::_atom_site_Cartn_x:</a>
+<a name="ln736">               x = token.as_number();</a>
+<a name="ln737">               break;</a>
+<a name="ln738">             case CIFTagID::_atom_site_fract_y:</a>
+<a name="ln739">             case CIFTagID::_atom_site_Cartn_y:</a>
+<a name="ln740">               y = token.as_number();</a>
+<a name="ln741">               break;</a>
+<a name="ln742">             case CIFTagID::_atom_site_fract_z:</a>
+<a name="ln743">             case CIFTagID::_atom_site_Cartn_z:</a>
+<a name="ln744">               z = token.as_number();</a>
+<a name="ln745">               break;</a>
+<a name="ln746">             case CIFTagID::_atom_site_label_atom_id: // The atomic label within the residue</a>
+<a name="ln747">               atom_label.assign(token.as_text);</a>
+<a name="ln748">               if (atom_type_tag == CIFTagID::_atom_site_label_atom_id)</a>
+<a name="ln749">                 {</a>
+<a name="ln750">                 for (string::iterator posx = token.as_text.begin(), posy = token.as_text.end(); posx != posy; ++ posx)</a>
+<a name="ln751">                   {</a>
+<a name="ln752">                   char c = (char)toupper(* posx);</a>
+<a name="ln753">                   if ( c &lt; 'A' || c &gt; 'Z' )</a>
+<a name="ln754">                     {</a>
+<a name="ln755">                     token.as_text.erase(posx, posy);</a>
+<a name="ln756">                     break;</a>
+<a name="ln757">                     }</a>
+<a name="ln758">                   }</a>
+<a name="ln759">                 atom-&gt;SetAtomicNum(OBElements::GetAtomicNum(token.as_text.c_str()));</a>
+<a name="ln760">                 atom-&gt;SetType(token.as_text);</a>
+<a name="ln761">                 }</a>
+<a name="ln762">               break;</a>
+<a name="ln763">             case CIFTagID::_atom_site_label_comp_id: // The residue abbreviation, e.g. ILE</a>
+<a name="ln764">               residue_name.assign(token.as_text);</a>
+<a name="ln765">               break;</a>
+<a name="ln766">             case CIFTagID::_atom_site_label_entity_id: // The chain entity number of the residue, e.g. 2</a>
+<a name="ln767">    // ignored and replaced by unique id for label_asym_id</a>
+<a name="ln768">               break;</a>
+<a name="ln769">             case CIFTagID::_atom_site_label_asym_id: // The strand number of the residue</a>
+<a name="ln770">                   if (token.as_text != last_asym_id) {</a>
+<a name="ln771">                       CIFasymmap::const_iterator asym_it = asym_map.find(token.as_text);</a>
+<a name="ln772">                          if (asym_it == asym_map.end()) {</a>
+<a name="ln773">                              ++next_asym_no;</a>
+<a name="ln774">                              asym_it =</a>
+<a name="ln775">                                  asym_map.insert(CIFasymmap::value_type(token.as_text,</a>
+<a name="ln776">                                                                         next_asym_no)).first;</a>
+<a name="ln777">                          }</a>
+<a name="ln778">                          chain_num = asym_it-&gt;second;</a>
+<a name="ln779">                          last_asym_id = token.as_text;</a>
+<a name="ln780">               }</a>
+<a name="ln781">               break;</a>
+<a name="ln782">             case CIFTagID::_atom_site_label_seq_id: // The sequence number of the residue, within the chain, e.g. 12</a>
+<a name="ln783">               residue_num = token.as_unsigned();</a>
+<a name="ln784">               break;</a>
+<a name="ln785">             case CIFTagID::_atom_site_occupancy: // The occupancy of the site.</a>
+<a name="ln786">               {</a>
+<a name="ln787">                 OBPairFloatingPoint * occup = new OBPairFloatingPoint;</a>
+<a name="ln788">                 occup-&gt;SetAttribute(&quot;_atom_site_occupancy&quot;);</a>
+<a name="ln789">                 double occupancy = std::max(0.0, std::min(1.0, token.as_number())); // clamp occupancy to [0.0, 1.0] bugfix  </a>
+<a name="ln790">                 occup-&gt;SetValue(occupancy);</a>
+<a name="ln791">                 occup-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln792">                 atom-&gt;SetData(occup);</a>
+<a name="ln793">               }  </a>
+<a name="ln794">               break;</a>
+<a name="ln795">             case CIFTagID::unread_CIFDataName:</a>
+<a name="ln796">             default:</a>
+<a name="ln797">               break;</a>
+<a name="ln798">               }</a>
+<a name="ln799">             ++ column_idx;</a>
+<a name="ln800">             if (column_idx == column_count)</a>
+<a name="ln801">               {</a>
+<a name="ln802">               atom-&gt;SetVector(x, y, z);</a>
+<a name="ln803">               if (use_residue == 2)</a>
+<a name="ln804">                 {</a>
+<a name="ln805">                 has_residue_information = true;</a>
+<a name="ln806">                 CIFResidueID res_id(chain_num, residue_num);</a>
+<a name="ln807">                 CIFResidueMap::const_iterator resx = ResidueMap.find(res_id);</a>
+<a name="ln808">                 OBResidue * res;</a>
+<a name="ln809">                 if (resx == ResidueMap.end())</a>
+<a name="ln810">                   {</a>
+<a name="ln811">                   ResidueMap[res_id] = pmol-&gt;NumResidues();</a>
+<a name="ln812">                   res  = pmol-&gt;NewResidue();</a>
+<a name="ln813">                   res-&gt;SetChainNum(chain_num);</a>
+<a name="ln814">                   res-&gt;SetNum(residue_num);</a>
+<a name="ln815">                   res-&gt;SetName(residue_name);</a>
+<a name="ln816">                   }</a>
+<a name="ln817">                 else</a>
+<a name="ln818">                   res = pmol-&gt;GetResidue( (* resx).second );</a>
+<a name="ln819">                 res-&gt;AddAtom(atom);</a>
+<a name="ln820">                 if (!atom_label.empty())</a>
+<a name="ln821">                   res-&gt;SetAtomID(atom, atom_label);</a>
+<a name="ln822">                 unsigned long serial_no = strtoul(atom_mol_label.c_str(), nullptr, 10);</a>
+<a name="ln823">                 if (serial_no &gt; 0)</a>
+<a name="ln824">                   res-&gt;SetSerialNum(atom, serial_no);</a>
+<a name="ln825">                 }</a>
+<a name="ln826">               column_idx = 0;</a>
+<a name="ln827">               }</a>
+<a name="ln828">             token_peeked = lexer.next_token(token);</a>
+<a name="ln829">             }</a>
+<a name="ln830">           }</a>
+<a name="ln831">           break;</a>
+<a name="ln832">         case CIFTagID::symmetry_equiv:</a>
+<a name="ln833">           {</a>
+<a name="ln834">           size_t column_idx = 0;</a>
+<a name="ln835">           while (token.type == CIFLexer::ValueToken) // Read in the Fields</a>
+<a name="ln836">             {</a>
+<a name="ln837">             if ((columns[column_idx] == CIFTagID::_symmetry_equiv_pos_as_xyz)</a>
+<a name="ln838">               &amp;&amp; token.as_text.find(UNKNOWN_VALUE) == string::npos)</a>
+<a name="ln839">               space_group.AddTransform(token.as_text);</a>
+<a name="ln840">             ++ column_idx;</a>
+<a name="ln841">             if (column_idx == column_count)</a>
+<a name="ln842">               column_idx = 0;</a>
+<a name="ln843">             token_peeked = lexer.next_token(token);</a>
+<a name="ln844">             }</a>
+<a name="ln845">           }</a>
+<a name="ln846">           break;</a>
+<a name="ln847"> </a>
+<a name="ln848">         case CIFTagID::atom_type: //Atoms oxidations</a>
+<a name="ln849">           {</a>
+<a name="ln850">           size_t column_idx = 0;</a>
+<a name="ln851">           string atom_label = &quot;&quot;;</a>
+<a name="ln852">           double charge = 0;</a>
+<a name="ln853">           while (token.type == CIFLexer::ValueToken) // Read in the Fields</a>
+<a name="ln854">             {</a>
+<a name="ln855">             if (columns[column_idx] == CIFTagID::_atom_type_symbol)</a>
+<a name="ln856">               atom_label = token.as_text;</a>
+<a name="ln857">             if (columns[column_idx] == CIFTagID::_atom_type_oxidation_number)</a>
+<a name="ln858">               charge = token.as_number();</a>
+<a name="ln859">             ++ column_idx;</a>
+<a name="ln860">             if (column_idx == column_count)</a>
+<a name="ln861">             {</a>
+<a name="ln862">               atomic_charges[atom_label] = charge;</a>
+<a name="ln863">               column_idx = 0;</a>
+<a name="ln864">             }</a>
+<a name="ln865">             token_peeked = lexer.next_token(token);</a>
+<a name="ln866">             }</a>
+<a name="ln867">           }</a>
+<a name="ln868">           break;</a>
+<a name="ln869"> </a>
+<a name="ln870"> </a>
+<a name="ln871">         case CIFTagID::unread_CIFCatName:</a>
+<a name="ln872">         default:</a>
+<a name="ln873">           while (token.type == CIFLexer::ValueToken) // Eat the values, we don't want them</a>
+<a name="ln874">             token_peeked = lexer.next_token(token);</a>
+<a name="ln875">           break;</a>
+<a name="ln876">           }</a>
+<a name="ln877">         }</a>
+<a name="ln878">         break;</a>
+<a name="ln879">       case CIFLexer::TagToken:</a>
+<a name="ln880">         {</a>
+<a name="ln881">         CIFTagID::CIFDataName tag_id = lexer.lookup_tag(token.as_text);</a>
+<a name="ln882">         // get the value</a>
+<a name="ln883">         lexer.next_token(token);</a>
+<a name="ln884">         switch (tag_id)</a>
+<a name="ln885">           {</a>
+<a name="ln886">         case CIFTagID::_cell_length_a:</a>
+<a name="ln887">           cell_a = token.as_number();</a>
+<a name="ln888">           ++ use_cell;</a>
+<a name="ln889">           break;</a>
+<a name="ln890">         case CIFTagID::_cell_length_b:</a>
+<a name="ln891">           cell_b = token.as_number();</a>
+<a name="ln892">           ++ use_cell;</a>
+<a name="ln893">           break;</a>
+<a name="ln894">         case CIFTagID::_cell_length_c:</a>
+<a name="ln895">           cell_c = token.as_number();</a>
+<a name="ln896">           ++ use_cell;</a>
+<a name="ln897">           break;</a>
+<a name="ln898">         case CIFTagID::_cell_angle_alpha:</a>
+<a name="ln899">           cell_alpha = token.as_number();</a>
+<a name="ln900">           ++ use_cell;</a>
+<a name="ln901">           break;</a>
+<a name="ln902">         case CIFTagID::_cell_angle_beta:</a>
+<a name="ln903">           cell_beta = token.as_number();</a>
+<a name="ln904">           ++ use_cell;</a>
+<a name="ln905">           break;</a>
+<a name="ln906">         case CIFTagID::_cell_angle_gamma:</a>
+<a name="ln907">           cell_gamma = token.as_number();</a>
+<a name="ln908">           ++ use_cell;</a>
+<a name="ln909">           break;</a>
+<a name="ln910">         case CIFTagID::_chemical_name_systematic:</a>
+<a name="ln911">         case CIFTagID::_chemical_name_mineral:</a>
+<a name="ln912">         case CIFTagID::_chemical_name_structure_type:</a>
+<a name="ln913">         case CIFTagID::_chemical_name_common:</a>
+<a name="ln914">           if (tag_id &gt; name_tag)</a>
+<a name="ln915">             {</a>
+<a name="ln916">             name_tag = tag_id;</a>
+<a name="ln917">             pmol-&gt;SetTitle(token.as_text);</a>
+<a name="ln918">             }</a>
+<a name="ln919">           break;</a>
+<a name="ln920">         case CIFTagID::_chemical_formula_analytical:</a>
+<a name="ln921">         case CIFTagID::_chemical_formula_structural:</a>
+<a name="ln922">         case CIFTagID::_chemical_formula_iupac:</a>
+<a name="ln923">         case CIFTagID::_chemical_formula_moiety:</a>
+<a name="ln924">           if (tag_id &gt; formula_tag)</a>
+<a name="ln925">             {</a>
+<a name="ln926">             formula_tag = tag_id;</a>
+<a name="ln927">             pmol-&gt;SetFormula(token.as_text);</a>
+<a name="ln928">             }</a>
+<a name="ln929">           break;</a>
+<a name="ln930">         case CIFTagID::_space_group_IT_number:</a>
+<a name="ln931">         case CIFTagID::_symmetry_Int_Tables_number:</a>
+<a name="ln932">           space_group_name.assign(token.as_text);</a>
+<a name="ln933">           space_group.SetId(atoi(space_group_name.c_str()));</a>
+<a name="ln934">           break;</a>
+<a name="ln935">         case CIFTagID::_space_group_name_Hall:</a>
+<a name="ln936">         case CIFTagID::_symmetry_space_group_name_Hall:</a>
+<a name="ln937">           space_group_name.assign(token.as_text);</a>
+<a name="ln938">           space_group.SetHallName(space_group_name.c_str());</a>
+<a name="ln939">           break;</a>
+<a name="ln940">         case CIFTagID::_space_group_name_H_M_alt:</a>
+<a name="ln941">         case CIFTagID::_symmetry_space_group_name_H_M:</a>
+<a name="ln942">           space_group_name.assign(token.as_text);</a>
+<a name="ln943">           space_group.SetHMName(space_group_name.c_str());</a>
+<a name="ln944">           break;</a>
+<a name="ln945">         case CIFTagID::_symmetry_equiv_pos_as_xyz:</a>
+<a name="ln946">           space_group.AddTransform(token.as_text);</a>
+<a name="ln947">           break;</a>
+<a name="ln948">         default: // eat the value for this tag</a>
+<a name="ln949">           break;</a>
+<a name="ln950">           }</a>
+<a name="ln951">         }</a>
+<a name="ln952">         break;</a>
+<a name="ln953">       case CIFLexer::KeyStopToken:</a>
+<a name="ln954">       case CIFLexer::ValueToken:</a>
+<a name="ln955">       default:</a>
+<a name="ln956">         break;</a>
+<a name="ln957">         }</a>
+<a name="ln958">       }</a>
+<a name="ln959">     if (pmol-&gt;NumAtoms() &gt; 0)</a>
+<a name="ln960">       {</a>
+<a name="ln961">       if (use_cell &gt;= 6)</a>
+<a name="ln962">         {</a>
+<a name="ln963">         OBUnitCell * pCell = new OBUnitCell;  // No matching &quot;delete&quot; because it's saved in pmol-&gt;SetData</a>
+<a name="ln964">         pCell-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln965">         pCell-&gt;SetData(cell_a, cell_b, cell_c,</a>
+<a name="ln966">                        cell_alpha,</a>
+<a name="ln967">                        cell_beta,</a>
+<a name="ln968">                        cell_gamma</a>
+<a name="ln969">                        );</a>
+<a name="ln970">         pCell-&gt;SetSpaceGroup(space_group_name);</a>
+<a name="ln971">         const SpaceGroup * pSpaceGroup = SpaceGroup::Find( &amp; space_group);</a>
+<a name="ln972">         if (pSpaceGroup)</a>
+<a name="ln973">           pCell-&gt;SetSpaceGroup(pSpaceGroup);</a>
+<a name="ln974">         else</a>
+<a name="ln975">           space_group_failed = true;</a>
+<a name="ln976">         pmol-&gt;SetData(pCell);</a>
+<a name="ln977">         if (use_fract)</a>
+<a name="ln978">           {</a>
+<a name="ln979">           for (OBAtomIterator atom_x = pmol-&gt;BeginAtoms(), atom_y = pmol-&gt;EndAtoms(); atom_x != atom_y; ++ atom_x)</a>
+<a name="ln980">             {</a>
+<a name="ln981">             OBAtom * atom = (* atom_x);</a>
+<a name="ln982">             if (wrap_coords)</a>
+<a name="ln983">               atom-&gt;SetVector(pCell-&gt;FractionalToCartesian(</a>
+<a name="ln984">                               pCell-&gt;WrapFractionalCoordinate(atom-&gt;GetVector())));</a>
+<a name="ln985">             else</a>
+<a name="ln986">               atom-&gt;SetVector(pCell-&gt;FractionalToCartesian(atom-&gt;GetVector()));</a>
+<a name="ln987">             }  // Note: this is where we could keep the original fractional coordinates, e.g. in a new OBCoord class</a>
+<a name="ln988">           }</a>
+<a name="ln989">         if (pConv-&gt;IsOption(&quot;p&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln990">           pmol-&gt;SetPeriodicMol();</a>
+<a name="ln991">         }</a>
+<a name="ln992">       for (OBAtomIterator atom_x = pmol-&gt;BeginAtoms(), atom_y = pmol-&gt;EndAtoms(); atom_x != atom_y; ++atom_x )</a>
+<a name="ln993">       {</a>
+<a name="ln994">         OBAtom * atom = (* atom_x);</a>
+<a name="ln995">         OBPairData * pd = dynamic_cast&lt;OBPairData *&gt;( atom-&gt;GetData( &quot;_atom_site_label&quot; ) );</a>
+<a name="ln996">         if (pd != nullptr)</a>
+<a name="ln997">         {</a>
+<a name="ln998">           if( atomic_charges.count( pd-&gt;GetValue() ) &gt; 0 )</a>
+<a name="ln999">           {</a>
+<a name="ln1000">               OBPairFloatingPoint * charge_obd = new OBPairFloatingPoint;</a>
+<a name="ln1001">               charge_obd-&gt;SetAttribute(&quot;input_charge&quot;);</a>
+<a name="ln1002">               charge_obd-&gt;SetValue(atomic_charges[pd-&gt;GetValue()] );</a>
+<a name="ln1003">               charge_obd-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln1004">               atom-&gt;SetData(charge_obd);</a>
+<a name="ln1005">           }</a>
+<a name="ln1006">         }</a>
+<a name="ln1007">       }</a>
+<a name="ln1008"> </a>
+<a name="ln1009">       if (!pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln1010">         {</a>
+<a name="ln1011">         pmol-&gt;ConnectTheDots();</a>
+<a name="ln1012">         if (!pConv-&gt;IsOption(&quot;s&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln1013">           pmol-&gt;PerceiveBondOrders();</a>
+<a name="ln1014">         }</a>
+<a name="ln1015">       }</a>
+<a name="ln1016"> </a>
+<a name="ln1017">       if (space_group_failed)</a>
+<a name="ln1018">       {</a>
+<a name="ln1019">         string transformations;</a>
+<a name="ln1020">         transform3dIterator ti;</a>
+<a name="ln1021">         const transform3d *t = space_group.BeginTransform(ti);</a>
+<a name="ln1022">         while(t){</a>
+<a name="ln1023">           transformations += t-&gt;DescribeAsString() + &quot; &quot;;</a>
+<a name="ln1024">           t = space_group.NextTransform(ti);</a>
+<a name="ln1025">         }</a>
+<a name="ln1026"> </a>
+<a name="ln1027">         OBOp* pOp = OBOp::FindType(&quot;fillUC&quot;);</a>
+<a name="ln1028">         if (pOp &amp;&amp; transformations.length())</a>
+<a name="ln1029">         {</a>
+<a name="ln1030">           map&lt;string, string&gt; m;</a>
+<a name="ln1031">           m.insert(pair&lt;string, string&gt;(&quot;transformations&quot;, transformations));</a>
+<a name="ln1032">           pOp-&gt;Do(pmol, &quot;strict&quot;, &amp;m);</a>
+<a name="ln1033">         }</a>
+<a name="ln1034">       }</a>
+<a name="ln1035"> </a>
+<a name="ln1036">     pmol-&gt;EndModify();</a>
+<a name="ln1037">     }</a>
+<a name="ln1038">   if (has_residue_information)</a>
+<a name="ln1039">     pmol-&gt;SetChainsPerceived();</a>
+<a name="ln1040">   return (pmol-&gt;NumAtoms() &gt; 0 ? true : false);</a>
+<a name="ln1041"> }</a>
+<a name="ln1042"> </a>
+<a name="ln1043"> ////////////////////////////////////////////////////////////////</a>
+<a name="ln1044"> </a>
+<a name="ln1045"> bool mmCIFFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln1046"> {</a>
+<a name="ln1047">   OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln1048">   if (pmol == nullptr)</a>
+<a name="ln1049">     return false;</a>
+<a name="ln1050"> </a>
+<a name="ln1051">   //Define some references so we can use the old parameter names</a>
+<a name="ln1052">   ostream &amp; ofs = * pConv-&gt;GetOutStream();</a>
+<a name="ln1053"> </a>
+<a name="ln1054">   char buffer[BUFF_SIZE];</a>
+<a name="ln1055"> </a>
+<a name="ln1056">   string id;</a>
+<a name="ln1057">   for (const char * p = pmol-&gt;GetTitle(); * p; ++ p)</a>
+<a name="ln1058">     if ( (* p) &gt; ' ' &amp;&amp; (* p) &lt;= '~' )</a>
+<a name="ln1059">       id.append(1, (char)toupper(* p));</a>
+<a name="ln1060">   if (id.empty())</a>
+<a name="ln1061">     {</a>
+<a name="ln1062">     snprintf(buffer, BUFF_SIZE, &quot;T%lu&quot;, (unsigned long)time(nullptr));</a>
+<a name="ln1063">     id.assign(buffer);</a>
+<a name="ln1064">     }</a>
+<a name="ln1065">   ofs &lt;&lt; &quot;# --------------------------------------------------------------------------&quot; &lt;&lt; endl;</a>
+<a name="ln1066">   ofs &lt;&lt; &quot;#&quot; &lt;&lt; endl;</a>
+<a name="ln1067">   ofs &lt;&lt; &quot;# CIF file generated by openbabel &quot; &lt;&lt; BABEL_VERSION &lt;&lt; &quot; http://openbabel.org/&quot; &lt;&lt; endl;</a>
+<a name="ln1068">   ofs &lt;&lt; &quot;# to comply with the Macromolecular CIF Dictionary  (cif_mm.dic) version  2.0.11 http://mmcif.pdb.org/&quot; &lt;&lt; endl;</a>
+<a name="ln1069">   ofs &lt;&lt; &quot;# The contents of this file were derived from &quot; &lt;&lt; pConv-&gt;GetInFilename() &lt;&lt; endl;</a>
+<a name="ln1070">   ofs &lt;&lt; &quot;#&quot; &lt;&lt; endl;</a>
+<a name="ln1071">   ofs &lt;&lt; &quot;#---------------------------------------------------------------------------&quot; &lt;&lt; endl;</a>
+<a name="ln1072">   ofs &lt;&lt; endl;</a>
+<a name="ln1073">   ofs &lt;&lt; &quot;data_&quot; &lt;&lt; id &lt;&lt; endl;</a>
+<a name="ln1074">   ofs &lt;&lt; endl;</a>
+<a name="ln1075">   ofs &lt;&lt; &quot;###########&quot; &lt;&lt; endl;</a>
+<a name="ln1076">   ofs &lt;&lt; &quot;## ENTRY ##&quot; &lt;&lt; endl;</a>
+<a name="ln1077">   ofs &lt;&lt; &quot;###########&quot; &lt;&lt; endl;</a>
+<a name="ln1078">   ofs &lt;&lt; endl;</a>
+<a name="ln1079">   ofs &lt;&lt; &quot;_entry.id\t&quot; &lt;&lt; id &lt;&lt; endl;</a>
+<a name="ln1080">   ofs &lt;&lt; endl;</a>
+<a name="ln1081">   if (* (pmol-&gt;GetTitle()))</a>
+<a name="ln1082">     {</a>
+<a name="ln1083">     ofs &lt;&lt; &quot;##############&quot; &lt;&lt; endl;</a>
+<a name="ln1084">     ofs &lt;&lt; &quot;## CHEMICAL ##&quot; &lt;&lt; endl;</a>
+<a name="ln1085">     ofs &lt;&lt; &quot;##############&quot; &lt;&lt; endl;</a>
+<a name="ln1086">     ofs &lt;&lt; endl;</a>
+<a name="ln1087">     ofs &lt;&lt; &quot;_chemical.entry_id\t&quot; &lt;&lt; id &lt;&lt; endl;</a>
+<a name="ln1088">     ofs &lt;&lt; &quot;_chemical.name_common\t'&quot; &lt;&lt; pmol-&gt;GetTitle() &lt;&lt; &quot;'&quot; &lt;&lt; endl;</a>
+<a name="ln1089">     ofs &lt;&lt; endl;</a>
+<a name="ln1090">     }</a>
+<a name="ln1091">   if (! (pmol-&gt;GetSpacedFormula().empty()))</a>
+<a name="ln1092">     {</a>
+<a name="ln1093">     ofs &lt;&lt; &quot;######################&quot; &lt;&lt; endl;</a>
+<a name="ln1094">     ofs &lt;&lt; &quot;## CHEMICAL FORMULA ##&quot; &lt;&lt; endl;</a>
+<a name="ln1095">     ofs &lt;&lt; &quot;######################&quot; &lt;&lt; endl;</a>
+<a name="ln1096">     ofs &lt;&lt; endl;</a>
+<a name="ln1097">     ofs &lt;&lt; &quot;_chemical_formula.entry_id\t&quot; &lt;&lt; id &lt;&lt; endl;</a>
+<a name="ln1098">     ofs &lt;&lt; &quot;_chemical_formula.structural\t'&quot; &lt;&lt; pmol-&gt;GetFormula() &lt;&lt; &quot;'&quot; &lt;&lt; endl;</a>
+<a name="ln1099">     ofs &lt;&lt; endl;</a>
+<a name="ln1100">     }</a>
+<a name="ln1101">   ofs &lt;&lt; &quot;###############&quot; &lt;&lt; endl;</a>
+<a name="ln1102">   ofs &lt;&lt; &quot;## ATOM_SITE ##&quot; &lt;&lt; endl;</a>
+<a name="ln1103">   ofs &lt;&lt; &quot;###############&quot; &lt;&lt; endl;</a>
+<a name="ln1104">   ofs &lt;&lt; endl;</a>
+<a name="ln1105">   ofs &lt;&lt; &quot;loop_&quot; &lt;&lt; endl;</a>
+<a name="ln1106">   ofs &lt;&lt; &quot;_atom_site.id&quot; &lt;&lt; endl;</a>
+<a name="ln1107">   ofs &lt;&lt; &quot;_atom_site.type_symbol&quot; &lt;&lt; endl;</a>
+<a name="ln1108">   bool has_residues = (pmol-&gt;NumResidues() &gt; 0);</a>
+<a name="ln1109">   if (has_residues)</a>
+<a name="ln1110">     {</a>
+<a name="ln1111">     ofs &lt;&lt; &quot;_atom_site.label_atom_id&quot; &lt;&lt; endl;</a>
+<a name="ln1112">     ofs &lt;&lt; &quot;_atom_site.label_comp_id&quot; &lt;&lt; endl;</a>
+<a name="ln1113">     ofs &lt;&lt; &quot;_atom_site.label_entity_id&quot; &lt;&lt; endl;</a>
+<a name="ln1114">     ofs &lt;&lt; &quot;_atom_site.label_seq_id&quot; &lt;&lt; endl;</a>
+<a name="ln1115">     }</a>
+<a name="ln1116">   ofs &lt;&lt; &quot;_atom_site.Cartn_x&quot; &lt;&lt; endl;</a>
+<a name="ln1117">   ofs &lt;&lt; &quot;_atom_site.Cartn_y&quot; &lt;&lt; endl;</a>
+<a name="ln1118">   ofs &lt;&lt; &quot;_atom_site.Cartn_z&quot; &lt;&lt; endl;</a>
+<a name="ln1119">   size_t site_id = 1;</a>
+<a name="ln1120">   for (OBAtomIterator atom_x = pmol-&gt;BeginAtoms(), atom_y = pmol-&gt;EndAtoms(); atom_x != atom_y; ++ atom_x, ++ site_id)</a>
+<a name="ln1121">     {</a>
+<a name="ln1122">     OBAtom * atom = (* atom_x);</a>
+<a name="ln1123">     ofs &lt;&lt; '\t' &lt;&lt; site_id &lt;&lt; '\t' &lt;&lt; OBElements::GetSymbol(atom-&gt;GetAtomicNum());</a>
+<a name="ln1124">     if (has_residues)</a>
+<a name="ln1125">       {</a>
+<a name="ln1126">       OBResidue * pRes = atom-&gt;GetResidue();</a>
+<a name="ln1127">       string resname(pRes-&gt;GetName()), atomname(pRes-&gt;GetAtomID(atom));</a>
+<a name="ln1128">       if (atomname.empty())</a>
+<a name="ln1129">         {</a>
+<a name="ln1130">         snprintf(buffer, BUFF_SIZE, &quot;%s%lu&quot;, OBElements::GetSymbol(atom-&gt;GetAtomicNum()), (unsigned long)site_id);</a>
+<a name="ln1131">         atomname.assign(buffer);</a>
+<a name="ln1132">         }</a>
+<a name="ln1133">       if (resname.empty())</a>
+<a name="ln1134">         resname.assign(&quot;UNK&quot;);</a>
+<a name="ln1135">       ofs &lt;&lt; '\t' &lt;&lt; atomname &lt;&lt; '\t' &lt;&lt; resname &lt;&lt; '\t' &lt;&lt; pRes-&gt;GetChainNum() &lt;&lt; '\t' &lt;&lt; pRes-&gt;GetNum() &lt;&lt; endl;</a>
+<a name="ln1136">       }</a>
+<a name="ln1137">     ofs &lt;&lt; '\t' &lt;&lt; atom-&gt;GetX() &lt;&lt; '\t' &lt;&lt; atom-&gt;GetY() &lt;&lt; '\t' &lt;&lt; atom-&gt;GetZ() &lt;&lt; endl;</a>
+<a name="ln1138">     }</a>
+<a name="ln1139">   ofs &lt;&lt; endl;</a>
+<a name="ln1140">   if (pmol-&gt;HasData(OBGenericDataType::UnitCell))</a>
+<a name="ln1141">     {</a>
+<a name="ln1142">     OBUnitCell * pCell = (OBUnitCell * )pmol-&gt;GetData(OBGenericDataType::UnitCell);</a>
+<a name="ln1143">     ofs &lt;&lt; &quot;##########&quot; &lt;&lt; endl;</a>
+<a name="ln1144">     ofs &lt;&lt; &quot;## CELL ##&quot; &lt;&lt; endl;</a>
+<a name="ln1145">     ofs &lt;&lt; &quot;##########&quot; &lt;&lt; endl;</a>
+<a name="ln1146">     ofs &lt;&lt; endl;</a>
+<a name="ln1147">     ofs &lt;&lt; &quot;_cell.entry_id\t&quot; &lt;&lt; id &lt;&lt; endl;</a>
+<a name="ln1148">     ofs &lt;&lt; &quot;_cell.length_a\t&quot; &lt;&lt; pCell-&gt;GetA() &lt;&lt; endl;</a>
+<a name="ln1149">     ofs &lt;&lt; &quot;_cell.length_b\t&quot; &lt;&lt; pCell-&gt;GetB() &lt;&lt; endl;</a>
+<a name="ln1150">     ofs &lt;&lt; &quot;_cell.length_c\t&quot; &lt;&lt; pCell-&gt;GetC() &lt;&lt; endl;</a>
+<a name="ln1151">     ofs &lt;&lt; &quot;_cell.angle_alpha\t&quot; &lt;&lt; pCell-&gt;GetAlpha() &lt;&lt; endl;</a>
+<a name="ln1152">     ofs &lt;&lt; &quot;_cell.angle_beta\t&quot;  &lt;&lt; pCell-&gt;GetBeta() &lt;&lt; endl;</a>
+<a name="ln1153">     ofs &lt;&lt; &quot;_cell.angle_gamma\t&quot; &lt;&lt; pCell-&gt;GetGamma() &lt;&lt; endl;</a>
+<a name="ln1154">     ofs &lt;&lt; endl;</a>
+<a name="ln1155">     const SpaceGroup * pSG = pCell-&gt;GetSpaceGroup();</a>
+<a name="ln1156">     if (pSG)</a>
+<a name="ln1157">       {</a>
+<a name="ln1158">       ofs &lt;&lt; &quot;#################&quot; &lt;&lt; endl;</a>
+<a name="ln1159">       ofs &lt;&lt; &quot;## SPACE GROUP ##&quot; &lt;&lt; endl;</a>
+<a name="ln1160">       ofs &lt;&lt; &quot;#################&quot; &lt;&lt; endl;</a>
+<a name="ln1161">       ofs &lt;&lt; endl;</a>
+<a name="ln1162">       ofs &lt;&lt; &quot;_space_group.id\t&quot; &lt;&lt; id &lt;&lt; endl;</a>
+<a name="ln1163">       bool loop_transforms = false;</a>
+<a name="ln1164">       if (pSG-&gt;GetId())</a>
+<a name="ln1165">         {</a>
+<a name="ln1166">         ofs &lt;&lt; &quot;_space_group.IT_number\t&quot; &lt;&lt; pSG-&gt;GetId() &lt;&lt; endl;</a>
+<a name="ln1167">         }</a>
+<a name="ln1168">       if (! (pSG-&gt;GetHallName().empty()))</a>
+<a name="ln1169">         {</a>
+<a name="ln1170">         loop_transforms = true;</a>
+<a name="ln1171">         ofs &lt;&lt; &quot;_space_group.name_Hall\t'&quot; &lt;&lt; pSG-&gt;GetHallName() &lt;&lt; &quot;'&quot; &lt;&lt; endl;</a>
+<a name="ln1172">         }</a>
+<a name="ln1173">       if (! (pSG-&gt;GetHMName().empty()))</a>
+<a name="ln1174">         {</a>
+<a name="ln1175">         loop_transforms = true;</a>
+<a name="ln1176">         // Do we have an extended HM symbol, with origin choice as &quot;:1&quot; or &quot;:2&quot; ? If so, remove it.</a>
+<a name="ln1177">         size_t n=pSG-&gt;GetHMName().find(&quot;:&quot;);</a>
+<a name="ln1178">         if(n==string::npos)</a>
+<a name="ln1179">           ofs &lt;&lt; &quot;_space_group_name_H-M_alt '&quot; &lt;&lt; pSG-&gt;GetHMName() &lt;&lt; &quot;'&quot; &lt;&lt; endl;</a>
+<a name="ln1180">         else</a>
+<a name="ln1181">           ofs &lt;&lt; &quot;_space_group_name_H-M_alt '&quot; &lt;&lt; pSG-&gt;GetHMName().substr(0,n) &lt;&lt; &quot;'&quot; &lt;&lt; endl;</a>
+<a name="ln1182">         }</a>
+<a name="ln1183">       ofs &lt;&lt; endl;</a>
+<a name="ln1184"> </a>
+<a name="ln1185">       transform3dIterator transx;</a>
+<a name="ln1186">       const transform3d * trans = pSG-&gt;BeginTransform(transx);</a>
+<a name="ln1187">       if (trans)</a>
+<a name="ln1188">         {</a>
+<a name="ln1189">         ofs &lt;&lt; &quot;####################&quot; &lt;&lt; endl;</a>
+<a name="ln1190">         ofs &lt;&lt; &quot;## SYMMETRY EQUIV ##&quot; &lt;&lt; endl;</a>
+<a name="ln1191">         ofs &lt;&lt; &quot;####################&quot; &lt;&lt; endl;</a>
+<a name="ln1192">         ofs &lt;&lt; endl;</a>
+<a name="ln1193">         size_t symid = 1;</a>
+<a name="ln1194">         if (!loop_transforms)</a>
+<a name="ln1195">           {</a>
+<a name="ln1196">           ofs &lt;&lt; &quot;_symmetry_equiv.id\t&quot; &lt;&lt; symid &lt;&lt; endl;</a>
+<a name="ln1197">           ofs &lt;&lt; &quot;_symmetry_equiv.pos_as_xyz\t'&quot; &lt;&lt; trans-&gt;DescribeAsString() &lt;&lt; &quot;'&quot; &lt;&lt; endl;</a>
+<a name="ln1198">           }</a>
+<a name="ln1199">         else</a>
+<a name="ln1200">           {</a>
+<a name="ln1201">           ofs &lt;&lt; &quot;loop_&quot; &lt;&lt; endl;</a>
+<a name="ln1202">           ofs &lt;&lt; &quot;_symmetry_equiv.id&quot; &lt;&lt; endl;</a>
+<a name="ln1203">           ofs &lt;&lt; &quot;_symmetry_equiv.pos_as_xyz&quot; &lt;&lt; endl;</a>
+<a name="ln1204">           while (trans)</a>
+<a name="ln1205">             {</a>
+<a name="ln1206">             ofs &lt;&lt; '\t' &lt;&lt; symid &lt;&lt; &quot;\t'&quot; &lt;&lt; trans-&gt;DescribeAsString() &lt;&lt; &quot;'&quot; &lt;&lt; endl;</a>
+<a name="ln1207">             trans = pSG-&gt;NextTransform(transx);</a>
+<a name="ln1208">             }</a>
+<a name="ln1209">           }</a>
+<a name="ln1210">         ofs &lt;&lt; endl;</a>
+<a name="ln1211">         }</a>
+<a name="ln1212">       }</a>
+<a name="ln1213">     }</a>
+<a name="ln1214"> </a>
+<a name="ln1215">   return true;</a>
+<a name="ln1216"> }</a>
+<a name="ln1217"> </a>
+<a name="ln1218">} //namespace OpenBabel</a>
+
+</code></pre>
+<div class="balloon" rel="158"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v730/" target="_blank">V730</a> Not all members of a class are initialized inside the constructor. Consider inspecting: ChainNum, ResNum.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

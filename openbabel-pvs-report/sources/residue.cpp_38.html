@@ -1,0 +1,1316 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>residue.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">residue.cpp - Handle macromolecule residues.</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 2001, 2002  OpenEye Scientific Software, Inc.</a>
+<a name="ln5">Some portions Copyright (C) 2001-2006 by Geoffrey R. Hutchison</a>
+<a name="ln6"> </a>
+<a name="ln7">This file is part of the Open Babel project.</a>
+<a name="ln8">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln11">it under the terms of the GNU General Public License as published by</a>
+<a name="ln12">the Free Software Foundation version 2 of the License.</a>
+<a name="ln13"> </a>
+<a name="ln14">This program is distributed in the hope that it will be useful,</a>
+<a name="ln15">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln16">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln17">GNU General Public License for more details.</a>
+<a name="ln18">***********************************************************************/</a>
+<a name="ln19"> </a>
+<a name="ln20">/**********************************************************************</a>
+<a name="ln21">Global arrays Residue, ElemDesc and function GetResidueNumber were</a>
+<a name="ln22">obtained in part or whole from RasMol2 by Roger Sayle.</a>
+<a name="ln23">***********************************************************************/</a>
+<a name="ln24"> </a>
+<a name="ln25">///////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln26">// File Includes</a>
+<a name="ln27">///////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln28"> </a>
+<a name="ln29">#include &lt;cstring&gt;</a>
+<a name="ln30"> </a>
+<a name="ln31">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln32"> </a>
+<a name="ln33">#include &lt;openbabel/residue.h&gt;</a>
+<a name="ln34">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln35">#include &lt;openbabel/oberror.h&gt;</a>
+<a name="ln36">#include &lt;openbabel/bitvec.h&gt;</a>
+<a name="ln37">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln38">#include &lt;cstring&gt;</a>
+<a name="ln39">#include &lt;cstdlib&gt;</a>
+<a name="ln40"> </a>
+<a name="ln41">using namespace std;</a>
+<a name="ln42"> </a>
+<a name="ln43">namespace OpenBabel</a>
+<a name="ln44">{</a>
+<a name="ln45">   ////////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln46">  // Global Variables</a>
+<a name="ln47">  ////////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln48"> </a>
+<a name="ln49">  char Residue[MAXRES][4] = {</a>
+<a name="ln50">    /*===============*/</a>
+<a name="ln51">    /*  Amino Acids  */</a>
+<a name="ln52">    /*===============*/</a>
+<a name="ln53"> </a>
+<a name="ln54">    /* Ordered by Cumulative Frequency in Brookhaven *</a>
+<a name="ln55">     * Protein Databank, December 1991               */</a>
+<a name="ln56"> </a>
+<a name="ln57">    &quot;ALA&quot;, /* 8.4% */     &quot;GLY&quot;, /* 8.3% */</a>
+<a name="ln58">    &quot;LEU&quot;, /* 8.0% */     &quot;SER&quot;, /* 7.5% */</a>
+<a name="ln59">    &quot;VAL&quot;, /* 7.1% */     &quot;THR&quot;, /* 6.4% */</a>
+<a name="ln60">    &quot;LYS&quot;, /* 5.8% */     &quot;ASP&quot;, /* 5.5% */</a>
+<a name="ln61">    &quot;ILE&quot;, /* 5.2% */     &quot;ASN&quot;, /* 4.9% */</a>
+<a name="ln62">    &quot;GLU&quot;, /* 4.9% */     &quot;PRO&quot;, /* 4.4% */</a>
+<a name="ln63">    &quot;ARG&quot;, /* 3.8% */     &quot;PHE&quot;, /* 3.7% */</a>
+<a name="ln64">    &quot;GLN&quot;, /* 3.5% */     &quot;TYR&quot;, /* 3.5% */</a>
+<a name="ln65">    &quot;HIS&quot;, /* 2.3% */     &quot;CYS&quot;, /* 2.0% */</a>
+<a name="ln66">    &quot;MET&quot;, /* 1.8% */     &quot;TRP&quot;, /* 1.4% */</a>
+<a name="ln67"> </a>
+<a name="ln68">    &quot;ASX&quot;, &quot;GLX&quot;, &quot;PCA&quot;, &quot;HYP&quot;,</a>
+<a name="ln69"> </a>
+<a name="ln70">    /*===================*/</a>
+<a name="ln71">    /*  DNA Nucleotides  */</a>
+<a name="ln72">    /*===================*/</a>
+<a name="ln73">    &quot;  A&quot;, &quot;  C&quot;, &quot;  G&quot;, &quot;  T&quot;,</a>
+<a name="ln74"> </a>
+<a name="ln75">    /*===================*/</a>
+<a name="ln76">    /*  RNA Nucleotides  */</a>
+<a name="ln77">    /*===================*/</a>
+<a name="ln78">    &quot;  U&quot;, &quot; +U&quot;, &quot;  I&quot;, &quot;1MA&quot;,</a>
+<a name="ln79">    &quot;5MC&quot;, &quot;OMC&quot;, &quot;1MG&quot;, &quot;2MG&quot;,</a>
+<a name="ln80">    &quot;M2G&quot;, &quot;7MG&quot;, &quot;OMG&quot;, &quot; YG&quot;,</a>
+<a name="ln81">    &quot;H2U&quot;, &quot;5MU&quot;, &quot;PSU&quot;,</a>
+<a name="ln82"> </a>
+<a name="ln83">    /*=================*/</a>
+<a name="ln84">    /*  Miscellaneous  */</a>
+<a name="ln85">    /*=================*/</a>
+<a name="ln86">    &quot;UNK&quot;, &quot;ACE&quot;, &quot;FOR&quot;, &quot;HOH&quot;,</a>
+<a name="ln87">    &quot;DOD&quot;, &quot;SO4&quot;, &quot;PO4&quot;, &quot;NAD&quot;,</a>
+<a name="ln88">    &quot;COA&quot;, &quot;NAP&quot;, &quot;NDP&quot;</a>
+<a name="ln89">  };</a>
+<a name="ln90"> </a>
+<a name="ln91">  /* Avoid SGI Compiler Warnings! */</a>
+<a name="ln92">    char ElemDesc[MAXELEM][4] = {</a>
+<a name="ln93">    { ' ', 'N', ' ', ' ' },  /* 0*/</a>
+<a name="ln94">    { ' ', 'C', 'A', ' ' },  /* 1*/</a>
+<a name="ln95">    { ' ', 'C', ' ', ' ' },  /* 2*/</a>
+<a name="ln96">    { ' ', 'O', ' ', ' ' },  /* 3*/   /* 0-3   Amino Acid Backbone    */</a>
+<a name="ln97">    { ' ', 'C', '\'', ' ' }, /* 4*/</a>
+<a name="ln98">    { ' ', 'O', 'T', ' ' },  /* 5*/</a>
+<a name="ln99">    { ' ', 'S', ' ', ' ' },  /* 6*/</a>
+<a name="ln100">    { ' ', 'P', ' ', ' ' },  /* 7*/   /* 4-7   Shapely Amino Backbone */</a>
+<a name="ln101">    { ' ', 'O', '1', 'P' },  /* 8*/</a>
+<a name="ln102">    { ' ', 'O', '2', 'P' },  /* 9*/</a>
+<a name="ln103">    { ' ', 'O', '5', '*' },  /*10*/</a>
+<a name="ln104">    { ' ', 'C', '5', '*' },  /*11*/</a>
+<a name="ln105">    { ' ', 'C', '4', '*' },  /*12*/</a>
+<a name="ln106">    { ' ', 'O', '4', '*' },  /*13*/</a>
+<a name="ln107">    { ' ', 'C', '3', '*' },  /*14*/</a>
+<a name="ln108">    { ' ', 'O', '3', '*' },  /*15*/</a>
+<a name="ln109">    { ' ', 'C', '2', '*' },  /*16*/</a>
+<a name="ln110">    { ' ', 'O', '2', '*' },  /*17*/</a>
+<a name="ln111">    { ' ', 'C', '1', '*' },  /*18*/   /* 7-18  Nucleic Acid Backbone  */</a>
+<a name="ln112">    { ' ', 'C', 'A', '2' },  /*19*/   /* 19    Shapely Special        */</a>
+<a name="ln113">    { ' ', 'S', 'G', ' ' },  /*20*/   /* 20    Cysteine Sulphur       */</a>
+<a name="ln114">    { ' ', 'N', '1', ' ' },  /*21*/</a>
+<a name="ln115">    { ' ', 'N', '2', ' ' },  /*22*/</a>
+<a name="ln116">    { ' ', 'N', '3', ' ' },  /*23*/</a>
+<a name="ln117">    { ' ', 'N', '4', ' ' },  /*24*/</a>
+<a name="ln118">    { ' ', 'N', '6', ' ' },  /*25*/</a>
+<a name="ln119">    { ' ', 'O', '2', ' ' },  /*26*/</a>
+<a name="ln120">    { ' ', 'O', '4', ' ' },  /*27*/</a>
+<a name="ln121">    { ' ', 'O', '6', ' ' }   /*28*/   /* 21-28 Nucleic Acid H-Bonding */</a>
+<a name="ln122">  };</a>
+<a name="ln123"> </a>
+<a name="ln124"> /** \class OBResidue residue.h &lt;openbabel/residue.h&gt;</a>
+<a name="ln125">      \brief Residue information</a>
+<a name="ln126"> </a>
+<a name="ln127">      The residue information is drawn from PDB or MOL2 files (or similar), which</a>
+<a name="ln128">      track biomolecule information,</a>
+<a name="ln129">      and are stored in the OBResidue class. OBResidues are stored inside the</a>
+<a name="ln130">      OBAtom class and OBMol classes.</a>
+<a name="ln131">      The residue information for an atom can be requested in</a>
+<a name="ln132">      the following way:</a>
+<a name="ln133">      \code</a>
+<a name="ln134">      OBAtom *atom;</a>
+<a name="ln135">      OBResidue *r;</a>
+<a name="ln136">      atom = mol.GetAtom(1);</a>
+<a name="ln137">      r = atom-&gt;GetResidue();</a>
+<a name="ln138">      \endcode</a>
+<a name="ln139">      The residue information for a molecule can be manipulated too:</a>
+<a name="ln140">      \code</a>
+<a name="ln141">      cout &lt;&lt; &quot;This molecule has &quot; &lt;&lt; mol.NumResidues() &lt;&lt; &quot; residues.&quot; &lt;&lt; endl;</a>
+<a name="ln142">      OBResidue *r;</a>
+<a name="ln143">      r = mol.GetResidue(1);</a>
+<a name="ln144">      \endcode</a>
+<a name="ln145">  */</a>
+<a name="ln146"> </a>
+<a name="ln147">  ///////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln148">  // Residue Functions</a>
+<a name="ln149">  ///////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln150"> </a>
+<a name="ln151">  static unsigned int GetAtomIDNumber(const char *atomid)</a>
+<a name="ln152">  {</a>
+<a name="ln153">    if (atomid != nullptr)</a>
+<a name="ln154">      {</a>
+<a name="ln155">        int ch1 = toupper(atomid[0]);</a>
+<a name="ln156">        int ch2 = toupper(atomid[1]);</a>
+<a name="ln157">        int ch3 = toupper(atomid[2]);</a>
+<a name="ln158">        int ch4 = toupper(atomid[3]);</a>
+<a name="ln159"> </a>
+<a name="ln160">        if (ch1 == ' ')</a>
+<a name="ln161">          {</a>
+<a name="ln162">            switch(ch2)</a>
+<a name="ln163">              {</a>
+<a name="ln164">              case 'C':</a>
+<a name="ln165"> </a>
+<a name="ln166">                switch(ch3)</a>
+<a name="ln167">                  {</a>
+<a name="ln168">                  case 'A':</a>
+<a name="ln169"> </a>
+<a name="ln170">                    if (ch4 == ' ')</a>
+<a name="ln171">                      return 1;</a>
+<a name="ln172">                    else if (ch4 == '2')</a>
+<a name="ln173">                      return 19;</a>
+<a name="ln174"> </a>
+<a name="ln175">                    break;</a>
+<a name="ln176"> </a>
+<a name="ln177">                  case ' ':</a>
+<a name="ln178">                    if (ch4 == ' ')</a>
+<a name="ln179">                      return 2;</a>
+<a name="ln180">                    break;</a>
+<a name="ln181"> </a>
+<a name="ln182">                  case '\'':</a>
+<a name="ln183">                    if (ch4 == ' ')</a>
+<a name="ln184">                      return 4;</a>
+<a name="ln185">                    break;</a>
+<a name="ln186"> </a>
+<a name="ln187">                  case '1':</a>
+<a name="ln188">                    if (ch4 == '*')</a>
+<a name="ln189">                      return 18;</a>
+<a name="ln190">                    break;</a>
+<a name="ln191"> </a>
+<a name="ln192">                  case '2':</a>
+<a name="ln193">                    if (ch4 == '*')</a>
+<a name="ln194">                      return 16;</a>
+<a name="ln195">                    break;</a>
+<a name="ln196"> </a>
+<a name="ln197">                  case '3':</a>
+<a name="ln198">                    if (ch4 == '*')</a>
+<a name="ln199">                      return 14;</a>
+<a name="ln200">                    break;</a>
+<a name="ln201"> </a>
+<a name="ln202">                  case '4':</a>
+<a name="ln203">                    if (ch4 == '*')</a>
+<a name="ln204">                      return 12;</a>
+<a name="ln205">                    break;</a>
+<a name="ln206"> </a>
+<a name="ln207">                  case '5':</a>
+<a name="ln208">                    if (ch4 == '*')</a>
+<a name="ln209">                      return 11;</a>
+<a name="ln210">                    break;</a>
+<a name="ln211"> </a>
+<a name="ln212">                  }</a>
+<a name="ln213"> </a>
+<a name="ln214">                break;</a>
+<a name="ln215"> </a>
+<a name="ln216">              case 'N':</a>
+<a name="ln217"> </a>
+<a name="ln218">                if (ch4 == ' ')</a>
+<a name="ln219">                  {</a>
+<a name="ln220">                    switch (ch3)</a>
+<a name="ln221">                      {</a>
+<a name="ln222">                      case ' ':</a>
+<a name="ln223">                        return 0;</a>
+<a name="ln224">                      case '1':</a>
+<a name="ln225">                        return 21;</a>
+<a name="ln226">                      case '2':</a>
+<a name="ln227">                        return 22;</a>
+<a name="ln228">                      case '3':</a>
+<a name="ln229">                        return 23;</a>
+<a name="ln230">                      case '4':</a>
+<a name="ln231">                        return 24;</a>
+<a name="ln232">                      case '6':</a>
+<a name="ln233">                        return 25;</a>
+<a name="ln234">                      }</a>
+<a name="ln235">                  }</a>
+<a name="ln236"> </a>
+<a name="ln237">                break;</a>
+<a name="ln238"> </a>
+<a name="ln239">              case 'O':</a>
+<a name="ln240"> </a>
+<a name="ln241">                switch(ch3)</a>
+<a name="ln242">                  {</a>
+<a name="ln243">                  case ' ':</a>
+<a name="ln244"> </a>
+<a name="ln245">                    if (ch4 == ' ')</a>
+<a name="ln246">                      return 3;</a>
+<a name="ln247"> </a>
+<a name="ln248">                    break;</a>
+<a name="ln249"> </a>
+<a name="ln250">                  case 'T':</a>
+<a name="ln251"> </a>
+<a name="ln252">                    if (ch4 == ' ')</a>
+<a name="ln253">                      return 5;</a>
+<a name="ln254"> </a>
+<a name="ln255">                    break;</a>
+<a name="ln256"> </a>
+<a name="ln257">                  case '1':</a>
+<a name="ln258"> </a>
+<a name="ln259">                    if (ch4 == 'P')</a>
+<a name="ln260">                      return 8;</a>
+<a name="ln261"> </a>
+<a name="ln262">                    break;</a>
+<a name="ln263"> </a>
+<a name="ln264">                  case '2':</a>
+<a name="ln265"> </a>
+<a name="ln266">                    if (ch4 == 'P')</a>
+<a name="ln267">                      return 9;</a>
+<a name="ln268">                    else if (ch4 == '*')</a>
+<a name="ln269">                      return 17;</a>
+<a name="ln270">                    else if (ch4 == ' ')</a>
+<a name="ln271">                      return 26;</a>
+<a name="ln272"> </a>
+<a name="ln273">                    break;</a>
+<a name="ln274"> </a>
+<a name="ln275">                  case '3':</a>
+<a name="ln276"> </a>
+<a name="ln277">                    if (ch4 == '*')</a>
+<a name="ln278">                      return 15;</a>
+<a name="ln279"> </a>
+<a name="ln280">                    break;</a>
+<a name="ln281"> </a>
+<a name="ln282">                  case '4':</a>
+<a name="ln283"> </a>
+<a name="ln284">                    if (ch4 == '*')</a>
+<a name="ln285">                      return 13;</a>
+<a name="ln286">                    else if (ch4 == ' ')</a>
+<a name="ln287">                      return 27;</a>
+<a name="ln288"> </a>
+<a name="ln289">                    break;</a>
+<a name="ln290"> </a>
+<a name="ln291">                  case '5':</a>
+<a name="ln292"> </a>
+<a name="ln293">                    if (ch4 == '*')</a>
+<a name="ln294">                      return 10;</a>
+<a name="ln295"> </a>
+<a name="ln296">                    break;</a>
+<a name="ln297"> </a>
+<a name="ln298">                  case '6':</a>
+<a name="ln299"> </a>
+<a name="ln300">                    if (ch4 == ' ')</a>
+<a name="ln301">                      return 28;</a>
+<a name="ln302"> </a>
+<a name="ln303">                    break;</a>
+<a name="ln304">                  }</a>
+<a name="ln305"> </a>
+<a name="ln306">                break;</a>
+<a name="ln307"> </a>
+<a name="ln308">              case 'P':</a>
+<a name="ln309"> </a>
+<a name="ln310">                if ((ch3 == ' ') &amp;&amp; (ch4 == ' '))</a>
+<a name="ln311">                  return 7;</a>
+<a name="ln312"> </a>
+<a name="ln313">                break;</a>
+<a name="ln314"> </a>
+<a name="ln315">              case 'S':</a>
+<a name="ln316"> </a>
+<a name="ln317">                if (ch4 == ' ')</a>
+<a name="ln318">                  {</a>
+<a name="ln319">                    if (ch3 == ' ')</a>
+<a name="ln320">                      return 6;</a>
+<a name="ln321">                    else if (ch3 == 'G')</a>
+<a name="ln322">                      return 20;</a>
+<a name="ln323">                  }</a>
+<a name="ln324"> </a>
+<a name="ln325">                break;</a>
+<a name="ln326">              }</a>
+<a name="ln327">          }</a>
+<a name="ln328"> </a>
+<a name="ln329">        return MAXELEM;</a>
+<a name="ln330">      }</a>
+<a name="ln331"> </a>
+<a name="ln332">    else</a>
+<a name="ln333">      {</a>
+<a name="ln334">        obErrorLog.ThrowError(__FUNCTION__, &quot;NULL Atom IDs specified&quot;, obWarning);</a>
+<a name="ln335">        return MAXELEM;</a>
+<a name="ln336">      }</a>
+<a name="ln337">  }</a>
+<a name="ln338"> </a>
+<a name="ln339">  static unsigned int GetResidueNumber(const char *res)</a>
+<a name="ln340">  {</a>
+<a name="ln341">    if (res != nullptr &amp;&amp; strlen(res) &gt; 2)</a>
+<a name="ln342">      {</a>
+<a name="ln343">        int ch1 = toupper(res[0]);</a>
+<a name="ln344">        int ch2 = toupper(res[1]);</a>
+<a name="ln345">        int ch3 = toupper(res[2]);</a>
+<a name="ln346"> </a>
+<a name="ln347">        switch( ch1 )</a>
+<a name="ln348">          {</a>
+<a name="ln349">          case(' '):</a>
+<a name="ln350"> </a>
+<a name="ln351">            if( ch2 == ' ' )</a>
+<a name="ln352">              {</a>
+<a name="ln353">                switch( ch3 )</a>
+<a name="ln354">                  {</a>
+<a name="ln355">                  case('A'):  return( 24 );</a>
+<a name="ln356">                  case('C'):  return( 25 );</a>
+<a name="ln357">                  case('G'):  return( 26 );</a>
+<a name="ln358">                  case('T'):  return( 27 );</a>
+<a name="ln359">                  case('U'):  return( 28 );</a>
+<a name="ln360">                  case('I'):  return( 30 );</a>
+<a name="ln361">                  }</a>
+<a name="ln362">              }</a>
+<a name="ln363">            else if( ch2 == '+' )</a>
+<a name="ln364">              {</a>
+<a name="ln365">                if( ch3 == 'U' )</a>
+<a name="ln366">                  return( 29 );</a>
+<a name="ln367">              }</a>
+<a name="ln368">            else if( ch2 == 'Y' )</a>
+<a name="ln369">              {</a>
+<a name="ln370">                if( ch3 == 'G' )</a>
+<a name="ln371">                  return( 39 );</a>
+<a name="ln372">              }</a>
+<a name="ln373"> </a>
+<a name="ln374">            break;</a>
+<a name="ln375"> </a>
+<a name="ln376">          case('0'):</a>
+<a name="ln377"> </a>
+<a name="ln378">            if( ch2 == 'M' )</a>
+<a name="ln379">              {</a>
+<a name="ln380">                if( ch3 == 'C' )</a>
+<a name="ln381">                  return( 33 );</a>
+<a name="ln382">                else if( ch3 == 'G' )</a>
+<a name="ln383">                  return( 38 );</a>
+<a name="ln384">              }</a>
+<a name="ln385"> </a>
+<a name="ln386">            break;</a>
+<a name="ln387"> </a>
+<a name="ln388">          case('1'):</a>
+<a name="ln389"> </a>
+<a name="ln390">            if( ch2 == 'M' )</a>
+<a name="ln391">              {</a>
+<a name="ln392">                if( ch3 == 'A' )</a>
+<a name="ln393">                  return( 31 );</a>
+<a name="ln394">                else if( ch3 == 'G' )</a>
+<a name="ln395">                  return( 34 );</a>
+<a name="ln396">              }</a>
+<a name="ln397"> </a>
+<a name="ln398">            break;</a>
+<a name="ln399"> </a>
+<a name="ln400">          case('2'):</a>
+<a name="ln401"> </a>
+<a name="ln402">            if( ch2 == 'M' )</a>
+<a name="ln403">              if( ch3 == 'G' )</a>
+<a name="ln404">                return( 35 );</a>
+<a name="ln405"> </a>
+<a name="ln406">            break;</a>
+<a name="ln407"> </a>
+<a name="ln408">          case('5'):</a>
+<a name="ln409"> </a>
+<a name="ln410">            if( ch2 == 'M' )</a>
+<a name="ln411">              {</a>
+<a name="ln412">                if( ch3 == 'C' )</a>
+<a name="ln413">                  return( 32 );</a>
+<a name="ln414">                else if( ch3 == 'U' )</a>
+<a name="ln415">                  return( 41 );</a>
+<a name="ln416">              }</a>
+<a name="ln417"> </a>
+<a name="ln418">            break;</a>
+<a name="ln419"> </a>
+<a name="ln420">          case('7'):</a>
+<a name="ln421"> </a>
+<a name="ln422">            if( ch2 == 'M' )</a>
+<a name="ln423">              if( ch3 == 'G' )</a>
+<a name="ln424">                return( 37 );</a>
+<a name="ln425"> </a>
+<a name="ln426">            break;</a>
+<a name="ln427"> </a>
+<a name="ln428">          case('A'):</a>
+<a name="ln429"> </a>
+<a name="ln430">            if( ch2 == 'L' )</a>
+<a name="ln431">              {</a>
+<a name="ln432">                if( ch3 == 'A' )</a>
+<a name="ln433">                  return(  0 );</a>
+<a name="ln434">              }</a>
+<a name="ln435">            else if( ch2 == 'S' )</a>
+<a name="ln436">              {</a>
+<a name="ln437">                if( ch3 == 'P' )</a>
+<a name="ln438">                  return(  7 );</a>
+<a name="ln439">                else if( ch3 == 'N' )</a>
+<a name="ln440">                  return(  9 );</a>
+<a name="ln441">                else if( ch3 == 'X' )</a>
+<a name="ln442">                  return( 20 );</a>
+<a name="ln443">              }</a>
+<a name="ln444">            else if( ch2 == 'R' )</a>
+<a name="ln445">              {</a>
+<a name="ln446">                if( ch3 == 'G' )</a>
+<a name="ln447">                  return( 12 );</a>
+<a name="ln448">              }</a>
+<a name="ln449">            else if( ch2 == 'C' )</a>
+<a name="ln450">              {</a>
+<a name="ln451">                if( ch3 == 'E' )</a>
+<a name="ln452">                  return( 44 );</a>
+<a name="ln453">              }</a>
+<a name="ln454">            else if( ch2 == 'D' )</a>
+<a name="ln455">              {</a>
+<a name="ln456">                if( ch3 == 'E' )</a>
+<a name="ln457">                  return( 24 );    /* &quot;ADE&quot; -&gt; &quot;  A&quot; */</a>
+<a name="ln458">              }</a>
+<a name="ln459"> </a>
+<a name="ln460">            break;</a>
+<a name="ln461"> </a>
+<a name="ln462">          case('C'):</a>
+<a name="ln463"> </a>
+<a name="ln464">            if( ch2 == 'Y' )</a>
+<a name="ln465">              {</a>
+<a name="ln466">                if( ch3 == 'S' )</a>
+<a name="ln467">                  return( 17 );</a>
+<a name="ln468">                else if( ch3 == 'H' )</a>
+<a name="ln469">                  return( 17 );    /* &quot;CYH&quot; -&gt; &quot;CYS&quot; */</a>
+<a name="ln470">                else if( ch3 == 'T' )</a>
+<a name="ln471">                  return( 25 );    /* &quot;CYT&quot; -&gt; &quot;  C&quot; */</a>
+<a name="ln472">              }</a>
+<a name="ln473">            else if( ch2 == 'O' )</a>
+<a name="ln474">              {</a>
+<a name="ln475">                if( ch3 == 'A' )</a>
+<a name="ln476">                  return( 51 );</a>
+<a name="ln477">              }</a>
+<a name="ln478">            else if( ch2 == 'P' )</a>
+<a name="ln479">              {</a>
+<a name="ln480">                if( ch3 == 'R' )</a>
+<a name="ln481">                  return( 11 );    /* &quot;CPR&quot; -&gt; &quot;PRO&quot; */</a>
+<a name="ln482">              }</a>
+<a name="ln483">            else if( ch2 == 'S' )</a>
+<a name="ln484">              {</a>
+<a name="ln485">                if( ch3 == 'H' )</a>
+<a name="ln486">                  return( 17 );    /* &quot;CSH&quot; -&gt; &quot;CYS&quot; */</a>
+<a name="ln487">                else if( ch3 == 'M' )</a>
+<a name="ln488">                  return( 17 );    /* &quot;CSM&quot; -&gt; &quot;CYS&quot; */</a>
+<a name="ln489">              }</a>
+<a name="ln490"> </a>
+<a name="ln491">            break;</a>
+<a name="ln492"> </a>
+<a name="ln493">          case('D'):</a>
+<a name="ln494"> </a>
+<a name="ln495">            if( ch2 == 'O' )</a>
+<a name="ln496">              {</a>
+<a name="ln497">                if( ch3 == 'D' )</a>
+<a name="ln498">                  return( 47 );</a>
+<a name="ln499">              }</a>
+<a name="ln500">            else if( ch2 == '2' )</a>
+<a name="ln501">              {</a>
+<a name="ln502">                if( ch3 == 'O' )</a>
+<a name="ln503">                  return( 47 );    /* &quot;D2O&quot; -&gt; &quot;DOD&quot; */</a>
+<a name="ln504">              }</a>
+<a name="ln505"> </a>
+<a name="ln506">            break;</a>
+<a name="ln507"> </a>
+<a name="ln508">          case('F'):</a>
+<a name="ln509"> </a>
+<a name="ln510">            if( ch2 == 'O' )</a>
+<a name="ln511">              if( ch3 == 'R' )</a>
+<a name="ln512">                return( 45 );</a>
+<a name="ln513"> </a>
+<a name="ln514">            break;</a>
+<a name="ln515"> </a>
+<a name="ln516">          case('G'):</a>
+<a name="ln517"> </a>
+<a name="ln518">            if( ch2 == 'L' )</a>
+<a name="ln519">              {</a>
+<a name="ln520">                if( ch3 == 'Y' )</a>
+<a name="ln521">                  return(  1 );</a>
+<a name="ln522">                else if( ch3 == 'U' )</a>
+<a name="ln523">                  return( 10 );</a>
+<a name="ln524">                else if( ch3 == 'N' )</a>
+<a name="ln525">                  return( 14 );</a>
+<a name="ln526">                else if( ch3 == 'X' )</a>
+<a name="ln527">                  return( 21 );</a>
+<a name="ln528">              }</a>
+<a name="ln529">            else if( ch2 == 'U' )</a>
+<a name="ln530">              {</a>
+<a name="ln531">                if( ch3 == 'A' )</a>
+<a name="ln532">                  return( 26 );    /* &quot;GUA&quot; -&gt; &quot;  G&quot; */</a>
+<a name="ln533">              }</a>
+<a name="ln534"> </a>
+<a name="ln535">            break;</a>
+<a name="ln536"> </a>
+<a name="ln537">          case('H'):</a>
+<a name="ln538"> </a>
+<a name="ln539">            if( ch2 == 'I' )</a>
+<a name="ln540">              {</a>
+<a name="ln541">                if( ch3 == 'S' )</a>
+<a name="ln542">                  return( 16 );</a>
+<a name="ln543">              }</a>
+<a name="ln544">            else if( ch2 == 'O' )</a>
+<a name="ln545">              {</a>
+<a name="ln546">                if( ch3 == 'H' )</a>
+<a name="ln547">                  return( 46 );</a>
+<a name="ln548">              }</a>
+<a name="ln549">            else if( ch2 == 'Y' )</a>
+<a name="ln550">              {</a>
+<a name="ln551">                if( ch3 == 'P' )</a>
+<a name="ln552">                  return( 23 );</a>
+<a name="ln553">              }</a>
+<a name="ln554">            else if( ch2 == '2' )</a>
+<a name="ln555">              {</a>
+<a name="ln556">                if( ch3 == 'O' )</a>
+<a name="ln557">                  return( 46 );    /* &quot;H20&quot; -&gt; &quot;HOH&quot; */</a>
+<a name="ln558">                else if( ch3 == 'U' )</a>
+<a name="ln559">                  return( 40 );</a>
+<a name="ln560">              }</a>
+<a name="ln561"> </a>
+<a name="ln562">            break;</a>
+<a name="ln563"> </a>
+<a name="ln564">          case('I'):</a>
+<a name="ln565"> </a>
+<a name="ln566">            if( ch2 == 'L' )</a>
+<a name="ln567">              if( ch3 == 'E' )</a>
+<a name="ln568">                return(  8 );</a>
+<a name="ln569"> </a>
+<a name="ln570">            break;</a>
+<a name="ln571"> </a>
+<a name="ln572">          case('L'):</a>
+<a name="ln573"> </a>
+<a name="ln574">            if( ch2 == 'E' )</a>
+<a name="ln575">              {</a>
+<a name="ln576">                if( ch3 == 'U' )</a>
+<a name="ln577">                  return(  2 );</a>
+<a name="ln578">              }</a>
+<a name="ln579">            else if( ch2 == 'Y' )</a>
+<a name="ln580">              {</a>
+<a name="ln581">                if( ch3 == 'S' )</a>
+<a name="ln582">                  return(  6 );</a>
+<a name="ln583">              }</a>
+<a name="ln584"> </a>
+<a name="ln585">            break;</a>
+<a name="ln586"> </a>
+<a name="ln587">          case('M'):</a>
+<a name="ln588"> </a>
+<a name="ln589">            if( ch2 == 'E' )</a>
+<a name="ln590">              {</a>
+<a name="ln591">                if( ch3 == 'T' )</a>
+<a name="ln592">                  return( 18 );</a>
+<a name="ln593">              }</a>
+<a name="ln594">            else if( ch2 == '2' )</a>
+<a name="ln595">              {</a>
+<a name="ln596">                if( ch3 == 'G' )</a>
+<a name="ln597">                  return( 36 );</a>
+<a name="ln598">              }</a>
+<a name="ln599"> </a>
+<a name="ln600">            break;</a>
+<a name="ln601"> </a>
+<a name="ln602">          case('N'):</a>
+<a name="ln603"> </a>
+<a name="ln604">            if( ch2 == 'A' )</a>
+<a name="ln605">              {</a>
+<a name="ln606">                if( ch3 == 'D' )</a>
+<a name="ln607">                  return( 50 );</a>
+<a name="ln608">                else if( ch3 == 'P' )</a>
+<a name="ln609">                  return( 52 );</a>
+<a name="ln610">              }</a>
+<a name="ln611">            else if( ch2 == 'D' )</a>
+<a name="ln612">              {</a>
+<a name="ln613">                if( ch3 == 'P' )</a>
+<a name="ln614">                  return( 53 );</a>
+<a name="ln615">              }</a>
+<a name="ln616"> </a>
+<a name="ln617">            break;</a>
+<a name="ln618"> </a>
+<a name="ln619">          case('P'):</a>
+<a name="ln620"> </a>
+<a name="ln621">            if( ch2 == 'R' )</a>
+<a name="ln622">              {</a>
+<a name="ln623">                if( ch3 == 'O' )</a>
+<a name="ln624">                  return( 11 );</a>
+<a name="ln625">              }</a>
+<a name="ln626">            else if( ch2 == 'H' )</a>
+<a name="ln627">              {</a>
+<a name="ln628">                if( ch3 == 'E' )</a>
+<a name="ln629">                  return( 13 );</a>
+<a name="ln630">              }</a>
+<a name="ln631">            else if( ch2 == 'C' )</a>
+<a name="ln632">              {</a>
+<a name="ln633">                if( ch3 == 'A' )</a>
+<a name="ln634">                  return( 22 );</a>
+<a name="ln635">              }</a>
+<a name="ln636">            else if( ch2 == 'O' )</a>
+<a name="ln637">              {</a>
+<a name="ln638">                if( ch3 == '4' )</a>
+<a name="ln639">                  return( 49 );</a>
+<a name="ln640">              }</a>
+<a name="ln641">            else if( ch2 == 'S' )</a>
+<a name="ln642">              {</a>
+<a name="ln643">                if( ch3 == 'U' )</a>
+<a name="ln644">                  return( 42 );</a>
+<a name="ln645">              }</a>
+<a name="ln646"> </a>
+<a name="ln647">            break;</a>
+<a name="ln648"> </a>
+<a name="ln649">          case('S'):</a>
+<a name="ln650"> </a>
+<a name="ln651">            if( ch2 == 'E' )</a>
+<a name="ln652">              {</a>
+<a name="ln653">                if( ch3 == 'R' )</a>
+<a name="ln654">                  return(  3 );</a>
+<a name="ln655">              }</a>
+<a name="ln656">            else if( ch2 == 'O' )</a>
+<a name="ln657">              {</a>
+<a name="ln658">                if( ch3 == '4' )</a>
+<a name="ln659">                  return( 48 );</a>
+<a name="ln660">                else if( ch3 == 'L' )</a>
+<a name="ln661">                  return( 46 );    /* &quot;SOL&quot; -&gt; &quot;HOH&quot; */</a>
+<a name="ln662">              }</a>
+<a name="ln663">            else if( ch2 == 'U' )</a>
+<a name="ln664">              {</a>
+<a name="ln665">                if( ch3 == 'L' )</a>
+<a name="ln666">                  return( 48 );    /* &quot;SUL&quot; -&gt; &quot;SO4&quot; */</a>
+<a name="ln667">              }</a>
+<a name="ln668"> </a>
+<a name="ln669">            break;</a>
+<a name="ln670"> </a>
+<a name="ln671">          case('T'):</a>
+<a name="ln672"> </a>
+<a name="ln673">            if( ch2 == 'H' )</a>
+<a name="ln674">              {</a>
+<a name="ln675">                if( ch3 == 'R' )</a>
+<a name="ln676">                  return(  5 );</a>
+<a name="ln677">                else if( ch3 == 'Y' )</a>
+<a name="ln678">                  return( 27 );    /* &quot;THY&quot; -&gt; &quot;  T&quot; */</a>
+<a name="ln679">              }</a>
+<a name="ln680">            else if( ch2 == 'Y' )</a>
+<a name="ln681">              {</a>
+<a name="ln682">                if( ch3 == 'R' )</a>
+<a name="ln683">                  return( 15 );</a>
+<a name="ln684">              }</a>
+<a name="ln685">            else if( ch2 == 'R' )</a>
+<a name="ln686">              {</a>
+<a name="ln687">                if( ch3 == 'P' )</a>
+<a name="ln688">                  return( 19 );</a>
+<a name="ln689">                else if( ch3 == 'Y' )</a>
+<a name="ln690">                  return( 19 );    /* &quot;TRY&quot; -&gt; &quot;TRP&quot; */</a>
+<a name="ln691">              }</a>
+<a name="ln692">            else if( ch2 == 'I' )</a>
+<a name="ln693">              {</a>
+<a name="ln694">                if( ch3 == 'P' )</a>
+<a name="ln695">                  return( 46 );    /* &quot;TIP&quot; -&gt; &quot;HOH&quot; */</a>
+<a name="ln696">              }</a>
+<a name="ln697"> </a>
+<a name="ln698">            break;</a>
+<a name="ln699"> </a>
+<a name="ln700">          case('U'):</a>
+<a name="ln701"> </a>
+<a name="ln702">            if( ch2 == 'N' )</a>
+<a name="ln703">              {</a>
+<a name="ln704">                if( ch3 == 'K' )</a>
+<a name="ln705">                  return( 43 );</a>
+<a name="ln706">              }</a>
+<a name="ln707">            else if( ch2 == 'R' )</a>
+<a name="ln708">              {</a>
+<a name="ln709">                if( ch3 == 'A' )</a>
+<a name="ln710">                  return( 28 );    /* &quot;URA&quot; -&gt; &quot;  U&quot; */</a>
+<a name="ln711">                else if( ch3 == 'I' )</a>
+<a name="ln712">                  return( 28 );    /* &quot;URI&quot; -&gt; &quot;  U&quot; */</a>
+<a name="ln713">              }</a>
+<a name="ln714"> </a>
+<a name="ln715">            break;</a>
+<a name="ln716"> </a>
+<a name="ln717">          case('V'):</a>
+<a name="ln718"> </a>
+<a name="ln719">            if( ch2 == 'A' )</a>
+<a name="ln720">              if( ch3 == 'L' )</a>
+<a name="ln721">                return(  4 );</a>
+<a name="ln722"> </a>
+<a name="ln723">            break;</a>
+<a name="ln724"> </a>
+<a name="ln725">          case('W'):</a>
+<a name="ln726"> </a>
+<a name="ln727">            if( ch2 == 'A' )</a>
+<a name="ln728">              if( ch3 == 'T' )</a>
+<a name="ln729">                return( 46 );    /* &quot;WAT&quot; -&gt; &quot;HOH&quot; */</a>
+<a name="ln730"> </a>
+<a name="ln731">            break;</a>
+<a name="ln732">          }</a>
+<a name="ln733"> </a>
+<a name="ln734">      }</a>
+<a name="ln735"> </a>
+<a name="ln736">    return OBResidueIndex::UNK;</a>
+<a name="ln737">  }</a>
+<a name="ln738"> </a>
+<a name="ln739">  void    OBResidue::SetInsertionCode(const char insertioncode) {</a>
+<a name="ln740">	_insertioncode=insertioncode;</a>
+<a name="ln741">  }</a>
+<a name="ln742"> </a>
+<a name="ln743"> </a>
+<a name="ln744">  static void SetResidueKeys(const char   *residue,</a>
+<a name="ln745">                             unsigned int &amp;reskey,</a>
+<a name="ln746">                             unsigned int &amp;aakey)</a>
+<a name="ln747">  {</a>
+<a name="ln748">    reskey = GetResidueNumber(residue);</a>
+<a name="ln749">    switch(reskey)</a>
+<a name="ln750">      {</a>
+<a name="ln751">      case OBResidueIndex::ALA:</a>
+<a name="ln752">        aakey = AA_ALA;</a>
+<a name="ln753">        break;</a>
+<a name="ln754">      case OBResidueIndex::GLY:</a>
+<a name="ln755">        aakey = AA_GLY;</a>
+<a name="ln756">        break;</a>
+<a name="ln757">      case OBResidueIndex::LEU:</a>
+<a name="ln758">        aakey = AA_LEU;</a>
+<a name="ln759">        break;</a>
+<a name="ln760">      case OBResidueIndex::SER:</a>
+<a name="ln761">        aakey = AA_SER;</a>
+<a name="ln762">        break;</a>
+<a name="ln763">      case OBResidueIndex::VAL:</a>
+<a name="ln764">        aakey = AA_VAL;</a>
+<a name="ln765">        break;</a>
+<a name="ln766">      case OBResidueIndex::THR:</a>
+<a name="ln767">        aakey = AA_THR;</a>
+<a name="ln768">        break;</a>
+<a name="ln769">      case OBResidueIndex::LYS:</a>
+<a name="ln770">        aakey = AA_LYS;</a>
+<a name="ln771">        break;</a>
+<a name="ln772">      case OBResidueIndex::ASP:</a>
+<a name="ln773">        aakey = AA_ASP;</a>
+<a name="ln774">        break;</a>
+<a name="ln775">      case OBResidueIndex::ILE:</a>
+<a name="ln776">        aakey = AA_ILE;</a>
+<a name="ln777">        break;</a>
+<a name="ln778">      case OBResidueIndex::ASN:</a>
+<a name="ln779">        aakey = AA_ASN;</a>
+<a name="ln780">        break;</a>
+<a name="ln781">      case OBResidueIndex::GLU:</a>
+<a name="ln782">        aakey = AA_GLU;</a>
+<a name="ln783">        break;</a>
+<a name="ln784">      case OBResidueIndex::PRO:</a>
+<a name="ln785">        aakey = AA_PRO;</a>
+<a name="ln786">        break;</a>
+<a name="ln787">      case OBResidueIndex::ARG:</a>
+<a name="ln788">        aakey = AA_ARG;</a>
+<a name="ln789">        break;</a>
+<a name="ln790">      case OBResidueIndex::PHE:</a>
+<a name="ln791">        aakey = AA_PHE;</a>
+<a name="ln792">        break;</a>
+<a name="ln793">      case OBResidueIndex::GLN:</a>
+<a name="ln794">        aakey = AA_GLN;</a>
+<a name="ln795">        break;</a>
+<a name="ln796">      case OBResidueIndex::TYR:</a>
+<a name="ln797">        aakey = AA_TYR;</a>
+<a name="ln798">        break;</a>
+<a name="ln799">      case OBResidueIndex::HIS:</a>
+<a name="ln800">        aakey = AA_HIS;</a>
+<a name="ln801">        break;</a>
+<a name="ln802">      case OBResidueIndex::CYS:</a>
+<a name="ln803">        aakey = AA_CYS;</a>
+<a name="ln804">        break;</a>
+<a name="ln805">      case OBResidueIndex::MET:</a>
+<a name="ln806">        aakey = AA_MET;</a>
+<a name="ln807">        break;</a>
+<a name="ln808">      case OBResidueIndex::TRP:</a>
+<a name="ln809">        aakey = AA_TRP;</a>
+<a name="ln810">        break;</a>
+<a name="ln811">      default:</a>
+<a name="ln812">        aakey = 0;</a>
+<a name="ln813">        break;</a>
+<a name="ln814">      }</a>
+<a name="ln815">  }</a>
+<a name="ln816"> </a>
+<a name="ln817">  ///////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln818">  // OBResidue: Constructors / Destructor</a>
+<a name="ln819">  ///////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln820"> </a>
+<a name="ln821">  OBResidue::OBResidue()</a>
+<a name="ln822">  {</a>
+<a name="ln823">    _chain    = 'A';</a>
+<a name="ln824">    _idx      = 0;</a>
+<a name="ln825">    _aakey    = 0;</a>
+<a name="ln826">    _reskey   = OBResidueIndex::UNK;</a>
+<a name="ln827">    _resnum   = &quot;&quot;;</a>
+<a name="ln828">    _resname  = &quot;&quot;;</a>
+<a name="ln829">    _vdata.clear();</a>
+<a name="ln830">    _insertioncode=0;</a>
+<a name="ln831">  }</a>
+<a name="ln832"> </a>
+<a name="ln833">  OBResidue::OBResidue(const OBResidue &amp;src) :</a>
+<a name="ln834">    OBBase()</a>
+<a name="ln835">  {</a>
+<a name="ln836">    _chain    = src._chain;</a>
+<a name="ln837">    _aakey    = src._aakey;</a>
+<a name="ln838">    _reskey   = src._reskey;</a>
+<a name="ln839">    _resnum   = src._resnum;</a>
+<a name="ln840">    _resname  = src._resname;</a>
+<a name="ln841">    _atomid   = src._atomid;</a>
+<a name="ln842">    _hetatm   = src._hetatm;</a>
+<a name="ln843">    _sernum   = src._sernum;</a>
+<a name="ln844">    _insertioncode=src._insertioncode;</a>
+<a name="ln845"> </a>
+<a name="ln846">  }</a>
+<a name="ln847"> </a>
+<a name="ln848">  OBResidue::~OBResidue()</a>
+<a name="ln849">  {</a>
+<a name="ln850">    vector&lt;OBAtom*&gt;::iterator a;</a>
+<a name="ln851">    for ( a = _atoms.begin() ; a != _atoms.end() ; ++a )</a>
+<a name="ln852">      (*a)-&gt;SetResidue(nullptr);</a>
+<a name="ln853">    _atoms.clear();</a>
+<a name="ln854"> </a>
+<a name="ln855">  }</a>
+<a name="ln856"> </a>
+<a name="ln857">  ///////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln858">  // OBResidue: Operator Overloads</a>
+<a name="ln859">  ///////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln860"> </a>
+<a name="ln861">  OBResidue &amp;OBResidue::operator = (const OBResidue &amp;src)</a>
+<a name="ln862">    //copy residue information</a>
+<a name="ln863">    // Currently does not copy vdata informtion</a>
+<a name="ln864">  {</a>
+<a name="ln865">    if (this != &amp;src)</a>
+<a name="ln866">      {</a>
+<a name="ln867">        _chain    = src._chain;</a>
+<a name="ln868">        _aakey    = src._aakey;</a>
+<a name="ln869">        _reskey   = src._reskey;</a>
+<a name="ln870">        _resnum   = src._resnum;</a>
+<a name="ln871">        _resname  = src._resname;</a>
+<a name="ln872">        _atomid   = src._atomid;</a>
+<a name="ln873">        _hetatm   = src._hetatm;</a>
+<a name="ln874">        _sernum   = src._sernum;</a>
+<a name="ln875">        _insertioncode = src._insertioncode;</a>
+<a name="ln876">      }</a>
+<a name="ln877"> </a>
+<a name="ln878">    return(*this);</a>
+<a name="ln879">  }</a>
+<a name="ln880"> </a>
+<a name="ln881">  ///////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln882">  // OBResidue: Data Access / Manipulation</a>
+<a name="ln883">  ///////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln884"> </a>
+<a name="ln885">  void OBResidue::AddAtom(OBAtom *atom)</a>
+<a name="ln886">  {</a>
+<a name="ln887">    if (atom != nullptr)</a>
+<a name="ln888">      {</a>
+<a name="ln889">        atom-&gt;SetResidue(this);</a>
+<a name="ln890"> </a>
+<a name="ln891">        _atoms.push_back(atom);</a>
+<a name="ln892">        _atomid.push_back(&quot;&quot;);</a>
+<a name="ln893">        _hetatm.push_back(false);</a>
+<a name="ln894">        _sernum.push_back(0);</a>
+<a name="ln895">      }</a>
+<a name="ln896">  }</a>
+<a name="ln897"> </a>
+<a name="ln898">  void OBResidue::InsertAtom(OBAtom *atom)</a>
+<a name="ln899">  {</a>
+<a name="ln900">    AddAtom(atom);</a>
+<a name="ln901">  }</a>
+<a name="ln902"> </a>
+<a name="ln903">  void OBResidue::RemoveAtom(OBAtom *atom)</a>
+<a name="ln904">  {</a>
+<a name="ln905">    if (atom != nullptr &amp;&amp; _atoms.size())</a>
+<a name="ln906">      {</a>
+<a name="ln907">        for ( unsigned int i = 0 ; i &lt; _atoms.size() ; ++i)</a>
+<a name="ln908">          {</a>
+<a name="ln909">            if (_atoms[i] != nullptr &amp;&amp; _atoms[i] == atom)</a>
+<a name="ln910">              {</a>
+<a name="ln911">                atom-&gt;SetResidue(nullptr);</a>
+<a name="ln912">                _atoms.erase(_atoms.begin() + i);</a>
+<a name="ln913">                _atomid.erase(_atomid.begin() + i);</a>
+<a name="ln914">                _hetatm.erase(_hetatm.begin() + i);</a>
+<a name="ln915">                _sernum.erase(_sernum.begin() + i);</a>
+<a name="ln916">              }</a>
+<a name="ln917">          }</a>
+<a name="ln918">      }</a>
+<a name="ln919">  }</a>
+<a name="ln920"> </a>
+<a name="ln921">  bool OBResidue::Clear(void)</a>
+<a name="ln922">  {</a>
+<a name="ln923">    for (unsigned int i = 0 ; i &lt; _atoms.size() ; ++i)</a>
+<a name="ln924">      _atoms[i]-&gt;SetResidue(nullptr);</a>
+<a name="ln925"> </a>
+<a name="ln926">    _chain   = 'A';</a>
+<a name="ln927">    _idx     = 0;</a>
+<a name="ln928">    _aakey   = 0;</a>
+<a name="ln929">    _reskey  = OBResidueIndex::UNK;</a>
+<a name="ln930">    _resnum  = &quot;&quot;;</a>
+<a name="ln931">    _resname = &quot;&quot;;</a>
+<a name="ln932">    _insertioncode=0;</a>
+<a name="ln933"> </a>
+<a name="ln934">    _atoms.clear();</a>
+<a name="ln935">    _atomid.clear();</a>
+<a name="ln936">    _hetatm.clear();</a>
+<a name="ln937">    _sernum.clear();</a>
+<a name="ln938"> </a>
+<a name="ln939">    return (OBBase::Clear());</a>
+<a name="ln940">  }</a>
+<a name="ln941"> </a>
+<a name="ln942">  void OBResidue::SetChain(char chain)</a>
+<a name="ln943">  {</a>
+<a name="ln944">    _chain = chain;</a>
+<a name="ln945">  }</a>
+<a name="ln946"> </a>
+<a name="ln947">  void OBResidue::SetChainNum(unsigned int chainnum)</a>
+<a name="ln948">  {</a>
+<a name="ln949">    _chain = (char) ('A' + chainnum - 1);</a>
+<a name="ln950">  }</a>
+<a name="ln951"> </a>
+<a name="ln952">  void OBResidue::SetIdx(unsigned int idx)</a>
+<a name="ln953">  {</a>
+<a name="ln954">    _idx = idx;</a>
+<a name="ln955">  }</a>
+<a name="ln956"> </a>
+<a name="ln957">  void OBResidue::SetName(const string &amp;name)</a>
+<a name="ln958">  {</a>
+<a name="ln959">    _resname = name;</a>
+<a name="ln960">    SetResidueKeys(_resname.c_str(), _reskey, _aakey);</a>
+<a name="ln961">  }</a>
+<a name="ln962"> </a>
+<a name="ln963">  void OBResidue::SetNum(const unsigned int resnum)</a>
+<a name="ln964">  {</a>
+<a name="ln965">    stringstream temp;</a>
+<a name="ln966">    temp &lt;&lt; resnum;</a>
+<a name="ln967">    _resnum = temp.str();</a>
+<a name="ln968">  }</a>
+<a name="ln969"> </a>
+<a name="ln970">  void OBResidue::SetNum(const string resnum)</a>
+<a name="ln971">  {</a>
+<a name="ln972">    _resnum = resnum;</a>
+<a name="ln973">  }</a>
+<a name="ln974"> </a>
+<a name="ln975">  void OBResidue::SetAtomID(OBAtom *atom, const string &amp;id)</a>
+<a name="ln976">  {</a>
+<a name="ln977">    for ( unsigned int i = 0 ; i &lt; _atoms.size() ; ++i )</a>
+<a name="ln978">      if (_atoms[i] == atom)</a>
+<a name="ln979">        _atomid[i] = id;</a>
+<a name="ln980">  }</a>
+<a name="ln981"> </a>
+<a name="ln982">  void OBResidue::SetHetAtom(OBAtom *atom, bool hetatm)</a>
+<a name="ln983">  {</a>
+<a name="ln984">    for ( unsigned int i = 0 ; i &lt; _atoms.size() ; ++i )</a>
+<a name="ln985">      if (_atoms[i] == atom)</a>
+<a name="ln986">        _hetatm[i] = hetatm;</a>
+<a name="ln987">  }</a>
+<a name="ln988"> </a>
+<a name="ln989">  void OBResidue::SetSerialNum(OBAtom *atom, unsigned int sernum)</a>
+<a name="ln990">  {</a>
+<a name="ln991">    for ( unsigned int i = 0 ; i &lt; _atoms.size() ; ++i )</a>
+<a name="ln992">      if (_atoms[i] == atom)</a>
+<a name="ln993">        _sernum[i] = sernum;</a>
+<a name="ln994">  }</a>
+<a name="ln995"> </a>
+<a name="ln996">  vector&lt;OBAtom*&gt; OBResidue::GetAtoms(void) const</a>
+<a name="ln997">  {</a>
+<a name="ln998">    return _atoms;</a>
+<a name="ln999">  }</a>
+<a name="ln1000"> </a>
+<a name="ln1001">  vector&lt;OBBond*&gt; OBResidue::GetBonds(bool exterior) const</a>
+<a name="ln1002">  {</a>
+<a name="ln1003">    OBAtom         *atom;</a>
+<a name="ln1004">    vector&lt;OBBond*&gt; bonds;</a>
+<a name="ln1005">    OBBitVec        idxs;</a>
+<a name="ln1006">    unsigned int    sz;</a>
+<a name="ln1007"> </a>
+<a name="ln1008">    sz = (unsigned int) _atoms.size();</a>
+<a name="ln1009">    for ( unsigned int i = 0 ; i &lt; sz ; ++i )</a>
+<a name="ln1010">      {</a>
+<a name="ln1011">        atom = _atoms[i];</a>
+<a name="ln1012">        OBBond *bond;</a>
+<a name="ln1013">        vector&lt;OBBond*&gt;::iterator b;</a>
+<a name="ln1014">        for (bond = atom-&gt;BeginBond(b) ; bond ; bond = atom-&gt;NextBond(b))</a>
+<a name="ln1015">          {</a>
+<a name="ln1016">            if (!idxs.BitIsSet(bond-&gt;GetIdx()))</a>
+<a name="ln1017">              {</a>
+<a name="ln1018">                if (!exterior)</a>
+<a name="ln1019">                  {</a>
+<a name="ln1020">                    if (bond-&gt;GetNbrAtom(atom)-&gt;GetResidue() == this)</a>
+<a name="ln1021">                      bonds.push_back(&amp;(*bond));</a>
+<a name="ln1022">                  }</a>
+<a name="ln1023">                else</a>
+<a name="ln1024">                  bonds.push_back(&amp;(*bond));</a>
+<a name="ln1025"> </a>
+<a name="ln1026">                idxs.SetBitOn(bond-&gt;GetIdx());</a>
+<a name="ln1027">              }</a>
+<a name="ln1028">          }</a>
+<a name="ln1029">      }</a>
+<a name="ln1030"> </a>
+<a name="ln1031">    return bonds;</a>
+<a name="ln1032">  }</a>
+<a name="ln1033"> </a>
+<a name="ln1034">  string OBResidue::GetName(void) const</a>
+<a name="ln1035">  {</a>
+<a name="ln1036">    return _resname;</a>
+<a name="ln1037">  }</a>
+<a name="ln1038"> </a>
+<a name="ln1039">  std::string OBResidue::GetNumString(void)</a>
+<a name="ln1040">  {</a>
+<a name="ln1041">    return _resnum;</a>
+<a name="ln1042">  }</a>
+<a name="ln1043"> </a>
+<a name="ln1044">  int OBResidue::GetNum(void)</a>
+<a name="ln1045">  {</a>
+<a name="ln1046">    return atoi(_resnum.c_str());</a>
+<a name="ln1047">  }</a>
+<a name="ln1048"> </a>
+<a name="ln1049">  unsigned int OBResidue::GetNumAtoms(void) const</a>
+<a name="ln1050">  {</a>
+<a name="ln1051">    return (unsigned int)_atoms.size();</a>
+<a name="ln1052">  }</a>
+<a name="ln1053"> </a>
+<a name="ln1054">  char OBResidue::GetChain(void) const</a>
+<a name="ln1055">  {</a>
+<a name="ln1056">    return _chain;</a>
+<a name="ln1057">  }</a>
+<a name="ln1058"> </a>
+<a name="ln1059">  unsigned int OBResidue::GetChainNum(void) const</a>
+<a name="ln1060">  {</a>
+<a name="ln1061">    if (isdigit(_chain))</a>
+<a name="ln1062">      return (_chain - '0');</a>
+<a name="ln1063">    else</a>
+<a name="ln1064">      return (_chain - 'A' + 1);</a>
+<a name="ln1065">  }</a>
+<a name="ln1066"> </a>
+<a name="ln1067">  unsigned int OBResidue::GetIdx(void) const</a>
+<a name="ln1068">  {</a>
+<a name="ln1069">    return(_idx);</a>
+<a name="ln1070">  }</a>
+<a name="ln1071"> </a>
+<a name="ln1072">  unsigned int OBResidue::GetResKey(void) const</a>
+<a name="ln1073">  {</a>
+<a name="ln1074">    return(_reskey);</a>
+<a name="ln1075">  }</a>
+<a name="ln1076"> </a>
+<a name="ln1077">  char OBResidue::GetInsertionCode(void) const</a>
+<a name="ln1078">  {</a>
+<a name="ln1079">    return(_insertioncode);</a>
+<a name="ln1080">  }</a>
+<a name="ln1081"> </a>
+<a name="ln1082">  string OBResidue::GetAtomID(OBAtom *atom) const</a>
+<a name="ln1083">  {</a>
+<a name="ln1084">    for ( unsigned int i = 0 ; i &lt; _atoms.size() ; ++i )</a>
+<a name="ln1085">      if (_atoms[i] == atom)</a>
+<a name="ln1086">        return _atomid[i];</a>
+<a name="ln1087">    return &quot;&quot;;</a>
+<a name="ln1088">  }</a>
+<a name="ln1089"> </a>
+<a name="ln1090">  unsigned int OBResidue::GetSerialNum(OBAtom *atom) const</a>
+<a name="ln1091">  {</a>
+<a name="ln1092">    for ( unsigned int i = 0 ; i &lt; _atoms.size() ; ++i )</a>
+<a name="ln1093">      if (_atoms[i] == atom)</a>
+<a name="ln1094">        return _sernum[i];</a>
+<a name="ln1095">    return 0;</a>
+<a name="ln1096">  }</a>
+<a name="ln1097"> </a>
+<a name="ln1098">  bool OBResidue::IsHetAtom(OBAtom *atom) const</a>
+<a name="ln1099">  {</a>
+<a name="ln1100">    for ( unsigned int i = 0 ; i &lt; _atoms.size() ; ++i )</a>
+<a name="ln1101">      if (_atoms[i] == atom)</a>
+<a name="ln1102">        return _hetatm[i];</a>
+<a name="ln1103">    return false;</a>
+<a name="ln1104">  }</a>
+<a name="ln1105"> </a>
+<a name="ln1106">  ///////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1107">  // OBResidue: Iteration Utilities</a>
+<a name="ln1108">  ///////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1109"> </a>
+<a name="ln1110">  OBAtom *OBResidue::BeginAtom(vector&lt;OBAtom*&gt;::iterator &amp;i)</a>
+<a name="ln1111">  {</a>
+<a name="ln1112">    i = _atoms.begin();</a>
+<a name="ln1113">    return ((i == _atoms.end()) ? nullptr : *i);</a>
+<a name="ln1114">  }</a>
+<a name="ln1115"> </a>
+<a name="ln1116">  OBAtom *OBResidue::NextAtom(vector&lt;OBAtom*&gt;::iterator &amp;i)</a>
+<a name="ln1117">  {</a>
+<a name="ln1118">    ++i;</a>
+<a name="ln1119">    return ((i == _atoms.end()) ? nullptr : *i);</a>
+<a name="ln1120">  }</a>
+<a name="ln1121"> </a>
+<a name="ln1122">  ///////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1123">  // OBResidue: Information Functions</a>
+<a name="ln1124">  ///////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1125"> </a>
+<a name="ln1126">  bool OBResidue::GetAminoAcidProperty(int property) const</a>
+<a name="ln1127">  {</a>
+<a name="ln1128">    switch(property)</a>
+<a name="ln1129">      {</a>
+<a name="ln1130">      case OBAminoAcidProperty::ACIDIC:</a>
+<a name="ln1131">        return IS_ACIDIC(_aakey)      != 0;</a>
+<a name="ln1132">      case OBAminoAcidProperty::ACYCLIC:</a>
+<a name="ln1133">        return IS_ACYCLIC(_aakey)     != 0;</a>
+<a name="ln1134">      case OBAminoAcidProperty::ALIPHATIC:</a>
+<a name="ln1135">        return IS_ALIPHATIC(_aakey)   != 0;</a>
+<a name="ln1136">      case OBAminoAcidProperty::AROMATIC:</a>
+<a name="ln1137">        return IS_AROMATIC(_aakey)    != 0;</a>
+<a name="ln1138">      case OBAminoAcidProperty::BASIC:</a>
+<a name="ln1139">        return IS_BASIC(_aakey)       != 0;</a>
+<a name="ln1140">      case OBAminoAcidProperty::BURIED:</a>
+<a name="ln1141">        return IS_BURIED(_aakey)      != 0;</a>
+<a name="ln1142">      case OBAminoAcidProperty::CHARGED:</a>
+<a name="ln1143">        return IS_CHARGED(_aakey)     != 0;</a>
+<a name="ln1144">      case OBAminoAcidProperty::CYCLIC:</a>
+<a name="ln1145">        return IS_CYCLIC(_aakey)      != 0;</a>
+<a name="ln1146">      case OBAminoAcidProperty::HYDROPHOBIC:</a>
+<a name="ln1147">        return IS_HYDROPHOBIC(_aakey) != 0;</a>
+<a name="ln1148">      case OBAminoAcidProperty::LARGE:</a>
+<a name="ln1149">        return IS_LARGE(_aakey)       != 0;</a>
+<a name="ln1150">      case OBAminoAcidProperty::MEDIUM:</a>
+<a name="ln1151">        return IS_MEDIUM(_aakey)      != 0;</a>
+<a name="ln1152">      case OBAminoAcidProperty::NEGATIVE:</a>
+<a name="ln1153">        return IS_NEGATIVE(_aakey)    != 0;</a>
+<a name="ln1154">      case OBAminoAcidProperty::NEUTRAL:</a>
+<a name="ln1155">        return IS_NEUTRAL(_aakey)     != 0;</a>
+<a name="ln1156">      case OBAminoAcidProperty::POLAR:</a>
+<a name="ln1157">        return IS_POLAR(_aakey)       != 0;</a>
+<a name="ln1158">      case OBAminoAcidProperty::POSITIVE:</a>
+<a name="ln1159">        return IS_POSITIVE(_aakey)    != 0;</a>
+<a name="ln1160">      case OBAminoAcidProperty::SMALL:</a>
+<a name="ln1161">        return IS_SMALL(_aakey)       != 0;</a>
+<a name="ln1162">      case OBAminoAcidProperty::SURFACE:</a>
+<a name="ln1163">        return IS_SURFACE(_aakey)     != 0;</a>
+<a name="ln1164">      default:</a>
+<a name="ln1165">        return false;</a>
+<a name="ln1166">      }</a>
+<a name="ln1167">  }</a>
+<a name="ln1168"> </a>
+<a name="ln1169">  bool OBResidue::GetAtomProperty(OBAtom *atom, int property) const</a>
+<a name="ln1170">  {</a>
+<a name="ln1171">    if (atom != nullptr)</a>
+<a name="ln1172">      {</a>
+<a name="ln1173">        unsigned int atomid = GetAtomIDNumber(GetAtomID(atom).c_str());</a>
+<a name="ln1174"> </a>
+<a name="ln1175">        switch(property)</a>
+<a name="ln1176">          {</a>
+<a name="ln1177">          case OBResidueAtomProperty::ALPHA_CARBON:</a>
+<a name="ln1178">            return (atomid == 1);</a>
+<a name="ln1179"> </a>
+<a name="ln1180">          case OBResidueAtomProperty::AMINO_BACKBONE:</a>
+<a name="ln1181">            return (atomid &lt;= 3);</a>
+<a name="ln1182"> </a>
+<a name="ln1183">          case OBResidueAtomProperty::BACKBONE:</a>
+<a name="ln1184">            return (atomid &lt;= 18);</a>
+<a name="ln1185"> </a>
+<a name="ln1186">          case OBResidueAtomProperty::CYSTEINE_SULPHUR:</a>
+<a name="ln1187">            return (atomid == 20);</a>
+<a name="ln1188"> </a>
+<a name="ln1189">          case OBResidueAtomProperty::LIGAND:</a>
+<a name="ln1190">            return IsHetAtom(atom) &amp;&amp;</a>
+<a name="ln1191">              !GetResidueProperty(OBResidueProperty::SOLVENT);</a>
+<a name="ln1192"> </a>
+<a name="ln1193">          case OBResidueAtomProperty::NUCLEIC_BACKBONE:</a>
+<a name="ln1194">            return ((atomid &gt;= 7) &amp;&amp; (atomid &lt;= 18));</a>
+<a name="ln1195"> </a>
+<a name="ln1196">          case OBResidueAtomProperty::SHAPELY_BACKBONE:</a>
+<a name="ln1197">            return (atomid &lt;= 7);</a>
+<a name="ln1198"> </a>
+<a name="ln1199">          case OBResidueAtomProperty::SHAPELY_SPECIAL:</a>
+<a name="ln1200">            return (atomid == 19);</a>
+<a name="ln1201"> </a>
+<a name="ln1202">          case OBResidueAtomProperty::SIDECHAIN:</a>
+<a name="ln1203">            return GetResidueProperty(OBResidueProperty::AMINO_NUCLEO) &amp;&amp;</a>
+<a name="ln1204">              (atomid &gt; 18);</a>
+<a name="ln1205"> </a>
+<a name="ln1206">          case OBResidueAtomProperty::SUGAR_PHOSPHATE:</a>
+<a name="ln1207">            return (atomid == 7);</a>
+<a name="ln1208">          }</a>
+<a name="ln1209">      }</a>
+<a name="ln1210"> </a>
+<a name="ln1211">    return false;</a>
+<a name="ln1212">  }</a>
+<a name="ln1213"> </a>
+<a name="ln1214">  bool OBResidue::GetResidueProperty(int property) const</a>
+<a name="ln1215">  {</a>
+<a name="ln1216">    switch(property)</a>
+<a name="ln1217">      {</a>
+<a name="ln1218">      case OBResidueProperty::AMINO:</a>
+<a name="ln1219">        return (_reskey &lt;= OBResidueIndex::HYP);</a>
+<a name="ln1220"> </a>
+<a name="ln1221">      case OBResidueProperty::AMINO_NUCLEO:</a>
+<a name="ln1222">        return (_reskey &lt;= OBResidueIndex::PSU);</a>
+<a name="ln1223"> </a>
+<a name="ln1224">      case OBResidueProperty::COENZYME:</a>
+<a name="ln1225">        return (_reskey &gt;= OBResidueIndex::NAD) &amp;&amp;</a>
+<a name="ln1226">          (_reskey &lt;= OBResidueIndex::NDP);</a>
+<a name="ln1227"> </a>
+<a name="ln1228">      case OBResidueProperty::ION:</a>
+<a name="ln1229">        return (_reskey == OBResidueIndex::SO4) ||</a>
+<a name="ln1230">          (_reskey == OBResidueIndex::PO4);</a>
+<a name="ln1231"> </a>
+<a name="ln1232">      case OBResidueProperty::NUCLEO:</a>
+<a name="ln1233">        return (_reskey &gt;= OBResidueIndex::A) &amp;&amp;</a>
+<a name="ln1234">          (_reskey &lt;= OBResidueIndex::PSU);</a>
+<a name="ln1235"> </a>
+<a name="ln1236">      case OBResidueProperty::PROTEIN:</a>
+<a name="ln1237">        return (_reskey &lt;= OBResidueIndex::HYP) ||</a>
+<a name="ln1238">          ((_reskey &gt;= OBResidueIndex::UNK) &amp;&amp;</a>
+<a name="ln1239">           (_reskey &lt;= OBResidueIndex::FOR));</a>
+<a name="ln1240"> </a>
+<a name="ln1241">      case OBResidueProperty::PURINE:</a>
+<a name="ln1242">        return (_reskey == OBResidueIndex::A) ||</a>
+<a name="ln1243">          (_reskey == OBResidueIndex::G);</a>
+<a name="ln1244"> </a>
+<a name="ln1245">      case OBResidueProperty::PYRIMIDINE:</a>
+<a name="ln1246">        return (_reskey == OBResidueIndex::C) ||</a>
+<a name="ln1247">          (_reskey == OBResidueIndex::T);</a>
+<a name="ln1248"> </a>
+<a name="ln1249">      case OBResidueProperty::SOLVENT:</a>
+<a name="ln1250">        return (_reskey &gt;= OBResidueIndex::HOH) &amp;&amp;</a>
+<a name="ln1251">          (_reskey &lt;= OBResidueIndex::PO4);</a>
+<a name="ln1252"> </a>
+<a name="ln1253">      case OBResidueProperty::WATER:</a>
+<a name="ln1254">        return (_reskey == OBResidueIndex::HOH) ||</a>
+<a name="ln1255">          (_reskey == OBResidueIndex::DOD);</a>
+<a name="ln1256"> </a>
+<a name="ln1257">      default:</a>
+<a name="ln1258">        return false;</a>
+<a name="ln1259">      }</a>
+<a name="ln1260">  }</a>
+<a name="ln1261"> </a>
+<a name="ln1262">  bool OBResidue::IsResidueType(int restype) const</a>
+<a name="ln1263">  {</a>
+<a name="ln1264">    return ((int)_reskey == restype);</a>
+<a name="ln1265">  }</a>
+<a name="ln1266"> </a>
+<a name="ln1267">} // end namespace OpenBabel</a>
+<a name="ln1268"> </a>
+<a name="ln1269">//! \file residue.cpp</a>
+<a name="ln1270">//! \brief Handle macromolecule residues.</a>
+
+</code></pre>
+<div class="balloon" rel="833"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v730/" target="_blank">V730</a> Not all members of a class are initialized inside the constructor. Consider inspecting: _idx.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

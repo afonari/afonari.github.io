@@ -1,0 +1,619 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>obmolecformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">obmolecformat.cpp - Implementation of subclass of OBFormat for conversion of OBMol.</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 2005 Chris Morley</a>
+<a name="ln5"> </a>
+<a name="ln6">This file is part of the Open Babel project.</a>
+<a name="ln7">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln10">it under the terms of the GNU General Public License as published by</a>
+<a name="ln11">the Free Software Foundation version 2 of the License.</a>
+<a name="ln12"> </a>
+<a name="ln13">This program is distributed in the hope that it will be useful,</a>
+<a name="ln14">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln15">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln16">GNU General Public License for more details.</a>
+<a name="ln17">***********************************************************************/</a>
+<a name="ln18">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln21">#ifdef HAVE_SHARED_POINTER</a>
+<a name="ln22">  #include &lt;openbabel/reaction.h&gt;</a>
+<a name="ln23">#endif</a>
+<a name="ln24"> </a>
+<a name="ln25">#include &lt;algorithm&gt;</a>
+<a name="ln26"> </a>
+<a name="ln27">using namespace std;</a>
+<a name="ln28">namespace OpenBabel</a>
+<a name="ln29">{</a>
+<a name="ln30">  bool OBMoleculeFormat::OptionsRegistered=false;</a>
+<a name="ln31">  std::map&lt;std::string, OBMol*&gt; OBMoleculeFormat::IMols;</a>
+<a name="ln32">  OBMol* OBMoleculeFormat::_jmol;</a>
+<a name="ln33">  std::vector&lt;OBMol&gt; OBMoleculeFormat::MolArray;</a>
+<a name="ln34">  bool OBMoleculeFormat::StoredMolsReady=false;</a>
+<a name="ln35"> </a>
+<a name="ln36">  bool OBMoleculeFormat::ReadChemObjectImpl(OBConversion* pConv, OBFormat* pFormat)</a>
+<a name="ln37">  {</a>
+<a name="ln38">    std::istream *ifs = pConv-&gt;GetInStream();</a>
+<a name="ln39">    if (!ifs || !ifs-&gt;good())</a>
+<a name="ln40">      return false;</a>
+<a name="ln41"> </a>
+<a name="ln42">    OBMol* pmol = new OBMol;</a>
+<a name="ln43"> </a>
+<a name="ln44">    if(pConv-&gt;IsOption(&quot;C&quot;,OBConversion::GENOPTIONS))</a>
+<a name="ln45">      return DeferMolOutput(pmol, pConv, pFormat);</a>
+<a name="ln46"> </a>
+<a name="ln47">    bool ret=true;</a>
+<a name="ln48">   if(pConv-&gt;IsOption(&quot;separate&quot;,OBConversion::GENOPTIONS))</a>
+<a name="ln49">   {</a>
+<a name="ln50">     //On first call, separate molecule and put fragments in MolArray.</a>
+<a name="ln51">     //On subsequent calls, remove a fragment from MolArray and send it for writing</a>
+<a name="ln52">     //Done this way so that each fragment can be written to its own file (with -m option)</a>
+<a name="ln53">     if(!StoredMolsReady)</a>
+<a name="ln54">     {</a>
+<a name="ln55">       while(ret) //do all the molecules in the file</a>
+<a name="ln56">       {</a>
+<a name="ln57">         ret = pFormat-&gt;ReadMolecule(pmol,pConv);</a>
+<a name="ln58"> </a>
+<a name="ln59">         if(ret &amp;&amp; (pmol-&gt;NumAtoms() &gt; 0 || (pFormat-&gt;Flags()&amp;ZEROATOMSOK)))</a>
+<a name="ln60">         {</a>
+<a name="ln61">           vector&lt;OBMol&gt; SepArray = pmol-&gt;Separate(); //use un-transformed molecule</a>
+<a name="ln62">           //Add an appropriate title to each fragment</a>
+<a name="ln63">           if(SepArray.size()&gt;1)</a>
+<a name="ln64">             for (unsigned int i=0; i&lt;SepArray.size(); ++i)</a>
+<a name="ln65">             {</a>
+<a name="ln66">               stringstream ss;</a>
+<a name="ln67">               ss &lt;&lt; pmol-&gt;GetTitle() &lt;&lt; '#' &lt;&lt; i+1;</a>
+<a name="ln68">               string title = ss.str();</a>
+<a name="ln69">               SepArray[i].SetTitle(title);</a>
+<a name="ln70">             }</a>
+<a name="ln71">           else</a>
+<a name="ln72">              SepArray[0].SetTitle(pmol-&gt;GetTitle());</a>
+<a name="ln73"> </a>
+<a name="ln74">           copy(SepArray.begin(),SepArray.end(),back_inserter(MolArray));</a>
+<a name="ln75">         }</a>
+<a name="ln76">       }</a>
+<a name="ln77">       reverse(MolArray.begin(),MolArray.end());</a>
+<a name="ln78">       StoredMolsReady = true;</a>
+<a name="ln79">       //Clear the flags of the input stream(which may have found eof) to ensure will</a>
+<a name="ln80">       //try to read anothe molecule and allow the stored ones to be sent for output.</a>
+<a name="ln81">       pConv-&gt;GetInStream()-&gt;clear();</a>
+<a name="ln82">     }</a>
+<a name="ln83"> </a>
+<a name="ln84">     if(MolArray.empty()) //normal end of fragments</a>
+<a name="ln85">       ret =false;</a>
+<a name="ln86">     else</a>
+<a name="ln87">     {</a>
+<a name="ln88">       // Copying is needed because the OBMol passed to AddChemObject will be deleted.</a>
+<a name="ln89">       // The OBMol in the vector is deleted here.</a>
+<a name="ln90">       OBMol* pMolCopy = new OBMol( MolArray.back());</a>
+<a name="ln91">       MolArray.pop_back();</a>
+<a name="ln92">       ret = pConv-&gt;AddChemObject(</a>
+<a name="ln93">           pMolCopy-&gt;DoTransformations(pConv-&gt;GetOptions(OBConversion::GENOPTIONS), pConv))!=0;</a>
+<a name="ln94">     }</a>
+<a name="ln95">     if(!ret)</a>
+<a name="ln96">       StoredMolsReady = false;</a>
+<a name="ln97"> </a>
+<a name="ln98">     delete pmol;</a>
+<a name="ln99">     return ret;</a>
+<a name="ln100">   }</a>
+<a name="ln101"> </a>
+<a name="ln102">    ret=pFormat-&gt;ReadMolecule(pmol,pConv);</a>
+<a name="ln103"> </a>
+<a name="ln104">    OBMol* ptmol = nullptr;</a>
+<a name="ln105">    //Molecule is valid if it has some atoms</a>
+<a name="ln106">    //or it represents a reaction</a>
+<a name="ln107">    //or the format allows zero-atom molecules and it has a title or properties</a>
+<a name="ln108">    if(ret &amp;&amp; (pmol-&gt;NumAtoms() &gt; 0</a>
+<a name="ln109">      || pmol-&gt;IsReaction()</a>
+<a name="ln110">      || (pFormat-&gt;Flags()&amp;ZEROATOMSOK &amp;&amp; (*pmol-&gt;GetTitle() || pmol-&gt;HasData(1)))))</a>
+<a name="ln111">    {</a>
+<a name="ln112">      ptmol = static_cast&lt;OBMol*&gt;(pmol-&gt;DoTransformations(pConv-&gt;GetOptions(OBConversion::GENOPTIONS),pConv));</a>
+<a name="ln113">      if(ptmol &amp;&amp; (pConv-&gt;IsOption(&quot;j&quot;,OBConversion::GENOPTIONS)</a>
+<a name="ln114">                || pConv-&gt;IsOption(&quot;join&quot;,OBConversion::GENOPTIONS)))</a>
+<a name="ln115">      {</a>
+<a name="ln116">        //With j option, accumulate all mols in one stored in this class</a>
+<a name="ln117">        if(pConv-&gt;IsFirstInput())</a>
+<a name="ln118">          _jmol = new OBMol;</a>
+<a name="ln119">        pConv-&gt;AddChemObject(_jmol);</a>
+<a name="ln120">        //will be discarded in WriteChemObjectImpl until the last input mol. This complication</a>
+<a name="ln121">        //is needed to allow joined molecules to be from different files. pOb1 in AddChem Object</a>
+<a name="ln122">        //is zeroed at the end of a file and _jmol is in danger of not being output.</a>
+<a name="ln123">        *_jmol += *ptmol;</a>
+<a name="ln124">        delete ptmol;</a>
+<a name="ln125">        return true;</a>
+<a name="ln126">      }</a>
+<a name="ln127">    }</a>
+<a name="ln128">    else</a>
+<a name="ln129">      delete pmol;</a>
+<a name="ln130"> </a>
+<a name="ln131">    // Normal operation - send molecule to be written</a>
+<a name="ln132">    ret = ret &amp;&amp; (pConv-&gt;AddChemObject(ptmol)!=0); //success of both writing and reading</a>
+<a name="ln133">    return ret;</a>
+<a name="ln134">  }</a>
+<a name="ln135"> </a>
+<a name="ln136">  bool OBMoleculeFormat::WriteChemObjectImpl(OBConversion* pConv, OBFormat* pFormat)</a>
+<a name="ln137">  {</a>
+<a name="ln138">    if(pConv-&gt;IsOption(&quot;C&quot;,OBConversion::GENOPTIONS))</a>
+<a name="ln139">      return OutputDeferredMols(pConv);</a>
+<a name="ln140">    if(pConv-&gt;IsOption(&quot;j&quot;,OBConversion::GENOPTIONS)</a>
+<a name="ln141">        || pConv-&gt;IsOption(&quot;join&quot;,OBConversion::GENOPTIONS))</a>
+<a name="ln142">      {</a>
+<a name="ln143">        //arrives here at the end of a file</a>
+<a name="ln144">        if(!pConv-&gt;IsLast())</a>
+<a name="ln145">          return true;</a>
+<a name="ln146">        bool ret=pFormat-&gt;WriteMolecule(_jmol,pConv);</a>
+<a name="ln147">        pConv-&gt;SetOutputIndex(1);</a>
+<a name="ln148">        delete _jmol;</a>
+<a name="ln149">        return ret;</a>
+<a name="ln150">      }</a>
+<a name="ln151"> </a>
+<a name="ln152"> </a>
+<a name="ln153">    //Retrieve the target OBMol</a>
+<a name="ln154">    OBBase* pOb = pConv-&gt;GetChemObject();</a>
+<a name="ln155"> </a>
+<a name="ln156">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt; (pOb);</a>
+<a name="ln157">    bool ret=false;</a>
+<a name="ln158">    if(pmol)</a>
+<a name="ln159">      {</a>
+<a name="ln160">        if(pmol-&gt;NumAtoms()==0)</a>
+<a name="ln161">          {</a>
+<a name="ln162">            std::string auditMsg = &quot;OpenBabel::Molecule &quot;;</a>
+<a name="ln163">            auditMsg += pmol-&gt;GetTitle();</a>
+<a name="ln164">            auditMsg += &quot; has 0 atoms&quot;;</a>
+<a name="ln165">            obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln166">                                  auditMsg,</a>
+<a name="ln167">                                  obInfo);</a>
+<a name="ln168">          }</a>
+<a name="ln169">        ret=true;</a>
+<a name="ln170"> </a>
+<a name="ln171">        ret = DoOutputOptions(pOb, pConv);</a>
+<a name="ln172"> </a>
+<a name="ln173">        if(ret)</a>
+<a name="ln174">          ret = pFormat-&gt;WriteMolecule(pmol,pConv);</a>
+<a name="ln175">    }</a>
+<a name="ln176"> </a>
+<a name="ln177">#ifdef HAVE_SHARED_POINTER</a>
+<a name="ln178">    //If sent a OBReaction* (rather than a OBMol*) output the consituent molecules</a>
+<a name="ln179">    OBReaction* pReact = dynamic_cast&lt;OBReaction*&gt; (pOb);</a>
+<a name="ln180">    if(pReact)</a>
+<a name="ln181">      ret = OutputMolsFromReaction(pReact, pConv, pFormat);</a>
+<a name="ln182">#endif</a>
+<a name="ln183">    delete pOb;</a>
+<a name="ln184">    return ret;</a>
+<a name="ln185">  }</a>
+<a name="ln186"> </a>
+<a name="ln187">  bool OBMoleculeFormat::DoOutputOptions(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln188">  {</a>
+<a name="ln189">    if(pConv-&gt;IsOption(&quot;addoutindex&quot;, OBConversion::GENOPTIONS)) {</a>
+<a name="ln190">      stringstream ss;</a>
+<a name="ln191">      ss &lt;&lt; pOb-&gt;GetTitle() &lt;&lt; &quot; &quot; &lt;&lt; pConv-&gt;GetOutputIndex();</a>
+<a name="ln192">      pOb-&gt;SetTitle(ss.str().c_str());</a>
+<a name="ln193">    }</a>
+<a name="ln194"> </a>
+<a name="ln195">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt; (pOb);</a>
+<a name="ln196">    if(pmol) {</a>
+<a name="ln197">      if(pConv-&gt;IsOption(&quot;writeconformers&quot;, OBConversion::GENOPTIONS)) {</a>
+<a name="ln198">        //The last conformer is written in the calling function</a>
+<a name="ln199">        int c = 0;</a>
+<a name="ln200">        for (; c &lt; pmol-&gt;NumConformers()-1; ++c) {</a>
+<a name="ln201">          pmol-&gt;SetConformer(c);</a>
+<a name="ln202">          if(!pConv-&gt;GetOutFormat()-&gt;WriteMolecule(pmol, pConv))</a>
+<a name="ln203">            break;</a>
+<a name="ln204">        }</a>
+<a name="ln205">        pmol-&gt;SetConformer(c);</a>
+<a name="ln206">      }</a>
+<a name="ln207">    }</a>
+<a name="ln208">    return true;</a>
+<a name="ln209">  }</a>
+<a name="ln210"> </a>
+<a name="ln211">  /*! Instead of sending molecules for output via AddChemObject(), they are</a>
+<a name="ln212">    saved in here in OBMoleculeFormat or discarded. By default they are</a>
+<a name="ln213">    saved only if they are in the first input file. Parts of subsequent</a>
+<a name="ln214">    molecules, such as chemical structure, coordinates and OBGenericData</a>
+<a name="ln215">    can replace the parts in molecules with the same title that have already</a>
+<a name="ln216">    been stored, subject to a set of rules. After all input files have been</a>
+<a name="ln217">    read, the stored molecules (possibly now having augmented properties) are</a>
+<a name="ln218">    sent to the output format.</a>
+<a name="ln219"> </a>
+<a name="ln220">    Is a static function with *this as parameter so that it can be called from other</a>
+<a name="ln221">    format classes like XMLMoleculeFormat which are not derived from OBMoleculeFormat.</a>
+<a name="ln222">  */</a>
+<a name="ln223">  bool OBMoleculeFormat::DeferMolOutput(OBMol* pmol, OBConversion* pConv, OBFormat* pF )</a>
+<a name="ln224">  {</a>
+<a name="ln225">    static bool IsFirstFile;</a>
+<a name="ln226">    bool OnlyMolsInFirstFile=true;</a>
+<a name="ln227"> </a>
+<a name="ln228">    if(pConv-&gt;IsFirstInput())</a>
+<a name="ln229">      {</a>
+<a name="ln230">        IsFirstFile=true;</a>
+<a name="ln231">        IMols.clear();</a>
+<a name="ln232">        pConv-&gt;AddOption(&quot;OutputAtEnd&quot;, OBConversion::GENOPTIONS);</a>
+<a name="ln233">      }</a>
+<a name="ln234">    else</a>
+<a name="ln235">      {</a>
+<a name="ln236">        if((std::streamoff)pConv-&gt;GetInStream()-&gt;tellg()&lt;=0)</a>
+<a name="ln237">          IsFirstFile=false;//File has changed</a>
+<a name="ln238">      }</a>
+<a name="ln239"> </a>
+<a name="ln240">    if (!pF-&gt;ReadMolecule(pmol,pConv))</a>
+<a name="ln241">      {</a>
+<a name="ln242">        delete pmol;</a>
+<a name="ln243">        return false;</a>
+<a name="ln244">      }</a>
+<a name="ln245">    const char* ptitle = pmol-&gt;GetTitle();</a>
+<a name="ln246">    if(*ptitle==0)</a>
+<a name="ln247">      obErrorLog.ThrowError(__FUNCTION__, &quot;Molecule with no title ignored&quot;, obWarning);</a>
+<a name="ln248">    else</a>
+<a name="ln249">      {</a>
+<a name="ln250">        string title(ptitle);</a>
+<a name="ln251">        string::size_type pos = title.find_first_of(&quot;\t\r\n&quot;); //some title have other data appended</a>
+<a name="ln252">        if(pos!=string::npos)</a>
+<a name="ln253">          title.erase(pos);</a>
+<a name="ln254"> </a>
+<a name="ln255">        map&lt;std::string, OBMol*&gt;::iterator itr;</a>
+<a name="ln256">        itr = IMols.find(title);</a>
+<a name="ln257">        if(itr!=IMols.end())</a>
+<a name="ln258">          {</a>
+<a name="ln259">            //Molecule with the same title has been input previously: update it</a>
+<a name="ln260">            OBMol* pNewMol = MakeCombinedMolecule(itr-&gt;second, pmol);</a>
+<a name="ln261">            if(pNewMol)</a>
+<a name="ln262">              {</a>
+<a name="ln263">                delete itr-&gt;second;</a>
+<a name="ln264">                IMols[title] = pNewMol;</a>
+<a name="ln265">              }</a>
+<a name="ln266">            else</a>
+<a name="ln267">              {</a>
+<a name="ln268">                //error: cleanup and return false</a>
+<a name="ln269">                delete pmol;</a>
+<a name="ln270">                return DeleteDeferredMols();</a>
+<a name="ln271">              }</a>
+<a name="ln272">          }</a>
+<a name="ln273">        else</a>
+<a name="ln274">          {</a>
+<a name="ln275">            //Molecule not already saved in IMols: save it if in first file</a>
+<a name="ln276">            if(!OnlyMolsInFirstFile || IsFirstFile)</a>
+<a name="ln277">              {</a>
+<a name="ln278">                IMols[title] = pmol;</a>
+<a name="ln279">                return true; //don't delete pmol</a>
+<a name="ln280">              }</a>
+<a name="ln281">          }</a>
+<a name="ln282">      }</a>
+<a name="ln283">    delete pmol;</a>
+<a name="ln284">    return true;</a>
+<a name="ln285">  }</a>
+<a name="ln286"> </a>
+<a name="ln287">  /*! Makes a new OBMol on the heap by combining two molecules according to the rule below.</a>
+<a name="ln288">    If both have OBGenericData of the same type, or OBPairData with the</a>
+<a name="ln289">    same attribute,  the version from pFirst is used.</a>
+<a name="ln290">    Returns a pointer to a new OBMol which will need deleting by the calling program</a>
+<a name="ln291">    (probably by being sent to an output format).</a>
+<a name="ln292">    If the molecules cannot be regarded as being the same structure a NULL</a>
+<a name="ln293">    pointer is returned and an error message logged.</a>
+<a name="ln294"> </a>
+<a name="ln295">    pFirst and pSecond and the objects they point to are not changed. (const</a>
+<a name="ln296">    modifiers difficult because class OBMol not designed appropriately)</a>
+<a name="ln297"> </a>
+<a name="ln298">    Combining molecules: rules for each of the three parts</a>
+<a name="ln299">    Title:</a>
+<a name="ln300">    Use the title of pFirst unless it has none, when use that of pSecond.</a>
+<a name="ln301">    Warning if neither molecule has a title.</a>
+<a name="ln302"> </a>
+<a name="ln303">    Structure</a>
+<a name="ln304">    - a structure with atoms replaces one with no atoms</a>
+<a name="ln305">    - a structure with bonds replaces one with no bonds,</a>
+<a name="ln306">    provided the formula is the same, else an error.</a>
+<a name="ln307">    - structures with atoms and bonds are compared by InChI; error if not the same.</a>
+<a name="ln308">    - a structure with 3D coordinates replaces one with 2D coordinates</a>
+<a name="ln309">    - a structure with 2D coordinates replace one with 0D coordinates</a>
+<a name="ln310"> </a>
+<a name="ln311">    OBGenericData</a>
+<a name="ln312">    OBPairData</a>
+<a name="ln313">  */</a>
+<a name="ln314">  OBMol* OBMoleculeFormat::MakeCombinedMolecule(OBMol* pFirst, OBMol* pSecond)</a>
+<a name="ln315">  {</a>
+<a name="ln316">    //Decide on which OBMol provides the new title</a>
+<a name="ln317">    string title(&quot;No title&quot;);</a>
+<a name="ln318">    if(*pFirst-&gt;GetTitle()!=0)</a>
+<a name="ln319">      title = pFirst-&gt;GetTitle();</a>
+<a name="ln320">    else</a>
+<a name="ln321">      {</a>
+<a name="ln322">        if(*pSecond-&gt;GetTitle()!=0)</a>
+<a name="ln323">          title = pSecond-&gt;GetTitle();</a>
+<a name="ln324">        else</a>
+<a name="ln325">          obErrorLog.ThrowError(__FUNCTION__,&quot;Combined molecule has no title&quot;, obWarning);</a>
+<a name="ln326">      }</a>
+<a name="ln327"> </a>
+<a name="ln328">    //Decide on which OBMol provides the new structure</a>
+<a name="ln329">    bool swap=false;</a>
+<a name="ln330">    if(pFirst-&gt;NumAtoms()==0 &amp;&amp; pSecond-&gt;NumAtoms()!=0)</a>
+<a name="ln331">      swap=true;</a>
+<a name="ln332">    else if(pSecond-&gt;NumAtoms()!=0)</a>
+<a name="ln333">      {</a>
+<a name="ln334">        if(pFirst-&gt;GetSpacedFormula()!=pSecond-&gt;GetSpacedFormula())</a>
+<a name="ln335">          {</a>
+<a name="ln336">            obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln337">                                  &quot;Molecules with name = &quot; + title + &quot; have different formula&quot;,obError);</a>
+<a name="ln338">            return nullptr;</a>
+<a name="ln339">          }</a>
+<a name="ln340">        else</a>
+<a name="ln341">          {</a>
+<a name="ln342">            if(pSecond-&gt;NumBonds()!=0 &amp;&amp; pFirst-&gt;NumBonds()==0)</a>
+<a name="ln343">              swap=true;</a>
+<a name="ln344">            else</a>
+<a name="ln345">              {</a>
+<a name="ln346">                //Compare by inchi; error if different NOT YET IMPLEMENTED</a>
+<a name="ln347">                //Use the one with the higher dimension</a>
+<a name="ln348">                if(pSecond-&gt;GetDimension() &gt; pFirst-&gt;GetDimension())</a>
+<a name="ln349">                  swap=true;</a>
+<a name="ln350">              }</a>
+<a name="ln351">          }</a>
+<a name="ln352">      }</a>
+<a name="ln353"> </a>
+<a name="ln354">    OBMol* pNewMol = new OBMol;</a>
+<a name="ln355">    pNewMol-&gt;SetTitle(title);</a>
+<a name="ln356"> </a>
+<a name="ln357">    OBMol* pMain = swap ? pSecond : pFirst;</a>
+<a name="ln358">    OBMol* pOther = swap ? pFirst : pSecond;</a>
+<a name="ln359"> </a>
+<a name="ln360">    *pNewMol = *pMain; //Now copies all data</a>
+<a name="ln361"> </a>
+<a name="ln362">    //Copy some OBGenericData from the OBMol which did not provide the structure</a>
+<a name="ln363">    vector&lt;OBGenericData*&gt;::iterator igd;</a>
+<a name="ln364">    for(igd=pOther-&gt;BeginData();igd!=pOther-&gt;EndData();++igd)</a>
+<a name="ln365">      {</a>
+<a name="ln366">        //copy only if not already data of the same type from molecule already copied to pNewMol</a>
+<a name="ln367">        unsigned datatype = (*igd)-&gt;GetDataType();</a>
+<a name="ln368">        OBGenericData* pData = pNewMol-&gt;GetData(datatype);</a>
+<a name="ln369">        if(datatype==OBGenericDataType::PairData)</a>
+<a name="ln370">          {</a>
+<a name="ln371">            if(pData-&gt;GetAttribute() == (*igd)-&gt;GetAttribute())</a>
+<a name="ln372">              continue;</a>
+<a name="ln373">          }</a>
+<a name="ln374">        else if (pNewMol-&gt;GetData(datatype) != nullptr)</a>
+<a name="ln375">          continue;</a>
+<a name="ln376"> </a>
+<a name="ln377">        OBGenericData* pCopiedData = (*igd)-&gt;Clone(pNewMol);</a>
+<a name="ln378">        pNewMol-&gt;SetData(pCopiedData);</a>
+<a name="ln379">      }</a>
+<a name="ln380">    return pNewMol;</a>
+<a name="ln381">  }</a>
+<a name="ln382"> </a>
+<a name="ln383">  bool OBMoleculeFormat::OutputDeferredMols(OBConversion* pConv)</a>
+<a name="ln384">  {</a>
+<a name="ln385">    std::map&lt;std::string, OBMol*&gt;::iterator itr, lastitr;</a>
+<a name="ln386">    bool ret=false;</a>
+<a name="ln387">    int i=1;</a>
+<a name="ln388">    lastitr = IMols.end();</a>
+<a name="ln389">    --lastitr;</a>
+<a name="ln390">    pConv-&gt;SetOneObjectOnly(false);</a>
+<a name="ln391">    for(itr=IMols.begin();itr!=IMols.end();++itr,++i)</a>
+<a name="ln392">      {</a>
+<a name="ln393">        if(!(itr-&gt;second)-&gt;DoTransformations(pConv-&gt;GetOptions(OBConversion::GENOPTIONS), pConv))</a>
+<a name="ln394">          continue;</a>
+<a name="ln395">        pConv-&gt;SetOutputIndex(i);</a>
+<a name="ln396">        if(itr==lastitr)</a>
+<a name="ln397">          pConv-&gt;SetOneObjectOnly(); //to set IsLast</a>
+<a name="ln398"> </a>
+<a name="ln399">        ret = pConv-&gt;GetOutFormat()-&gt;WriteMolecule(itr-&gt;second, pConv);</a>
+<a name="ln400"> </a>
+<a name="ln401">        delete itr-&gt;second; //always delete OBMol object</a>
+<a name="ln402">        itr-&gt;second = nullptr; // so can be deleted in DeleteDeferredMols()</a>
+<a name="ln403">        if (!ret) break;</a>
+<a name="ln404">      }</a>
+<a name="ln405">    DeleteDeferredMols();//cleans up in case there have been errors</a>
+<a name="ln406">    return ret;</a>
+<a name="ln407">  }</a>
+<a name="ln408"> </a>
+<a name="ln409">  bool OBMoleculeFormat::DeleteDeferredMols()</a>
+<a name="ln410">  {</a>
+<a name="ln411">    //Empties IMols, deteting the OBMol objects whose pointers are stored there</a>
+<a name="ln412">    std::map&lt;std::string, OBMol*&gt;::iterator itr;</a>
+<a name="ln413">    for(itr=IMols.begin();itr!=IMols.end();++itr)</a>
+<a name="ln414">      {</a>
+<a name="ln415">        delete itr-&gt;second; //usually NULL</a>
+<a name="ln416">      }</a>
+<a name="ln417">    IMols.clear();</a>
+<a name="ln418">    return false;</a>
+<a name="ln419">  }</a>
+<a name="ln420"> </a>
+<a name="ln421">  ///////////////////////////////////////////////////////////////////</a>
+<a name="ln422">#ifdef HAVE_SHARED_POINTER</a>
+<a name="ln423">  bool OBMoleculeFormat::OutputMolsFromReaction</a>
+<a name="ln424">    (OBReaction* pReact, OBConversion* pConv, OBFormat* pFormat)</a>
+<a name="ln425">  {</a>
+<a name="ln426">    //Output all the constituent molecules of the reaction</a>
+<a name="ln427"> </a>
+<a name="ln428">    //Collect the molecules first, just for convenience</a>
+<a name="ln429">    vector&lt;obsharedptr&lt;OBMol&gt; &gt; mols;</a>
+<a name="ln430">    for(int i=0;i&lt;pReact-&gt;NumReactants();i++)</a>
+<a name="ln431">      mols.push_back(pReact-&gt;GetReactant(i));</a>
+<a name="ln432">    for(int i=0;i&lt;pReact-&gt;NumProducts();i++)</a>
+<a name="ln433">      mols.push_back(pReact-&gt;GetProduct(i));</a>
+<a name="ln434">    for (int i = 0; i&lt;pReact-&gt;NumAgents(); i++)</a>
+<a name="ln435">      mols.push_back(pReact-&gt;GetAgent(i));</a>
+<a name="ln436"> </a>
+<a name="ln437">    if(pReact-&gt;GetTransitionState())</a>
+<a name="ln438">      mols.push_back(pReact-&gt;GetTransitionState());</a>
+<a name="ln439"> </a>
+<a name="ln440">    pConv-&gt;SetOutputIndex(pConv-&gt;GetOutputIndex() - 1); // The OBReaction object is not output</a>
+<a name="ln441">    if((pFormat-&gt;Flags() &amp; WRITEONEONLY) &amp;&amp; mols.size()&gt;1)</a>
+<a name="ln442">    {</a>
+<a name="ln443">      stringstream ss;</a>
+<a name="ln444">      ss &lt;&lt; &quot;There are &quot; &lt;&lt; mols.size() &lt;&lt; &quot; molecules to be output,&quot;</a>
+<a name="ln445">         &lt;&lt; &quot;but this format is for single molecules only&quot;;</a>
+<a name="ln446">      obErrorLog.ThrowError(__FUNCTION__, ss.str(), obWarning);</a>
+<a name="ln447">      mols.resize(1);</a>
+<a name="ln448">    }</a>
+<a name="ln449">    bool ok = true;</a>
+<a name="ln450">    for(unsigned int i=0;i&lt;mols.size() &amp;&amp; ok;++i)</a>
+<a name="ln451">    {</a>
+<a name="ln452">      if(mols[i])</a>
+<a name="ln453">      {</a>
+<a name="ln454">        //Have to do set these manually because not using &quot;Convert&quot; interface</a>
+<a name="ln455">        pConv-&gt;SetLast(i==mols.size()-1);</a>
+<a name="ln456">        pConv-&gt;SetOutputIndex(pConv-&gt;GetOutputIndex()+1);</a>
+<a name="ln457">        ok = pFormat-&gt;WriteMolecule(</a>
+<a name="ln458">          mols[i]-&gt;DoTransformations(pConv-&gt;GetOptions(OBConversion::GENOPTIONS), pConv),pConv);</a>
+<a name="ln459">      }</a>
+<a name="ln460">    }</a>
+<a name="ln461">    return ok;</a>
+<a name="ln462">  }</a>
+<a name="ln463">#endif</a>
+<a name="ln464">  //////////////////////////////////////////////////////////////////</a>
+<a name="ln465">  /** Attempts to read the index file datafilename.obindx successively</a>
+<a name="ln466">      from the following directories:</a>
+<a name="ln467">      - the current directory</a>
+<a name="ln468">      - that in the environment variable BABEL_DATADIR or in the macro BABEL_DATADIR</a>
+<a name="ln469">      if the environment variable is not set</a>
+<a name="ln470">      - in a subdirectory of the BABEL_DATADIR directory with the version of OpenBabel as its name</a>
+<a name="ln471">      An index of type NameIndexType is then constructed. NameIndexType is defined</a>
+<a name="ln472">      in obmolecformat.h and may be a std::tr1::unordered_map (a hash_map) or std::map.</a>
+<a name="ln473">      In any case it is searched by</a>
+<a name="ln474">      @code</a>
+<a name="ln475">      NameIndexType::iterator itr = index.find(molecule_name);</a>
+<a name="ln476">      if(itr!=index.end())</a>
+<a name="ln477">      unsigned pos_in_datafile = itr-&gt;second;</a>
+<a name="ln478">      @endcode</a>
+<a name="ln479">      pos_in_datafile is used as a parameter in seekg() to read from the datafile</a>
+<a name="ln480"> </a>
+<a name="ln481">      If no index is found, it is constructed from the datafile by reading all of</a>
+<a name="ln482">      it using the format pInFormat, and written to the directory containing the datafile.</a>
+<a name="ln483">      This means that this function can be used without worrying whether there is an index.</a>
+<a name="ln484">      It will be slow to execute the first time, but subsequent uses get the speed benefit</a>
+<a name="ln485">      of indexed access to the datafile.</a>
+<a name="ln486"> </a>
+<a name="ln487">      The serialization and de-serialization of the NameIndexType is entirely in</a>
+<a name="ln488">      this routine and could possibly be improved. Currently re-hashing is done</a>
+<a name="ln489">      every time the index is read.</a>
+<a name="ln490">  **/</a>
+<a name="ln491"> </a>
+<a name="ln492">  bool OBMoleculeFormat::ReadNameIndex(NameIndexType&amp; index,</a>
+<a name="ln493">                                       const string&amp; datafilename, OBFormat* pInFormat)</a>
+<a name="ln494">  {</a>
+<a name="ln495">    struct headertype</a>
+<a name="ln496">    {</a>
+<a name="ln497">      char filename[256];</a>
+<a name="ln498">      size_t size;</a>
+<a name="ln499">    } header;</a>
+<a name="ln500"> </a>
+<a name="ln501">    NameIndexType::iterator itr;</a>
+<a name="ln502"> </a>
+<a name="ln503">    ifstream indexstream;</a>
+<a name="ln504">    OpenDatafile(indexstream, datafilename + &quot;.obindx&quot;);</a>
+<a name="ln505">    if(!indexstream)</a>
+<a name="ln506">      {</a>
+<a name="ln507">        //Need to prepare the index</a>
+<a name="ln508">        ifstream datastream;</a>
+<a name="ln509">        string datafilepath = OpenDatafile(datastream, datafilename);</a>
+<a name="ln510">        if(!datastream)</a>
+<a name="ln511">          {</a>
+<a name="ln512">            obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln513">                                  datafilename + &quot; was not found or could not be opened&quot;,  obError);</a>
+<a name="ln514">            return false;</a>
+<a name="ln515">          }</a>
+<a name="ln516"> </a>
+<a name="ln517">        OBConversion Conv(&amp;datastream, nullptr);</a>
+<a name="ln518">        Conv.SetInFormat(pInFormat);</a>
+<a name="ln519">        OBMol mol;</a>
+<a name="ln520">        streampos pos;</a>
+<a name="ln521">        while(Conv.Read(&amp;mol))</a>
+<a name="ln522">          {</a>
+<a name="ln523">            string name = mol.GetTitle();</a>
+<a name="ln524">            if(!name.empty())</a>
+<a name="ln525">              index.insert(make_pair(name, pos));</a>
+<a name="ln526">            mol.Clear();</a>
+<a name="ln527">            pos = datastream.tellg();</a>
+<a name="ln528">          }</a>
+<a name="ln529">        obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln530">                              &quot;Prepared an index for &quot; + datafilepath, obAuditMsg);</a>
+<a name="ln531">        //Save index to file</a>
+<a name="ln532">        ofstream dofs((datafilepath + &quot;.obindx&quot;).c_str(), ios_base::out|ios_base::binary);</a>
+<a name="ln533">        if(!dofs) return false;</a>
+<a name="ln534"> </a>
+<a name="ln535">        strncpy(header.filename,datafilename.c_str(), sizeof(header.filename));</a>
+<a name="ln536">        header.filename[sizeof(header.filename) - 1] = '\0';</a>
+<a name="ln537">        header.size = index.size();</a>
+<a name="ln538">        dofs.write((const char*)&amp;header, sizeof(headertype));</a>
+<a name="ln539"> </a>
+<a name="ln540">        for(itr=index.begin();itr!=index.end();++itr)</a>
+<a name="ln541">          {</a>
+<a name="ln542">            //#chars; chars;  ofset(4bytes).</a>
+<a name="ln543">            const char n = static_cast&lt;char&gt; (itr-&gt;first.size());</a>
+<a name="ln544">            dofs.put(n);</a>
+<a name="ln545">            dofs.write(itr-&gt;first.c_str(),n);</a>
+<a name="ln546">            dofs.write((const char*)&amp;itr-&gt;second,sizeof(unsigned));</a>
+<a name="ln547">          }</a>
+<a name="ln548">      }</a>
+<a name="ln549">    else</a>
+<a name="ln550">      {</a>
+<a name="ln551">        //Read index data from file and put into hash_map</a>
+<a name="ln552">        indexstream.read((char*)&amp;header,sizeof(headertype));</a>
+<a name="ln553">        itr=index.begin(); // for hint</a>
+<a name="ln554">        for(unsigned int i=0;i&lt;header.size;++i)</a>
+<a name="ln555">          {</a>
+<a name="ln556">            char len;</a>
+<a name="ln557">            indexstream.get(len);</a>
+<a name="ln558">            string title(len, 0);</a>
+<a name="ln559">            unsigned pos;</a>
+<a name="ln560">            indexstream.read(&amp;title[0],len);</a>
+<a name="ln561">            indexstream.read((char*)&amp;pos,sizeof(unsigned));</a>
+<a name="ln562">            index.insert(itr, make_pair(title,pos));</a>
+<a name="ln563">          }</a>
+<a name="ln564">      }</a>
+<a name="ln565">    return true;</a>
+<a name="ln566">  }</a>
+<a name="ln567"> </a>
+<a name="ln568">} //namespace OpenBabel</a>
+<a name="ln569"> </a>
+<a name="ln570">//! \file obmolecformat.cpp</a>
+<a name="ln571">//! \brief Subclass of OBFormat for conversion of OBMol.</a>
+
+</code></pre>
+<div class="balloon" rel="94"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v773/" target="_blank">V773</a> Visibility scope of the 'pMolCopy' pointer was exited without releasing the memory. A memory leak is possible.</p></div>
+<div class="balloon" rel="171"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v519/" target="_blank">V519</a> The 'ret' variable is assigned values twice successively. Perhaps this is a mistake. Check lines: 169, 171.</p></div>
+<div class="balloon" rel="276"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always false: !OnlyMolsInFirstFile.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,617 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>ikey_dll.c</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/*</a>
+<a name="ln2"> * International Chemical Identifier (InChI)</a>
+<a name="ln3"> * Version 1</a>
+<a name="ln4"> * Software version 1.04</a>
+<a name="ln5"> * September 9, 2011</a>
+<a name="ln6"> *</a>
+<a name="ln7"> * The InChI library and programs are free software developed under the</a>
+<a name="ln8"> * auspices of the International Union of Pure and Applied Chemistry (IUPAC).</a>
+<a name="ln9"> * Originally developed at NIST. Modifications and additions by IUPAC </a>
+<a name="ln10"> * and the InChI Trust.</a>
+<a name="ln11"> *</a>
+<a name="ln12"> * IUPAC/InChI-Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln13"> * Software version 1.0.</a>
+<a name="ln14"> * Copyright (C) IUPAC and InChI Trust Limited</a>
+<a name="ln15"> * </a>
+<a name="ln16"> * This library is free software; you can redistribute it and/or modify it under the </a>
+<a name="ln17"> * terms of the IUPAC/InChI Trust Licence for the International Chemical Identifier </a>
+<a name="ln18"> * (InChI) Software version 1.0; either version 1.0 of the License, or </a>
+<a name="ln19"> * (at your option) any later version.</a>
+<a name="ln20"> * </a>
+<a name="ln21"> * This library is distributed in the hope that it will be useful, </a>
+<a name="ln22"> * but WITHOUT ANY WARRANTY; without even the implied warranty of </a>
+<a name="ln23"> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  </a>
+<a name="ln24"> * See the IUPAC/InChI Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln25"> * Software version 1.0 for more details.</a>
+<a name="ln26"> * </a>
+<a name="ln27"> * You should have received a copy of the IUPAC/InChI Trust Licence for the </a>
+<a name="ln28"> * International Chemical Identifier (InChI) Software version 1.0 along with </a>
+<a name="ln29"> * this library; if not, write to:</a>
+<a name="ln30"> * </a>
+<a name="ln31"> * The InChI Trust</a>
+<a name="ln32"> * c/o FIZ CHEMIE Berlin</a>
+<a name="ln33"> * Franklinstrasse 11</a>
+<a name="ln34"> * 10587 Berlin</a>
+<a name="ln35"> * GERMANY</a>
+<a name="ln36"> * </a>
+<a name="ln37"> */</a>
+<a name="ln38"> </a>
+<a name="ln39"> </a>
+<a name="ln40">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^</a>
+<a name="ln41"> </a>
+<a name="ln42">    InChIKey: calculation of hash for InChI string</a>
+<a name="ln43"> </a>
+<a name="ln44">    Uses truncated SHA-256 function.</a>
+<a name="ln45">    SHA-256 implementation: Copyright (C) Brainspark B.V., </a>
+<a name="ln46">                            see files sha2.c, sha2.h.</a>
+<a name="ln47"> </a>
+<a name="ln48">^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/</a>
+<a name="ln49"> </a>
+<a name="ln50">#ifdef _MSC_VER</a>
+<a name="ln51">#if _MSC_VER &gt; 1000</a>
+<a name="ln52">#pragma warning( disable : 4996 )</a>
+<a name="ln53">#endif</a>
+<a name="ln54">#endif</a>
+<a name="ln55"> </a>
+<a name="ln56">#include &lt;time.h&gt;</a>
+<a name="ln57">#include &lt;stdlib.h&gt;</a>
+<a name="ln58">#include &lt;stdio.h&gt;</a>
+<a name="ln59">#include &lt;string.h&gt;</a>
+<a name="ln60">#include &lt;ctype.h&gt;</a>
+<a name="ln61"> </a>
+<a name="ln62">#include &quot;sha2.h&quot;</a>
+<a name="ln63">#include &quot;ikey_base26.h&quot;</a>
+<a name="ln64"> </a>
+<a name="ln65">#include &quot;ichisize.h&quot;</a>
+<a name="ln66">#include &quot;mode.h&quot;</a>
+<a name="ln67">#include &quot;inchi_api.h&quot;</a>
+<a name="ln68"> </a>
+<a name="ln69">#include &quot;util.h&quot;</a>
+<a name="ln70"> </a>
+<a name="ln71"> </a>
+<a name="ln72"> </a>
+<a name="ln73"> </a>
+<a name="ln74">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^</a>
+<a name="ln75">Local options </a>
+<a name="ln76">^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/</a>
+<a name="ln77"> </a>
+<a name="ln78">#define INCHIKEY_DEBUG 0 /* 2 */</a>
+<a name="ln79"> </a>
+<a name="ln80">#define INCHIKEY_FLAG_OK 0</a>
+<a name="ln81">#define INCHIKEY_NOT_VALID_FLAG 1</a>
+<a name="ln82"> </a>
+<a name="ln83">enum { MINOUTLENGTH=256 };  </a>
+<a name="ln84"> </a>
+<a name="ln85"> </a>
+<a name="ln86"> </a>
+<a name="ln87">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^</a>
+<a name="ln88">                            Local functions</a>
+<a name="ln89">^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/</a>
+<a name="ln90"> </a>
+<a name="ln91">void fprint_digest(FILE* fw, const char *header, unsigned char *a);</a>
+<a name="ln92"> </a>
+<a name="ln93"> </a>
+<a name="ln94">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^</a>
+<a name="ln95">                            EXPORTED FUNCTIONS</a>
+<a name="ln96">^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/</a>
+<a name="ln97"> </a>
+<a name="ln98">EXPIMP_TEMPLATE INCHI_API int INCHI_DECL GetStdINCHIKeyFromStdINCHI(const char* szINCHISource, </a>
+<a name="ln99">                                                                 char* szINCHIKey)</a>
+<a name="ln100">{</a>
+<a name="ln101">    if ( strlen(szINCHISource) &lt; LEN_INCHI_STRING_PREFIX+3 )                         </a>
+<a name="ln102">        return INCHIKEY_INVALID_STD_INCHI;    </a>
+<a name="ln103">    if (szINCHISource[LEN_INCHI_STRING_PREFIX+1]!='S')            </a>
+<a name="ln104">            return INCHIKEY_INVALID_STD_INCHI;</a>
+<a name="ln105">    return GetINCHIKeyFromINCHI(szINCHISource, 0, 0, szINCHIKey, (char *) NULL, (char *) NULL);</a>
+<a name="ln106">}</a>
+<a name="ln107"> </a>
+<a name="ln108">EXPIMP_TEMPLATE INCHI_API int INCHI_DECL GetINCHIKeyFromINCHI(const char* szINCHISource, </a>
+<a name="ln109">                                                              const int xtra1,</a>
+<a name="ln110">                                                              const int xtra2,</a>
+<a name="ln111">                                                              char* szINCHIKey,</a>
+<a name="ln112">                                                              char* szXtra1,</a>
+<a name="ln113">                                                              char* szXtra2)</a>
+<a name="ln114">{</a>
+<a name="ln115">int ret = INCHIKEY_OK;</a>
+<a name="ln116">int ret1 = INCHIKEY_OK;</a>
+<a name="ln117">int cn;</a>
+<a name="ln118">size_t slen, i, j, jproto=0, ncp, pos_slash1=0;</a>
+<a name="ln119">char *str = NULL, *smajor = NULL, *sminor = NULL, </a>
+<a name="ln120">     *sproto=NULL,</a>
+<a name="ln121">     *stmp = NULL, tmp[MINOUTLENGTH]; </a>
+<a name="ln122">unsigned char </a>
+<a name="ln123">    digest_major[32], digest_minor[32];     </a>
+<a name="ln124"> </a>
+<a name="ln125">char flagstd = 'S', /* standard key */</a>
+<a name="ln126">     flagnonstd = 'N', /* non-standard key */</a>
+<a name="ln127">     flagver = 'A', /* InChI v. 1 */</a>
+<a name="ln128">     flagproto = 'N'; /* no [de]protonization , by default */</a>
+<a name="ln129">int  nprotons;</a>
+<a name="ln130">/*</a>
+<a name="ln131">Protonization encoding:</a>
+<a name="ln132">N 0</a>
+<a name="ln133">O +1 P +2 Q +3 R +4 S +5 T +6 U +7 V +8 W +9 X +10 Y +11 Z +12</a>
+<a name="ln134">M -1 L-2 K -3 J -4 I -5 H -6 G -7 F -8 E -9 D -10 C -11 B -12 </a>
+<a name="ln135">A &lt; -12 or &gt; +12</a>
+<a name="ln136">*/</a>
+<a name="ln137">static const char *pplus = &quot;OPQRSTUVWXYZ&quot;;</a>
+<a name="ln138">static const char *pminus = &quot;MLKJIHGFEDCB&quot;;</a>
+<a name="ln139"> </a>
+<a name="ln140">int bStdFormat = 0;</a>
+<a name="ln141">size_t bytelen = 32;</a>
+<a name="ln142"> </a>
+<a name="ln143"> </a>
+<a name="ln144">    /* Check if input is a valid InChI string */</a>
+<a name="ln145"> </a>
+<a name="ln146">    /* .. non-empty */</a>
+<a name="ln147">    if (szINCHISource==NULL)</a>
+<a name="ln148">        return INCHIKEY_EMPTY_INPUT;</a>
+<a name="ln149">    </a>
+<a name="ln150">    slen = strlen(szINCHISource);</a>
+<a name="ln151">    </a>
+<a name="ln152">    /* .. has valid prefix */</a>
+<a name="ln153">    if (slen&lt;LEN_INCHI_STRING_PREFIX+3)                         </a>
+<a name="ln154">        return INCHIKEY_INVALID_INCHI_PREFIX;    </a>
+<a name="ln155">    if (memcmp(szINCHISource,INCHI_STRING_PREFIX,LEN_INCHI_STRING_PREFIX))    </a>
+<a name="ln156">        return INCHIKEY_INVALID_INCHI_PREFIX;</a>
+<a name="ln157"> </a>
+<a name="ln158">    /* .. has InChI version 1 */</a>
+<a name="ln159">    /* if (!isdigit(szINCHISource[LEN_INCHI_STRING_PREFIX]) )  */</a>
+<a name="ln160">    if ( szINCHISource[LEN_INCHI_STRING_PREFIX] != '1' )  </a>
+<a name="ln161">        return INCHIKEY_INVALID_INCHI_PREFIX;</a>
+<a name="ln162"> </a>
+<a name="ln163">    /* .. optionally has a 'standard' flag character */</a>
+<a name="ln164">    pos_slash1 = LEN_INCHI_STRING_PREFIX+1;</a>
+<a name="ln165">    if (szINCHISource[pos_slash1]=='S')            </a>
+<a name="ln166">    {</a>
+<a name="ln167">        /* Standard InChI ==&gt; standard InChIKey */</a>
+<a name="ln168">        bStdFormat = 1;</a>
+<a name="ln169">        pos_slash1++;</a>
+<a name="ln170">    }</a>
+<a name="ln171"> </a>
+<a name="ln172">    /* .. has trailing slash in the right place */</a>
+<a name="ln173">    if (szINCHISource[pos_slash1]!='/')            </a>
+<a name="ln174">        return INCHIKEY_INVALID_INCHI_PREFIX;</a>
+<a name="ln175"> </a>
+<a name="ln176">    /* .. the rest of source string contains at least one a..Z0.9 or slash */</a>
+<a name="ln177">    /* TODO: improve/add full string check */</a>
+<a name="ln178">    if (!isalnum(szINCHISource[pos_slash1+1] ) &amp;&amp;</a>
+<a name="ln179">       ( szINCHISource[pos_slash1+1]!='/' )     ) </a>
+<a name="ln180">        return INCHIKEY_INVALID_INCHI;    </a>
+<a name="ln181"> </a>
+<a name="ln182"> </a>
+<a name="ln183">    /*^^^ Ok. Will use a local copy of the source. */</a>
+<a name="ln184">    </a>
+<a name="ln185">    extract_inchi_substring(&amp;str, szINCHISource, slen);</a>
+<a name="ln186">    if (NULL==str)</a>
+<a name="ln187">    { </a>
+<a name="ln188">        ret = INCHIKEY_NOT_ENOUGH_MEMORY; </a>
+<a name="ln189">        goto fin; </a>
+<a name="ln190">    }</a>
+<a name="ln191">    slen = strlen(str);</a>
+<a name="ln192"> </a>
+<a name="ln193"> </a>
+<a name="ln194">    /*^^^ Make buffers. */</a>
+<a name="ln195">    smajor = (char*) inchi_calloc( slen+1, sizeof(char)); </a>
+<a name="ln196">    if (NULL==smajor)</a>
+<a name="ln197">        { ret = INCHIKEY_NOT_ENOUGH_MEMORY; goto fin; }</a>
+<a name="ln198">    sminor = (char*) inchi_calloc( 2*slen + 2, sizeof(char)); /* we may double the length ... */ </a>
+<a name="ln199">    if (NULL==sminor)</a>
+<a name="ln200">        { ret = INCHIKEY_NOT_ENOUGH_MEMORY; goto fin; }</a>
+<a name="ln201">    stmp = (char*) inchi_calloc( slen+1, sizeof(char)); </a>
+<a name="ln202">    if (NULL==stmp)</a>
+<a name="ln203">        { ret = INCHIKEY_NOT_ENOUGH_MEMORY; goto fin; }</a>
+<a name="ln204">    sproto = (char*) inchi_calloc( slen+1, sizeof(char)); </a>
+<a name="ln205">    if (NULL==sproto)</a>
+<a name="ln206">        { ret = INCHIKEY_NOT_ENOUGH_MEMORY; goto fin; }</a>
+<a name="ln207"> </a>
+<a name="ln208"> </a>
+<a name="ln209">    szINCHIKey[0] = '\0';</a>
+<a name="ln210"> </a>
+<a name="ln211">    </a>
+<a name="ln212">    </a>
+<a name="ln213">    /*^^^ Extract the major block. */</a>
+<a name="ln214">    </a>
+<a name="ln215">    smajor[0]  = '\0';</a>
+<a name="ln216">    for (j = pos_slash1 + 1; j &lt; slen-1; j++)</a>
+<a name="ln217">    {</a>
+<a name="ln218">        if (str[j]=='/')    </a>
+<a name="ln219">        {</a>
+<a name="ln220">            cn = str[j+1];</a>
+<a name="ln221">            switch (cn) </a>
+<a name="ln222">            { </a>
+<a name="ln223">                /* anything allowed from a major part */</a>
+<a name="ln224">                case 'c': case 'h': case 'q':   continue; </a>
+<a name="ln225">                </a>
+<a name="ln226">                /* &quot;/p&quot;; protons now go to to special string, not to minor hash */</a>
+<a name="ln227">                case 'p':						jproto = j;</a>
+<a name="ln228">                                                continue;</a>
+<a name="ln229">                </a>
+<a name="ln230">                /* &quot;/f&quot;,  &quot;/r&quot; : may not occur in stdInChI */</a>
+<a name="ln231">                case 'f': case 'r':		        if ( bStdFormat )</a>
+<a name="ln232">                                                {</a>
+<a name="ln233">                                                    ret = INCHIKEY_INVALID_STD_INCHI; </a>
+<a name="ln234">                                                    goto fin;</a>
+<a name="ln235">                                                }</a>
+<a name="ln236">                                                break;</a>
+<a name="ln237">                </a>
+<a name="ln238">                /* anything allowed from a minor part */</a>
+<a name="ln239">                default:                        break; </a>
+<a name="ln240">            }</a>
+<a name="ln241">            break;</a>
+<a name="ln242">        }</a>
+<a name="ln243">    }       </a>
+<a name="ln244">    j++;</a>
+<a name="ln245">    if (j==slen) </a>
+<a name="ln246">        j++;</a>
+<a name="ln247">    else </a>
+<a name="ln248">        j--;</a>
+<a name="ln249"> </a>
+<a name="ln250">    if (jproto)</a>
+<a name="ln251">        ncp = jproto - pos_slash1 - 1; </a>
+<a name="ln252">    else</a>
+<a name="ln253">        ncp = j - pos_slash1 - 1; </a>
+<a name="ln254">    </a>
+<a name="ln255"> </a>
+<a name="ln256">    /*^^^ Trim 'InChI=1[S]/' */</a>
+<a name="ln257">    memcpy(smajor,str+pos_slash1+1, ncp*sizeof(str[0]));</a>
+<a name="ln258">    smajor[ncp]='\0';</a>
+<a name="ln259"> </a>
+<a name="ln260"> </a>
+<a name="ln261">    /* Treat protonization */</a>
+<a name="ln262">    if (jproto)</a>
+<a name="ln263">    {</a>
+<a name="ln264">        /* 2009-01-07 fix bug/typo: assigned incorrect length to the protonation segment of </a>
+<a name="ln265">        /* source string ( was sproto[ncp]='\0'; should be sproto[lenproto]='\0'; )  */</a>
+<a name="ln266">        int lenproto = j - (int) jproto;</a>
+<a name="ln267">        if (lenproto&lt;3)</a>
+<a name="ln268">        {	</a>
+<a name="ln269">            /* empty &quot;/p&quot;, should not occur */</a>
+<a name="ln270">            ret = INCHIKEY_INVALID_INCHI; </a>
+<a name="ln271">            goto fin;</a>
+<a name="ln272">        }</a>
+<a name="ln273">        </a>
+<a name="ln274">        memcpy(sproto,str+pos_slash1+ncp+1, lenproto*sizeof(str[0]));</a>
+<a name="ln275">        sproto[lenproto]='\0';</a>
+<a name="ln276">       </a>
+<a name="ln277">        nprotons = strtol( sproto+2, NULL, 10 );        </a>
+<a name="ln278">        </a>
+<a name="ln279">        if (nprotons &gt; 0)</a>
+<a name="ln280">        {</a>
+<a name="ln281">            if (nprotons &gt; 12) flagproto = 'A';</a>
+<a name="ln282">            else			   flagproto = pplus[nprotons-1];</a>
+<a name="ln283">        }</a>
+<a name="ln284">        else if (nprotons &lt; 0)</a>
+<a name="ln285">        {</a>
+<a name="ln286">            if (nprotons &lt; -12) flagproto = 'A';</a>
+<a name="ln287">            else				flagproto = pminus[-nprotons-1];</a>
+<a name="ln288">        }</a>
+<a name="ln289">        else</a>
+<a name="ln290">        {</a>
+<a name="ln291">            /* should never occur */</a>
+<a name="ln292">            ret = INCHIKEY_INVALID_STD_INCHI; </a>
+<a name="ln293">            goto fin;</a>
+<a name="ln294">        }</a>
+<a name="ln295">    }</a>
+<a name="ln296"> </a>
+<a name="ln297"> </a>
+<a name="ln298"> </a>
+<a name="ln299">    /*^^^ Extract the minor block. */</a>
+<a name="ln300"> </a>
+<a name="ln301">    if (j != slen+1)    /*^^^ check that something exists at right.*/</a>
+<a name="ln302">    {</a>
+<a name="ln303">        ncp = slen-j; </a>
+<a name="ln304">        memcpy(sminor,str+j, (ncp)*sizeof(str[0]));</a>
+<a name="ln305">        sminor[ncp]='\0';</a>
+<a name="ln306">    }</a>
+<a name="ln307">    else </a>
+<a name="ln308">        sminor[0]='\0'; </a>
+<a name="ln309">        </a>
+<a name="ln310"> </a>
+<a name="ln311">#if INCHIKEY_DEBUG </a>
+<a name="ln312">    fprintf(stdout,&quot;Source:  {%-s}\n&quot;,str);</a>
+<a name="ln313">    fprintf(stdout,&quot;SMajor:  {%-s}\n&quot;,smajor);</a>
+<a name="ln314">    fprintf(stdout,&quot;SMinor:  {%-s}\n&quot;,sminor);</a>
+<a name="ln315">    fprintf(stdout,&quot;SProto:  {%-s}\n&quot;,sproto);</a>
+<a name="ln316">#endif      </a>
+<a name="ln317"> </a>
+<a name="ln318"> </a>
+<a name="ln319"> </a>
+<a name="ln320">    /*^^^ Compute and compose the InChIKey string. */</a>
+<a name="ln321"> </a>
+<a name="ln322"> </a>
+<a name="ln323">    /*^^^ Major hash sub-string. */    </a>
+<a name="ln324">    for( i = 0; i &lt; 32; i++ ) </a>
+<a name="ln325">        digest_major[i] = 0;            </a>
+<a name="ln326">    sha2_csum( (unsigned char *) smajor, (int) strlen(smajor), digest_major );    </a>
+<a name="ln327"> </a>
+<a name="ln328">    sprintf(tmp,&quot;%-.3s%-.3s%-.3s%-.3s%-.2s&quot;, </a>
+<a name="ln329">                base26_triplet_1(digest_major), base26_triplet_2(digest_major),</a>
+<a name="ln330">                base26_triplet_3(digest_major), base26_triplet_4(digest_major),</a>
+<a name="ln331">                base26_dublet_for_bits_56_to_64(digest_major));</a>
+<a name="ln332">    strcat(szINCHIKey, tmp);    </a>
+<a name="ln333">#if (INCHIKEY_DEBUG&gt;1)</a>
+<a name="ln334">        fprint_digest(stderr, &quot;Major hash, full SHA-256&quot;,digest_major);         </a>
+<a name="ln335">#endif  </a>
+<a name="ln336"> </a>
+<a name="ln337"> </a>
+<a name="ln338"> </a>
+<a name="ln339">    /*^^^ Minor hash sub-string. */</a>
+<a name="ln340">    for( i = 0; i &lt; 32; i++ ) </a>
+<a name="ln341">        digest_minor[i] = 0; </a>
+<a name="ln342">    slen = strlen(sminor); </a>
+<a name="ln343">    if ((slen&gt;0)&amp;&amp;(slen&lt;255)) </a>
+<a name="ln344">    { </a>
+<a name="ln345">        strcpy(stmp, sminor); </a>
+<a name="ln346">        strcpy(sminor+slen,stmp); </a>
+<a name="ln347">    }</a>
+<a name="ln348">    sha2_csum( (unsigned char *) sminor, (int) strlen(sminor), digest_minor );</a>
+<a name="ln349">#if (INCHIKEY_DEBUG&gt;1)  </a>
+<a name="ln350">        fprint_digest(stderr, &quot;Minor hash, full SHA-256&quot;,digest_minor);</a>
+<a name="ln351">#endif</a>
+<a name="ln352"> </a>
+<a name="ln353">    strcat(szINCHIKey, &quot;-&quot;);</a>
+<a name="ln354">    sprintf(tmp,&quot;%-.3s%-.3s%-.2s&quot;, </a>
+<a name="ln355">        base26_triplet_1(digest_minor), </a>
+<a name="ln356">        base26_triplet_2(digest_minor), </a>
+<a name="ln357">        base26_dublet_for_bits_28_to_36(digest_minor));  </a>
+<a name="ln358">    strcat(szINCHIKey, tmp); </a>
+<a name="ln359"> </a>
+<a name="ln360"> </a>
+<a name="ln361">    /* Append a standard/non-standard flag */</a>
+<a name="ln362">    slen = strlen(szINCHIKey);</a>
+<a name="ln363">    if ( bStdFormat )</a>
+<a name="ln364">        szINCHIKey[slen] = flagstd; </a>
+<a name="ln365">    else</a>
+<a name="ln366">        szINCHIKey[slen] = flagnonstd; </a>
+<a name="ln367"> </a>
+<a name="ln368">    /*^^^ Append InChI v.1 flag */</a>
+<a name="ln369">    szINCHIKey[slen+1] = flagver; </a>
+<a name="ln370">    </a>
+<a name="ln371">    /*^^^ Append dash  */</a>
+<a name="ln372">    szINCHIKey[slen+2] = '-'; </a>
+<a name="ln373">    </a>
+<a name="ln374">    /*^^^ Append protonization flag */</a>
+<a name="ln375">    szINCHIKey[slen+3] = flagproto; </a>
+<a name="ln376">    szINCHIKey[slen+4] = '\0';</a>
+<a name="ln377"> </a>
+<a name="ln378"> </a>
+<a name="ln379">#if INCHIKEY_DEBUG </a>
+<a name="ln380">    fprintf(stdout,&quot;szINCHIKey:  {%-s}\n&quot;,szINCHIKey);</a>
+<a name="ln381">#endif</a>
+<a name="ln382"> </a>
+<a name="ln383">    /* Hash extensions */</a>
+<a name="ln384">    if ( xtra1 &amp;&amp; szXtra1 )</a>
+<a name="ln385">    {</a>
+<a name="ln386">        get_xtra_hash_major_hex(digest_major, szXtra1);</a>
+<a name="ln387">#if INCHIKEY_DEBUG </a>
+<a name="ln388">        fprintf(stderr,&quot;XHash1=%-s\n&quot;,szXtra1);</a>
+<a name="ln389">        fprintf(stderr,&quot;j=%-d\n&quot;,j);</a>
+<a name="ln390">#endif</a>
+<a name="ln391">    }</a>
+<a name="ln392">    if ( xtra2 &amp;&amp; szXtra2 )</a>
+<a name="ln393">    {</a>
+<a name="ln394">        get_xtra_hash_minor_hex(digest_minor, szXtra2);</a>
+<a name="ln395">#if INCHIKEY_DEBUG </a>
+<a name="ln396">        fprintf(stderr,&quot;XHash2=%-s\n&quot;,szXtra2);</a>
+<a name="ln397">        fprintf(stderr,&quot;j=%-d\n&quot;,j);</a>
+<a name="ln398">#endif</a>
+<a name="ln399">    }</a>
+<a name="ln400">        </a>
+<a name="ln401"> </a>
+<a name="ln402">fin:if (NULL!=str)      inchi_free(str);</a>
+<a name="ln403">    if (NULL!=smajor)   inchi_free(smajor);</a>
+<a name="ln404">    if (NULL!=sminor)   inchi_free(sminor);</a>
+<a name="ln405">    if (NULL!=stmp)     inchi_free(stmp);</a>
+<a name="ln406">    if (NULL!=sproto)   inchi_free(sproto);</a>
+<a name="ln407"> </a>
+<a name="ln408">    if ( (ret==INCHIKEY_OK) &amp;&amp; (ret1!=INCHIKEY_OK) )</a>
+<a name="ln409">        ret = ret1;</a>
+<a name="ln410">    return ret;</a>
+<a name="ln411"> </a>
+<a name="ln412">}</a>
+<a name="ln413"> </a>
+<a name="ln414"> </a>
+<a name="ln415"> </a>
+<a name="ln416"> </a>
+<a name="ln417">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^</a>
+<a name="ln418">Check if the string represents valid InChIKey.          </a>
+<a name="ln419">^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/</a>
+<a name="ln420">EXPIMP_TEMPLATE INCHI_API int INCHI_DECL CheckINCHIKey(const char *szINCHIKey)</a>
+<a name="ln421">{</a>
+<a name="ln422">size_t slen, j;</a>
+<a name="ln423"> </a>
+<a name="ln424"> </a>
+<a name="ln425">    slen = strlen(szINCHIKey);</a>
+<a name="ln426"> </a>
+<a name="ln427">    </a>
+<a name="ln428">    /*^^^ Proper length is 27  */</a>
+<a name="ln429">    if (slen != 27) </a>
+<a name="ln430">        return INCHIKEY_INVALID_LENGTH;</a>
+<a name="ln431"> </a>
+<a name="ln432">    /*^^^ Should have dash in 14-th position */   </a>
+<a name="ln433">    if (szINCHIKey[14] !='-')   </a>
+<a name="ln434">        return INCHIKEY_INVALID_LAYOUT;</a>
+<a name="ln435">    /*^^^ Should have dash in 25-th position */   </a>
+<a name="ln436">    if (szINCHIKey[25] !='-')   </a>
+<a name="ln437">        return INCHIKEY_INVALID_LAYOUT;</a>
+<a name="ln438">    </a>
+<a name="ln439">    /*^^^ All other should be uppercase */  </a>
+<a name="ln440">    for (j = 0;  j &lt; 14; j++)   </a>
+<a name="ln441">        if ( !isbase26(szINCHIKey[j]) ) </a>
+<a name="ln442">            return INCHIKEY_INVALID_LAYOUT; /* first block */</a>
+<a name="ln443">    for (j = 15; j &lt; 25; j++)   </a>
+<a name="ln444">        if ( !isbase26(szINCHIKey[j]) ) </a>
+<a name="ln445">            return INCHIKEY_INVALID_LAYOUT; /* second block */</a>
+<a name="ln446">    if ( !isbase26(szINCHIKey[26]) ) </a>
+<a name="ln447">        return INCHIKEY_INVALID_LAYOUT; /* (de)protonation flag */</a>
+<a name="ln448">    </a>
+<a name="ln449">    </a>
+<a name="ln450">    /*^^^ No 'E' may appear in 0,3,6,and 9 positions of the 1st block ... */ </a>
+<a name="ln451">    for (j=0; j &lt;10; j+=3)  </a>
+<a name="ln452">        if (szINCHIKey[j]=='E')        </a>
+<a name="ln453">            return INCHIKEY_INVALID_LAYOUT;</a>
+<a name="ln454">    /*^^^ ... and 0 and 3 pos. of the second block. */</a>
+<a name="ln455">    for (j=15; j &lt;19; j+=3) </a>
+<a name="ln456">        if (szINCHIKey[j]=='E')        </a>
+<a name="ln457">            return INCHIKEY_INVALID_LAYOUT;</a>
+<a name="ln458">    </a>
+<a name="ln459">    /*^^^ Check for version (only 1 allowed) */</a>
+<a name="ln460">    if (szINCHIKey[24] !='A')   </a>
+<a name="ln461">        return INCHIKEY_INVALID_VERSION;</a>
+<a name="ln462"> </a>
+<a name="ln463">    /*^^^ Check for standard-ness */</a>
+<a name="ln464">    if (szINCHIKey[23] == 'S')   </a>
+<a name="ln465">        return INCHIKEY_VALID_STANDARD;</a>
+<a name="ln466">    else if (szINCHIKey[23] == 'N')</a>
+<a name="ln467">        return INCHIKEY_VALID_NON_STANDARD;</a>
+<a name="ln468">    else</a>
+<a name="ln469">        return INCHIKEY_INVALID_LAYOUT;</a>
+<a name="ln470">}</a>
+<a name="ln471"> </a>
+<a name="ln472"> </a>
+<a name="ln473"> </a>
+<a name="ln474"> </a>
+<a name="ln475"> </a>
+<a name="ln476"> </a>
+<a name="ln477"> </a>
+<a name="ln478">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/</a>
+<a name="ln479">void fprint_digest(FILE* fw, const char *header, unsigned char *a)</a>
+<a name="ln480">{</a>
+<a name="ln481">size_t i, bytelen = 32;</a>
+<a name="ln482">    fprintf(fw,&quot;%s\n&quot;, header);</a>
+<a name="ln483">    for( i = 0; i &lt; bytelen; i++ )</a>
+<a name="ln484">        fprintf(fw,&quot;%02x &quot;, a[i]);</a>
+<a name="ln485">    fprintf(fw,&quot;\n&quot; );</a>
+<a name="ln486">}</a>
+<a name="ln487"> </a>
+<a name="ln488"> </a>
+<a name="ln489"> </a>
+<a name="ln490">/********************************************************************/</a>
+<a name="ln491"> </a>
+<a name="ln492">#if ( defined( _WIN32 ) &amp;&amp; defined( _MSC_VER ) &amp;&amp; _MSC_VER &gt;= 800 &amp;&amp; defined(_USRDLL) &amp;&amp; defined(BUILD_LINK_AS_DLL) )</a>
+<a name="ln493">    /* Win32 &amp; MS VC ++, compile and link as a DLL */</a>
+<a name="ln494">/*********************************************************/</a>
+<a name="ln495">/*   C calling conventions export from Win32 dll         */</a>
+<a name="ln496">/*********************************************************/</a>
+<a name="ln497">/* prototypes */</a>
+<a name="ln498">#ifndef COMPILE_ALL_CPP</a>
+<a name="ln499">#ifdef __cplusplus</a>
+<a name="ln500">extern &quot;C&quot; {</a>
+<a name="ln501">#endif</a>
+<a name="ln502">#endif</a>
+<a name="ln503"> </a>
+<a name="ln504">int cdecl_CheckINCHIKey(const char *szINCHIKey,const int strict);</a>
+<a name="ln505">int cdecl_GetINCHIKeyFromINCHI(const char* szINCHISource, </a>
+<a name="ln506">                               const int xtra1,const int xtra2,</a>
+<a name="ln507">                               char* szINCHIKey, char* szXtra1, char* szXtra2); </a>
+<a name="ln508">int cdecl_GetStdINCHIKeyFromStdINCHI(const char* szINCHISource, char* szINCHIKey); </a>
+<a name="ln509"> </a>
+<a name="ln510">#ifndef COMPILE_ALL_CPP</a>
+<a name="ln511">#ifdef __cplusplus</a>
+<a name="ln512">}</a>
+<a name="ln513">#endif</a>
+<a name="ln514">#endif</a>
+<a name="ln515"> </a>
+<a name="ln516">/* implementation */</a>
+<a name="ln517">/* libinchi.def provides export without cdecl_ prefixes */</a>
+<a name="ln518"> </a>
+<a name="ln519">/********************************************************/</a>
+<a name="ln520">int cdecl_GetStdINCHIKeyFromStdINCHI(const char* szINCHISource, char* szINCHIKey)</a>
+<a name="ln521">{</a>
+<a name="ln522">    return GetStdINCHIKeyFromStdINCHI(szINCHISource, szINCHIKey);</a>
+<a name="ln523">}</a>
+<a name="ln524">/********************************************************/</a>
+<a name="ln525">int cdecl_CheckINCHIKey(const char *szINCHIKey,const int strict)</a>
+<a name="ln526">{</a>
+<a name="ln527">    return CheckINCHIKey(szINCHIKey);</a>
+<a name="ln528">}</a>
+<a name="ln529">/********************************************************/</a>
+<a name="ln530">int cdecl_GetINCHIKeyFromINCHI(const char* szINCHISource, </a>
+<a name="ln531">                               const int xtra1,const int xtra2,</a>
+<a name="ln532">                               char* szINCHIKey, char* szXtra1, char* szXtra2)</a>
+<a name="ln533">{</a>
+<a name="ln534">    return GetINCHIKeyFromINCHI(szINCHISource, xtra1, xtra2, szINCHIKey, szXtra1, szXtra2);</a>
+<a name="ln535">}</a>
+<a name="ln536">#endif</a>
+<a name="ln537"> </a>
+<a name="ln538"> </a>
+<a name="ln539"> </a>
+<a name="ln540">#if ( defined(__GNUC__) &amp;&amp; __GNUC__ &gt;= 3 &amp;&amp; defined(__MINGW32__) &amp;&amp; defined(_WIN32) )</a>
+<a name="ln541">#include &lt;windows.h&gt;</a>
+<a name="ln542">/*********************************************************/</a>
+<a name="ln543">/*   Pacal calling conventions export from Win32 dll     */</a>
+<a name="ln544">/*********************************************************/</a>
+<a name="ln545">#ifndef COMPILE_ALL_CPP</a>
+<a name="ln546">#ifdef __cplusplus</a>
+<a name="ln547">extern &quot;C&quot; {</a>
+<a name="ln548">#endif</a>
+<a name="ln549">#endif</a>
+<a name="ln550">/* prototypes */</a>
+<a name="ln551">int PASCAL pasc_CheckINCHIKey(const char *szINCHIKey);</a>
+<a name="ln552">#ifndef COMPILE_ALL_CPP</a>
+<a name="ln553">#ifdef __cplusplus</a>
+<a name="ln554">}</a>
+<a name="ln555">#endif</a>
+<a name="ln556">#endif</a>
+<a name="ln557"> </a>
+<a name="ln558">/* implementation */</a>
+<a name="ln559">/* libinchi.def provides export without PASCAL pasc_ prefixes */</a>
+<a name="ln560">/********************************************************/</a>
+<a name="ln561">int PASCAL pasc_CheckINCHIKey(const char *szINCHIKey)</a>
+<a name="ln562">{</a>
+<a name="ln563">    return CheckINCHIKey(szINCHIKey);</a>
+<a name="ln564">}</a>
+<a name="ln565">#endif </a>
+<a name="ln566"> </a>
+
+</code></pre>
+<div class="balloon" rel="402"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'str' is always true.</p></div>
+<div class="balloon" rel="403"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'smajor' is always true.</p></div>
+<div class="balloon" rel="404"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'sminor' is always true.</p></div>
+<div class="balloon" rel="405"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'stmp' is always true.</p></div>
+<div class="balloon" rel="406"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'sproto' is always true.</p></div>
+<div class="balloon" rel="408"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always false: (ret1 != 0).</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

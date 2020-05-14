@@ -1,0 +1,2264 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>pointgroup.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">pointgroup.cpp - Brute force symmetry analyzer.</a>
+<a name="ln3"> </a>
+<a name="ln4"> (C) 1996, 2003 S. Patchkovskii, Serguei.Patchkovskii@sympatico.ca</a>
+<a name="ln5"> Some portions Copyright (C) 2007 by Geoffrey R. Hutchison</a>
+<a name="ln6">     (Ported to C++, integrated with Open Babel)</a>
+<a name="ln7"> </a>
+<a name="ln8">This file is part of the Open Babel project.</a>
+<a name="ln9">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln10"> </a>
+<a name="ln11">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln12">it under the terms of the GNU General Public License as published by</a>
+<a name="ln13">the Free Software Foundation version 2 of the License.</a>
+<a name="ln14"> </a>
+<a name="ln15">This program is distributed in the hope that it will be useful,</a>
+<a name="ln16">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln17">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln18">GNU General Public License for more details.</a>
+<a name="ln19">***********************************************************************/</a>
+<a name="ln20"> </a>
+<a name="ln21">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln22"> </a>
+<a name="ln23">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln24">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln25">#include &lt;openbabel/pointgroup.h&gt;</a>
+<a name="ln26">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln27">#include &lt;iostream&gt;</a>
+<a name="ln28"> </a>
+<a name="ln29">#include &lt;string&gt;</a>
+<a name="ln30">#include &lt;math.h&gt;</a>
+<a name="ln31">#include &lt;cstring&gt;</a>
+<a name="ln32">#include &lt;algorithm&gt;</a>
+<a name="ln33"> </a>
+<a name="ln34">#ifndef M_PI</a>
+<a name="ln35">#define M_PI 3.1415926535897932384626433832795028841971694</a>
+<a name="ln36">#endif</a>
+<a name="ln37"> </a>
+<a name="ln38">#define	DIMENSION 3</a>
+<a name="ln39">#define MAXPARAM  7</a>
+<a name="ln40"> </a>
+<a name="ln41">namespace OpenBabel {</a>
+<a name="ln42"> </a>
+<a name="ln43">  /*</a>
+<a name="ln44">   *  All specific structures should have corresponding elements in the</a>
+<a name="ln45">   *  same position generic structure does.</a>
+<a name="ln46">   *</a>
+<a name="ln47">   *  Planes are characterized by the surface normal direction</a>
+<a name="ln48">   *  (taken in the direction *from* the coordinate origin)</a>
+<a name="ln49">   *  and distance from the coordinate origin to the plane</a>
+<a name="ln50">   *  in the direction of the surface normal.</a>
+<a name="ln51">   *</a>
+<a name="ln52">   *  Inversion is characterized by location of the inversion center.</a>
+<a name="ln53">   *</a>
+<a name="ln54">   *  Rotation is characterized by a vector (distance+direction) from the origin</a>
+<a name="ln55">   *  to the rotation axis, axis direction and rotation order. Rotations</a>
+<a name="ln56">   *  are in the clockwise direction looking opposite to the direction</a>
+<a name="ln57">   *  of the axis. Note that this definition of the rotation axis</a>
+<a name="ln58">   *  is *not* unique, since an arbitrary multiple of the axis direction</a>
+<a name="ln59">   *  can be added to the position vector without changing actual operation.</a>
+<a name="ln60">   *</a>
+<a name="ln61">   *  Mirror rotation is defined by the same parameters as normal rotation,</a>
+<a name="ln62">   *  but the origin is now unambiguous since it defines the position of the</a>
+<a name="ln63">   *  plane associated with the axis.</a>
+<a name="ln64">   *</a>
+<a name="ln65">   */</a>
+<a name="ln66"> </a>
+<a name="ln67">  typedef struct {</a>
+<a name="ln68">    const char *  group_name ;        /* Canonical group name                        */</a>
+<a name="ln69">    const char *  symmetry_code ;     /* Group symmetry code                         */</a>
+<a name="ln70">    int     (*check)( void ) ;        /* Additional verification routine, not used  */</a>
+<a name="ln71">  } POINT_GROUP ;</a>
+<a name="ln72"> </a>
+<a name="ln73">  /*</a>
+<a name="ln74">   *    Point groups I know about</a>
+<a name="ln75">   */</a>
+<a name="ln76">  POINT_GROUP            PointGroups[]         = {</a>
+<a name="ln77">    {  &quot;C1&quot;,    &quot;&quot;},</a>
+<a name="ln78">    {  &quot;Cs&quot;,    &quot;(sigma) &quot;},</a>
+<a name="ln79">    {  &quot;Ci&quot;,    &quot;(i) &quot;},</a>
+<a name="ln80">    {  &quot;C2&quot;,    &quot;(C2) &quot;},</a>
+<a name="ln81">    {  &quot;C3&quot;,    &quot;(C3) &quot;},</a>
+<a name="ln82">    {  &quot;C4&quot;,    &quot;(C4) (C2) &quot;},</a>
+<a name="ln83">    {  &quot;C5&quot;,    &quot;(C5) &quot;},</a>
+<a name="ln84">    {  &quot;C6&quot;,    &quot;(C6) (C3) (C2) &quot;},</a>
+<a name="ln85">    {  &quot;C7&quot;,    &quot;(C7) &quot;},</a>
+<a name="ln86">    {  &quot;C8&quot;,    &quot;(C8) (C4) (C2) &quot;},</a>
+<a name="ln87">    {  &quot;D2&quot;,    &quot;3*(C2) &quot;},</a>
+<a name="ln88">    {  &quot;D3&quot;,    &quot;(C3) 3*(C2) &quot;},</a>
+<a name="ln89">    {  &quot;D4&quot;,    &quot;(C4) 5*(C2) &quot;},</a>
+<a name="ln90">    {  &quot;D5&quot;,    &quot;(C5) 5*(C2) &quot;},</a>
+<a name="ln91">    {  &quot;D6&quot;,    &quot;(C6) (C3) 7*(C2) &quot;},</a>
+<a name="ln92">    {  &quot;D7&quot;,    &quot;(C7) 7*(C2) &quot;},</a>
+<a name="ln93">    {  &quot;D8&quot;,    &quot;(C8) (C4) 9*(C2) &quot;},</a>
+<a name="ln94">    {  &quot;C2v&quot;,   &quot;(C2) 2*(sigma) &quot;},</a>
+<a name="ln95">    {  &quot;C3v&quot;,   &quot;(C3) 3*(sigma) &quot;},</a>
+<a name="ln96">    {  &quot;C4v&quot;,   &quot;(C4) (C2) 4*(sigma) &quot;},</a>
+<a name="ln97">    {  &quot;C5v&quot;,   &quot;(C5) 5*(sigma) &quot;},</a>
+<a name="ln98">    {  &quot;C6v&quot;,   &quot;(C6) (C3) (C2) 6*(sigma) &quot;},</a>
+<a name="ln99">    {  &quot;C7v&quot;,   &quot;(C7) 7*(sigma) &quot;},</a>
+<a name="ln100">    {  &quot;C8v&quot;,   &quot;(C8) (C4) (C2) 8*(sigma) &quot;},</a>
+<a name="ln101">    {  &quot;C2h&quot;,   &quot;(i) (C2) (sigma) &quot;},</a>
+<a name="ln102">    {  &quot;C3h&quot;,   &quot;(C3) (S3) (sigma) &quot;},</a>
+<a name="ln103">    {  &quot;C4h&quot;,   &quot;(i) (C4) (C2) (S4) (sigma) &quot;},</a>
+<a name="ln104">    {  &quot;C5h&quot;,   &quot;(C5) (S5) (sigma) &quot;},</a>
+<a name="ln105">    {  &quot;C6h&quot;,   &quot;(i) (C6) (C3) (C2) (S6) (S3) (sigma) &quot;},</a>
+<a name="ln106">    {  &quot;C7h&quot;,   &quot;(C7) (S7) (sigma) &quot;},</a>
+<a name="ln107">    {  &quot;C8h&quot;,   &quot;(i) (C8) (C4) (C2) (S8) (S4) (sigma) &quot;},</a>
+<a name="ln108">    {  &quot;D2d&quot;,   &quot;3*(C2) (S4) 2*(sigma) &quot;},</a>
+<a name="ln109">    {  &quot;D3d&quot;,   &quot;(i) (C3) 3*(C2) (S6) 3*(sigma) &quot;},</a>
+<a name="ln110">    {  &quot;D4d&quot;,   &quot;(C4) 5*(C2) (S8) 4*(sigma) &quot;},</a>
+<a name="ln111">    {  &quot;D5d&quot;,   &quot;(i) (C5) 5*(C2) (S10) 5*(sigma) &quot;},</a>
+<a name="ln112">    {  &quot;D6d&quot;,   &quot;(C6) (C3) 7*(C2) (S12) (S4) 6*(sigma) &quot;},</a>
+<a name="ln113">    {  &quot;D7d&quot;,   &quot;(i) (C7) 7*(C2) (S14) 7*(sigma) &quot;},</a>
+<a name="ln114">    {  &quot;D8d&quot;,   &quot;(C8) (C4) 9*(C2) (S16) 8*(sigma) &quot;},</a>
+<a name="ln115">    {  &quot;D2h&quot;,   &quot;(i) 3*(C2) 3*(sigma) &quot;},</a>
+<a name="ln116">    {  &quot;D3h&quot;,   &quot;(C3) 3*(C2) (S3) 4*(sigma) &quot;},</a>
+<a name="ln117">    {  &quot;D4h&quot;,   &quot;(i) (C4) 5*(C2) (S4) 5*(sigma) &quot;},</a>
+<a name="ln118">    {  &quot;D5h&quot;,   &quot;(C5) 5*(C2) (S5) 6*(sigma) &quot;},</a>
+<a name="ln119">    {  &quot;D6h&quot;,   &quot;(i) (C6) (C3) 7*(C2) (S6) (S3) 7*(sigma) &quot;},</a>
+<a name="ln120">    {  &quot;D7h&quot;,   &quot;(C7) 7*(C2) (S7) 8*(sigma) &quot;},</a>
+<a name="ln121">    {  &quot;D8h&quot;,   &quot;(i) (C8) (C4) 9*(C2) (S8) (S4) 9*(sigma) &quot;},</a>
+<a name="ln122">    {  &quot;S4&quot;,    &quot;(C2) (S4) &quot;},</a>
+<a name="ln123">    {  &quot;S6&quot;,    &quot;(i) (C3) (S6) &quot;},</a>
+<a name="ln124">    {  &quot;S8&quot;,    &quot;(C4) (C2) (S8) &quot;},</a>
+<a name="ln125">    {  &quot;T&quot;,     &quot;4*(C3) 3*(C2) &quot;},</a>
+<a name="ln126">    {  &quot;Th&quot;,    &quot;(i) 4*(C3) 3*(C2) 4*(S6) 3*(sigma) &quot;},</a>
+<a name="ln127">    {  &quot;Td&quot;,    &quot;4*(C3) 3*(C2) 3*(S4) 6*(sigma) &quot;},</a>
+<a name="ln128">    {  &quot;O&quot;,     &quot;3*(C4) 4*(C3) 9*(C2) &quot;},</a>
+<a name="ln129">    {  &quot;Oh&quot;,    &quot;(i) 3*(C4) 4*(C3) 9*(C2) 4*(S6) 3*(S4) 9*(sigma) &quot;},</a>
+<a name="ln130">    {  &quot;Cinfv&quot;, &quot;(Cinf) (sigma) &quot;},</a>
+<a name="ln131">    {  &quot;Dinfh&quot;, &quot;(i) (Cinf) (C2) 2*(sigma) &quot;},</a>
+<a name="ln132">    {  &quot;I&quot;,     &quot;6*(C5) 10*(C3) 15*(C2) &quot;},</a>
+<a name="ln133">    {  &quot;Ih&quot;,    &quot;(i) 6*(C5) 10*(C3) 15*(C2) 6*(S10) 10*(S6) 15*(sigma) &quot;},</a>
+<a name="ln134">    {  &quot;K&quot;,     &quot;(Cinf)&quot; },</a>
+<a name="ln135">    {  &quot;Kh&quot;,    &quot;(i) (Cinf) (sigma) &quot;},</a>
+<a name="ln136">  } ;</a>
+<a name="ln137">#define PointGroupsCount (sizeof(PointGroups)/sizeof(POINT_GROUP))</a>
+<a name="ln138"> </a>
+<a name="ln139">  class PointGroupPrivate</a>
+<a name="ln140">  {</a>
+<a name="ln141">  public:</a>
+<a name="ln142">    struct _SYMMETRY_ELEMENT_ {</a>
+<a name="ln143">      void    (*transform_atom)( struct _SYMMETRY_ELEMENT_ *el, OBAtom *from, OBAtom *to ) ;</a>
+<a name="ln144">      int *   transform ;     /*   Correspondence table for the transformation         */</a>
+<a name="ln145">      int     order ;         /*   Applying transformation this many times is identity */</a>
+<a name="ln146">      int     nparam ;        /*   4 for inversion and planes, 7 for axes              */</a>
+<a name="ln147">      double  maxdev ;        /*   Largest error associated with the element            */</a>
+<a name="ln148">      double  distance ;</a>
+<a name="ln149">      double  normal[ DIMENSION ] ;</a>
+<a name="ln150">      double  direction[ DIMENSION ] ;</a>
+<a name="ln151">    };</a>
+<a name="ln152"> </a>
+<a name="ln153">    typedef _SYMMETRY_ELEMENT_ SYMMETRY_ELEMENT;</a>
+<a name="ln154"> </a>
+<a name="ln155">    PointGroupPrivate()</a>
+<a name="ln156">    {</a>
+<a name="ln157">      ToleranceSame         = 1e-1;</a>
+<a name="ln158">      TolerancePrimary      = 5e-1;</a>
+<a name="ln159">      ToleranceFinal        = 1e-1;</a>
+<a name="ln160">      MaxOptStep            = 5e-1;</a>
+<a name="ln161">      MinOptStep            = 1e-6;</a>
+<a name="ln162">      GradientStep          = 1e-7;</a>
+<a name="ln163">      OptChangeThreshold    = 1e-10;</a>
+<a name="ln164">      DistanceFromCenter    = nullptr;</a>
+<a name="ln165">      verbose               = -1;</a>
+<a name="ln166">      MaxOptCycles          = 500;</a>
+<a name="ln167">      OptChangeHits         = 5;</a>
+<a name="ln168">      MaxAxisOrder          = 20;</a>
+<a name="ln169">      PlanesCount           = 0;</a>
+<a name="ln170">      Planes                = nullptr;</a>
+<a name="ln171">      MolecularPlane        = nullptr;</a>
+<a name="ln172">      InversionCentersCount = 0;</a>
+<a name="ln173">      InversionCenters      = nullptr;</a>
+<a name="ln174">      NormalAxesCount       = 0;</a>
+<a name="ln175">      NormalAxes            = nullptr;</a>
+<a name="ln176">      ImproperAxesCount     = 0;</a>
+<a name="ln177">      ImproperAxes          = nullptr;</a>
+<a name="ln178">      NormalAxesCounts      = nullptr;</a>
+<a name="ln179">      ImproperAxesCounts    = nullptr;</a>
+<a name="ln180">      BadOptimization       = 0;</a>
+<a name="ln181">      SymmetryCode          = &quot;&quot;;</a>
+<a name="ln182">      PointGroupRejectionReason = nullptr ;</a>
+<a name="ln183"> </a>
+<a name="ln184">      StatTotal             = 0 ;</a>
+<a name="ln185">      StatEarly             = 0 ;</a>
+<a name="ln186">      StatPairs             = 0 ;</a>
+<a name="ln187">      StatDups              = 0 ;</a>
+<a name="ln188">      StatOrder             = 0 ;</a>
+<a name="ln189">      StatOpt               = 0 ;</a>
+<a name="ln190">      StatAccept            = 0 ;</a>
+<a name="ln191"> </a>
+<a name="ln192">      Setup                 = false;</a>
+<a name="ln193">    }</a>
+<a name="ln194"> </a>
+<a name="ln195">    OBMol  *               _mol;</a>
+<a name="ln196">    double                 ToleranceSame         ;</a>
+<a name="ln197">    double                 TolerancePrimary      ;</a>
+<a name="ln198">    double                 ToleranceFinal        ;</a>
+<a name="ln199">    double                 MaxOptStep            ;</a>
+<a name="ln200">    double                 MinOptStep            ;</a>
+<a name="ln201">    double                 GradientStep          ;</a>
+<a name="ln202">    double                 OptChangeThreshold    ;</a>
+<a name="ln203">    double                 CenterOfSomething[ DIMENSION ];</a>
+<a name="ln204">    double *               DistanceFromCenter    ;</a>
+<a name="ln205">    int                    verbose               ;</a>
+<a name="ln206">    int                    MaxOptCycles          ;</a>
+<a name="ln207">    int                    OptChangeHits         ;</a>
+<a name="ln208">    int                    MaxAxisOrder          ;</a>
+<a name="ln209">    int                    PlanesCount           ;</a>
+<a name="ln210">    SYMMETRY_ELEMENT **    Planes                ;</a>
+<a name="ln211">    SYMMETRY_ELEMENT *     MolecularPlane        ;</a>
+<a name="ln212">    int                    InversionCentersCount ;</a>
+<a name="ln213">    SYMMETRY_ELEMENT **    InversionCenters      ;</a>
+<a name="ln214">    int                    NormalAxesCount       ;</a>
+<a name="ln215">    SYMMETRY_ELEMENT **    NormalAxes            ;</a>
+<a name="ln216">    int                    ImproperAxesCount     ;</a>
+<a name="ln217">    SYMMETRY_ELEMENT **    ImproperAxes          ;</a>
+<a name="ln218">    int *                  NormalAxesCounts      ;</a>
+<a name="ln219">    int *                  ImproperAxesCounts    ;</a>
+<a name="ln220">    int                    BadOptimization       ;</a>
+<a name="ln221">    const char *           SymmetryCode          ;</a>
+<a name="ln222">    char *                 PointGroupRejectionReason;</a>
+<a name="ln223">    std::vector&lt; std::pair&lt;int, int&gt; &gt; PairedAtoms;</a>
+<a name="ln224">    bool                   Setup;</a>
+<a name="ln225"> </a>
+<a name="ln226">    /*</a>
+<a name="ln227">     *    Statistics</a>
+<a name="ln228">     */</a>
+<a name="ln229">    long                   StatTotal        ;</a>
+<a name="ln230">    long                   StatEarly        ;</a>
+<a name="ln231">    long                   StatPairs        ;</a>
+<a name="ln232">    long                   StatDups         ;</a>
+<a name="ln233">    long                   StatOrder        ;</a>
+<a name="ln234">    long                   StatOpt          ;</a>
+<a name="ln235">    long                   StatAccept       ;</a>
+<a name="ln236"> </a>
+<a name="ln237">    bool equivalentAtoms(OBAtom &amp;a1, OBAtom &amp;a2)</a>
+<a name="ln238">    {</a>
+<a name="ln239">      if (a1.GetAtomicNum() != a2.GetAtomicNum())</a>
+<a name="ln240">        return false;</a>
+<a name="ln241">      if (a1.GetIsotope() != a2.GetIsotope())</a>
+<a name="ln242">        return false;</a>
+<a name="ln243">      if (a1.GetFormalCharge() != a2.GetFormalCharge())</a>
+<a name="ln244">        return false;</a>
+<a name="ln245">      if (a1.GetSpinMultiplicity() != a2.GetSpinMultiplicity())</a>
+<a name="ln246">        return false;</a>
+<a name="ln247"> </a>
+<a name="ln248">      return true;</a>
+<a name="ln249">    }</a>
+<a name="ln250"> </a>
+<a name="ln251">    int</a>
+<a name="ln252">    establish_pairs( SYMMETRY_ELEMENT *elem )</a>
+<a name="ln253">    {</a>
+<a name="ln254">      unsigned int      i, j, best_j;</a>
+<a name="ln255">      char *            atom_used = (char *)calloc( _mol-&gt;NumAtoms(), 1 ) ;</a>
+<a name="ln256">      double            distance, best_distance ;</a>
+<a name="ln257">      OBAtom            symmetric;</a>
+<a name="ln258">      OBAtom            *atom;</a>
+<a name="ln259"> </a>
+<a name="ln260">      PairedAtoms.clear();</a>
+<a name="ln261"> </a>
+<a name="ln262">      if (atom_used == nullptr){</a>
+<a name="ln263">        //        fprintf( stderr, &quot;Out of memory for tagging array in establish_pairs()\n&quot; ) ;</a>
+<a name="ln264">        return 0;</a>
+<a name="ln265">      }</a>
+<a name="ln266">      for( i = 0 ; i &lt; _mol-&gt;NumAtoms() ; i++ ){</a>
+<a name="ln267">        if( elem-&gt;transform[i] &gt;= _mol-&gt;NumAtoms() ){ /* No symmetric atom yet          */</a>
+<a name="ln268">          if( verbose &gt; 2 ) printf( &quot;        looking for a pair for %d\n&quot;, i ) ;</a>
+<a name="ln269">          elem-&gt;transform_atom( elem, _mol-&gt;GetAtom(i+1), &amp;symmetric ) ;   // ATOM INDEX ISSUE</a>
+<a name="ln270">          if( verbose &gt; 2 ) printf( &quot;        new coordinates are: (%g,%g,%g)\n&quot;,</a>
+<a name="ln271">                                    symmetric.x(), symmetric.y(), symmetric.z() ) ;</a>
+<a name="ln272">          best_j        = i ;</a>
+<a name="ln273">          best_distance = 2*TolerancePrimary ;/* Performance value we'll reject */</a>
+<a name="ln274">          for( j = 0 ; j &lt; _mol-&gt;NumAtoms() ; j++ ){</a>
+<a name="ln275"> </a>
+<a name="ln276">            atom = _mol-&gt;GetAtom(j+1);</a>
+<a name="ln277">            // START here</a>
+<a name="ln278">            if( atom_used[j] || !equivalentAtoms(*atom, symmetric) )</a>
+<a name="ln279">              continue ;</a>
+<a name="ln280"> </a>
+<a name="ln281">            distance = symmetric.GetDistance(atom) ;</a>
+<a name="ln282">            if( verbose &gt; 2 ) printf( &quot;        distance to %d is %g\n&quot;, j, distance ) ;</a>
+<a name="ln283">            if( distance &lt; best_distance ){</a>
+<a name="ln284">              best_j        = j ;</a>
+<a name="ln285">              best_distance = distance ;</a>
+<a name="ln286">            }</a>
+<a name="ln287">          }</a>
+<a name="ln288">          if( best_distance &gt; TolerancePrimary ){ /* Too bad, there is no symmetric atom */</a>
+<a name="ln289">            if( verbose &gt; 0 )</a>
+<a name="ln290">              printf( &quot;        no pair for atom %d - best was %d with err = %g\n&quot;, i, best_j, best_distance ) ;</a>
+<a name="ln291">            free( atom_used ) ;</a>
+<a name="ln292">            return -1 ;</a>
+<a name="ln293">          }</a>
+<a name="ln294">          elem-&gt;transform[i] = best_j ;</a>
+<a name="ln295">          atom_used[best_j]  = 1 ;</a>
+<a name="ln296">          if( verbose &gt; 1 ) printf( &quot;        atom %d transforms to the atom %d, err = %g\n&quot;, i, best_j, best_distance ) ;</a>
+<a name="ln297">          std::pair&lt;int, int&gt; atomPair(i, best_j);</a>
+<a name="ln298">          PairedAtoms.push_back( atomPair );</a>
+<a name="ln299">        }</a>
+<a name="ln300">      }</a>
+<a name="ln301">      free( atom_used ) ;</a>
+<a name="ln302">      return 0 ;</a>
+<a name="ln303">    }</a>
+<a name="ln304"> </a>
+<a name="ln305">    int</a>
+<a name="ln306">    check_transform_order( SYMMETRY_ELEMENT *elem )</a>
+<a name="ln307">    {</a>
+<a name="ln308">      unsigned int i, j, k;</a>
+<a name="ln309"> </a>
+<a name="ln310">      for( i = 0 ; i &lt; _mol-&gt;NumAtoms() ; i++ ){</a>
+<a name="ln311">        if( elem-&gt;transform[i] == i )   /* Identity transform is Ok for any order */</a>
+<a name="ln312">          continue ;</a>
+<a name="ln313">        if( elem-&gt;transform_atom == rotate_reflect_atom ){</a>
+<a name="ln314">          j = elem-&gt;transform[i] ;</a>
+<a name="ln315">          if( elem-&gt;transform[j] == i )</a>
+<a name="ln316">            continue ; /* Second-order transform is Ok for improper axis */</a>
+<a name="ln317">        }</a>
+<a name="ln318">        for( j = elem-&gt;order - 1, k = elem-&gt;transform[i] ; j &gt; 0 ; j--, k = elem-&gt;transform[k] ){</a>
+<a name="ln319">          if( k == i ){</a>
+<a name="ln320">            if( verbose &gt; 0 ) printf( &quot;        transform looped %d steps too early from atom %d\n&quot;, j, i ) ;</a>
+<a name="ln321">            return -1 ;</a>
+<a name="ln322">          }</a>
+<a name="ln323">        }</a>
+<a name="ln324">        if( k != i &amp;&amp; elem-&gt;transform_atom == rotate_reflect_atom ){</a>
+<a name="ln325">          /* For improper axes, the complete loop may also take twice the order */</a>
+<a name="ln326">          for( j = elem-&gt;order ; j &gt; 0 ; j--, k = elem-&gt;transform[k] ){</a>
+<a name="ln327">            if( k == i ){</a>
+<a name="ln328">              if( verbose &gt; 0 ) printf( &quot;        (improper) transform looped %d steps too early from atom %d\n&quot;, j, i ) ;</a>
+<a name="ln329">              return -1 ;</a>
+<a name="ln330">            }</a>
+<a name="ln331">          }</a>
+<a name="ln332">        }</a>
+<a name="ln333">        if( k != i ){</a>
+<a name="ln334">          if( verbose &gt; 0 ) printf( &quot;        transform failed to loop after %d steps from atom %d\n&quot;, elem-&gt;order, i ) ;</a>
+<a name="ln335">          return -1 ;</a>
+<a name="ln336">        }</a>
+<a name="ln337">      }</a>
+<a name="ln338">      return 0 ;</a>
+<a name="ln339">    }</a>
+<a name="ln340"> </a>
+<a name="ln341">    int</a>
+<a name="ln342">    same_transform( SYMMETRY_ELEMENT *a, SYMMETRY_ELEMENT *b )</a>
+<a name="ln343">    {</a>
+<a name="ln344">      unsigned int      i, j;</a>
+<a name="ln345">      int               code;</a>
+<a name="ln346"> </a>
+<a name="ln347">      if( ( a-&gt;order != b-&gt;order ) || ( a-&gt;nparam != b-&gt;nparam ) || ( a-&gt;transform_atom != b-&gt;transform_atom ) )</a>
+<a name="ln348">        return 0 ;</a>
+<a name="ln349">      for( i = 0, code = 1 ; i &lt; _mol-&gt;NumAtoms() ; i++ ){</a>
+<a name="ln350">        if( a-&gt;transform[i] != b-&gt;transform[i] ){</a>
+<a name="ln351">          code = 0 ;</a>
+<a name="ln352">          break ;</a>
+<a name="ln353">        }</a>
+<a name="ln354">      }</a>
+<a name="ln355">      if( code == 0 &amp;&amp; a-&gt;order &gt; 2 ){  /* b can also be a reverse transformation for a */</a>
+<a name="ln356">        for( i = 0 ; i &lt; _mol-&gt;NumAtoms() ; i++ ){</a>
+<a name="ln357">          j = a-&gt;transform[i] ;</a>
+<a name="ln358">          if( b-&gt;transform[j] != i )</a>
+<a name="ln359">            return 0 ;</a>
+<a name="ln360">        }</a>
+<a name="ln361">        return 1 ;</a>
+<a name="ln362">      }</a>
+<a name="ln363">      return code ;</a>
+<a name="ln364">    }</a>
+<a name="ln365"> </a>
+<a name="ln366">    SYMMETRY_ELEMENT *</a>
+<a name="ln367">    alloc_symmetry_element( void )</a>
+<a name="ln368">    {</a>
+<a name="ln369">      SYMMETRY_ELEMENT * elem = (SYMMETRY_ELEMENT *)calloc( 1, sizeof( SYMMETRY_ELEMENT ) ) ;</a>
+<a name="ln370">      unsigned int i;</a>
+<a name="ln371"> </a>
+<a name="ln372">      if (elem == nullptr){</a>
+<a name="ln373">        //        fprintf( stderr, &quot;Out of memory allocating symmetry element\n&quot; ) ;</a>
+<a name="ln374">        return nullptr;</a>
+<a name="ln375">      }</a>
+<a name="ln376">      elem-&gt;transform = (int*)calloc( _mol-&gt;NumAtoms(), sizeof( int ) ) ;</a>
+<a name="ln377">      if (elem-&gt;transform == nullptr){</a>
+<a name="ln378">        //        fprintf( stderr, &quot;Out of memory allocating transform table for symmetry element\n&quot; ) ;</a>
+<a name="ln379">        free(elem);</a>
+<a name="ln380">        return nullptr;</a>
+<a name="ln381">      }</a>
+<a name="ln382">      for( i = 0 ; i &lt; _mol-&gt;NumAtoms() ; i++ ){</a>
+<a name="ln383">        elem-&gt;transform[i] = _mol-&gt;NumAtoms() + 1 ; /* An impossible value */</a>
+<a name="ln384">      }</a>
+<a name="ln385">      return elem ;</a>
+<a name="ln386">    }</a>
+<a name="ln387"> </a>
+<a name="ln388">    void</a>
+<a name="ln389">    destroy_symmetry_element( SYMMETRY_ELEMENT *elem )</a>
+<a name="ln390">    {</a>
+<a name="ln391">      if (elem != nullptr) {</a>
+<a name="ln392">        if (elem-&gt;transform != nullptr)</a>
+<a name="ln393">          free( elem-&gt;transform ) ;</a>
+<a name="ln394">        free( elem ) ;</a>
+<a name="ln395">      }</a>
+<a name="ln396">    }</a>
+<a name="ln397"> </a>
+<a name="ln398">    int</a>
+<a name="ln399">    check_transform_quality( SYMMETRY_ELEMENT *elem )</a>
+<a name="ln400">    {</a>
+<a name="ln401">      unsigned int      i, j;</a>
+<a name="ln402">      OBAtom            symmetric ;</a>
+<a name="ln403">      double            r, max_r ;</a>
+<a name="ln404"> </a>
+<a name="ln405">      for( i = 0, max_r = 0 ; i &lt; _mol-&gt;NumAtoms() ; i++ ){</a>
+<a name="ln406">        j = elem-&gt;transform[i] ;</a>
+<a name="ln407">        elem-&gt;transform_atom( elem, _mol-&gt;GetAtom(i+1), &amp;symmetric ) ;</a>
+<a name="ln408"> </a>
+<a name="ln409">        r = symmetric.GetDistance(_mol-&gt;GetAtom(j+1));</a>
+<a name="ln410">        if( r &gt; ToleranceFinal ){</a>
+<a name="ln411">          if( verbose &gt; 0 ) printf( &quot;        distance to symmetric atom (%g) is too big for %d\n&quot;, r, i ) ;</a>
+<a name="ln412">          return -1 ;</a>
+<a name="ln413">        }</a>
+<a name="ln414">        if( r &gt; max_r ) max_r = r ;</a>
+<a name="ln415">      }</a>
+<a name="ln416">      elem-&gt;maxdev = max_r ;</a>
+<a name="ln417">      return 0 ;</a>
+<a name="ln418">    }</a>
+<a name="ln419"> </a>
+<a name="ln420">    double</a>
+<a name="ln421">    eval_optimization_target_function( SYMMETRY_ELEMENT *elem, int *finish )</a>
+<a name="ln422">    {</a>
+<a name="ln423">      unsigned int      i, j, k;</a>
+<a name="ln424">      OBAtom            symmetric ;</a>
+<a name="ln425">      double            target, r, maxr ;</a>
+<a name="ln426"> </a>
+<a name="ln427">      if( elem-&gt;nparam &gt;= 4 ){</a>
+<a name="ln428">        for( k = 0, r = 0 ; k &lt; DIMENSION ; k++ ){</a>
+<a name="ln429">          r += elem-&gt;normal[k]*elem-&gt;normal[k] ;</a>
+<a name="ln430">        }</a>
+<a name="ln431">        r = sqrt( r ) ;</a>
+<a name="ln432">        if( r &lt; ToleranceSame ){</a>
+<a name="ln433">          //          fprintf( stderr, &quot;Normal collapsed!\n&quot; ) ;</a>
+<a name="ln434">          return 0.0;</a>
+<a name="ln435">        }</a>
+<a name="ln436">        for( k = 0 ; k &lt; DIMENSION ; k++ ){</a>
+<a name="ln437">          elem-&gt;normal[k] /= r ;</a>
+<a name="ln438">        }</a>
+<a name="ln439">        if( elem-&gt;distance &lt; 0 ){</a>
+<a name="ln440">          elem-&gt;distance = -elem-&gt;distance ;</a>
+<a name="ln441">          for( k = 0 ; k &lt; DIMENSION ; k++ ){</a>
+<a name="ln442">            elem-&gt;normal[k] = -elem-&gt;normal[k] ;</a>
+<a name="ln443">          }</a>
+<a name="ln444">        }</a>
+<a name="ln445">      }</a>
+<a name="ln446">      if( elem-&gt;nparam &gt;= 7 ){</a>
+<a name="ln447">        for( k = 0, r = 0 ; k &lt; DIMENSION ; k++ ){</a>
+<a name="ln448">          r += elem-&gt;direction[k]*elem-&gt;direction[k] ;</a>
+<a name="ln449">        }</a>
+<a name="ln450">        r = sqrt( r ) ;</a>
+<a name="ln451">        if( r &lt; ToleranceSame ){</a>
+<a name="ln452">          //          fprintf( stderr, &quot;Direction collapsed!\n&quot; ) ;</a>
+<a name="ln453">          return 0.0;</a>
+<a name="ln454">        }</a>
+<a name="ln455">        for( k = 0 ; k &lt; DIMENSION ; k++ ){</a>
+<a name="ln456">          elem-&gt;direction[k] /= r ;</a>
+<a name="ln457">        }</a>
+<a name="ln458">      }</a>
+<a name="ln459">      for( i = 0, target = maxr = 0 ; i &lt; _mol-&gt;NumAtoms() ; i++ ){</a>
+<a name="ln460">        elem-&gt;transform_atom( elem, _mol-&gt;GetAtom(i+1), &amp;symmetric ) ;</a>
+<a name="ln461">        j = elem-&gt;transform[i] ;</a>
+<a name="ln462">        r = symmetric.GetDistance(_mol-&gt;GetAtom(j+1));</a>
+<a name="ln463">        if( r &gt; maxr ) maxr = r ;</a>
+<a name="ln464">        target += r ;</a>
+<a name="ln465">      }</a>
+<a name="ln466">      if (finish != nullptr) {</a>
+<a name="ln467">        *finish = 0 ;</a>
+<a name="ln468">        if( maxr &lt; ToleranceFinal )</a>
+<a name="ln469">          *finish = 1 ;</a>
+<a name="ln470">      }</a>
+<a name="ln471">      return target ;</a>
+<a name="ln472">    }</a>
+<a name="ln473"> </a>
+<a name="ln474">    void</a>
+<a name="ln475">    get_params( SYMMETRY_ELEMENT *elem, double values[] )</a>
+<a name="ln476">    {</a>
+<a name="ln477">      memcpy( values, &amp;elem-&gt;distance, elem-&gt;nparam * sizeof( double ) ) ;</a>
+<a name="ln478">    }</a>
+<a name="ln479"> </a>
+<a name="ln480">    void</a>
+<a name="ln481">    set_params( SYMMETRY_ELEMENT *elem, double values[] )</a>
+<a name="ln482">    {</a>
+<a name="ln483">      memcpy( &amp;elem-&gt;distance, values, elem-&gt;nparam * sizeof( double ) ) ;</a>
+<a name="ln484">    }</a>
+<a name="ln485"> </a>
+<a name="ln486">    void</a>
+<a name="ln487">    optimize_transformation_params( SYMMETRY_ELEMENT *elem )</a>
+<a name="ln488">    {</a>
+<a name="ln489">      double            values[ MAXPARAM ] ;</a>
+<a name="ln490">      double            grad  [ MAXPARAM ] ;</a>
+<a name="ln491">      double            force [ MAXPARAM ] ;</a>
+<a name="ln492">      double            step  [ MAXPARAM ] ;</a>
+<a name="ln493">      double            f, fold, fnew, fnew2, fdn, fup, snorm ;</a>
+<a name="ln494">      double            a, b, x ;</a>
+<a name="ln495">      int               vars  = elem-&gt;nparam ;</a>
+<a name="ln496">      int               cycle = 0 ;</a>
+<a name="ln497">      int               i, finish ;</a>
+<a name="ln498">      int               hits = 0 ;</a>
+<a name="ln499"> </a>
+<a name="ln500">      if( vars &gt; MAXPARAM ){</a>
+<a name="ln501">        //        fprintf( stderr, &quot;Catastrophe in optimize_transformation_params()!\n&quot; ) ;</a>
+<a name="ln502">        return;</a>
+<a name="ln503">      }</a>
+<a name="ln504">      f = 0 ;</a>
+<a name="ln505">      do {</a>
+<a name="ln506">        fold = f ;</a>
+<a name="ln507">        f    = eval_optimization_target_function( elem, &amp;finish ) ;</a>
+<a name="ln508">        /* Evaluate function, gradient and diagonal force constants */</a>
+<a name="ln509">        if( verbose &gt; 1 ) printf( &quot;            function value = %g\n&quot;, f ) ;</a>
+<a name="ln510">        if( finish ){</a>
+<a name="ln511">          if( verbose &gt; 1 ) printf( &quot;        function value is small enough\n&quot; ) ;</a>
+<a name="ln512">          break ;</a>
+<a name="ln513">        }</a>
+<a name="ln514">        if( cycle &gt; 0 ){</a>
+<a name="ln515">          if( fabs( f-fold ) &gt; OptChangeThreshold )</a>
+<a name="ln516">            hits = 0 ;</a>
+<a name="ln517">          else hits++ ;</a>
+<a name="ln518">          if( hits &gt;= OptChangeHits ){</a>
+<a name="ln519">            if( verbose &gt; 1 ) printf( &quot;        no progress is made, stop optimization\n&quot; ) ;</a>
+<a name="ln520">            break ;</a>
+<a name="ln521">          }</a>
+<a name="ln522">        }</a>
+<a name="ln523">        get_params( elem, values ) ;</a>
+<a name="ln524">        for( i = 0 ; i &lt; vars ; i++ ){</a>
+<a name="ln525">          values[i] -= GradientStep ;</a>
+<a name="ln526">          set_params( elem, values ) ;</a>
+<a name="ln527">          fdn        = eval_optimization_target_function(elem, nullptr);</a>
+<a name="ln528">          values[i] += 2*GradientStep ;</a>
+<a name="ln529">          set_params( elem, values ) ;</a>
+<a name="ln530">          fup        = eval_optimization_target_function(elem, nullptr);</a>
+<a name="ln531">          values[i] -= GradientStep ;</a>
+<a name="ln532">          grad[i]    = ( fup - fdn ) / ( 2 * GradientStep ) ;</a>
+<a name="ln533">          force[i]   = ( fup + fdn - 2*f ) / ( GradientStep * GradientStep ) ;</a>
+<a name="ln534">          if( verbose &gt; 1 ) printf( &quot;        i = %d, grad = %12.6e, force = %12.6e\n&quot;, i, grad[i], force[i] ) ;</a>
+<a name="ln535">        }</a>
+<a name="ln536">        /* Do a quasi-Newton step */</a>
+<a name="ln537">        for( i = 0, snorm = 0 ; i &lt; vars ; i++ ){</a>
+<a name="ln538">          if( force[i] &lt;  0   ) force[i] = -force[i] ;</a>
+<a name="ln539">          if( force[i] &lt; 1e-3 ) force[i] = 1e-3 ;</a>
+<a name="ln540">          if( force[i] &gt; 1e3  ) force[i] = 1e3 ;</a>
+<a name="ln541">          step[i] = - grad[i]/force[i] ;</a>
+<a name="ln542">          snorm += step[i] * step[i] ;</a>
+<a name="ln543">        }</a>
+<a name="ln544">        snorm = sqrt( snorm ) ;</a>
+<a name="ln545">        if( snorm &gt; MaxOptStep ){ /* Renormalize step */</a>
+<a name="ln546">          for( i = 0 ; i &lt; vars ; i++ )</a>
+<a name="ln547">            step[i] *= MaxOptStep/snorm ;</a>
+<a name="ln548">          snorm = MaxOptStep ;</a>
+<a name="ln549">        }</a>
+<a name="ln550">        do {</a>
+<a name="ln551">          for( i = 0 ; i &lt; vars ; i++ ){</a>
+<a name="ln552">            values[i] += step[i] ;</a>
+<a name="ln553">          }</a>
+<a name="ln554">          set_params( elem, values ) ;</a>
+<a name="ln555">          fnew = eval_optimization_target_function(elem, nullptr);</a>
+<a name="ln556">          if( fnew &lt; f )</a>
+<a name="ln557">            break ;</a>
+<a name="ln558">          for( i = 0 ; i &lt; vars ; i++ ){</a>
+<a name="ln559">            values[i] -= step[i] ;</a>
+<a name="ln560">            step  [i] /= 2 ;</a>
+<a name="ln561">          }</a>
+<a name="ln562">          set_params( elem, values ) ;</a>
+<a name="ln563">          snorm /= 2 ;</a>
+<a name="ln564">        } while( snorm &gt; MinOptStep ) ;</a>
+<a name="ln565">        if( (snorm &gt; MinOptStep) &amp;&amp; (snorm &lt; MaxOptStep / 2) ){  /* try to do quadratic interpolation */</a>
+<a name="ln566">          for( i = 0 ; i &lt; vars ; i++ )</a>
+<a name="ln567">            values[i] += step[i] ;</a>
+<a name="ln568">          set_params( elem, values ) ;</a>
+<a name="ln569">          fnew2 = eval_optimization_target_function(elem, nullptr);</a>
+<a name="ln570">          if( verbose &gt; 1 ) printf( &quot;        interpolation base points: %g, %g, %g\n&quot;, f, fnew, fnew2 ) ;</a>
+<a name="ln571">          for( i = 0 ; i &lt; vars ; i++ )</a>
+<a name="ln572">            values[i] -= 2*step[i] ;</a>
+<a name="ln573">          a     = ( 4*f - fnew2 - 3*fnew ) / 2 ;</a>
+<a name="ln574">          b     = ( f + fnew2 - 2*fnew ) / 2 ;</a>
+<a name="ln575">          if( verbose &gt; 1 ) printf( &quot;        linear interpolation coefficients %g, %g\n&quot;, a, b ) ;</a>
+<a name="ln576">          if( b &gt; 0 ){</a>
+<a name="ln577">            x = -a/(2*b) ;</a>
+<a name="ln578">            if( x &gt; 0.2 &amp;&amp; x &lt; 1.8 ){</a>
+<a name="ln579">              if( verbose &gt; 1 ) printf( &quot;        interpolated: %g\n&quot;, x ) ;</a>
+<a name="ln580">              for( i = 0 ; i &lt; vars ; i++ )</a>
+<a name="ln581">                values[i] += x*step[i] ;</a>
+<a name="ln582">            }</a>
+<a name="ln583">            else b = 0 ;</a>
+<a name="ln584">          }</a>
+<a name="ln585">          if( b &lt;= 0 ){</a>
+<a name="ln586">            if( fnew2 &lt; fnew ){</a>
+<a name="ln587">              for( i = 0 ; i &lt; vars ; i++ )</a>
+<a name="ln588">                values[i] += 2*step[i] ;</a>
+<a name="ln589">            }</a>
+<a name="ln590">            else {</a>
+<a name="ln591">              for( i = 0 ; i &lt; vars ; i++ )</a>
+<a name="ln592">                values[i] += step[i] ;</a>
+<a name="ln593">            }</a>
+<a name="ln594">          }</a>
+<a name="ln595">          set_params( elem, values ) ;</a>
+<a name="ln596">        }</a>
+<a name="ln597">      } while( snorm &gt; MinOptStep &amp;&amp; ++cycle &lt; MaxOptCycles ) ;</a>
+<a name="ln598">      f = eval_optimization_target_function(elem, nullptr);</a>
+<a name="ln599">      if( cycle &gt;= MaxOptCycles ) BadOptimization = 1 ;</a>
+<a name="ln600">      if( verbose &gt; 0 ) {</a>
+<a name="ln601">        if( cycle &gt;= MaxOptCycles )</a>
+<a name="ln602">          printf( &quot;        maximum number of optimization cycles made\n&quot; ) ;</a>
+<a name="ln603">        printf( &quot;        optimization completed after %d cycles with f = %g\n&quot;, cycle, f ) ;</a>
+<a name="ln604">      }</a>
+<a name="ln605">    }</a>
+<a name="ln606"> </a>
+<a name="ln607">    int</a>
+<a name="ln608">    refine_symmetry_element( SYMMETRY_ELEMENT *elem, int build_table )</a>
+<a name="ln609">    {</a>
+<a name="ln610">      int               i ;</a>
+<a name="ln611"> </a>
+<a name="ln612"> </a>
+<a name="ln613">      if( build_table &amp;&amp; (establish_pairs( elem ) &lt; 0) ){</a>
+<a name="ln614">        StatPairs++ ;</a>
+<a name="ln615">        if( verbose &gt; 0 ) printf( &quot;        no transformation correspondence table can be constructed\n&quot; ) ;</a>
+<a name="ln616">        return -1 ;</a>
+<a name="ln617">      }</a>
+<a name="ln618">      for( i = 0 ; i &lt; PlanesCount ; i++ ){</a>
+<a name="ln619">        if( same_transform( Planes[i], elem ) ){</a>
+<a name="ln620">          StatDups++ ;</a>
+<a name="ln621">          if( verbose &gt; 0 ) printf( &quot;        transformation is identical to plane %d\n&quot;, i ) ;</a>
+<a name="ln622">          return -1 ;</a>
+<a name="ln623">        }</a>
+<a name="ln624">      }</a>
+<a name="ln625">      for( i = 0 ; i &lt; InversionCentersCount ; i++ ){</a>
+<a name="ln626">        if( same_transform( InversionCenters[i], elem ) ){</a>
+<a name="ln627">          StatDups++ ;</a>
+<a name="ln628">          if( verbose &gt; 0 ) printf( &quot;        transformation is identical to inversion center %d\n&quot;, i ) ;</a>
+<a name="ln629">          return -1 ;</a>
+<a name="ln630">        }</a>
+<a name="ln631">      }</a>
+<a name="ln632">      for( i = 0 ; i &lt; NormalAxesCount ; i++ ){</a>
+<a name="ln633">        if( same_transform( NormalAxes[i], elem ) ){</a>
+<a name="ln634">          StatDups++ ;</a>
+<a name="ln635">          if( verbose &gt; 0 ) printf( &quot;        transformation is identical to normal axis %d\n&quot;, i ) ;</a>
+<a name="ln636">          return -1 ;</a>
+<a name="ln637">        }</a>
+<a name="ln638">      }</a>
+<a name="ln639">      for( i = 0 ; i &lt; ImproperAxesCount ; i++ ){</a>
+<a name="ln640">        if( same_transform( ImproperAxes[i], elem ) ){</a>
+<a name="ln641">          StatDups++ ;</a>
+<a name="ln642">          if( verbose &gt; 0 ) printf( &quot;        transformation is identical to improper axis %d\n&quot;, i ) ;</a>
+<a name="ln643">          return -1 ;</a>
+<a name="ln644">        }</a>
+<a name="ln645">      }</a>
+<a name="ln646">      if( check_transform_order( elem ) &lt; 0 ){</a>
+<a name="ln647">        StatOrder++ ;</a>
+<a name="ln648">        if( verbose &gt; 0 ) printf( &quot;        incorrect transformation order\n&quot; ) ;</a>
+<a name="ln649">        return -1 ;</a>
+<a name="ln650">      }</a>
+<a name="ln651">      optimize_transformation_params( elem ) ;</a>
+<a name="ln652">      if( check_transform_quality( elem ) &lt; 0 ){</a>
+<a name="ln653">        StatOpt++ ;</a>
+<a name="ln654">        if( verbose &gt; 0 ) printf( &quot;        refined transformation does not pass the numeric threshold\n&quot; ) ;</a>
+<a name="ln655">        return -1 ;</a>
+<a name="ln656">      }</a>
+<a name="ln657">      StatAccept++ ;</a>
+<a name="ln658">      return 0 ;</a>
+<a name="ln659">    }</a>
+<a name="ln660"> </a>
+<a name="ln661">    /*</a>
+<a name="ln662">     *   Plane-specific functions</a>
+<a name="ln663">     */</a>
+<a name="ln664"> </a>
+<a name="ln665">    static void mirror_atom( SYMMETRY_ELEMENT *plane, OBAtom *from, OBAtom *to )</a>
+<a name="ln666">    {</a>
+<a name="ln667">      double             r = plane-&gt;distance;</a>
+<a name="ln668"> </a>
+<a name="ln669">      r -= from-&gt;x() * plane-&gt;normal[0];</a>
+<a name="ln670">      r -= from-&gt;y() * plane-&gt;normal[1];</a>
+<a name="ln671">      r -= from-&gt;z() * plane-&gt;normal[2];</a>
+<a name="ln672"> </a>
+<a name="ln673">      // copy the &quot;type&quot; of from into to</a>
+<a name="ln674">      to-&gt;SetAtomicNum(from-&gt;GetAtomicNum());</a>
+<a name="ln675">      to-&gt;SetIsotope(from-&gt;GetIsotope());</a>
+<a name="ln676">      to-&gt;SetFormalCharge(from-&gt;GetFormalCharge());</a>
+<a name="ln677">      to-&gt;SetSpinMultiplicity(from-&gt;GetSpinMultiplicity());</a>
+<a name="ln678"> </a>
+<a name="ln679">      to-&gt;SetVector(from-&gt;x() + 2*r*plane-&gt;normal[0],</a>
+<a name="ln680">                    from-&gt;y() + 2*r*plane-&gt;normal[1],</a>
+<a name="ln681">                    from-&gt;z() + 2*r*plane-&gt;normal[2]);</a>
+<a name="ln682">    }</a>
+<a name="ln683"> </a>
+<a name="ln684">    SYMMETRY_ELEMENT *</a>
+<a name="ln685">    init_mirror_plane( int i, int j )</a>
+<a name="ln686">    {</a>
+<a name="ln687">      SYMMETRY_ELEMENT * plane = alloc_symmetry_element() ;</a>
+<a name="ln688">      double             dx[ DIMENSION ], midpoint[ DIMENSION ], rab, r ;</a>
+<a name="ln689">      int                k ;</a>
+<a name="ln690"> </a>
+<a name="ln691">      if( verbose &gt; 0 ) printf( &quot;Trying mirror plane for atoms %d,%d\n&quot;, i, j ) ;</a>
+<a name="ln692">      StatTotal++ ;</a>
+<a name="ln693">      plane-&gt;transform_atom = mirror_atom;</a>
+<a name="ln694">      plane-&gt;order          = 2 ;</a>
+<a name="ln695">      plane-&gt;nparam         = 4 ;</a>
+<a name="ln696"> </a>
+<a name="ln697">      dx[0]       = _mol-&gt;GetAtom(i+1)-&gt;x() - _mol-&gt;GetAtom(j+1)-&gt;x();</a>
+<a name="ln698">      dx[1]       = _mol-&gt;GetAtom(i+1)-&gt;y() - _mol-&gt;GetAtom(j+1)-&gt;y();</a>
+<a name="ln699">      dx[2]       = _mol-&gt;GetAtom(i+1)-&gt;z() - _mol-&gt;GetAtom(j+1)-&gt;z();</a>
+<a name="ln700"> </a>
+<a name="ln701">      midpoint[0] = ( _mol-&gt;GetAtom(i+1)-&gt;x() + _mol-&gt;GetAtom(j+1)-&gt;x() ) / 2.0 ;</a>
+<a name="ln702">      midpoint[1] = ( _mol-&gt;GetAtom(i+1)-&gt;y() + _mol-&gt;GetAtom(j+1)-&gt;y() ) / 2.0 ;</a>
+<a name="ln703">      midpoint[2] = ( _mol-&gt;GetAtom(i+1)-&gt;z() + _mol-&gt;GetAtom(j+1)-&gt;z() ) / 2.0 ;</a>
+<a name="ln704"> </a>
+<a name="ln705">      rab        = _mol-&gt;GetAtom(i+1)-&gt;GetDistance(_mol-&gt;GetAtom(j+1));</a>
+<a name="ln706"> </a>
+<a name="ln707">      if( rab &lt; ToleranceSame ){</a>
+<a name="ln708">        //        fprintf( stderr, &quot;Atoms %d and %d coincide (r = %g)\n&quot;, i, j, rab ) ;</a>
+<a name="ln709">        destroy_symmetry_element(plane);</a>
+<a name="ln710">        return nullptr;</a>
+<a name="ln711">      }</a>
+<a name="ln712">      for( k = 0, r = 0 ; k &lt; DIMENSION ; k++ ){</a>
+<a name="ln713">        plane-&gt;normal[k] = dx[k]/rab ;</a>
+<a name="ln714">        r += midpoint[k]*plane-&gt;normal[k] ;</a>
+<a name="ln715">      }</a>
+<a name="ln716">      if( r &lt; 0 ){  /* Reverse normal direction, distance is always positive! */</a>
+<a name="ln717">        r = -r ;</a>
+<a name="ln718">        for( k = 0 ; k &lt; DIMENSION ; k++ ){</a>
+<a name="ln719">          plane-&gt;normal[k] = -plane-&gt;normal[k] ;</a>
+<a name="ln720">        }</a>
+<a name="ln721">      }</a>
+<a name="ln722">      plane-&gt;distance = r ;</a>
+<a name="ln723">      if( verbose &gt; 0 ) printf( &quot;    initial plane is at %g from the origin\n&quot;, r ) ;</a>
+<a name="ln724">      if( refine_symmetry_element( plane, 1 ) &lt; 0 ){</a>
+<a name="ln725">        if( verbose &gt; 0 ) printf( &quot;    refinement failed for the plane\n&quot; ) ;</a>
+<a name="ln726">        destroy_symmetry_element( plane ) ;</a>
+<a name="ln727">        return nullptr;</a>
+<a name="ln728">      }</a>
+<a name="ln729">      return plane ;</a>
+<a name="ln730">    }</a>
+<a name="ln731"> </a>
+<a name="ln732">    SYMMETRY_ELEMENT *</a>
+<a name="ln733">    init_ultimate_plane( void )</a>
+<a name="ln734">    {</a>
+<a name="ln735">      SYMMETRY_ELEMENT * plane = alloc_symmetry_element() ;</a>
+<a name="ln736">      double             d0[ DIMENSION ], d1[ DIMENSION ], d2[ DIMENSION ] ;</a>
+<a name="ln737">      double             p[ DIMENSION ] ;</a>
+<a name="ln738">      double             r, s0, s1, s2 ;</a>
+<a name="ln739">      double *           d ;</a>
+<a name="ln740">      unsigned int       i, j, k;</a>
+<a name="ln741"> </a>
+<a name="ln742">      if( verbose &gt; 0 ) printf( &quot;Trying whole-molecule mirror plane\n&quot; ) ;</a>
+<a name="ln743">      StatTotal++ ;</a>
+<a name="ln744">      plane-&gt;transform_atom = mirror_atom ;</a>
+<a name="ln745">      plane-&gt;order          = 1 ;</a>
+<a name="ln746">      plane-&gt;nparam         = 4 ;</a>
+<a name="ln747">      for( k = 0 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln748">        d0[k] = d1[k] = d2[k] = 0 ;</a>
+<a name="ln749">      d0[0] = 1 ; d1[1] = 1 ; d2[2] = 1 ;</a>
+<a name="ln750">      for( i = 1 ; i &lt; _mol-&gt;NumAtoms() ; i++ ){</a>
+<a name="ln751">        for( j = 0 ; j &lt; i ; j++ ){</a>
+<a name="ln752">          p[0] = _mol-&gt;GetAtom(i+1)-&gt;x() - _mol-&gt;GetAtom(j+1)-&gt;x();</a>
+<a name="ln753">          p[1] = _mol-&gt;GetAtom(i+1)-&gt;y() - _mol-&gt;GetAtom(j+1)-&gt;y();</a>
+<a name="ln754">          p[2] = _mol-&gt;GetAtom(i+1)-&gt;z() - _mol-&gt;GetAtom(j+1)-&gt;z();</a>
+<a name="ln755"> </a>
+<a name="ln756">          r = sqrt(SQUARE(p[0]) + SQUARE(p[1]) + SQUARE(p[2])); // distance between atoms i and j</a>
+<a name="ln757"> </a>
+<a name="ln758">          for( k = 0, s0=s1=s2=0 ; k &lt; DIMENSION ; k++ ){</a>
+<a name="ln759">            p[k] /= r ;</a>
+<a name="ln760">            s0   += p[k]*d0[k] ;</a>
+<a name="ln761">            s1   += p[k]*d1[k] ;</a>
+<a name="ln762">            s2   += p[k]*d2[k] ;</a>
+<a name="ln763">          }</a>
+<a name="ln764">          for( k = 0 ; k &lt; DIMENSION ; k++ ){</a>
+<a name="ln765">            d0[k] -= s0*p[k] ;</a>
+<a name="ln766">            d1[k] -= s1*p[k] ;</a>
+<a name="ln767">            d2[k] -= s2*p[k] ;</a>
+<a name="ln768">          }</a>
+<a name="ln769">        }</a>
+<a name="ln770">      }</a>
+<a name="ln771">      for( k = 0, s0=s1=s2=0 ; k &lt; DIMENSION ; k++ ){</a>
+<a name="ln772">        s0 += d0[k] ;</a>
+<a name="ln773">        s1 += d1[k] ;</a>
+<a name="ln774">        s2 += d2[k] ;</a>
+<a name="ln775">      }</a>
+<a name="ln776">      d = nullptr;</a>
+<a name="ln777">      if( s0 &gt;= s1 &amp;&amp; s0 &gt;= s2 ) d = d0 ;</a>
+<a name="ln778">      if( s1 &gt;= s0 &amp;&amp; s1 &gt;= s2 ) d = d1 ;</a>
+<a name="ln779">      if( s2 &gt;= s0 &amp;&amp; s2 &gt;= s1 ) d = d2 ;</a>
+<a name="ln780">      if (d == nullptr) {</a>
+<a name="ln781">        fprintf( stderr, &quot;Catastrophe in init_ultimate_plane(): %g, %g and %g have no ordering!\n&quot;, s0, s1, s2 ) ;</a>
+<a name="ln782">        destroy_symmetry_element(plane);</a>
+<a name="ln783">        return nullptr;</a>
+<a name="ln784">      }</a>
+<a name="ln785">      for( k = 0, r = 0 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln786">        r += d[k]*d[k] ;</a>
+<a name="ln787">      r = sqrt(r) ;</a>
+<a name="ln788">      if( r &gt; 0 ){</a>
+<a name="ln789">        for( k = 0 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln790">          plane-&gt;normal[k] = d[k]/r ;</a>
+<a name="ln791">      }</a>
+<a name="ln792">      else {</a>
+<a name="ln793">        for( k = 1 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln794">          plane-&gt;normal[k] = 0 ;</a>
+<a name="ln795">        plane-&gt;normal[0] = 1 ;</a>
+<a name="ln796">      }</a>
+<a name="ln797">      for( k = 0, r = 0 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln798">        r += CenterOfSomething[k]*plane-&gt;normal[k] ;</a>
+<a name="ln799">      plane-&gt;distance = r ;</a>
+<a name="ln800">      for( k = 0 ; k &lt; _mol-&gt;NumAtoms() ; k++ )</a>
+<a name="ln801">        plane-&gt;transform[k] = k ;</a>
+<a name="ln802">      if( refine_symmetry_element( plane, 0 ) &lt; 0 ){</a>
+<a name="ln803">        if( verbose &gt; 0 ) printf( &quot;    refinement failed for the plane\n&quot; ) ;</a>
+<a name="ln804">        destroy_symmetry_element( plane ) ;</a>
+<a name="ln805">        return nullptr;</a>
+<a name="ln806">      }</a>
+<a name="ln807">      return plane ;</a>
+<a name="ln808">    }</a>
+<a name="ln809"> </a>
+<a name="ln810">    /*</a>
+<a name="ln811">     *   Inversion-center specific functions</a>
+<a name="ln812">     */</a>
+<a name="ln813">    static void</a>
+<a name="ln814">    invert_atom( SYMMETRY_ELEMENT *center, OBAtom *from, OBAtom *to )</a>
+<a name="ln815">    {</a>
+<a name="ln816"> </a>
+<a name="ln817">      // copy the &quot;type&quot; of from into to</a>
+<a name="ln818">      to-&gt;SetAtomicNum(from-&gt;GetAtomicNum());</a>
+<a name="ln819">      to-&gt;SetIsotope(from-&gt;GetIsotope());</a>
+<a name="ln820">      to-&gt;SetFormalCharge(from-&gt;GetFormalCharge());</a>
+<a name="ln821">      to-&gt;SetSpinMultiplicity(from-&gt;GetSpinMultiplicity());</a>
+<a name="ln822"> </a>
+<a name="ln823">      to-&gt;SetVector(2*center-&gt;distance*center-&gt;normal[0] - from-&gt;x(),</a>
+<a name="ln824">                    2*center-&gt;distance*center-&gt;normal[1] - from-&gt;y(),</a>
+<a name="ln825">                    2*center-&gt;distance*center-&gt;normal[2] - from-&gt;z());</a>
+<a name="ln826">    }</a>
+<a name="ln827"> </a>
+<a name="ln828">    SYMMETRY_ELEMENT *</a>
+<a name="ln829">    init_inversion_center( void )</a>
+<a name="ln830">    {</a>
+<a name="ln831">      SYMMETRY_ELEMENT * center = alloc_symmetry_element() ;</a>
+<a name="ln832">      int                k ;</a>
+<a name="ln833">      double             r ;</a>
+<a name="ln834"> </a>
+<a name="ln835">      if( verbose &gt; 0 ) printf( &quot;Trying inversion center at the center of something\n&quot; ) ;</a>
+<a name="ln836">      StatTotal++ ;</a>
+<a name="ln837">      center-&gt;transform_atom = invert_atom ;</a>
+<a name="ln838">      center-&gt;order          = 2 ;</a>
+<a name="ln839">      center-&gt;nparam         = 4 ;</a>
+<a name="ln840">      for( k = 0, r = 0 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln841">        r += CenterOfSomething[k]*CenterOfSomething[k] ;</a>
+<a name="ln842">      r = sqrt(r) ;</a>
+<a name="ln843">      if( r &gt; 0 ){</a>
+<a name="ln844">        for( k = 0 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln845">          center-&gt;normal[k] = CenterOfSomething[k]/r ;</a>
+<a name="ln846">      }</a>
+<a name="ln847">      else {</a>
+<a name="ln848">        center-&gt;normal[0] = 1 ;</a>
+<a name="ln849">        for( k = 1 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln850">          center-&gt;normal[k] = 0 ;</a>
+<a name="ln851">      }</a>
+<a name="ln852">      center-&gt;distance = r ;</a>
+<a name="ln853">      if( verbose &gt; 0 ) printf( &quot;    initial inversion center is at %g from the origin\n&quot;, r ) ;</a>
+<a name="ln854">      if( refine_symmetry_element( center, 1 ) &lt; 0 ){</a>
+<a name="ln855">        if( verbose &gt; 0 ) printf( &quot;    refinement failed for the inversion center\n&quot; ) ;</a>
+<a name="ln856">        destroy_symmetry_element( center ) ;</a>
+<a name="ln857">        return nullptr;</a>
+<a name="ln858">      }</a>
+<a name="ln859">      return center ;</a>
+<a name="ln860">    }</a>
+<a name="ln861"> </a>
+<a name="ln862">    /*</a>
+<a name="ln863">     *   Normal rotation axis-specific routines.</a>
+<a name="ln864">     */</a>
+<a name="ln865">    static void</a>
+<a name="ln866">    rotate_atom( SYMMETRY_ELEMENT *axis, OBAtom *from, OBAtom *to )</a>
+<a name="ln867">    {</a>
+<a name="ln868">      double             x[3], y[3], a[3], b[3], c[3] ;</a>
+<a name="ln869">      double             angle = axis-&gt;order ? 2*M_PI/axis-&gt;order : 1.0 ;</a>
+<a name="ln870">      double             a_sin = sin( angle ) ;</a>
+<a name="ln871">      double             a_cos = cos( angle ) ;</a>
+<a name="ln872">      double             dot ;</a>
+<a name="ln873">      int                i ;</a>
+<a name="ln874"> </a>
+<a name="ln875">      if( DIMENSION != 3 ){</a>
+<a name="ln876">        //        fprintf( stderr, &quot;Catastrophe in rotate_atom!\n&quot; ) ;</a>
+<a name="ln877">        return;</a>
+<a name="ln878">      }</a>
+<a name="ln879"> </a>
+<a name="ln880">      x[0] = from-&gt;x() - axis-&gt;distance * axis-&gt;normal[0];</a>
+<a name="ln881">      x[1] = from-&gt;y() - axis-&gt;distance * axis-&gt;normal[1];</a>
+<a name="ln882">      x[2] = from-&gt;z() - axis-&gt;distance * axis-&gt;normal[2];</a>
+<a name="ln883"> </a>
+<a name="ln884">      for( i = 0, dot = 0 ; i &lt; 3 ; i++ )</a>
+<a name="ln885">        dot += x[i] * axis-&gt;direction[i] ;</a>
+<a name="ln886">      for( i = 0 ; i &lt; 3 ; i++ )</a>
+<a name="ln887">        a[i] = axis-&gt;direction[i] * dot ;</a>
+<a name="ln888">      for( i = 0 ; i &lt; 3 ; i++ )</a>
+<a name="ln889">        b[i] = x[i] - a[i] ;</a>
+<a name="ln890">      c[0] = b[1]*axis-&gt;direction[2] - b[2]*axis-&gt;direction[1] ;</a>
+<a name="ln891">      c[1] = b[2]*axis-&gt;direction[0] - b[0]*axis-&gt;direction[2] ;</a>
+<a name="ln892">      c[2] = b[0]*axis-&gt;direction[1] - b[1]*axis-&gt;direction[0] ;</a>
+<a name="ln893">      for( i = 0 ; i &lt; 3 ; i++ )</a>
+<a name="ln894">        y[i] = a[i] + b[i]*a_cos + c[i]*a_sin ;</a>
+<a name="ln895"> </a>
+<a name="ln896">      to-&gt;SetVector(y[0] + axis-&gt;distance * axis-&gt;normal[0],</a>
+<a name="ln897">                    y[1] + axis-&gt;distance * axis-&gt;normal[1],</a>
+<a name="ln898">                    y[2] + axis-&gt;distance * axis-&gt;normal[2]);</a>
+<a name="ln899"> </a>
+<a name="ln900">      // copy the &quot;type&quot; of from into to</a>
+<a name="ln901">      to-&gt;SetAtomicNum(from-&gt;GetAtomicNum());</a>
+<a name="ln902">      to-&gt;SetIsotope(from-&gt;GetIsotope());</a>
+<a name="ln903">      to-&gt;SetFormalCharge(from-&gt;GetFormalCharge());</a>
+<a name="ln904">      to-&gt;SetSpinMultiplicity(from-&gt;GetSpinMultiplicity());</a>
+<a name="ln905">    }</a>
+<a name="ln906"> </a>
+<a name="ln907">    SYMMETRY_ELEMENT *</a>
+<a name="ln908">    init_ultimate_axis(void)</a>
+<a name="ln909">    {</a>
+<a name="ln910">      SYMMETRY_ELEMENT * axis = alloc_symmetry_element() ;</a>
+<a name="ln911">      double             dir[ DIMENSION ], rel[ DIMENSION ] ;</a>
+<a name="ln912">      double             s ;</a>
+<a name="ln913">      unsigned int       i, k;</a>
+<a name="ln914"> </a>
+<a name="ln915">      if( verbose &gt; 0 ) printf( &quot;Trying infinity axis\n&quot; ) ;</a>
+<a name="ln916">      StatTotal++ ;</a>
+<a name="ln917">      axis-&gt;transform_atom = rotate_atom ;</a>
+<a name="ln918">      axis-&gt;order          = 0 ;</a>
+<a name="ln919">      axis-&gt;nparam         = 7 ;</a>
+<a name="ln920">      for( k = 0 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln921">        dir[k] = 0 ;</a>
+<a name="ln922">      for( i = 0 ; i &lt; _mol-&gt;NumAtoms() ; i++ ){</a>
+<a name="ln923"> </a>
+<a name="ln924">        rel[0] = _mol-&gt;GetAtom(i+1)-&gt;x() - CenterOfSomething[0];</a>
+<a name="ln925">        rel[1] = _mol-&gt;GetAtom(i+1)-&gt;z() - CenterOfSomething[1];</a>
+<a name="ln926">        rel[2] = _mol-&gt;GetAtom(i+1)-&gt;y() - CenterOfSomething[2];</a>
+<a name="ln927"> </a>
+<a name="ln928">        s = rel[0]*dir[0] + rel[1]*dir[1] + rel[2]*dir[2];</a>
+<a name="ln929"> </a>
+<a name="ln930">        if( s &gt;= 0 )</a>
+<a name="ln931">          for( k = 0 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln932">            dir[k] += rel[k] ;</a>
+<a name="ln933">        else for( k = 0 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln934">               dir[k] -= rel[k] ;</a>
+<a name="ln935">      }</a>
+<a name="ln936">      for( k = 0, s = 0 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln937">        s += SQUARE( dir[k] ) ;</a>
+<a name="ln938">      s = sqrt(s) ;</a>
+<a name="ln939">      if( s &gt; 0 )</a>
+<a name="ln940">        for( k = 0 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln941">          dir[k] /= s ;</a>
+<a name="ln942">      else dir[0] = 1 ;</a>
+<a name="ln943">      for( k = 0 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln944">        axis-&gt;direction[k] = dir[k] ;</a>
+<a name="ln945">      for( k = 0, s = 0 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln946">        s += SQUARE( CenterOfSomething[k] ) ;</a>
+<a name="ln947">      s = sqrt(s) ;</a>
+<a name="ln948">      if( s &gt; 0 )</a>
+<a name="ln949">        for( k = 0 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln950">          axis-&gt;normal[k] = CenterOfSomething[k]/s ;</a>
+<a name="ln951">      else {</a>
+<a name="ln952">        for( k = 1 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln953">          axis-&gt;normal[k] = 0 ;</a>
+<a name="ln954">        axis-&gt;normal[0] = 1 ;</a>
+<a name="ln955">      }</a>
+<a name="ln956">      axis-&gt;distance = s ;</a>
+<a name="ln957">      for( k = 0 ; k &lt; _mol-&gt;NumAtoms() ; k++ )</a>
+<a name="ln958">        axis-&gt;transform[k] = k ;</a>
+<a name="ln959">      if( refine_symmetry_element( axis, 0 ) &lt; 0 ){</a>
+<a name="ln960">        if( verbose &gt; 0 ) printf( &quot;    refinement failed for the infinity axis\n&quot; ) ;</a>
+<a name="ln961">        destroy_symmetry_element( axis ) ;</a>
+<a name="ln962">        return nullptr;</a>
+<a name="ln963">      }</a>
+<a name="ln964">      return axis ;</a>
+<a name="ln965">    }</a>
+<a name="ln966"> </a>
+<a name="ln967"> </a>
+<a name="ln968">    SYMMETRY_ELEMENT *</a>
+<a name="ln969">    init_c2_axis( int i, int j, const double support[ DIMENSION ] )</a>
+<a name="ln970">    {</a>
+<a name="ln971">      SYMMETRY_ELEMENT * axis ;</a>
+<a name="ln972">      int                k ;</a>
+<a name="ln973">      double             ris, rjs ;</a>
+<a name="ln974">      double             r, center[ DIMENSION ] ;</a>
+<a name="ln975"> </a>
+<a name="ln976">      if( verbose &gt; 0 )</a>
+<a name="ln977">        printf( &quot;Trying c2 axis for the pair (%d,%d) with the support (%g,%g,%g)\n&quot;,</a>
+<a name="ln978">                i, j, support[0], support[1], support[2] ) ;</a>
+<a name="ln979">      StatTotal++ ;</a>
+<a name="ln980">      /* First, do a quick sanity check */</a>
+<a name="ln981"> </a>
+<a name="ln982">      vector3 supportVec(support[0], support[1], support[2]);</a>
+<a name="ln983">      ris = vector3(_mol-&gt;GetAtom(i+1)-&gt;GetVector() - supportVec).length();</a>
+<a name="ln984">      rjs = vector3(_mol-&gt;GetAtom(j+1)-&gt;GetVector() - supportVec).length();</a>
+<a name="ln985"> </a>
+<a name="ln986">      if( fabs( ris - rjs ) &gt; TolerancePrimary ){</a>
+<a name="ln987">        StatEarly++ ;</a>
+<a name="ln988">        if( verbose &gt; 0 ) printf( &quot;    Support can't actually define a rotation axis\n&quot; ) ;</a>
+<a name="ln989">        return nullptr;</a>
+<a name="ln990">      }</a>
+<a name="ln991">      axis                 = alloc_symmetry_element() ;</a>
+<a name="ln992">      axis-&gt;transform_atom = rotate_atom ;</a>
+<a name="ln993">      axis-&gt;order          = 2 ;</a>
+<a name="ln994">      axis-&gt;nparam         = 7 ;</a>
+<a name="ln995">      for( k = 0, r = 0 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln996">        r += CenterOfSomething[k]*CenterOfSomething[k] ;</a>
+<a name="ln997">      r = sqrt(r) ;</a>
+<a name="ln998">      if( r &gt; 0 ){</a>
+<a name="ln999">        for( k = 0 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln1000">          axis-&gt;normal[k] = CenterOfSomething[k]/r ;</a>
+<a name="ln1001">      }</a>
+<a name="ln1002">      else {</a>
+<a name="ln1003">        axis-&gt;normal[0] = 1 ;</a>
+<a name="ln1004">        for( k = 1 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln1005">          axis-&gt;normal[k] = 0 ;</a>
+<a name="ln1006">      }</a>
+<a name="ln1007">      axis-&gt;distance = r ;</a>
+<a name="ln1008"> </a>
+<a name="ln1009">      center[0] = ( _mol-&gt;GetAtom(i+1)-&gt;x() + _mol-&gt;GetAtom(j+1)-&gt;x() ) / 2 - support[0] ;</a>
+<a name="ln1010">      center[1] = ( _mol-&gt;GetAtom(i+1)-&gt;y() + _mol-&gt;GetAtom(j+1)-&gt;y() ) / 2 - support[1] ;</a>
+<a name="ln1011">      center[2] = ( _mol-&gt;GetAtom(i+1)-&gt;z() + _mol-&gt;GetAtom(j+1)-&gt;z() ) / 2 - support[2] ;</a>
+<a name="ln1012">      r = sqrt(SQUARE(center[0]) + SQUARE(center[1]) + SQUARE(center[2]));</a>
+<a name="ln1013"> </a>
+<a name="ln1014">      if( r &lt;= TolerancePrimary ){ /* c2 is underdefined, let's do something special */</a>
+<a name="ln1015">        if (MolecularPlane != nullptr) {</a>
+<a name="ln1016">          if( verbose &gt; 0 ) printf( &quot;    c2 is underdefined, but there is a molecular plane\n&quot; ) ;</a>
+<a name="ln1017">          for( k = 0 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln1018">            axis-&gt;direction[k] = MolecularPlane-&gt;normal[k] ;</a>
+<a name="ln1019">        }</a>
+<a name="ln1020">        else {</a>
+<a name="ln1021">          if( verbose &gt; 0 ) printf( &quot;    c2 is underdefined, trying random direction\n&quot; ) ;</a>
+<a name="ln1022"> </a>
+<a name="ln1023">          center[0] = _mol-&gt;GetAtom(i+1)-&gt;x() - _mol-&gt;GetAtom(j+1)-&gt;x();</a>
+<a name="ln1024">          center[1] = _mol-&gt;GetAtom(i+1)-&gt;y() - _mol-&gt;GetAtom(j+1)-&gt;y();</a>
+<a name="ln1025">          center[2] = _mol-&gt;GetAtom(i+1)-&gt;z() - _mol-&gt;GetAtom(j+1)-&gt;z();</a>
+<a name="ln1026"> </a>
+<a name="ln1027">          if( fabs( center[2] ) + fabs( center[1] ) &gt; ToleranceSame ){</a>
+<a name="ln1028">            axis-&gt;direction[0] =  0 ;</a>
+<a name="ln1029">            axis-&gt;direction[1] =  center[2] ;</a>
+<a name="ln1030">            axis-&gt;direction[2] = -center[1] ;</a>
+<a name="ln1031">          }</a>
+<a name="ln1032">          else {</a>
+<a name="ln1033">            axis-&gt;direction[0] = -center[2] ;</a>
+<a name="ln1034">            axis-&gt;direction[1] =  0 ;</a>
+<a name="ln1035">            axis-&gt;direction[2] =  center[0] ;</a>
+<a name="ln1036">          }</a>
+<a name="ln1037">          for( k = 0, r = 0 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln1038">            r += axis-&gt;direction[k] * axis-&gt;direction[k] ;</a>
+<a name="ln1039">          r = sqrt(r) ;</a>
+<a name="ln1040">          for( k = 0 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln1041">            axis-&gt;direction[k] /= r ;</a>
+<a name="ln1042">        }</a>
+<a name="ln1043">      }</a>
+<a name="ln1044">      else { /* direction is Ok, renormalize it */</a>
+<a name="ln1045">        for( k = 0 ; k &lt; DIMENSION ; k++ )</a>
+<a name="ln1046">          axis-&gt;direction[k] = center[k]/r ;</a>
+<a name="ln1047">      }</a>
+<a name="ln1048">      if( refine_symmetry_element( axis, 1 ) &lt; 0 ){</a>
+<a name="ln1049">        if( verbose &gt; 0 ) printf( &quot;    refinement failed for the c2 axis\n&quot; ) ;</a>
+<a name="ln1050">        destroy_symmetry_element( axis ) ;</a>
+<a name="ln1051">        return nullptr;</a>
+<a name="ln1052">      }</a>
+<a name="ln1053">      return axis ;</a>
+<a name="ln1054">    }</a>
+<a name="ln1055"> </a>
+<a name="ln1056">    SYMMETRY_ELEMENT *</a>
+<a name="ln1057">    init_axis_parameters( double a[3], double b[3], double c[3] )</a>
+<a name="ln1058">    {</a>
+<a name="ln1059">      SYMMETRY_ELEMENT * axis ;</a>
+<a name="ln1060">      int                i, order, sign ;</a>
+<a name="ln1061">      double             ra, rb, rc, rab, rbc, rac, r ;</a>
+<a name="ln1062">      double             angle ;</a>
+<a name="ln1063"> </a>
+<a name="ln1064">      ra = rb = rc = rab = rbc = rac = 0 ;</a>
+<a name="ln1065">      for( i = 0 ; i &lt; DIMENSION ; i++ ){</a>
+<a name="ln1066">        ra  += a[i]*a[i] ;</a>
+<a name="ln1067">        rb  += b[i]*b[i] ;</a>
+<a name="ln1068">        rc  += c[i]*c[i] ;</a>
+<a name="ln1069">      }</a>
+<a name="ln1070">      ra = sqrt(ra) ; rb  = sqrt(rb) ; rc  = sqrt(rc) ;</a>
+<a name="ln1071">      if( fabs( ra - rb ) &gt; TolerancePrimary || fabs( ra - rc ) &gt; TolerancePrimary || fabs( rb - rc ) &gt; TolerancePrimary ){</a>
+<a name="ln1072">        StatEarly++ ;</a>
+<a name="ln1073">        if( verbose &gt; 0 ) printf( &quot;    points are not on a sphere\n&quot; ) ;</a>
+<a name="ln1074">        return nullptr;</a>
+<a name="ln1075">      }</a>
+<a name="ln1076">      for( i = 0 ; i &lt; DIMENSION ; i++ ){</a>
+<a name="ln1077">        rab += (a[i]-b[i])*(a[i]-b[i]) ;</a>
+<a name="ln1078">        rac += (a[i]-c[i])*(a[i]-c[i]) ;</a>
+<a name="ln1079">        rbc += (c[i]-b[i])*(c[i]-b[i]) ;</a>
+<a name="ln1080">      }</a>
+<a name="ln1081">      rab = sqrt(rab) ;</a>
+<a name="ln1082">      rac = sqrt(rac) ;</a>
+<a name="ln1083">      rbc = sqrt(rbc) ;</a>
+<a name="ln1084">      if( fabs( rab - rbc ) &gt; TolerancePrimary ){</a>
+<a name="ln1085">        StatEarly++ ;</a>
+<a name="ln1086">        if( verbose &gt; 0 ) printf( &quot;    points can't be rotation-equivalent\n&quot; ) ;</a>
+<a name="ln1087">        return nullptr;</a>
+<a name="ln1088">      }</a>
+<a name="ln1089">      if( rab &lt;= ToleranceSame || rbc &lt;= ToleranceSame || rac &lt;= ToleranceSame ){</a>
+<a name="ln1090">        StatEarly++ ;</a>
+<a name="ln1091">        if( verbose &gt; 0 ) printf( &quot;    rotation is underdefined by these points: %8.3f %8.3f %8.3f\n&quot;, rab, rbc, rac ) ;</a>
+<a name="ln1092">        return nullptr;</a>
+<a name="ln1093">      }</a>
+<a name="ln1094">      rab   = (rab+rbc)/2 ;</a>
+<a name="ln1095">      angle = M_PI - 2*asin( rac/(2*rab) ) ;</a>
+<a name="ln1096">      if( verbose &gt; 1 ) printf( &quot;    rotation angle is %f\n&quot;, angle ) ;</a>
+<a name="ln1097">      if( fabs(angle) &lt;= M_PI/(MaxAxisOrder+1) ){</a>
+<a name="ln1098">        StatEarly++ ;</a>
+<a name="ln1099">        if( verbose &gt; 0 ) printf( &quot;    atoms are too close to a straight line\n&quot; ) ;</a>
+<a name="ln1100">        return nullptr;</a>
+<a name="ln1101">      }</a>
+<a name="ln1102">      order = static_cast&lt;int&gt; (floor( (2*M_PI)/angle + 0.5 )) ;</a>
+<a name="ln1103">      if( order &lt;= 2 || order &gt; MaxAxisOrder ){</a>
+<a name="ln1104">        StatEarly++ ;</a>
+<a name="ln1105">        if( verbose &gt; 0 ) printf( &quot;    rotation axis order (%d) is not from 3 to %d\n&quot;, order, MaxAxisOrder ) ;</a>
+<a name="ln1106">        return nullptr;</a>
+<a name="ln1107">      }</a>
+<a name="ln1108">      axis = alloc_symmetry_element() ;</a>
+<a name="ln1109">      axis-&gt;order          = order ;</a>
+<a name="ln1110">      axis-&gt;nparam         = 7 ;</a>
+<a name="ln1111">      for( i = 0, r = 0 ; i &lt; DIMENSION ; i++ )</a>
+<a name="ln1112">        r += CenterOfSomething[i]*CenterOfSomething[i] ;</a>
+<a name="ln1113">      r = sqrt(r) ;</a>
+<a name="ln1114">      if( r &gt; 0 ){</a>
+<a name="ln1115">        for( i = 0 ; i &lt; DIMENSION ; i++ )</a>
+<a name="ln1116">          axis-&gt;normal[i] = CenterOfSomething[i]/r ;</a>
+<a name="ln1117">      }</a>
+<a name="ln1118">      else {</a>
+<a name="ln1119">        axis-&gt;normal[0] = 1 ;</a>
+<a name="ln1120">        for( i = 1 ; i &lt; DIMENSION ; i++ )</a>
+<a name="ln1121">          axis-&gt;normal[i] = 0 ;</a>
+<a name="ln1122">      }</a>
+<a name="ln1123">      axis-&gt;distance = r ;</a>
+<a name="ln1124">      axis-&gt;direction[0] = (b[1]-a[1])*(c[2]-b[2]) - (b[2]-a[2])*(c[1]-b[1]) ;</a>
+<a name="ln1125">      axis-&gt;direction[1] = (b[2]-a[2])*(c[0]-b[0]) - (b[0]-a[0])*(c[2]-b[2]) ;</a>
+<a name="ln1126">      axis-&gt;direction[2] = (b[0]-a[0])*(c[1]-b[1]) - (b[1]-a[1])*(c[0]-b[0]) ;</a>
+<a name="ln1127">      /*</a>
+<a name="ln1128">       *  Arbitrarily select axis direction so that first non-zero component</a>
+<a name="ln1129">       *  or the direction is positive.</a>
+<a name="ln1130">       */</a>
+<a name="ln1131">      sign = 0 ;</a>
+<a name="ln1132">      if (axis-&gt;direction[0] &lt;= 0) {</a>
+<a name="ln1133">        if (axis-&gt;direction[0] &lt; 0) {</a>
+<a name="ln1134">          sign = 1;</a>
+<a name="ln1135">        }</a>
+<a name="ln1136">        else if (axis-&gt;direction[1] &lt;= 0) {</a>
+<a name="ln1137">          if (axis-&gt;direction[1] &lt; 0) {</a>
+<a name="ln1138">            sign = 1;</a>
+<a name="ln1139">          }</a>
+<a name="ln1140">          else if (axis-&gt;direction[2] &lt; 0) {</a>
+<a name="ln1141">            sign = 1;</a>
+<a name="ln1142">          }</a>
+<a name="ln1143">        }</a>
+<a name="ln1144">      }</a>
+<a name="ln1145">      if( sign )</a>
+<a name="ln1146">        for( i = 0 ; i &lt; DIMENSION ; i++ )</a>
+<a name="ln1147">          axis-&gt;direction[i] = -axis-&gt;direction[i] ;</a>
+<a name="ln1148">      for( i = 0, r = 0 ; i &lt; DIMENSION ; i++ )</a>
+<a name="ln1149">        r += axis-&gt;direction[i]*axis-&gt;direction[i] ;</a>
+<a name="ln1150">      r = sqrt(r) ;</a>
+<a name="ln1151">      for( i = 0 ; i &lt; DIMENSION ; i++ )</a>
+<a name="ln1152">        axis-&gt;direction[i] /= r ;</a>
+<a name="ln1153">      if( verbose &gt; 1 ){</a>
+<a name="ln1154">        printf( &quot;    axis origin is at (%g,%g,%g)\n&quot;,</a>
+<a name="ln1155">                axis-&gt;normal[0]*axis-&gt;distance, axis-&gt;normal[1]*axis-&gt;distance, axis-&gt;normal[2]*axis-&gt;distance ) ;</a>
+<a name="ln1156">        printf( &quot;    axis is in the direction (%g,%g,%g)\n&quot;, axis-&gt;direction[0], axis-&gt;direction[1], axis-&gt;direction[2] ) ;</a>
+<a name="ln1157">      }</a>
+<a name="ln1158">      return axis ;</a>
+<a name="ln1159">    }</a>
+<a name="ln1160"> </a>
+<a name="ln1161">    SYMMETRY_ELEMENT *</a>
+<a name="ln1162">    init_higher_axis( int ia, int ib, int ic )</a>
+<a name="ln1163">    {</a>
+<a name="ln1164">      SYMMETRY_ELEMENT * axis ;</a>
+<a name="ln1165">      double             a[ DIMENSION ], b[ DIMENSION ], c[ DIMENSION ] ;</a>
+<a name="ln1166"> </a>
+<a name="ln1167">      if( verbose &gt; 0 ) printf( &quot;Trying cn axis for the triplet (%d,%d,%d)\n&quot;, ia, ib, ic ) ;</a>
+<a name="ln1168">      StatTotal++ ;</a>
+<a name="ln1169">      /* Do a quick check of geometry validity */</a>
+<a name="ln1170"> </a>
+<a name="ln1171">      a[0] = _mol-&gt;GetAtom(ia+1)-&gt;x() - CenterOfSomething[0];</a>
+<a name="ln1172">      a[1] = _mol-&gt;GetAtom(ia+1)-&gt;y() - CenterOfSomething[1];</a>
+<a name="ln1173">      a[2] = _mol-&gt;GetAtom(ia+1)-&gt;z() - CenterOfSomething[2];</a>
+<a name="ln1174"> </a>
+<a name="ln1175">      b[0] = _mol-&gt;GetAtom(ib+1)-&gt;x() - CenterOfSomething[0];</a>
+<a name="ln1176">      b[1] = _mol-&gt;GetAtom(ib+1)-&gt;y() - CenterOfSomething[1];</a>
+<a name="ln1177">      b[2] = _mol-&gt;GetAtom(ib+1)-&gt;z() - CenterOfSomething[2];</a>
+<a name="ln1178"> </a>
+<a name="ln1179">      c[0] = _mol-&gt;GetAtom(ic+1)-&gt;x() - CenterOfSomething[0];</a>
+<a name="ln1180">      c[1] = _mol-&gt;GetAtom(ic+1)-&gt;y() - CenterOfSomething[1];</a>
+<a name="ln1181">      c[2] = _mol-&gt;GetAtom(ic+1)-&gt;z() - CenterOfSomething[2];</a>
+<a name="ln1182"> </a>
+<a name="ln1183">      if ((axis = init_axis_parameters(a, b, c)) == nullptr) {</a>
+<a name="ln1184">        if( verbose &gt; 0 ) printf( &quot;    no coherrent axis is defined by the points\n&quot; ) ;</a>
+<a name="ln1185">        return nullptr;</a>
+<a name="ln1186">      }</a>
+<a name="ln1187">      axis-&gt;transform_atom = rotate_atom ;</a>
+<a name="ln1188">      if( refine_symmetry_element( axis, 1 ) &lt; 0 ){</a>
+<a name="ln1189">        if( verbose &gt; 0 ) printf( &quot;    refinement failed for the c%d axis\n&quot;, axis-&gt;order ) ;</a>
+<a name="ln1190">        destroy_symmetry_element( axis ) ;</a>
+<a name="ln1191">        return nullptr;</a>
+<a name="ln1192">      }</a>
+<a name="ln1193">      return axis ;</a>
+<a name="ln1194">    }</a>
+<a name="ln1195"> </a>
+<a name="ln1196">    /*</a>
+<a name="ln1197">     *   Improper axes-specific routines.</a>
+<a name="ln1198">     *   These are obtained by slight modifications of normal rotation</a>
+<a name="ln1199">     *       routines.</a>
+<a name="ln1200">     */</a>
+<a name="ln1201">    static void</a>
+<a name="ln1202">    rotate_reflect_atom( SYMMETRY_ELEMENT *axis, OBAtom *from, OBAtom *to )</a>
+<a name="ln1203">    {</a>
+<a name="ln1204">      double             x[3], y[3], a[3], b[3], c[3] ;</a>
+<a name="ln1205">      double             angle = 2*M_PI/axis-&gt;order ;</a>
+<a name="ln1206">      double             a_sin = sin( angle ) ;</a>
+<a name="ln1207">      double             a_cos = cos( angle ) ;</a>
+<a name="ln1208">      double             dot ;</a>
+<a name="ln1209">      int                i ;</a>
+<a name="ln1210"> </a>
+<a name="ln1211">      if( DIMENSION != 3 ){</a>
+<a name="ln1212">        //        fprintf( stderr, &quot;Catastrophe in rotate_reflect_atom!\n&quot; ) ;</a>
+<a name="ln1213">        return;</a>
+<a name="ln1214">      }</a>
+<a name="ln1215"> </a>
+<a name="ln1216">      x[0] = from-&gt;x() - axis-&gt;distance * axis-&gt;normal[0];</a>
+<a name="ln1217">      x[1] = from-&gt;y() - axis-&gt;distance * axis-&gt;normal[1];</a>
+<a name="ln1218">      x[2] = from-&gt;z() - axis-&gt;distance * axis-&gt;normal[2];</a>
+<a name="ln1219"> </a>
+<a name="ln1220">      for( i = 0, dot = 0 ; i &lt; 3 ; i++ )</a>
+<a name="ln1221">        dot += x[i] * axis-&gt;direction[i] ;</a>
+<a name="ln1222">      for( i = 0 ; i &lt; 3 ; i++ )</a>
+<a name="ln1223">        a[i] = axis-&gt;direction[i] * dot ;</a>
+<a name="ln1224">      for( i = 0 ; i &lt; 3 ; i++ )</a>
+<a name="ln1225">        b[i] = x[i] - a[i] ;</a>
+<a name="ln1226">      c[0] = b[1]*axis-&gt;direction[2] - b[2]*axis-&gt;direction[1] ;</a>
+<a name="ln1227">      c[1] = b[2]*axis-&gt;direction[0] - b[0]*axis-&gt;direction[2] ;</a>
+<a name="ln1228">      c[2] = b[0]*axis-&gt;direction[1] - b[1]*axis-&gt;direction[0] ;</a>
+<a name="ln1229">      for( i = 0 ; i &lt; 3 ; i++ )</a>
+<a name="ln1230">        y[i] = -a[i] + b[i]*a_cos + c[i]*a_sin ;</a>
+<a name="ln1231"> </a>
+<a name="ln1232">      to-&gt;SetVector(y[0] + axis-&gt;distance * axis-&gt;normal[0],</a>
+<a name="ln1233">                    y[1] + axis-&gt;distance * axis-&gt;normal[1],</a>
+<a name="ln1234">                    y[2] + axis-&gt;distance * axis-&gt;normal[2]);</a>
+<a name="ln1235"> </a>
+<a name="ln1236">      // copy the &quot;type&quot; of from into to</a>
+<a name="ln1237">      to-&gt;SetAtomicNum(from-&gt;GetAtomicNum());</a>
+<a name="ln1238">      to-&gt;SetIsotope(from-&gt;GetIsotope());</a>
+<a name="ln1239">      to-&gt;SetFormalCharge(from-&gt;GetFormalCharge());</a>
+<a name="ln1240">      to-&gt;SetSpinMultiplicity(from-&gt;GetSpinMultiplicity());</a>
+<a name="ln1241">    }</a>
+<a name="ln1242"> </a>
+<a name="ln1243">    SYMMETRY_ELEMENT *</a>
+<a name="ln1244">    init_improper_axis( int ia, int ib, int ic )</a>
+<a name="ln1245">    {</a>
+<a name="ln1246">      SYMMETRY_ELEMENT * axis ;</a>
+<a name="ln1247">      double             a[ DIMENSION ], b[ DIMENSION ], c[ DIMENSION ] ;</a>
+<a name="ln1248">      double             centerpoint[ DIMENSION ] ;</a>
+<a name="ln1249">      double             r ;</a>
+<a name="ln1250">      int                i ;</a>
+<a name="ln1251"> </a>
+<a name="ln1252">      if( verbose &gt; 0 ) printf( &quot;Trying an axis for the triplet (%d,%d,%d)\n&quot;, ia, ib, ic ) ;</a>
+<a name="ln1253">      StatTotal++ ;</a>
+<a name="ln1254">      /* First, reduce the problem to Cn case */</a>
+<a name="ln1255">      a[0] = _mol-&gt;GetAtom(ia+1)-&gt;x() - CenterOfSomething[0];</a>
+<a name="ln1256">      a[1] = _mol-&gt;GetAtom(ia+1)-&gt;y() - CenterOfSomething[1];</a>
+<a name="ln1257">      a[2] = _mol-&gt;GetAtom(ia+1)-&gt;z() - CenterOfSomething[2];</a>
+<a name="ln1258"> </a>
+<a name="ln1259">      b[0] = _mol-&gt;GetAtom(ib+1)-&gt;x() - CenterOfSomething[0];</a>
+<a name="ln1260">      b[1] = _mol-&gt;GetAtom(ib+1)-&gt;y() - CenterOfSomething[1];</a>
+<a name="ln1261">      b[2] = _mol-&gt;GetAtom(ib+1)-&gt;z() - CenterOfSomething[2];</a>
+<a name="ln1262"> </a>
+<a name="ln1263">      c[0] = _mol-&gt;GetAtom(ic+1)-&gt;x() - CenterOfSomething[0];</a>
+<a name="ln1264">      c[1] = _mol-&gt;GetAtom(ic+1)-&gt;y() - CenterOfSomething[1];</a>
+<a name="ln1265">      c[2] = _mol-&gt;GetAtom(ic+1)-&gt;z() - CenterOfSomething[2];</a>
+<a name="ln1266"> </a>
+<a name="ln1267">      for( i = 0, r = 0 ; i &lt; DIMENSION ; i++ ){</a>
+<a name="ln1268">        centerpoint[i] = a[i] + c[i] + 2*b[i] ;</a>
+<a name="ln1269">        r             += centerpoint[i]*centerpoint[i] ;</a>
+<a name="ln1270">      }</a>
+<a name="ln1271">      r = sqrt(r) ;</a>
+<a name="ln1272">      if( r &lt;= ToleranceSame ){</a>
+<a name="ln1273">        StatEarly++ ;</a>
+<a name="ln1274">        if( verbose &gt; 0 ) printf( &quot;    atoms can not define improper axis of the order more than 2\n&quot; ) ;</a>
+<a name="ln1275">        return nullptr;</a>
+<a name="ln1276">      }</a>
+<a name="ln1277">      for( i = 0 ; i &lt; DIMENSION ; i++ )</a>
+<a name="ln1278">        centerpoint[i] /= r ;</a>
+<a name="ln1279">      for( i = 0, r = 0 ; i &lt; DIMENSION ; i++ )</a>
+<a name="ln1280">        r += centerpoint[i] * b[i] ;</a>
+<a name="ln1281">      for( i = 0 ; i &lt; DIMENSION ; i++ )</a>
+<a name="ln1282">        b[i] = 2*r*centerpoint[i] - b[i] ;</a>
+<a name="ln1283">      /* Do a quick check of geometry validity */</a>
+<a name="ln1284">      if ((axis = init_axis_parameters(a, b, c)) == nullptr) {</a>
+<a name="ln1285">        if( verbose &gt; 0 ) printf( &quot;    no coherrent improper axis is defined by the points\n&quot; ) ;</a>
+<a name="ln1286">        return nullptr;</a>
+<a name="ln1287">      }</a>
+<a name="ln1288">      axis-&gt;transform_atom = rotate_reflect_atom ;</a>
+<a name="ln1289">      if( refine_symmetry_element( axis, 1 ) &lt; 0 ){</a>
+<a name="ln1290">        if( verbose &gt; 0 ) printf( &quot;    refinement failed for the s%d axis\n&quot;, axis-&gt;order ) ;</a>
+<a name="ln1291">        destroy_symmetry_element( axis ) ;</a>
+<a name="ln1292">        return nullptr;</a>
+<a name="ln1293">      }</a>
+<a name="ln1294">      return axis ;</a>
+<a name="ln1295">    }</a>
+<a name="ln1296"> </a>
+<a name="ln1297">    /*</a>
+<a name="ln1298">     *   Control routines</a>
+<a name="ln1299">     */</a>
+<a name="ln1300"> </a>
+<a name="ln1301">    void</a>
+<a name="ln1302">    find_center_of_something( void )</a>
+<a name="ln1303">    {</a>
+<a name="ln1304">      unsigned int       i, j;</a>
+<a name="ln1305">      double             coord_sum[ DIMENSION ] ;</a>
+<a name="ln1306">      double             r ;</a>
+<a name="ln1307">      OBAtom             *atom;</a>
+<a name="ln1308"> </a>
+<a name="ln1309">      for( j = 0 ; j &lt; DIMENSION ; j++ )</a>
+<a name="ln1310">        coord_sum[j] = 0 ;</a>
+<a name="ln1311">      for( i = 0 ; i &lt; _mol-&gt;NumAtoms() ; i++ ){</a>
+<a name="ln1312">        atom = _mol-&gt;GetAtom(i+1);</a>
+<a name="ln1313">        coord_sum[0] = atom-&gt;x() + atom-&gt;y() + atom-&gt;z();</a>
+<a name="ln1314">      }</a>
+<a name="ln1315">      for( j = 0 ; j &lt; DIMENSION ; j++ )</a>
+<a name="ln1316">        CenterOfSomething[j] = coord_sum[j]/_mol-&gt;NumAtoms() ;</a>
+<a name="ln1317">      if( verbose &gt; 0 )</a>
+<a name="ln1318">        printf( &quot;Center of something is at %15.10f, %15.10f, %15.10f\n&quot;,</a>
+<a name="ln1319">                CenterOfSomething[0], CenterOfSomething[1], CenterOfSomething[2] ) ;</a>
+<a name="ln1320">      DistanceFromCenter = (double *) calloc( _mol-&gt;NumAtoms(), sizeof( double ) ) ;</a>
+<a name="ln1321">      if (DistanceFromCenter == nullptr) {</a>
+<a name="ln1322">        //        fprintf( stderr, &quot;Unable to allocate array for the distances\n&quot; ) ;</a>
+<a name="ln1323">        return;</a>
+<a name="ln1324">      }</a>
+<a name="ln1325">      for( i = 0 ; i &lt; _mol-&gt;NumAtoms() ; i++ ){</a>
+<a name="ln1326">        atom = _mol-&gt;GetAtom(i+1);</a>
+<a name="ln1327">        r = SQUARE(atom-&gt;x() - CenterOfSomething[0])</a>
+<a name="ln1328">          + SQUARE(atom-&gt;y() - CenterOfSomething[1])</a>
+<a name="ln1329">          + SQUARE(atom-&gt;z() - CenterOfSomething[2]);</a>
+<a name="ln1330"> </a>
+<a name="ln1331">        DistanceFromCenter[i] = r ;</a>
+<a name="ln1332">      }</a>
+<a name="ln1333">    }</a>
+<a name="ln1334"> </a>
+<a name="ln1335">    void</a>
+<a name="ln1336">    find_planes(void)</a>
+<a name="ln1337">    {</a>
+<a name="ln1338">      unsigned int i, j;</a>
+<a name="ln1339">      SYMMETRY_ELEMENT * plane ;</a>
+<a name="ln1340"> </a>
+<a name="ln1341">      plane = init_ultimate_plane() ;</a>
+<a name="ln1342">      if (plane != nullptr) {</a>
+<a name="ln1343">        MolecularPlane = plane ;</a>
+<a name="ln1344">        PlanesCount++ ;</a>
+<a name="ln1345">        Planes = (SYMMETRY_ELEMENT **) realloc( Planes, sizeof( SYMMETRY_ELEMENT* ) * PlanesCount ) ;</a>
+<a name="ln1346">        if (Planes == nullptr) {</a>
+<a name="ln1347">          perror( &quot;Out of memory in find_planes&quot; ) ;</a>
+<a name="ln1348">          exit( EXIT_FAILURE ) ;</a>
+<a name="ln1349">        }</a>
+<a name="ln1350">        Planes[ PlanesCount - 1 ] = plane ;</a>
+<a name="ln1351">      }</a>
+<a name="ln1352">      for( i = 1 ; i &lt; _mol-&gt;NumAtoms() ; i++ ){</a>
+<a name="ln1353">        for( j = 0 ; j &lt; i ; j++ ){</a>
+<a name="ln1354">          if( !equivalentAtoms(*_mol-&gt;GetAtom(i+1), *_mol-&gt;GetAtom(j+1)) )</a>
+<a name="ln1355">            continue ;</a>
+<a name="ln1356">          if ((plane = init_mirror_plane(i, j)) != nullptr) {</a>
+<a name="ln1357">            PlanesCount++ ;</a>
+<a name="ln1358">            Planes = (SYMMETRY_ELEMENT **) realloc( Planes, sizeof( SYMMETRY_ELEMENT* ) * PlanesCount ) ;</a>
+<a name="ln1359">            if (Planes == nullptr) {</a>
+<a name="ln1360">              perror( &quot;Out of memory in find_planes&quot; ) ;</a>
+<a name="ln1361">              exit( EXIT_FAILURE ) ;</a>
+<a name="ln1362">            }</a>
+<a name="ln1363">            Planes[ PlanesCount - 1 ] = plane ;</a>
+<a name="ln1364">          }</a>
+<a name="ln1365">        }</a>
+<a name="ln1366">      }</a>
+<a name="ln1367">    }</a>
+<a name="ln1368"> </a>
+<a name="ln1369">    void</a>
+<a name="ln1370">    find_inversion_centers(void)</a>
+<a name="ln1371">    {</a>
+<a name="ln1372">      SYMMETRY_ELEMENT * center ;</a>
+<a name="ln1373"> </a>
+<a name="ln1374">      if ((center = init_inversion_center()) != nullptr) {</a>
+<a name="ln1375">        InversionCenters = (SYMMETRY_ELEMENT **) calloc( 1, sizeof( SYMMETRY_ELEMENT* ) ) ;</a>
+<a name="ln1376">        InversionCenters[0]   = center ;</a>
+<a name="ln1377">        InversionCentersCount = 1 ;</a>
+<a name="ln1378">      }</a>
+<a name="ln1379">    }</a>
+<a name="ln1380"> </a>
+<a name="ln1381">    void</a>
+<a name="ln1382">    find_infinity_axis(void)</a>
+<a name="ln1383">    {</a>
+<a name="ln1384">      SYMMETRY_ELEMENT * axis ;</a>
+<a name="ln1385"> </a>
+<a name="ln1386">      if ((axis = init_ultimate_axis()) != nullptr) {</a>
+<a name="ln1387">        NormalAxesCount++ ;</a>
+<a name="ln1388">        NormalAxes = (SYMMETRY_ELEMENT **) realloc( NormalAxes, sizeof( SYMMETRY_ELEMENT* ) * NormalAxesCount ) ;</a>
+<a name="ln1389">        if (NormalAxes == nullptr) {</a>
+<a name="ln1390">          perror( &quot;Out of memory in find_infinity_axes()&quot; ) ;</a>
+<a name="ln1391">          return;</a>
+<a name="ln1392">        }</a>
+<a name="ln1393">        NormalAxes[ NormalAxesCount - 1 ] = axis ;</a>
+<a name="ln1394">      }</a>
+<a name="ln1395">    }</a>
+<a name="ln1396"> </a>
+<a name="ln1397">    void</a>
+<a name="ln1398">    find_c2_axes(void)</a>
+<a name="ln1399">    {</a>
+<a name="ln1400">      unsigned int       i, j, k, l;</a>
+<a name="ln1401">      double             center[ DIMENSION ] ;</a>
+<a name="ln1402">      double *           distances = (double*)calloc( _mol-&gt;NumAtoms(), sizeof( double ) ) ;</a>
+<a name="ln1403">      double             r ;</a>
+<a name="ln1404">      SYMMETRY_ELEMENT * axis ;</a>
+<a name="ln1405">      OBAtom           *a1, *a2, *a3, *a4;</a>
+<a name="ln1406"> </a>
+<a name="ln1407">      if (distances == nullptr) {</a>
+<a name="ln1408">        //        fprintf( stderr, &quot;Out of memory in find_c2_axes()\n&quot; ) ;</a>
+<a name="ln1409">        return;</a>
+<a name="ln1410">      }</a>
+<a name="ln1411">      for( i = 1 ; i &lt; _mol-&gt;NumAtoms() ; i++ ){</a>
+<a name="ln1412">        for( j = 0 ; j &lt; i ; j++ ){</a>
+<a name="ln1413">          if( !equivalentAtoms(*_mol-&gt;GetAtom(i+1), *_mol-&gt;GetAtom(j+1)) )</a>
+<a name="ln1414">            continue ;</a>
+<a name="ln1415">          if( fabs( DistanceFromCenter[i] - DistanceFromCenter[j] ) &gt; TolerancePrimary )</a>
+<a name="ln1416">            continue ; /* A very cheap, but quite effective check */</a>
+<a name="ln1417">          /*</a>
+<a name="ln1418">           *   First, let's try to get it cheap and use CenterOfSomething</a>
+<a name="ln1419">           */</a>
+<a name="ln1420">          a1 = _mol-&gt;GetAtom(i+1);</a>
+<a name="ln1421">          a2 = _mol-&gt;GetAtom(j+1);</a>
+<a name="ln1422">          center[0] = (a1-&gt;x() + a2-&gt;x()) / 2.0;</a>
+<a name="ln1423">          center[1] = (a1-&gt;y() + a2-&gt;z()) / 2.0;</a>
+<a name="ln1424">          center[2] = (a1-&gt;z() + a2-&gt;y()) / 2.0;</a>
+<a name="ln1425"> </a>
+<a name="ln1426">          r = (vector3(center[0], center[1], center[2])</a>
+<a name="ln1427">               - vector3(CenterOfSomething[0], CenterOfSomething[1], CenterOfSomething[2])).length();</a>
+<a name="ln1428"> </a>
+<a name="ln1429">          if( r &gt; 5*TolerancePrimary ){ /* It's Ok to use CenterOfSomething */</a>
+<a name="ln1430">            if ((axis = init_c2_axis(i, j, CenterOfSomething)) != nullptr) {</a>
+<a name="ln1431">              NormalAxesCount++ ;</a>
+<a name="ln1432">              NormalAxes = (SYMMETRY_ELEMENT **) realloc( NormalAxes, sizeof( SYMMETRY_ELEMENT* ) * NormalAxesCount ) ;</a>
+<a name="ln1433">              if (NormalAxes == nullptr) {</a>
+<a name="ln1434">                perror( &quot;Out of memory in find_c2_axes&quot; ) ;</a>
+<a name="ln1435">                free(distances);</a>
+<a name="ln1436">                return;</a>
+<a name="ln1437">              }</a>
+<a name="ln1438">              NormalAxes[ NormalAxesCount - 1 ] = axis ;</a>
+<a name="ln1439">            }</a>
+<a name="ln1440">            continue ;</a>
+<a name="ln1441">          }</a>
+<a name="ln1442">          /*</a>
+<a name="ln1443">           *  Now, C2 axis can either pass through an atom, or through the</a>
+<a name="ln1444">           *  middle of the other pair.</a>
+<a name="ln1445">           */</a>
+<a name="ln1446">          for( k = 0 ; k &lt; _mol-&gt;NumAtoms() ; k++ ){</a>
+<a name="ln1447">            if ((axis = init_c2_axis(i, j, _mol-&gt;GetAtom(k+1)-&gt;GetVector().AsArray())) != nullptr) {</a>
+<a name="ln1448">              NormalAxesCount++ ;</a>
+<a name="ln1449">              NormalAxes = (SYMMETRY_ELEMENT **) realloc( NormalAxes, sizeof( SYMMETRY_ELEMENT* ) * NormalAxesCount ) ;</a>
+<a name="ln1450">              if (NormalAxes == nullptr) {</a>
+<a name="ln1451">                perror( &quot;Out of memory in find_c2_axes&quot; ) ;</a>
+<a name="ln1452">                free(distances);</a>
+<a name="ln1453">                return;</a>
+<a name="ln1454">              }</a>
+<a name="ln1455">              NormalAxes[ NormalAxesCount - 1 ] = axis ;</a>
+<a name="ln1456">            }</a>
+<a name="ln1457">          }</a>
+<a name="ln1458">          /*</a>
+<a name="ln1459">           *  Prepare data for an additional pre-screening check</a>
+<a name="ln1460">           */</a>
+<a name="ln1461">          for( k = 0 ; k &lt; _mol-&gt;NumAtoms() ; k++ ){</a>
+<a name="ln1462">            r = SQUARE(_mol-&gt;GetAtom(k+1)-&gt;x() - center[0])</a>
+<a name="ln1463">              + SQUARE(_mol-&gt;GetAtom(k+1)-&gt;y() - center[1])</a>
+<a name="ln1464">              + SQUARE(_mol-&gt;GetAtom(k+1)-&gt;z() - center[2]);</a>
+<a name="ln1465">            distances[k] = sqrt(r) ;</a>
+<a name="ln1466">          }</a>
+<a name="ln1467">          for( k = 0 ; k &lt; _mol-&gt;NumAtoms() ; k++ ){</a>
+<a name="ln1468">            a3 = _mol-&gt;GetAtom(k+1);</a>
+<a name="ln1469">            for( l = 0 ; l &lt; _mol-&gt;NumAtoms() ; l++ ){</a>
+<a name="ln1470">              a4 = _mol-&gt;GetAtom(l+1);</a>
+<a name="ln1471">              if( !equivalentAtoms(*a3, *a4) )</a>
+<a name="ln1472">                continue ;</a>
+<a name="ln1473">              if( fabs( DistanceFromCenter[k] - DistanceFromCenter[l] ) &gt; TolerancePrimary ||</a>
+<a name="ln1474">                  fabs( distances[k] - distances[l] ) &gt; TolerancePrimary )</a>
+<a name="ln1475">                continue ; /* We really need this one to run reasonably fast! */</a>
+<a name="ln1476"> </a>
+<a name="ln1477">              center[0] = (a3-&gt;x() + a4-&gt;x()) / 2.0;</a>
+<a name="ln1478">              center[1] = (a3-&gt;y() + a4-&gt;y()) / 2.0;</a>
+<a name="ln1479">              center[2] = (a3-&gt;z() + a4-&gt;z()) / 2.0;</a>
+<a name="ln1480"> </a>
+<a name="ln1481">              if ((axis = init_c2_axis(i, j, center)) != nullptr) {</a>
+<a name="ln1482">                NormalAxesCount++ ;</a>
+<a name="ln1483">                NormalAxes = (SYMMETRY_ELEMENT **) realloc( NormalAxes, sizeof( SYMMETRY_ELEMENT* ) * NormalAxesCount ) ;</a>
+<a name="ln1484">                if (NormalAxes == nullptr) {</a>
+<a name="ln1485">                  perror( &quot;Out of memory in find_c2_axes&quot; ) ;</a>
+<a name="ln1486">                  free(distances);</a>
+<a name="ln1487">                  return;</a>
+<a name="ln1488">                }</a>
+<a name="ln1489">                NormalAxes[ NormalAxesCount - 1 ] = axis ;</a>
+<a name="ln1490">              }</a>
+<a name="ln1491">            }</a>
+<a name="ln1492">          }</a>
+<a name="ln1493">        }</a>
+<a name="ln1494">      }</a>
+<a name="ln1495">      free( distances ) ;</a>
+<a name="ln1496">    }</a>
+<a name="ln1497"> </a>
+<a name="ln1498">    void</a>
+<a name="ln1499">    find_higher_axes(void)</a>
+<a name="ln1500">    {</a>
+<a name="ln1501">      unsigned int i, j, k;</a>
+<a name="ln1502">      SYMMETRY_ELEMENT * axis ;</a>
+<a name="ln1503"> </a>
+<a name="ln1504">      for( i = 0 ; i &lt; _mol-&gt;NumAtoms() ; i++ ){</a>
+<a name="ln1505">        for( j = i + 1 ; j &lt; _mol-&gt;NumAtoms() ; j++ ){</a>
+<a name="ln1506">          if( !equivalentAtoms(*_mol-&gt;GetAtom(i+1), *_mol-&gt;GetAtom(j+1)) )</a>
+<a name="ln1507">            continue ;</a>
+<a name="ln1508">          if( fabs( DistanceFromCenter[i] - DistanceFromCenter[j] ) &gt; TolerancePrimary )</a>
+<a name="ln1509">            continue ; /* A very cheap, but quite effective check */</a>
+<a name="ln1510">          for( k = 0 ; k &lt; _mol-&gt;NumAtoms() ; k++ ){</a>
+<a name="ln1511">            if( !equivalentAtoms(*_mol-&gt;GetAtom(i+1), *_mol-&gt;GetAtom(k+1)) )</a>
+<a name="ln1512">              continue ;</a>
+<a name="ln1513">            if( ( fabs( DistanceFromCenter[i] - DistanceFromCenter[k] ) &gt; TolerancePrimary ) ||</a>
+<a name="ln1514">                ( fabs( DistanceFromCenter[j] - DistanceFromCenter[k] ) &gt; TolerancePrimary ) )</a>
+<a name="ln1515">              continue ;</a>
+<a name="ln1516">            if ((axis = init_higher_axis(i, j, k)) != nullptr) {</a>
+<a name="ln1517">              NormalAxesCount++ ;</a>
+<a name="ln1518">              NormalAxes = (SYMMETRY_ELEMENT **) realloc( NormalAxes, sizeof( SYMMETRY_ELEMENT* ) * NormalAxesCount ) ;</a>
+<a name="ln1519">              if (NormalAxes == nullptr) {</a>
+<a name="ln1520">                perror( &quot;Out of memory in find_higher_axes&quot; ) ;</a>
+<a name="ln1521">                return;</a>
+<a name="ln1522">              }</a>
+<a name="ln1523">              NormalAxes[ NormalAxesCount - 1 ] = axis ;</a>
+<a name="ln1524">            }</a>
+<a name="ln1525">          }</a>
+<a name="ln1526">        }</a>
+<a name="ln1527">      }</a>
+<a name="ln1528">    }</a>
+<a name="ln1529"> </a>
+<a name="ln1530">    void</a>
+<a name="ln1531">    find_improper_axes(void)</a>
+<a name="ln1532">    {</a>
+<a name="ln1533">      unsigned int i, j, k;</a>
+<a name="ln1534">      SYMMETRY_ELEMENT * axis ;</a>
+<a name="ln1535"> </a>
+<a name="ln1536">      for( i = 0 ; i &lt; _mol-&gt;NumAtoms() ; i++ ){</a>
+<a name="ln1537">        for( j = i + 1 ; j &lt; _mol-&gt;NumAtoms() ; j++ ){</a>
+<a name="ln1538">          for( k = 0 ; k &lt; _mol-&gt;NumAtoms() ; k++ ){</a>
+<a name="ln1539">            if ((axis = init_improper_axis(i, j, k)) != nullptr) {</a>
+<a name="ln1540">              ImproperAxesCount++ ;</a>
+<a name="ln1541">              ImproperAxes = (SYMMETRY_ELEMENT **) realloc( ImproperAxes, sizeof( SYMMETRY_ELEMENT* ) * ImproperAxesCount ) ;</a>
+<a name="ln1542">              if (ImproperAxes == nullptr) {</a>
+<a name="ln1543">                perror( &quot;Out of memory in find_improper_axes&quot; ) ;</a>
+<a name="ln1544">                return;</a>
+<a name="ln1545">              }</a>
+<a name="ln1546">              ImproperAxes[ ImproperAxesCount - 1 ] = axis ;</a>
+<a name="ln1547">            }</a>
+<a name="ln1548">          }</a>
+<a name="ln1549">        }</a>
+<a name="ln1550">      }</a>
+<a name="ln1551">    }</a>
+<a name="ln1552"> </a>
+<a name="ln1553">    void</a>
+<a name="ln1554">    report_planes( void )</a>
+<a name="ln1555">    {</a>
+<a name="ln1556">      int           i ;</a>
+<a name="ln1557"> </a>
+<a name="ln1558">      if( PlanesCount == 0 )</a>
+<a name="ln1559">        printf( &quot;There are no planes of symmetry in the molecule\n&quot; ) ;</a>
+<a name="ln1560">      else {</a>
+<a name="ln1561">        if( PlanesCount == 1 )</a>
+<a name="ln1562">          printf( &quot;There is a plane of symmetry in the molecule\n&quot; ) ;</a>
+<a name="ln1563">        else printf( &quot;There are %d planes of symmetry in the molecule\n&quot;, PlanesCount ) ;</a>
+<a name="ln1564">        printf( &quot;     Residual          Direction of the normal           Distance\n&quot; ) ;</a>
+<a name="ln1565">        for( i = 0 ; i &lt; PlanesCount ; i++ ){</a>
+<a name="ln1566">          printf( &quot;%3d %8.4e &quot;, i, Planes[i]-&gt;maxdev ) ;</a>
+<a name="ln1567">          printf( &quot;(%11.8f,%11.8f,%11.8f) &quot;, Planes[i]-&gt;normal[0], Planes[i]-&gt;normal[1], Planes[i]-&gt;normal[2] ) ;</a>
+<a name="ln1568">          printf( &quot;%14.8f\n&quot;, Planes[i]-&gt;distance ) ;</a>
+<a name="ln1569">        }</a>
+<a name="ln1570">      }</a>
+<a name="ln1571">    }</a>
+<a name="ln1572"> </a>
+<a name="ln1573">    void</a>
+<a name="ln1574">    report_inversion_centers( void )</a>
+<a name="ln1575">    {</a>
+<a name="ln1576">      if( InversionCentersCount == 0 )</a>
+<a name="ln1577">        printf( &quot;There is no inversion center in the molecule\n&quot; ) ;</a>
+<a name="ln1578">      else {</a>
+<a name="ln1579">        printf( &quot;There in an inversion center in the molecule\n&quot; ) ;</a>
+<a name="ln1580">        printf( &quot;     Residual                      Position\n&quot; ) ;</a>
+<a name="ln1581">        printf( &quot;   %8.4e &quot;, InversionCenters[0]-&gt;maxdev ) ;</a>
+<a name="ln1582">        printf( &quot;(%14.8f,%14.8f,%14.8f)\n&quot;,</a>
+<a name="ln1583">                InversionCenters[0]-&gt;distance * InversionCenters[0]-&gt;normal[0],</a>
+<a name="ln1584">                InversionCenters[0]-&gt;distance * InversionCenters[0]-&gt;normal[1],</a>
+<a name="ln1585">                InversionCenters[0]-&gt;distance * InversionCenters[0]-&gt;normal[2] ) ;</a>
+<a name="ln1586">      }</a>
+<a name="ln1587">    }</a>
+<a name="ln1588"> </a>
+<a name="ln1589">    void</a>
+<a name="ln1590">    report_axes( void )</a>
+<a name="ln1591">    {</a>
+<a name="ln1592">      int           i ;</a>
+<a name="ln1593"> </a>
+<a name="ln1594">      if( NormalAxesCount == 0 )</a>
+<a name="ln1595">        printf( &quot;There are no normal axes in the molecule\n&quot; ) ;</a>
+<a name="ln1596">      else {</a>
+<a name="ln1597">        if( NormalAxesCount == 1 )</a>
+<a name="ln1598">          printf( &quot;There is a normal axis in the molecule\n&quot; ) ;</a>
+<a name="ln1599">        else printf( &quot;There are %d normal axes in the molecule\n&quot;, NormalAxesCount ) ;</a>
+<a name="ln1600">        printf( &quot;     Residual  Order         Direction of the axis                         Supporting point\n&quot; ) ;</a>
+<a name="ln1601">        for( i = 0 ; i &lt; NormalAxesCount ; i++ ){</a>
+<a name="ln1602">          printf( &quot;%3d %8.4e &quot;, i, NormalAxes[i]-&gt;maxdev ) ;</a>
+<a name="ln1603">          if( NormalAxes[i]-&gt;order == 0 )</a>
+<a name="ln1604">            printf( &quot;Inf &quot; ) ;</a>
+<a name="ln1605">          else printf( &quot;%3d &quot;, NormalAxes[i]-&gt;order ) ;</a>
+<a name="ln1606">          printf( &quot;(%11.8f,%11.8f,%11.8f) &quot;,</a>
+<a name="ln1607">                  NormalAxes[i]-&gt;direction[0], NormalAxes[i]-&gt;direction[1], NormalAxes[i]-&gt;direction[2] ) ;</a>
+<a name="ln1608">          printf( &quot;(%14.8f,%14.8f,%14.8f)\n&quot;,</a>
+<a name="ln1609">                  NormalAxes[0]-&gt;distance * NormalAxes[0]-&gt;normal[0],</a>
+<a name="ln1610">                  NormalAxes[0]-&gt;distance * NormalAxes[0]-&gt;normal[1],</a>
+<a name="ln1611">                  NormalAxes[0]-&gt;distance * NormalAxes[0]-&gt;normal[2] ) ;</a>
+<a name="ln1612">        }</a>
+<a name="ln1613">      }</a>
+<a name="ln1614">    }</a>
+<a name="ln1615"> </a>
+<a name="ln1616">    void</a>
+<a name="ln1617">    report_improper_axes( void )</a>
+<a name="ln1618">    {</a>
+<a name="ln1619">      int           i ;</a>
+<a name="ln1620"> </a>
+<a name="ln1621">      if( ImproperAxesCount == 0 )</a>
+<a name="ln1622">        printf( &quot;There are no improper axes in the molecule\n&quot; ) ;</a>
+<a name="ln1623">      else {</a>
+<a name="ln1624">        if( ImproperAxesCount == 1 )</a>
+<a name="ln1625">          printf( &quot;There is an improper axis in the molecule\n&quot; ) ;</a>
+<a name="ln1626">        else printf( &quot;There are %d improper axes in the molecule\n&quot;, ImproperAxesCount ) ;</a>
+<a name="ln1627">        printf( &quot;     Residual  Order         Direction of the axis                         Supporting point\n&quot; ) ;</a>
+<a name="ln1628">        for( i = 0 ; i &lt; ImproperAxesCount ; i++ ){</a>
+<a name="ln1629">          printf( &quot;%3d %8.4e &quot;, i, ImproperAxes[i]-&gt;maxdev ) ;</a>
+<a name="ln1630">          if( ImproperAxes[i]-&gt;order == 0 )</a>
+<a name="ln1631">            printf( &quot;Inf &quot; ) ;</a>
+<a name="ln1632">          else printf( &quot;%3d &quot;, ImproperAxes[i]-&gt;order ) ;</a>
+<a name="ln1633">          printf( &quot;(%11.8f,%11.8f,%11.8f) &quot;,</a>
+<a name="ln1634">                  ImproperAxes[i]-&gt;direction[0], ImproperAxes[i]-&gt;direction[1], ImproperAxes[i]-&gt;direction[2] ) ;</a>
+<a name="ln1635">          printf( &quot;(%14.8f,%14.8f,%14.8f)\n&quot;,</a>
+<a name="ln1636">                  ImproperAxes[0]-&gt;distance * ImproperAxes[0]-&gt;normal[0],</a>
+<a name="ln1637">                  ImproperAxes[0]-&gt;distance * ImproperAxes[0]-&gt;normal[1],</a>
+<a name="ln1638">                  ImproperAxes[0]-&gt;distance * ImproperAxes[0]-&gt;normal[2] ) ;</a>
+<a name="ln1639">        }</a>
+<a name="ln1640">      }</a>
+<a name="ln1641">    }</a>
+<a name="ln1642"> </a>
+<a name="ln1643">    /*</a>
+<a name="ln1644">     *  General symmetry handling</a>
+<a name="ln1645">     */</a>
+<a name="ln1646">    void</a>
+<a name="ln1647">    report_and_reset_counters( void )</a>
+<a name="ln1648">    {</a>
+<a name="ln1649">      if (verbose &gt; -1)</a>
+<a name="ln1650">        printf( &quot;  %10ld candidates examined\n&quot;</a>
+<a name="ln1651">                &quot;  %10ld removed early\n&quot;</a>
+<a name="ln1652">                &quot;  %10ld removed during initial mating stage\n&quot;</a>
+<a name="ln1653">                &quot;  %10ld removed as duplicates\n&quot;</a>
+<a name="ln1654">                &quot;  %10ld removed because of the wrong transformation order\n&quot;</a>
+<a name="ln1655">                &quot;  %10ld removed after unsuccessful optimization\n&quot;</a>
+<a name="ln1656">                &quot;  %10ld accepted\n&quot;,</a>
+<a name="ln1657">                StatTotal, StatEarly, StatPairs, StatDups, StatOrder, StatOpt, StatAccept ) ;</a>
+<a name="ln1658">      StatTotal = StatEarly = StatPairs = StatDups = StatOrder = StatOpt = StatAccept = 0 ;</a>
+<a name="ln1659">    }</a>
+<a name="ln1660"> </a>
+<a name="ln1661">    void</a>
+<a name="ln1662">    find_symmetry_elements( void )</a>
+<a name="ln1663">    {</a>
+<a name="ln1664">      find_center_of_something() ;</a>
+<a name="ln1665">      if( verbose &gt; -1 ){</a>
+<a name="ln1666">        printf( &quot;Looking for the inversion center\n&quot; ) ;</a>
+<a name="ln1667">      }</a>
+<a name="ln1668">      find_inversion_centers() ;</a>
+<a name="ln1669">      if( verbose &gt; -1 ){</a>
+<a name="ln1670">        report_and_reset_counters() ;</a>
+<a name="ln1671">        printf( &quot;Looking for the planes of symmetry\n&quot; ) ;</a>
+<a name="ln1672">      }</a>
+<a name="ln1673">      find_planes() ;</a>
+<a name="ln1674">      if( verbose &gt; -1 ){</a>
+<a name="ln1675">        report_and_reset_counters() ;</a>
+<a name="ln1676">        printf( &quot;Looking for infinity axis\n&quot; ) ;</a>
+<a name="ln1677">      }</a>
+<a name="ln1678">      find_infinity_axis() ;</a>
+<a name="ln1679">      if( verbose &gt; -1 ){</a>
+<a name="ln1680">        report_and_reset_counters() ;</a>
+<a name="ln1681">        printf( &quot;Looking for C2 axes\n&quot; ) ;</a>
+<a name="ln1682">      }</a>
+<a name="ln1683">      find_c2_axes() ;</a>
+<a name="ln1684">      if( verbose &gt; -1 ){</a>
+<a name="ln1685">        report_and_reset_counters() ;</a>
+<a name="ln1686">        printf( &quot;Looking for higher axes\n&quot; ) ;</a>
+<a name="ln1687">      }</a>
+<a name="ln1688">      find_higher_axes() ;</a>
+<a name="ln1689">      if( verbose &gt; -1 ){</a>
+<a name="ln1690">        report_and_reset_counters() ;</a>
+<a name="ln1691">        printf( &quot;Looking for the improper axes\n&quot; ) ;</a>
+<a name="ln1692">      }</a>
+<a name="ln1693">      find_improper_axes() ;</a>
+<a name="ln1694">      if( verbose &gt; -1 ){</a>
+<a name="ln1695">        report_and_reset_counters() ;</a>
+<a name="ln1696">      }</a>
+<a name="ln1697">    }</a>
+<a name="ln1698"> </a>
+<a name="ln1699">    static int</a>
+<a name="ln1700">    compare_axes( const void *a, const void *b )</a>
+<a name="ln1701">    {</a>
+<a name="ln1702">      SYMMETRY_ELEMENT * axis_a = *(SYMMETRY_ELEMENT**) a ;</a>
+<a name="ln1703">      SYMMETRY_ELEMENT * axis_b = *(SYMMETRY_ELEMENT**) b ;</a>
+<a name="ln1704">      int                i, order_a, order_b ;</a>
+<a name="ln1705"> </a>
+<a name="ln1706">      order_a = axis_a-&gt;order ; if( order_a == 0 ) order_a = 10000 ;</a>
+<a name="ln1707">      order_b = axis_b-&gt;order ; if( order_b == 0 ) order_b = 10000 ;</a>
+<a name="ln1708">      if( ( i = order_b - order_a ) != 0 ) return i ;</a>
+<a name="ln1709">      if( axis_a-&gt;maxdev &gt; axis_b-&gt;maxdev ) return -1 ;</a>
+<a name="ln1710">      if( axis_a-&gt;maxdev &lt; axis_b-&gt;maxdev ) return  1 ;</a>
+<a name="ln1711">      return 0 ;</a>
+<a name="ln1712">    }</a>
+<a name="ln1713"> </a>
+<a name="ln1714">    void</a>
+<a name="ln1715">    sort_symmetry_elements( void )</a>
+<a name="ln1716">    {</a>
+<a name="ln1717">      if( PlanesCount &gt; 1 ){</a>
+<a name="ln1718">        qsort( Planes, PlanesCount, sizeof( SYMMETRY_ELEMENT * ), compare_axes ) ;</a>
+<a name="ln1719">      }</a>
+<a name="ln1720">      if( NormalAxesCount &gt; 1 ){</a>
+<a name="ln1721">        qsort( NormalAxes, NormalAxesCount, sizeof( SYMMETRY_ELEMENT * ), compare_axes ) ;</a>
+<a name="ln1722">      }</a>
+<a name="ln1723">      if( ImproperAxesCount &gt; 1 ){</a>
+<a name="ln1724">        qsort( ImproperAxes, ImproperAxesCount, sizeof( SYMMETRY_ELEMENT * ), compare_axes ) ;</a>
+<a name="ln1725">      }</a>
+<a name="ln1726">    }</a>
+<a name="ln1727"> </a>
+<a name="ln1728">    void</a>
+<a name="ln1729">    report_symmetry_elements_verbose( void )</a>
+<a name="ln1730">    {</a>
+<a name="ln1731">      report_inversion_centers() ;</a>
+<a name="ln1732">      report_axes() ;</a>
+<a name="ln1733">      report_improper_axes() ;</a>
+<a name="ln1734">      report_planes() ;</a>
+<a name="ln1735">    }</a>
+<a name="ln1736"> </a>
+<a name="ln1737">    void</a>
+<a name="ln1738">    summarize_symmetry_elements( void )</a>
+<a name="ln1739">    {</a>
+<a name="ln1740">      int          i ;</a>
+<a name="ln1741"> </a>
+<a name="ln1742">      NormalAxesCounts   = (int*) calloc( MaxAxisOrder+1, sizeof( int ) ) ;</a>
+<a name="ln1743">      ImproperAxesCounts = (int*) calloc( MaxAxisOrder+1, sizeof( int ) ) ;</a>
+<a name="ln1744">      for( i = 0 ; i &lt; NormalAxesCount ; i++ )</a>
+<a name="ln1745">        NormalAxesCounts[ NormalAxes[i]-&gt;order ]++ ;</a>
+<a name="ln1746">      for( i = 0 ; i &lt; ImproperAxesCount ; i++ )</a>
+<a name="ln1747">        ImproperAxesCounts[ ImproperAxes[i]-&gt;order ]++ ;</a>
+<a name="ln1748">    }</a>
+<a name="ln1749"> </a>
+<a name="ln1750">    void</a>
+<a name="ln1751">    report_symmetry_elements_brief( void )</a>
+<a name="ln1752">    {</a>
+<a name="ln1753">      int          i ;</a>
+<a name="ln1754">      char *       symmetry_code = (char*)calloc( 1, 10*(PlanesCount+NormalAxesCount+ImproperAxesCount+InversionCentersCount+2) ) ;</a>
+<a name="ln1755">      char         buf[ 100 ] ;</a>
+<a name="ln1756"> </a>
+<a name="ln1757">      if (symmetry_code == nullptr) {</a>
+<a name="ln1758">        //        fprintf( stderr, &quot;Unable to allocate memory for symmetry ID code in report_symmetry_elements_brief()\n&quot; ) ;</a>
+<a name="ln1759">        return;</a>
+<a name="ln1760">      }</a>
+<a name="ln1761">      if( PlanesCount + NormalAxesCount + ImproperAxesCount + InversionCentersCount == 0 ) {</a>
+<a name="ln1762">        SymmetryCode = symmetry_code ;</a>
+<a name="ln1763">        return;</a>
+<a name="ln1764">        //        printf( &quot;Molecule has no symmetry elements\n&quot; ) ;</a>
+<a name="ln1765">      }</a>
+<a name="ln1766">      else {</a>
+<a name="ln1767">        //        printf( &quot;Molecule has the following symmetry elements: &quot; ) ;</a>
+<a name="ln1768">        if( InversionCentersCount &gt; 0 ) strcat( symmetry_code, &quot;(i) &quot; ) ;</a>
+<a name="ln1769">        if( NormalAxesCounts[0] == 1 )</a>
+<a name="ln1770">          strcat( symmetry_code, &quot;(Cinf) &quot; ) ;</a>
+<a name="ln1771">        if( NormalAxesCounts[0] &gt;  1 ) {</a>
+<a name="ln1772">          snprintf( buf, 100, &quot;%d*(Cinf) &quot;, NormalAxesCounts[0] ) ;</a>
+<a name="ln1773">          strcat( symmetry_code, buf ) ;</a>
+<a name="ln1774">        }</a>
+<a name="ln1775">        for( i = MaxAxisOrder ; i &gt;= 2 ; i-- ){</a>
+<a name="ln1776">          if( NormalAxesCounts[i] == 1 ){ snprintf( buf, 100, &quot;(C%d) &quot;, i ) ; strcat( symmetry_code, buf ) ; }</a>
+<a name="ln1777">          if( NormalAxesCounts[i] &gt;  1 ){ snprintf( buf, 100, &quot;%d*(C%d) &quot;, NormalAxesCounts[i], i ) ; strcat( symmetry_code, buf ) ; }</a>
+<a name="ln1778">        }</a>
+<a name="ln1779">        for( i = MaxAxisOrder ; i &gt;= 2 ; i-- ){</a>
+<a name="ln1780">          if( ImproperAxesCounts[i] == 1 ){ snprintf( buf, 100, &quot;(S%d) &quot;, i ) ; strcat( symmetry_code, buf ) ; }</a>
+<a name="ln1781">          if( ImproperAxesCounts[i] &gt;  1 ){ snprintf( buf, 100, &quot;%d*(S%d) &quot;, ImproperAxesCounts[i], i ) ; strcat( symmetry_code, buf ) ; }</a>
+<a name="ln1782">        }</a>
+<a name="ln1783">        if( PlanesCount == 1 ) strcat( symmetry_code, &quot;(sigma) &quot; ) ;</a>
+<a name="ln1784">        if( PlanesCount &gt;  1 ){ snprintf( buf, 100, &quot;%d*(sigma) &quot;, PlanesCount ) ; strcat( symmetry_code, buf ) ; }</a>
+<a name="ln1785">        //        printf( &quot;%s\n&quot;, symmetry_code ) ;</a>
+<a name="ln1786">      }</a>
+<a name="ln1787">      SymmetryCode = symmetry_code ;</a>
+<a name="ln1788">    }</a>
+<a name="ln1789"> </a>
+<a name="ln1790">    const char *identify_point_group( void )</a>
+<a name="ln1791">    {</a>
+<a name="ln1792">      unsigned int   i;</a>
+<a name="ln1793">      int            last_matching = -1;</a>
+<a name="ln1794">      int            matching_count = 0;</a>
+<a name="ln1795"> </a>
+<a name="ln1796">      for( i = 0 ; i &lt; PointGroupsCount ; i++ ){</a>
+<a name="ln1797">        if( strcmp( SymmetryCode, PointGroups[i].symmetry_code ) == 0 ){</a>
+<a name="ln1798">          last_matching = i ;</a>
+<a name="ln1799">          matching_count++ ;</a>
+<a name="ln1800">        }</a>
+<a name="ln1801">      }</a>
+<a name="ln1802">      if( matching_count == 0 ){</a>
+<a name="ln1803">        printf( &quot;These symmetry elements match no point group I know of. Sorry.\n&quot; ) ;</a>
+<a name="ln1804">      }</a>
+<a name="ln1805">      if( matching_count &gt;  1 ){</a>
+<a name="ln1806">        printf( &quot;These symmetry elements match more than one group I know of.\n&quot;</a>
+<a name="ln1807">                &quot;SOMETHING IS VERY WRONG\n&quot; ) ;</a>
+<a name="ln1808">        printf( &quot;Matching groups are:\n&quot; ) ;</a>
+<a name="ln1809">        for( i = 0 ; i &lt; PointGroupsCount ; i++ ){</a>
+<a name="ln1810">          if( ( strcmp( SymmetryCode, PointGroups[i].symmetry_code ) == 0 )) {</a>
+<a name="ln1811">            printf( &quot;    %s\n&quot;, PointGroups[i].group_name ) ;</a>
+<a name="ln1812">          }</a>
+<a name="ln1813">        }</a>
+<a name="ln1814">      }</a>
+<a name="ln1815">      if( matching_count == 1 ){</a>
+<a name="ln1816">        printf( &quot;It seems to be the %s point group\n&quot;, PointGroups[last_matching].group_name ) ;</a>
+<a name="ln1817">      }</a>
+<a name="ln1818">      return PointGroups[last_matching].group_name;</a>
+<a name="ln1819">    }</a>
+<a name="ln1820"> </a>
+<a name="ln1821">    void clean_paired_atoms(SYMMETRY_ELEMENT *elem)</a>
+<a name="ln1822">    {</a>
+<a name="ln1823">      if (PairedAtoms.size() == 0)</a>
+<a name="ln1824">        return;</a>
+<a name="ln1825"> </a>
+<a name="ln1826">      OBAtom *a, *b, symmetric;</a>
+<a name="ln1827">      for (unsigned int idx = 0; idx &lt; PairedAtoms.size(); ++idx) {</a>
+<a name="ln1828">          std::pair&lt;int, int&gt; atomPair = PairedAtoms[idx];</a>
+<a name="ln1829">          a = _mol-&gt;GetAtom(atomPair.first + 1); // ATOM INDEX ISSUE</a>
+<a name="ln1830">          b = _mol-&gt;GetAtom(atomPair.second + 1);</a>
+<a name="ln1831">          elem-&gt;transform_atom( elem, a, &amp;symmetric ) ;   // ATOM INDEX ISSUE</a>
+<a name="ln1832"> </a>
+<a name="ln1833">          // OK, so symmetric is where b *should* be</a>
+<a name="ln1834">          vector3 displacement = b-&gt;GetVector() - symmetric.GetVector();</a>
+<a name="ln1835">          displacement /= 2.0; // take the average displacement</a>
+<a name="ln1836">          a-&gt;SetVector(a-&gt;GetVector() + displacement);</a>
+<a name="ln1837">          b-&gt;SetVector(b-&gt;GetVector() - displacement);</a>
+<a name="ln1838">        }</a>
+<a name="ln1839">    }</a>
+<a name="ln1840"> </a>
+<a name="ln1841">  }; // end class PointGroupPrivate</a>
+<a name="ln1842"> </a>
+<a name="ln1843">  OBPointGroup::OBPointGroup()</a>
+<a name="ln1844">  {</a>
+<a name="ln1845">    d = new PointGroupPrivate;</a>
+<a name="ln1846">  }</a>
+<a name="ln1847"> </a>
+<a name="ln1848">  OBPointGroup::~OBPointGroup()</a>
+<a name="ln1849">  {</a>
+<a name="ln1850">    delete d;</a>
+<a name="ln1851">  }</a>
+<a name="ln1852"> </a>
+<a name="ln1853">  void OBPointGroup::Setup(OBMol *mol)</a>
+<a name="ln1854">  {</a>
+<a name="ln1855">    d-&gt;_mol = mol;</a>
+<a name="ln1856">    d-&gt;_mol-&gt;Center();</a>
+<a name="ln1857">    d-&gt;Setup = true;</a>
+<a name="ln1858">  }</a>
+<a name="ln1859"> </a>
+<a name="ln1860">  //! @todo Remove this on next ABI break</a>
+<a name="ln1861">  const char* OBPointGroup::IdentifyPointGroup()</a>
+<a name="ln1862">  {</a>
+<a name="ln1863">    return this-&gt;IdentifyPointGroup(0.01);</a>
+<a name="ln1864">  }</a>
+<a name="ln1865"> </a>
+<a name="ln1866">  const char* OBPointGroup::IdentifyPointGroup(double tolerance)</a>
+<a name="ln1867">  {</a>
+<a name="ln1868">    // Don't duplicate work, use the more reliable fallback method</a>
+<a name="ln1869">    Symbol pg = IdentifyPointGroupSymbol(tolerance);</a>
+<a name="ln1870">    if (pg == Unknown)</a>
+<a name="ln1871">      pg = C1; // no known symmetry</a>
+<a name="ln1872"> </a>
+<a name="ln1873">    return PointGroups[pg].group_name;</a>
+<a name="ln1874">  }</a>
+<a name="ln1875"> </a>
+<a name="ln1876">  OBPointGroup::Symbol OBPointGroup::IdentifyPointGroupSymbol(double tolerance)</a>
+<a name="ln1877">  {</a>
+<a name="ln1878">    d-&gt;ToleranceSame = tolerance; // allow for &quot;sloppy&quot; perception</a>
+<a name="ln1879">    d-&gt;find_symmetry_elements();</a>
+<a name="ln1880">    d-&gt;sort_symmetry_elements();</a>
+<a name="ln1881">    d-&gt;summarize_symmetry_elements();</a>
+<a name="ln1882">    if ( d-&gt;BadOptimization ) {</a>
+<a name="ln1883">      // error handling</a>
+<a name="ln1884">    }</a>
+<a name="ln1885"> </a>
+<a name="ln1886">    d-&gt;report_symmetry_elements_brief(); // assign a symmetry code</a>
+<a name="ln1887">    //    printf(&quot;%s\n&quot;, d-&gt;SymmetryCode);</a>
+<a name="ln1888"> </a>
+<a name="ln1889">    Symbol perceived = Unknown; // assume no symmetry</a>
+<a name="ln1890"> </a>
+<a name="ln1891">    if( d-&gt;PlanesCount + d-&gt;NormalAxesCount + d-&gt;ImproperAxesCount + d-&gt;InversionCentersCount == 0 )</a>
+<a name="ln1892">      return C1; // no symmetry</a>
+<a name="ln1893"> </a>
+<a name="ln1894">    // OK, let's use the normal decision tree, falling back to an appropriate sub-group as needed</a>
+<a name="ln1895">    // Check for linear or K/Kh groups</a>
+<a name="ln1896">    if( d-&gt;NormalAxesCounts[0] &gt;= 1 ) // has Cinf axis</a>
+<a name="ln1897">      {</a>
+<a name="ln1898">        if (d-&gt;NormalAxesCounts[2] == 1 &amp;&amp; d-&gt;PlanesCount &gt; 1 &amp;&amp; d-&gt;InversionCentersCount == 1) // has C2, so Dinfh</a>
+<a name="ln1899">          perceived = Dinfh;</a>
+<a name="ln1900">        else if (d-&gt;InversionCentersCount == 1 &amp;&amp; d-&gt;PlanesCount == 1) // no C2, but i = Kh</a>
+<a name="ln1901">          perceived = Kh;</a>
+<a name="ln1902">        else if (d-&gt;PlanesCount &gt;= 1) // fallback</a>
+<a name="ln1903">          perceived = Cinfv;</a>
+<a name="ln1904">        else // really unlikely</a>
+<a name="ln1905">          perceived = K;</a>
+<a name="ln1906">      }</a>
+<a name="ln1907"> </a>
+<a name="ln1908">    if (d-&gt;NormalAxesCounts[5] &gt; 1) { // Possible icosahedral</a>
+<a name="ln1909">      if ( strcmp( d-&gt;SymmetryCode, PointGroups[Ih].symmetry_code ) == 0 ) {</a>
+<a name="ln1910">        perceived = Ih;</a>
+<a name="ln1911">      }</a>
+<a name="ln1912">      else if ( strcmp( d-&gt;SymmetryCode, PointGroups[I].symmetry_code) == 0 ) {</a>
+<a name="ln1913">        perceived = I;</a>
+<a name="ln1914">      }</a>
+<a name="ln1915">      // fall back to a subgroup below</a>
+<a name="ln1916">    }</a>
+<a name="ln1917">    if (d-&gt;NormalAxesCounts[4] &gt; 1) { // Possible octahedral</a>
+<a name="ln1918">      if ( strcmp( d-&gt;SymmetryCode, PointGroups[Oh].symmetry_code ) == 0 ) {</a>
+<a name="ln1919">        perceived = Oh;</a>
+<a name="ln1920">      }</a>
+<a name="ln1921">      else if ( strcmp( d-&gt;SymmetryCode, PointGroups[O].symmetry_code) == 0 ) {</a>
+<a name="ln1922">        perceived = O;</a>
+<a name="ln1923">      }</a>
+<a name="ln1924">      // fall back to a subgroup below</a>
+<a name="ln1925">    }</a>
+<a name="ln1926">    if (d-&gt;NormalAxesCounts[3] &gt; 1) { // Possible tetrahedral</a>
+<a name="ln1927">      if ( strcmp( d-&gt;SymmetryCode, PointGroups[Th].symmetry_code ) == 0 ) {</a>
+<a name="ln1928">        perceived = Th;</a>
+<a name="ln1929">      }</a>
+<a name="ln1930">      else if ( strcmp( d-&gt;SymmetryCode, PointGroups[Td].symmetry_code) == 0 ) {</a>
+<a name="ln1931">        perceived = Td;</a>
+<a name="ln1932">      }</a>
+<a name="ln1933">      else if ( strcmp( d-&gt;SymmetryCode, PointGroups[T].symmetry_code) == 0 ) {</a>
+<a name="ln1934">        perceived = T;</a>
+<a name="ln1935">      }</a>
+<a name="ln1936">      // fall back to a subgroup below</a>
+<a name="ln1937">    }</a>
+<a name="ln1938"> </a>
+<a name="ln1939">    // Find the maximum rotational axis (if present)</a>
+<a name="ln1940">    unsigned int maxAxis = 0;</a>
+<a name="ln1941">    unsigned int maxImproperAxis = 0;</a>
+<a name="ln1942">    bool noAxes = true;</a>
+<a name="ln1943">    for (int i = d-&gt;MaxAxisOrder; i &gt;= 2; i--) { // Find the maximum axis</a>
+<a name="ln1944">      if (d-&gt;NormalAxesCounts[i] &gt; 0) {</a>
+<a name="ln1945">        maxAxis = i;</a>
+<a name="ln1946">        noAxes = false;</a>
+<a name="ln1947">        break;</a>
+<a name="ln1948">      }</a>
+<a name="ln1949">      if (d-&gt;ImproperAxesCounts[i] &gt; 0) {</a>
+<a name="ln1950">        maxImproperAxis = i;</a>
+<a name="ln1951">        noAxes = false;</a>
+<a name="ln1952">        // continue to loop so we can find the max regular axis</a>
+<a name="ln1953">      }</a>
+<a name="ln1954">    }</a>
+<a name="ln1955"> </a>
+<a name="ln1956">    if (d-&gt;NormalAxesCounts[2] &gt; 1 &amp;&amp; maxAxis != 0) { // Probably Dihedral</a>
+<a name="ln1957">      if ((maxAxis == 2 &amp;&amp; d-&gt;NormalAxesCounts[2] == 3)</a>
+<a name="ln1958">          || d-&gt;NormalAxesCounts[2] &gt;= maxAxis) { // Are there the perpendicular C2 axes?</a>
+<a name="ln1959"> </a>
+<a name="ln1960">        // If not, we'll handle it later</a>
+<a name="ln1961">        if (d-&gt;PlanesCount &gt;= maxAxis + 1) { // Likely Dnh</a>
+<a name="ln1962">          switch (maxAxis){</a>
+<a name="ln1963">          case 8:</a>
+<a name="ln1964">            perceived = D8h;</a>
+<a name="ln1965">            break;</a>
+<a name="ln1966">          case 7:</a>
+<a name="ln1967">            perceived = D7h;</a>
+<a name="ln1968">            break;</a>
+<a name="ln1969">          case 6:</a>
+<a name="ln1970">            perceived = D6h;</a>
+<a name="ln1971">            break;</a>
+<a name="ln1972">          case 5:</a>
+<a name="ln1973">            perceived = D5h;</a>
+<a name="ln1974">            break;</a>
+<a name="ln1975">          case 4:</a>
+<a name="ln1976">            perceived = D4h;</a>
+<a name="ln1977">            break;</a>
+<a name="ln1978">          case 3:</a>
+<a name="ln1979">            perceived = D3h;</a>
+<a name="ln1980">            break;</a>
+<a name="ln1981">          case 2:</a>
+<a name="ln1982">          default:</a>
+<a name="ln1983">            perceived = D2h;</a>
+<a name="ln1984">          }</a>
+<a name="ln1985">        }</a>
+<a name="ln1986">        else if (d-&gt;PlanesCount == maxAxis) { // Likely Dnd</a>
+<a name="ln1987">          switch (maxAxis){</a>
+<a name="ln1988">          case 8:</a>
+<a name="ln1989">            perceived = D8d;</a>
+<a name="ln1990">            break;</a>
+<a name="ln1991">          case 7:</a>
+<a name="ln1992">            perceived = D7d;</a>
+<a name="ln1993">            break;</a>
+<a name="ln1994">          case 6:</a>
+<a name="ln1995">            perceived = D6d;</a>
+<a name="ln1996">            break;</a>
+<a name="ln1997">          case 5:</a>
+<a name="ln1998">            perceived = D5d;</a>
+<a name="ln1999">            break;</a>
+<a name="ln2000">          case 4:</a>
+<a name="ln2001">            perceived = D4d;</a>
+<a name="ln2002">            break;</a>
+<a name="ln2003">          case 3:</a>
+<a name="ln2004">            perceived = D3d;</a>
+<a name="ln2005">            break;</a>
+<a name="ln2006">          case 2:</a>
+<a name="ln2007">          default:</a>
+<a name="ln2008">            perceived = D2d;</a>
+<a name="ln2009">          }</a>
+<a name="ln2010">        }</a>
+<a name="ln2011">        else { // Dn groups</a>
+<a name="ln2012">          switch (maxAxis){</a>
+<a name="ln2013">          case 8:</a>
+<a name="ln2014">            perceived = D8;</a>
+<a name="ln2015">            break;</a>
+<a name="ln2016">          case 7:</a>
+<a name="ln2017">            perceived = D7;</a>
+<a name="ln2018">            break;</a>
+<a name="ln2019">          case 6:</a>
+<a name="ln2020">            perceived = D6;</a>
+<a name="ln2021">            break;</a>
+<a name="ln2022">          case 5:</a>
+<a name="ln2023">            perceived = D5;</a>
+<a name="ln2024">            break;</a>
+<a name="ln2025">          case 4:</a>
+<a name="ln2026">            perceived = D4;</a>
+<a name="ln2027">            break;</a>
+<a name="ln2028">          case 3:</a>
+<a name="ln2029">            perceived = D3;</a>
+<a name="ln2030">            break;</a>
+<a name="ln2031">          case 2:</a>
+<a name="ln2032">          default:</a>
+<a name="ln2033">            perceived = D2;</a>
+<a name="ln2034">          }</a>
+<a name="ln2035">        }</a>
+<a name="ln2036">        // Check to see if symmetry code is correct, or we'll try again with a subgroup</a>
+<a name="ln2037">        if ( strcmp( d-&gt;SymmetryCode, PointGroups[perceived].symmetry_code) != 0 ) {</a>
+<a name="ln2038">          perceived = Unknown; // try again</a>
+<a name="ln2039">        }</a>
+<a name="ln2040">      }</a>
+<a name="ln2041">    } // end of dihedral group checks</a>
+<a name="ln2042"> </a>
+<a name="ln2043">    if (perceived != Unknown)</a>
+<a name="ln2044">      return perceived;</a>
+<a name="ln2045"> </a>
+<a name="ln2046">    // OK, we'll try again with subgroups &amp; low symmetry</a>
+<a name="ln2047">    if (noAxes) { // low symmetry</a>
+<a name="ln2048">      if (d-&gt;InversionCentersCount &gt; 0)</a>
+<a name="ln2049">        perceived = Ci;</a>
+<a name="ln2050">      else if (d-&gt;PlanesCount &gt; 0)</a>
+<a name="ln2051">        perceived = Cs;</a>
+<a name="ln2052">      else</a>
+<a name="ln2053">        perceived = C1;</a>
+<a name="ln2054"> </a>
+<a name="ln2055">      // Don't look for higher symmetry</a>
+<a name="ln2056">      return perceived;</a>
+<a name="ln2057">    }</a>
+<a name="ln2058"> </a>
+<a name="ln2059">    // Must be Cn? or Sn</a>
+<a name="ln2060">    // Check Cnh first, usually largest order</a>
+<a name="ln2061">    // Must have sigma-h and either i or Sn axis</a>
+<a name="ln2062">    if (d-&gt;PlanesCount == 1 &amp;&amp; (d-&gt;InversionCentersCount &gt; 0 || maxImproperAxis &gt; 0)) { // Cnh</a>
+<a name="ln2063">      switch (maxAxis){</a>
+<a name="ln2064">      case 8:</a>
+<a name="ln2065">        perceived = C8h;</a>
+<a name="ln2066">        break;</a>
+<a name="ln2067">      case 7:</a>
+<a name="ln2068">        perceived = C7h;</a>
+<a name="ln2069">        break;</a>
+<a name="ln2070">      case 6:</a>
+<a name="ln2071">        perceived = C6h;</a>
+<a name="ln2072">        break;</a>
+<a name="ln2073">      case 5:</a>
+<a name="ln2074">        perceived = C5h;</a>
+<a name="ln2075">        break;</a>
+<a name="ln2076">      case 4:</a>
+<a name="ln2077">        perceived = C4h;</a>
+<a name="ln2078">        break;</a>
+<a name="ln2079">      case 3:</a>
+<a name="ln2080">        perceived = C3h;</a>
+<a name="ln2081">        break;</a>
+<a name="ln2082">      case 2:</a>
+<a name="ln2083">      default:</a>
+<a name="ln2084">        perceived = C2h;</a>
+<a name="ln2085">      }</a>
+<a name="ln2086">    }</a>
+<a name="ln2087">    // Next Easiest is Cnv =&gt; n * sigma</a>
+<a name="ln2088">    else if (d-&gt;PlanesCount &gt;= maxAxis) { // Cnv</a>
+<a name="ln2089">      switch (maxAxis){</a>
+<a name="ln2090">      case 8:</a>
+<a name="ln2091">        perceived = C8v;</a>
+<a name="ln2092">        break;</a>
+<a name="ln2093">      case 7:</a>
+<a name="ln2094">        perceived = C7v;</a>
+<a name="ln2095">        break;</a>
+<a name="ln2096">      case 6:</a>
+<a name="ln2097">        perceived = C6v;</a>
+<a name="ln2098">        break;</a>
+<a name="ln2099">      case 5:</a>
+<a name="ln2100">        perceived = C5v;</a>
+<a name="ln2101">        break;</a>
+<a name="ln2102">      case 4:</a>
+<a name="ln2103">        perceived = C4v;</a>
+<a name="ln2104">        break;</a>
+<a name="ln2105">      case 3:</a>
+<a name="ln2106">        perceived = C3v;</a>
+<a name="ln2107">        break;</a>
+<a name="ln2108">      case 2:</a>
+<a name="ln2109">      default:</a>
+<a name="ln2110">        perceived = C2v;</a>
+<a name="ln2111">      }</a>
+<a name="ln2112">    }</a>
+<a name="ln2113">    else if (maxImproperAxis) {</a>
+<a name="ln2114">      switch (maxImproperAxis){</a>
+<a name="ln2115">      case 8:</a>
+<a name="ln2116">        perceived = S8;</a>
+<a name="ln2117">        break;</a>
+<a name="ln2118">      case 6:</a>
+<a name="ln2119">        perceived = S6;</a>
+<a name="ln2120">        break;</a>
+<a name="ln2121">      case 4:</a>
+<a name="ln2122">        perceived = S4;</a>
+<a name="ln2123">        break;</a>
+<a name="ln2124">      case 2:</a>
+<a name="ln2125">      default:</a>
+<a name="ln2126">        perceived = Ci;</a>
+<a name="ln2127">      }</a>
+<a name="ln2128">    }</a>
+<a name="ln2129">    else {// Fallback to Cn</a>
+<a name="ln2130">      switch (maxAxis){</a>
+<a name="ln2131">      case 8:</a>
+<a name="ln2132">        perceived = C8;</a>
+<a name="ln2133">        break;</a>
+<a name="ln2134">      case 7:</a>
+<a name="ln2135">        perceived = C7;</a>
+<a name="ln2136">        break;</a>
+<a name="ln2137">      case 6:</a>
+<a name="ln2138">        perceived = C6;</a>
+<a name="ln2139">        break;</a>
+<a name="ln2140">      case 5:</a>
+<a name="ln2141">        perceived = C5;</a>
+<a name="ln2142">        break;</a>
+<a name="ln2143">      case 4:</a>
+<a name="ln2144">        perceived = C4;</a>
+<a name="ln2145">        break;</a>
+<a name="ln2146">      case 3:</a>
+<a name="ln2147">        perceived = C3;</a>
+<a name="ln2148">        break;</a>
+<a name="ln2149">      case 2:</a>
+<a name="ln2150">      default:</a>
+<a name="ln2151">        perceived = C2;</a>
+<a name="ln2152">      }</a>
+<a name="ln2153">    }</a>
+<a name="ln2154"> </a>
+<a name="ln2155">    return perceived;</a>
+<a name="ln2156">  }</a>
+<a name="ln2157"> </a>
+<a name="ln2158">  void OBPointGroup::Symmetrize(OBMol *mol)</a>
+<a name="ln2159">  {</a>
+<a name="ln2160">    if (!d-&gt;Setup) {</a>
+<a name="ln2161">      // TODO: We should also check to see if this mol is different from the original setup molecule</a>
+<a name="ln2162">      Setup(mol);</a>
+<a name="ln2163">      IdentifyPointGroup(); // make sure we run the symmetry analysis</a>
+<a name="ln2164">    }</a>
+<a name="ln2165"> </a>
+<a name="ln2166">    // We'll do this in several steps</a>
+<a name="ln2167">    // First, inversion centers</a>
+<a name="ln2168">    if (d-&gt;InversionCentersCount) {</a>
+<a name="ln2169">      PointGroupPrivate::SYMMETRY_ELEMENT *center = d-&gt;InversionCenters[0];</a>
+<a name="ln2170">      d-&gt;establish_pairs(center);</a>
+<a name="ln2171">      d-&gt;clean_paired_atoms(center);</a>
+<a name="ln2172">    } // inversion centers</a>
+<a name="ln2173"> </a>
+<a name="ln2174">    // Mirror planes</a>
+<a name="ln2175">    for (unsigned int i = 0; i &lt; d-&gt;PlanesCount; i++)</a>
+<a name="ln2176">      {</a>
+<a name="ln2177">        d-&gt;establish_pairs(d-&gt;Planes[i]);</a>
+<a name="ln2178">        d-&gt;clean_paired_atoms(d-&gt;Planes[i]);</a>
+<a name="ln2179">      }</a>
+<a name="ln2180"> </a>
+<a name="ln2181">    // Proper rotations</a>
+<a name="ln2182">    for (unsigned int i = 0; i &lt; d-&gt;NormalAxesCount; i++)</a>
+<a name="ln2183">      {</a>
+<a name="ln2184">        d-&gt;establish_pairs(d-&gt;NormalAxes[i]);</a>
+<a name="ln2185">        d-&gt;clean_paired_atoms(d-&gt;NormalAxes[i]);</a>
+<a name="ln2186">      }</a>
+<a name="ln2187"> </a>
+<a name="ln2188">    // Improper rotations</a>
+<a name="ln2189">    for (unsigned int i = 0; i &lt; d-&gt;ImproperAxesCount; i++)</a>
+<a name="ln2190">      {</a>
+<a name="ln2191">        d-&gt;establish_pairs(d-&gt;ImproperAxes[i]);</a>
+<a name="ln2192">        d-&gt;clean_paired_atoms(d-&gt;ImproperAxes[i]);</a>
+<a name="ln2193">      }</a>
+<a name="ln2194"> </a>
+<a name="ln2195">    // Copy back to the molecule</a>
+<a name="ln2196">    OBAtom *atom;</a>
+<a name="ln2197">    FOR_ATOMS_OF_MOL(a, d-&gt;_mol)</a>
+<a name="ln2198">      {</a>
+<a name="ln2199">        atom = mol-&gt;GetAtom(a-&gt;GetIdx());</a>
+<a name="ln2200">        atom-&gt;SetVector(a-&gt;GetVector());</a>
+<a name="ln2201">      }</a>
+<a name="ln2202">  }</a>
+<a name="ln2203"> </a>
+<a name="ln2204">} // end namespace OpenBabel</a>
+<a name="ln2205"> </a>
+<a name="ln2206">//! \file pointgroup.cpp</a>
+<a name="ln2207">//! \brief Brute-force point group detection</a>
+
+</code></pre>
+<div class="balloon" rel="1345"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v701/" target="_blank">V701</a> realloc() possible leak: when realloc() fails in allocating memory, original pointer 'Planes' is lost. Consider assigning realloc() to a temporary pointer.</p></div>
+<div class="balloon" rel="1358"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v701/" target="_blank">V701</a> realloc() possible leak: when realloc() fails in allocating memory, original pointer 'Planes' is lost. Consider assigning realloc() to a temporary pointer.</p></div>
+<div class="balloon" rel="1376"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v522/" target="_blank">V522</a> There might be dereferencing of a potential null pointer 'InversionCenters'. Check lines: 1376, 1375.</p></div>
+<div class="balloon" rel="1388"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v701/" target="_blank">V701</a> realloc() possible leak: when realloc() fails in allocating memory, original pointer 'NormalAxes' is lost. Consider assigning realloc() to a temporary pointer.</p></div>
+<div class="balloon" rel="1432"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v701/" target="_blank">V701</a> realloc() possible leak: when realloc() fails in allocating memory, original pointer 'NormalAxes' is lost. Consider assigning realloc() to a temporary pointer.</p></div>
+<div class="balloon" rel="1449"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v701/" target="_blank">V701</a> realloc() possible leak: when realloc() fails in allocating memory, original pointer 'NormalAxes' is lost. Consider assigning realloc() to a temporary pointer.</p></div>
+<div class="balloon" rel="1483"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v701/" target="_blank">V701</a> realloc() possible leak: when realloc() fails in allocating memory, original pointer 'NormalAxes' is lost. Consider assigning realloc() to a temporary pointer.</p></div>
+<div class="balloon" rel="1518"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v701/" target="_blank">V701</a> realloc() possible leak: when realloc() fails in allocating memory, original pointer 'NormalAxes' is lost. Consider assigning realloc() to a temporary pointer.</p></div>
+<div class="balloon" rel="1541"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v701/" target="_blank">V701</a> realloc() possible leak: when realloc() fails in allocating memory, original pointer 'ImproperAxes' is lost. Consider assigning realloc() to a temporary pointer.</p></div>
+<div class="balloon" rel="1745"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v522/" target="_blank">V522</a> There might be dereferencing of a potential null pointer 'NormalAxesCounts'. Check lines: 1745, 1742.</p></div>
+<div class="balloon" rel="1747"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v522/" target="_blank">V522</a> There might be dereferencing of a potential null pointer 'ImproperAxesCounts'. Check lines: 1747, 1743.</p></div>
+<div class="balloon" rel="155"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v730/" target="_blank">V730</a> Not all members of a class are initialized inside the constructor. Consider inspecting: _mol, CenterOfSomething.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

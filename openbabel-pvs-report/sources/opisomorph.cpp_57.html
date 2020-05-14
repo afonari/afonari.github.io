@@ -1,0 +1,447 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>opisomorph.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">opisomorph.cpp - Enhanced -s option</a>
+<a name="ln3">Copyright (C) 2010 by Chris Morley</a>
+<a name="ln4"> </a>
+<a name="ln5">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln6">it under the terms of the GNU General Public License as published by</a>
+<a name="ln7">the Free Software Foundation version 2 of the License.</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is distributed in the hope that it will be useful,</a>
+<a name="ln10">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln11">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln12">GNU General Public License for more details.</a>
+<a name="ln13">***********************************************************************/</a>
+<a name="ln14">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln15">#include &lt;openbabel/parsmart.h&gt;</a>
+<a name="ln16">#include &lt;openbabel/isomorphism.h&gt;</a>
+<a name="ln17">#include &quot;opisomorph.h&quot;</a>
+<a name="ln18">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln19">#include &lt;cstdlib&gt;</a>
+<a name="ln20">#include &lt;algorithm&gt;</a>
+<a name="ln21"> </a>
+<a name="ln22">namespace OpenBabel</a>
+<a name="ln23">{</a>
+<a name="ln24"> </a>
+<a name="ln25">using namespace std;</a>
+<a name="ln26"> </a>
+<a name="ln27">/**</a>
+<a name="ln28">@since version 2.3</a>
+<a name="ln29">Adds an OBPairData object to each atom and bond in a substructure.</a>
+<a name="ln30">The substructure's atoms are specified in an input parameter, a</a>
+<a name="ln31">vector of atom indx; the bonds are those in the molecule that join</a>
+<a name="ln32">these atoms. The attribute and value of the OBPairObject (the same</a>
+<a name="ln33">for all the added objects) are specified as parameters.</a>
+<a name="ln34">**/</a>
+<a name="ln35">bool AddDataToSubstruct(OBMol* pmol,</a>
+<a name="ln36">        const std::vector&lt;int&gt;&amp; atomIdxs,</a>
+<a name="ln37">        const std::string&amp; attribute,</a>
+<a name="ln38">        const std::string&amp; value)</a>
+<a name="ln39">{</a>
+<a name="ln40">  //Add data to atoms</a>
+<a name="ln41">  for(unsigned int j=0; j&lt;atomIdxs.size(); ++j)</a>
+<a name="ln42">  {</a>
+<a name="ln43">    OBAtom* pAtom = pmol-&gt;GetAtom(atomIdxs[j]);</a>
+<a name="ln44">    if(!pAtom)</a>
+<a name="ln45">      continue;</a>
+<a name="ln46">    OBPairData* dp = new OBPairData;</a>
+<a name="ln47">    dp-&gt;SetAttribute(attribute);</a>
+<a name="ln48">    dp-&gt;SetValue(value);</a>
+<a name="ln49">    pAtom-&gt;SetData(dp);</a>
+<a name="ln50">  }</a>
+<a name="ln51"> </a>
+<a name="ln52">  OBBond* pBond;</a>
+<a name="ln53">  vector&lt;OBBond*&gt;::iterator i;</a>
+<a name="ln54">  for(pBond = pmol-&gt;BeginBond(i); pBond; pBond = pmol-&gt;NextBond(i))</a>
+<a name="ln55">  {</a>
+<a name="ln56">    //Add data to bond if it joins two atoms in list</a>
+<a name="ln57">    if(count(atomIdxs.begin(), atomIdxs.end(), pBond-&gt;GetBeginAtomIdx())</a>
+<a name="ln58">        &amp;&amp; count(atomIdxs.begin(), atomIdxs.end(), pBond-&gt;GetEndAtomIdx()))</a>
+<a name="ln59">    {</a>
+<a name="ln60">      OBPairData* dp = new OBPairData;</a>
+<a name="ln61">      dp-&gt;SetAttribute(attribute);</a>
+<a name="ln62">      dp-&gt;SetValue(value);</a>
+<a name="ln63">      pBond-&gt;SetData(dp);</a>
+<a name="ln64">    }</a>
+<a name="ln65">  }</a>
+<a name="ln66">  return true;</a>
+<a name="ln67">}</a>
+<a name="ln68"> </a>
+<a name="ln69">/**</a>
+<a name="ln70">@since version 2.3</a>
+<a name="ln71">Deletes all atoms except those in @p atomIndxs</a>
+<a name="ln72">**/</a>
+<a name="ln73">bool ExtractSubstruct(OBMol* pmol, const std::vector&lt;int&gt;&amp; atomIdxs)</a>
+<a name="ln74">{</a>
+<a name="ln75">  //Erase from the top to avoid invalidating the remaining ones</a>
+<a name="ln76">  for(int i = pmol-&gt;NumAtoms(); i; --i)</a>
+<a name="ln77">    if(find(atomIdxs.begin(),atomIdxs.end(), i)==atomIdxs.end())</a>
+<a name="ln78">      pmol-&gt;DeleteAtom(pmol-&gt;GetAtom(i));</a>
+<a name="ln79">  return true;</a>
+<a name="ln80">}</a>
+<a name="ln81"> </a>
+<a name="ln82">//*****************************************************</a>
+<a name="ln83"> </a>
+<a name="ln84">bool MakeQueriesFromMolInFile(vector&lt;OBQuery*&gt;&amp; queries, const std::string&amp; filename, int* pnAtoms, bool noH)</a>
+<a name="ln85">{</a>
+<a name="ln86">    OBMol patternMol;</a>
+<a name="ln87">    patternMol.SetIsPatternStructure();</a>
+<a name="ln88">    OBConversion patternConv;</a>
+<a name="ln89">    OBFormat* pFormat;</a>
+<a name="ln90">    //Need to distinguish between filename and SMARTS. Not infallable...</a>
+<a name="ln91">    if( filename.empty() ||</a>
+<a name="ln92">        filename.find('.')==string::npos ||</a>
+<a name="ln93">        !(pFormat = patternConv.FormatFromExt(filename.c_str())) ||</a>
+<a name="ln94">        !patternConv.SetInFormat(pFormat) ||</a>
+<a name="ln95">        !patternConv.ReadFile(&amp;patternMol, filename) ||</a>
+<a name="ln96">        patternMol.NumAtoms()==0)</a>
+<a name="ln97">      return false;</a>
+<a name="ln98"> </a>
+<a name="ln99">    if(noH)</a>
+<a name="ln100">      patternMol.DeleteHydrogens();</a>
+<a name="ln101"> </a>
+<a name="ln102">    do</a>
+<a name="ln103">    {</a>
+<a name="ln104">      *pnAtoms = patternMol.NumHvyAtoms();</a>
+<a name="ln105">      queries.push_back(CompileMoleculeQuery(&amp;patternMol));</a>
+<a name="ln106">    }while(patternConv.Read(&amp;patternMol));</a>
+<a name="ln107">    return true;</a>
+<a name="ln108">}</a>
+<a name="ln109"> </a>
+<a name="ln110">const char* OpNewS::Description()</a>
+<a name="ln111">{</a>
+<a name="ln112">  return &quot;Isomorphism filter(-s, -v options replacement)(not displayed in GUI)\n&quot;</a>
+<a name="ln113">    &quot;This enhanced version can take a SMARTS parameter, for example:\n&quot;</a>
+<a name="ln114">    &quot;      babel in.smi -s \&quot;c1ccccc1[#6] green\&quot; out.cml \n&quot;</a>
+<a name="ln115">    &quot;With -s, only molecules matching the SMARTS are converted.\n&quot;</a>
+<a name="ln116">    &quot;With -v, only molecules NOT matching the SMARTS are converted.\n&quot;</a>
+<a name="ln117">    &quot;The optional second parameter causes the matched substructure to be\n&quot;</a>
+<a name="ln118">    &quot;colored if it is a color name like ``green`` or a hex value like\n&quot;</a>
+<a name="ln119">    &quot;``#8dcb70``. The coloring is recognized by SVGFormat and CMLFormat.\n \n&quot;</a>
+<a name="ln120"> </a>
+<a name="ln121">    &quot;The first parameter can also be a filename with an extension that\n&quot;</a>
+<a name="ln122">    &quot;can be interpreted as a file format:\n&quot;</a>
+<a name="ln123">    &quot;    -s \&quot;pattern.mol exact\&quot;\n&quot;</a>
+<a name="ln124">    &quot;A molecule in the file is used in an isomorphism test with the default\n&quot;</a>
+<a name="ln125">    &quot;matching: bonds by aromaticity or order, atoms only by atomic\n&quot;</a>
+<a name="ln126">    &quot;number. Explicit hydrogen atoms in this molecule are matched like\n&quot;</a>
+<a name="ln127">    &quot;any other atom, unless there is a parameter ``noH``.\n&quot;</a>
+<a name="ln128">    &quot;If the pattern file contains more than one molecule, the test is\n&quot;</a>
+<a name="ln129">    &quot;an OR of them, i.e. with -s, a molecule is converted (and with -v\n&quot;</a>
+<a name="ln130">    &quot;is excluded) if it matches ANY of the pattern molecules.\n&quot;</a>
+<a name="ln131">    &quot;Multiple color parameters can be specified and the coloring in the\n&quot;</a>
+<a name="ln132">    &quot;converted molecule corresponds to the first pattern molecule matched,\n&quot;</a>
+<a name="ln133">    &quot;or the last color if there are fewer colors than pattern molecules.\n \n&quot;</a>
+<a name="ln134"> </a>
+<a name="ln135">    &quot;If the last parameter is ``showall``, all molecules are shown, even if\n&quot;</a>
+<a name="ln136">    &quot;they do not match. This allows the -s option to be used for highlighting.\n \n&quot;</a>
+<a name="ln137"> </a>
+<a name="ln138">    &quot;If the second parameter is ``exact`` only exact matches are converted.\n&quot;</a>
+<a name="ln139">    &quot;If the second parameter is ``extract`` all the atoms in the converted\n&quot;</a>
+<a name="ln140">    &quot;molecule are deleted except for those matched. Since these retain their\n&quot;</a>
+<a name="ln141">    &quot;coordinates, this can be used to prepare display templates.\n\n&quot;</a>
+<a name="ln142"> </a>
+<a name="ln143">    &quot;With SMARTS matching only, the number of unique occurrences in a molecule\n&quot;</a>
+<a name="ln144">    &quot;can be specified in the second parameter, e.g.\n&quot;</a>
+<a name="ln145">    &quot;    -s c1ccccc1 2   which matches if there are exactly two benzene rings\n&quot;</a>
+<a name="ln146">    &quot; or -s c1ccccc1 &gt;2  which matches if there are more than two.\n&quot;</a>
+<a name="ln147">    &quot;(&lt;2 also works.) The color of the substructure can be in the 3rd parameter.\n \n&quot;</a>
+<a name="ln148"> </a>
+<a name="ln149">    &quot;In the GUI (or on the commandline as an alternative to using -v) the test\n&quot;</a>
+<a name="ln150">    &quot;can be negated with a ~ before the SMARTS string or file name.\n \n&quot;</a>
+<a name="ln151"> </a>
+<a name="ln152">    &quot;With the ``babel`` commandline interface, unless the option is at the end\n&quot;</a>
+<a name="ln153">    &quot;of a line, it is necessary to enclose all the parameters together in quotes,\n&quot;</a>
+<a name="ln154">    &quot;as in the first example above, because the -s and -v options are\n&quot;</a>
+<a name="ln155">    &quot;expecting a single parameter. With obabel and the GUI this is not necessary.\n&quot;</a>
+<a name="ln156">    &quot;A command must not have more than a single -s or single -v option.\n&quot;</a>
+<a name="ln157">    &quot;The ``--filter`` option is more flexible.\n\n&quot;;</a>
+<a name="ln158">}</a>
+<a name="ln159"> </a>
+<a name="ln160">/////////////////////////////////////////////////////////////////</a>
+<a name="ln161">OpNewS theOpNewS(&quot;s&quot;); //Global instances</a>
+<a name="ln162">OpNewS theOpNewV(&quot;v&quot;);</a>
+<a name="ln163"> </a>
+<a name="ln164">//////////////////////////////////////////////////////////////////</a>
+<a name="ln165">bool OpNewS::Do(OBBase* pOb, const char* OptionText, OpMap* pmap, OBConversion* pConv)</a>
+<a name="ln166">{</a>
+<a name="ln167">  OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln168">  if(!pmol)</a>
+<a name="ln169">    return false;</a>
+<a name="ln170"> </a>
+<a name="ln171">  // The SMARTS and any other parameters are extracted on the first molecule</a>
+<a name="ln172">  // and stored in the member variables. The parameter is cleared so that</a>
+<a name="ln173">  // the original -s option in transform.cpp is inactive</a>
+<a name="ln174"> </a>
+<a name="ln175">  //string txt(pmap-&gt;find(GetID())-&gt;second); // ID can be &quot;s&quot; or &quot;v&quot;</a>
+<a name="ln176"> </a>
+<a name="ln177">  vector&lt;OBQuery*&gt;::iterator qiter;</a>
+<a name="ln178">  if(OptionText &amp;&amp; *OptionText)//(!pConv || pConv-&gt;IsFirstInput())</a>
+<a name="ln179">  {</a>
+<a name="ln180">    //Set up on first call</a>
+<a name="ln181">    queries.clear();</a>
+<a name="ln182">    query=nullptr;</a>
+<a name="ln183">    nPatternAtoms=0;</a>
+<a name="ln184">    inv=false;</a>
+<a name="ln185"> </a>
+<a name="ln186">    tokenize(vec, OptionText);</a>
+<a name="ln187">    inv = GetID()[0]=='v';</a>
+<a name="ln188">    if(vec[0][0]=='~')</a>
+<a name="ln189">    {</a>
+<a name="ln190">      inv = true;</a>
+<a name="ln191">      vec[0].erase(0,1);</a>
+<a name="ln192">    }</a>
+<a name="ln193"> </a>
+<a name="ln194">    //Do not filter out any molecules if there is a parameter &quot;showall&quot;;</a>
+<a name="ln195">    //allows -s option to be used for highlighting substructures (--highlight also does this)</a>
+<a name="ln196">    vector&lt;string&gt;::iterator it = std::remove(vec.begin(), vec.end(),&quot;showall&quot;);</a>
+<a name="ln197">    showAll = it != vec.end();</a>
+<a name="ln198">    if(showAll)</a>
+<a name="ln199">      vec.erase(it);</a>
+<a name="ln200"> </a>
+<a name="ln201">    //Store the number of matches required, if as a number in the second parameter, else 0.</a>
+<a name="ln202">    nmatches = 0;</a>
+<a name="ln203">    comparechar = '\0';</a>
+<a name="ln204">    if(vec.size()&gt;1)</a>
+<a name="ln205">    {</a>
+<a name="ln206">      comparechar = vec[1][0];</a>
+<a name="ln207">      if(comparechar=='&gt;' || comparechar=='&lt;')</a>
+<a name="ln208">        vec[1].erase(0,1);</a>
+<a name="ln209">      else</a>
+<a name="ln210">        comparechar = '\0';</a>
+<a name="ln211">      nmatches = atoi(vec[1].c_str());</a>
+<a name="ln212">      if(nmatches) //remove this parameter to still allow coloring</a>
+<a name="ln213">        vec.erase(vec.begin()+1);</a>
+<a name="ln214">    }</a>
+<a name="ln215"> </a>
+<a name="ln216">    //Interpret as a filename if possible</a>
+<a name="ln217">    MakeQueriesFromMolInFile(queries, vec[0], &amp;nPatternAtoms, strstr(OptionText,&quot;noH&quot;));</a>
+<a name="ln218">    vec.erase(remove(vec.begin(),vec.end(),&quot;noH&quot;),vec.end());//to prevent &quot;noH2&quot; being seen as a color</a>
+<a name="ln219">    </a>
+<a name="ln220">     </a>
+<a name="ln221">    if(queries.empty())</a>
+<a name="ln222">    {</a>
+<a name="ln223">      //SMARTS supplied</a>
+<a name="ln224">    </a>
+<a name="ln225">      // Explicit H in SMARTS requires explicit H in the molecule.</a>
+<a name="ln226">      // Calling AddHydrogens() on a copy of the molecule  is done in parsmart.cpp</a>
+<a name="ln227">      // only when SMARTS contains [H]. Doing more has complications with atom typing,</a>
+<a name="ln228">      // so AddHydrogens here on the molecule (not a copy) when #1 detected.</a>
+<a name="ln229">      addHydrogens = (vec[0].find(&quot;#1]&quot;)!=string::npos);</a>
+<a name="ln230"> </a>
+<a name="ln231">      // If extra target mols have been supplied, make a composite SMARTS</a>
+<a name="ln232">      // to test for any of the targets.</a>
+<a name="ln233">      if(ExtraMols.size()&gt;0)</a>
+<a name="ln234">      {</a>
+<a name="ln235">        for(unsigned i=0;i&lt;ExtraMols.size();++i)</a>
+<a name="ln236">        {</a>
+<a name="ln237">          OBConversion extraConv;</a>
+<a name="ln238">          extraConv.AddOption(&quot;h&quot;);</a>
+<a name="ln239">          if(!extraConv.SetOutFormat(&quot;smi&quot;))</a>
+<a name="ln240">            return false;</a>
+<a name="ln241">          // Add option which avoids implicit H being added to the SMARTS.</a>
+<a name="ln242">          // The parameter must be present but can be anything.</a>
+<a name="ln243">          extraConv.AddOption(&quot;h&quot;,OBConversion::OUTOPTIONS, &quot;X&quot;);</a>
+<a name="ln244">          xsmarts += &quot;,$(&quot; + extraConv.WriteString(ExtraMols[i], true) + &quot;)&quot;;</a>
+<a name="ln245">        }</a>
+<a name="ln246">      }</a>
+<a name="ln247"> </a>
+<a name="ln248">      string ysmarts = xsmarts.empty() ? vec[0] : &quot;[$(&quot; + vec[0] + &quot;)&quot; + xsmarts +&quot;]&quot;;</a>
+<a name="ln249">      xsmarts.clear();</a>
+<a name="ln250">      if(!sp.Init(ysmarts))</a>
+<a name="ln251">      {</a>
+<a name="ln252">        string msg = ysmarts + &quot; cannot be interpreted as either valid SMARTS &quot;</a>
+<a name="ln253">          &quot;or the name of a file with an extension known to OpenBabel &quot;</a>
+<a name="ln254">          &quot;that contains one or more pattern molecules.&quot;;</a>
+<a name="ln255">        obErrorLog.ThrowError(__FUNCTION__, msg, obError, onceOnly);</a>
+<a name="ln256">        delete pmol;</a>
+<a name="ln257">        pmol = nullptr;</a>
+<a name="ln258">        pConv-&gt;SetOneObjectOnly(); //stop conversion</a>
+<a name="ln259">        return false;</a>
+<a name="ln260">      }</a>
+<a name="ln261">    }</a>
+<a name="ln262">    else</a>
+<a name="ln263">    {</a>
+<a name="ln264">      // Target is in a file. Add extra targets if any supplied</a>
+<a name="ln265">      for(unsigned i=0;i&lt;ExtraMols.size();++i)</a>
+<a name="ln266">        queries.push_back(CompileMoleculeQuery(static_cast&lt;OBMol*&gt;(ExtraMols[i])));</a>
+<a name="ln267">      ExtraMols.clear();</a>
+<a name="ln268">    }</a>
+<a name="ln269"> </a>
+<a name="ln270">    if(vec.size()&gt;1 &amp;&amp; vec[1]==&quot;exact&quot;)</a>
+<a name="ln271">    {</a>
+<a name="ln272">      if(queries.empty())</a>
+<a name="ln273">      {</a>
+<a name="ln274">        //Convert SMARTS to SMILES to count number of atoms</a>
+<a name="ln275">        OBConversion conv;</a>
+<a name="ln276">        OBMol patmol;</a>
+<a name="ln277">        if(!conv.SetInFormat(&quot;smi&quot;) || !conv.ReadString(&amp;patmol, vec[0]))</a>
+<a name="ln278">        {</a>
+<a name="ln279">          obErrorLog.ThrowError(__FUNCTION__, &quot;Cannot read the parameter of -s option, &quot;</a>
+<a name="ln280">          &quot;which has to be valid SMILES when the exact option is used.&quot;, obError, onceOnly);</a>
+<a name="ln281">          delete pmol;</a>
+<a name="ln282">          if(pConv)</a>
+<a name="ln283">            pConv-&gt;SetOneObjectOnly(); //stop conversion</a>
+<a name="ln284">          return false;</a>
+<a name="ln285">        }</a>
+<a name="ln286">        nPatternAtoms = patmol.NumHvyAtoms();</a>
+<a name="ln287">      }</a>
+<a name="ln288">    }</a>
+<a name="ln289">    else</a>
+<a name="ln290">      nPatternAtoms = 0;</a>
+<a name="ln291"> </a>
+<a name="ln292">    //disable old versions</a>
+<a name="ln293">    if(pConv)</a>
+<a name="ln294">      pConv-&gt;AddOption(GetID(), OBConversion::GENOPTIONS, &quot;&quot;);</a>
+<a name="ln295">  }</a>
+<a name="ln296"> </a>
+<a name="ln297">  bool match = false;</a>
+<a name="ln298">  //These are a vector of each mapping, each containing atom indxs.</a>
+<a name="ln299">  vector&lt;vector&lt;int&gt; &gt; vecatomvec;</a>
+<a name="ln300">  vector&lt;vector&lt;int&gt; &gt;* pMappedAtoms = nullptr;</a>
+<a name="ln301"> </a>
+<a name="ln302">  if(nPatternAtoms)</a>
+<a name="ln303">    if(pmol-&gt;NumHvyAtoms() != nPatternAtoms)</a>
+<a name="ln304">      return false;</a>
+<a name="ln305"> </a>
+<a name="ln306">  unsigned int imol=0; //index of mol in pattern file</a>
+<a name="ln307">  if(!queries.empty()) //filename supplied</a>
+<a name="ln308">  {</a>
+<a name="ln309">    //match is set true if any of the structures match - OR behaviour</a>
+<a name="ln310">    for(qiter=queries.begin();qiter!=queries.end();++qiter, ++imol)</a>
+<a name="ln311">    {</a>
+<a name="ln312">      OBIsomorphismMapper* mapper = OBIsomorphismMapper::GetInstance(*qiter);</a>
+<a name="ln313">      OBIsomorphismMapper::Mappings mappings;</a>
+<a name="ln314">      mapper-&gt;MapUnique(pmol, mappings);</a>
+<a name="ln315">      if( (match = !mappings.empty()) ) // extra parens to indicate truth value</a>
+<a name="ln316">      {</a>
+<a name="ln317">        OBIsomorphismMapper::Mappings::iterator ita;</a>
+<a name="ln318">        OBIsomorphismMapper::Mapping::iterator itb;</a>
+<a name="ln319">        for(ita=mappings.begin(); ita!=mappings.end();++ita)//each mapping</a>
+<a name="ln320">        {</a>
+<a name="ln321">          vector&lt;int&gt; atomvec;</a>
+<a name="ln322">          for(itb=ita-&gt;begin(); itb!=ita-&gt;end();++itb)//each atom index</a>
+<a name="ln323">            atomvec.push_back(itb-&gt;second+1);</a>
+<a name="ln324">          vecatomvec.push_back(atomvec);</a>
+<a name="ln325">          atomvec.clear();</a>
+<a name="ln326">        }</a>
+<a name="ln327">        pMappedAtoms = &amp;vecatomvec;</a>
+<a name="ln328">        break;</a>
+<a name="ln329">      }</a>
+<a name="ln330">    }</a>
+<a name="ln331">  }</a>
+<a name="ln332">  else //SMARTS supplied</a>
+<a name="ln333">  {</a>
+<a name="ln334"> </a>
+<a name="ln335">    if(addHydrogens)</a>
+<a name="ln336">      pmol-&gt;AddHydrogens(false,false);</a>
+<a name="ln337"> </a>
+<a name="ln338">    if( (match = sp.Match(*pmol)) ) // extra parens to indicate truth value</a>
+<a name="ln339">    {</a>
+<a name="ln340">      pMappedAtoms = &amp;sp.GetMapList();</a>
+<a name="ln341">      if(nmatches!=0)</a>
+<a name="ln342">      {</a>
+<a name="ln343">        int n = sp.GetUMapList().size();</a>
+<a name="ln344">        if(comparechar=='&gt;')      match = (n &gt; nmatches);</a>
+<a name="ln345">        else if(comparechar=='&lt;') match = (n &lt; nmatches);</a>
+<a name="ln346">        else                      match = (n == nmatches);</a>
+<a name="ln347">      }</a>
+<a name="ln348">    }</a>
+<a name="ln349">  }</a>
+<a name="ln350"> </a>
+<a name="ln351">  if((!showAll &amp;&amp; (!match &amp;&amp; !inv)) || (match &amp;&amp; inv))</a>
+<a name="ln352">  {</a>
+<a name="ln353">    //delete a non-matching mol</a>
+<a name="ln354">    delete pmol;</a>
+<a name="ln355">    pmol = nullptr;</a>
+<a name="ln356">    return false;</a>
+<a name="ln357">  }</a>
+<a name="ln358"> </a>
+<a name="ln359">  if(match)</a>
+<a name="ln360">    //Copy the idxes of the first match to a member variable so that it can be retrieved from outside</a>
+<a name="ln361">    firstmatch.assign(pMappedAtoms-&gt;begin()-&gt;begin(), pMappedAtoms-&gt;begin()-&gt;end());</a>
+<a name="ln362">  else</a>
+<a name="ln363">    firstmatch.clear();</a>
+<a name="ln364"> </a>
+<a name="ln365">  if(match &amp;&amp; !inv &amp;&amp; vec.size()&gt;=2 &amp;&amp; !vec[1].empty() &amp;&amp; !nPatternAtoms)</a>
+<a name="ln366">  {</a>
+<a name="ln367">    vector&lt;vector&lt;int&gt; &gt;::iterator iter;</a>
+<a name="ln368"> </a>
+<a name="ln369">    if (vec[1]==&quot;extract&quot; || (vec.size()&gt;3 &amp;&amp; vec[2]==&quot;extract&quot;))</a>
+<a name="ln370">    {</a>
+<a name="ln371">      //Delete all unmatched atoms. Use only the first match</a>
+<a name="ln372">      ExtractSubstruct(pmol, *pMappedAtoms-&gt;begin());</a>
+<a name="ln373">      return true;</a>
+<a name="ln374">    }</a>
+<a name="ln375"> </a>
+<a name="ln376">    // color the substructure if there is a second parameter which is not &quot;exact&quot; or &quot;extract&quot; or &quot;noH&quot;</a>
+<a name="ln377">    // with multiple color parameters use the one corresponding to the query molecule, or the last</a>
+<a name="ln378">    if(imol&gt;vec.size()-2)</a>
+<a name="ln379">      imol = vec.size()-2;</a>
+<a name="ln380">    for(iter=pMappedAtoms-&gt;begin();iter!=pMappedAtoms-&gt;end();++iter)//each match</a>
+<a name="ln381">       AddDataToSubstruct(pmol, *iter, &quot;color&quot;, vec[imol+1]);</a>
+<a name="ln382">    return true;</a>
+<a name="ln383">  }</a>
+<a name="ln384"> </a>
+<a name="ln385">  if(pConv &amp;&amp; pConv-&gt;IsLast())</a>
+<a name="ln386">  {</a>
+<a name="ln387">    for(qiter=queries.begin();qiter!=queries.end();++qiter)</a>
+<a name="ln388">      delete *qiter;</a>
+<a name="ln389">    queries.clear();</a>
+<a name="ln390">  }</a>
+<a name="ln391">  return true;</a>
+<a name="ln392">}</a>
+<a name="ln393"> </a>
+<a name="ln394">bool OpNewS::ProcessVec(std::vector&lt;OBBase*&gt;&amp; Extravec)</a>
+<a name="ln395">{</a>
+<a name="ln396">  //Adds extra target molecules (see FastSearchFormat)</a>
+<a name="ln397">  ExtraMols = Extravec;</a>
+<a name="ln398">  return true;</a>
+<a name="ln399">}</a>
+<a name="ln400"> </a>
+<a name="ln401">}//namespace</a>
+
+</code></pre>
+<div class="balloon" rel="258"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v595/" target="_blank">V595</a> The 'pConv' pointer was utilized before it was verified against nullptr. Check lines: 258, 282.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

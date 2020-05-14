@@ -1,0 +1,1933 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>atom.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">atom.cpp - Handle OBAtom class.</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 1998-2001 by OpenEye Scientific Software, Inc.</a>
+<a name="ln5">Some portions Copyright (C) 2001-2008 by Geoffrey R. Hutchison</a>
+<a name="ln6">Some portions Copyright (C) 2003 by Michael Banck</a>
+<a name="ln7"> </a>
+<a name="ln8">This file is part of the Open Babel project.</a>
+<a name="ln9">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln10"> </a>
+<a name="ln11">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln12">it under the terms of the GNU General Public License as published by</a>
+<a name="ln13">the Free Software Foundation version 2 of the License.</a>
+<a name="ln14"> </a>
+<a name="ln15">This program is distributed in the hope that it will be useful,</a>
+<a name="ln16">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln17">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln18">GNU General Public License for more details.</a>
+<a name="ln19">***********************************************************************/</a>
+<a name="ln20">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln21"> </a>
+<a name="ln22">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln24">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln25">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln26">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln27">#include &lt;openbabel/molchrg.h&gt;</a>
+<a name="ln28">#include &lt;openbabel/ring.h&gt;</a>
+<a name="ln29">#include &lt;openbabel/phmodel.h&gt;</a>
+<a name="ln30">#include &lt;openbabel/builder.h&gt;</a>
+<a name="ln31">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln32">#include &lt;openbabel/chains.h&gt;</a>
+<a name="ln33">#include &lt;openbabel/obutil.h&gt;</a>
+<a name="ln34">#include &lt;openbabel/residue.h&gt;</a>
+<a name="ln35">#include &lt;openbabel/chains.h&gt;</a>
+<a name="ln36"> </a>
+<a name="ln37">#include &lt;openbabel/math/matrix3x3.h&gt;</a>
+<a name="ln38"> </a>
+<a name="ln39">#if !HAVE_STRNCASECMP</a>
+<a name="ln40">extern &quot;C&quot; int strncasecmp(const char *s1, const char *s2, size_t n);</a>
+<a name="ln41">#endif</a>
+<a name="ln42"> </a>
+<a name="ln43">using namespace std;</a>
+<a name="ln44"> </a>
+<a name="ln45"> </a>
+<a name="ln46">namespace OpenBabel</a>
+<a name="ln47">{</a>
+<a name="ln48">  OB_EXTERN OBChainsParser chainsparser;</a>
+<a name="ln49">  /** \class OBAtom atom.h &lt;openbabel/atom.h&gt;</a>
+<a name="ln50">      \brief Atom class</a>
+<a name="ln51"> </a>
+<a name="ln52">      To understand the OBAtom class it is important to state a key</a>
+<a name="ln53">      decision on which the design was based. The OBAtom class not only</a>
+<a name="ln54">      holds data, but facilitates extraction of data perceived from both</a>
+<a name="ln55">      the atom and the molecule. This prevents the OBMol class from</a>
+<a name="ln56">      becoming overly large and complicated.</a>
+<a name="ln57"> </a>
+<a name="ln58">      A number of data extraction methods perform what is called</a>
+<a name="ln59">      &lt;a href=&quot;http://en.wikipedia.org/wiki/Lazy_evaluation&quot;&gt;`Lazy Evaluation,'&lt;/a&gt;</a>
+<a name="ln60">      which is essentially on-the-fly evaluation.</a>
+<a name="ln61">      For example, when an atom is queried as to whether it is cyclic</a>
+<a name="ln62">      or what it's hybridization state is the information is perceived</a>
+<a name="ln63">      automatically. The perception of a particular trait is actually</a>
+<a name="ln64">      performed on the entire molecule the first time it is requested of</a>
+<a name="ln65">      an atom or bond, and stored for subsequent requests for the same</a>
+<a name="ln66">      trait of additional atoms or bonds.The OBAtom class is similar to</a>
+<a name="ln67">      OBMol and the whole of Open Babel in that data access and modification</a>
+<a name="ln68">      is done through Get and Set methods.</a>
+<a name="ln69"> </a>
+<a name="ln70">      The following code demonstrates how to print out the atom numbers,</a>
+<a name="ln71">      element numbers, and coordinates of a molecule:</a>
+<a name="ln72">      \code</a>
+<a name="ln73">      OBMol mol;</a>
+<a name="ln74"> </a>
+<a name="ln75">      FOR_ATOMS_OF_MOL(atom, mol)</a>
+<a name="ln76">      {</a>
+<a name="ln77">         cout &lt;&lt; atom-&gt;GetIdx() &lt;&lt; ` `;</a>
+<a name="ln78">         cout &lt;&lt; atom-&gt;GetAtomicNum() &lt;&lt; ` `;</a>
+<a name="ln79">         cout &lt;&lt; atom-&gt;GetVector() &lt;&lt; endl;</a>
+<a name="ln80">      }</a>
+<a name="ln81">      \endcode</a>
+<a name="ln82">      A number of the property member functions indicate that atoms</a>
+<a name="ln83">      have some knowledge of their covalently attached neighbor atoms.</a>
+<a name="ln84">      Bonding information is partly redundant within a molecule in</a>
+<a name="ln85">      that an OBMol has a complete list of bonds in a molecule, and</a>
+<a name="ln86">      an OBAtom has a list bonds of which it is a member. The following</a>
+<a name="ln87">      code demonstrates how an OBAtom uses its bond information to loop</a>
+<a name="ln88">      over atoms attached to itself:</a>
+<a name="ln89">      \code</a>
+<a name="ln90">      OBMol mol;</a>
+<a name="ln91">      OBAtom *atom;</a>
+<a name="ln92"> </a>
+<a name="ln93">      atom = mol.GetAtom(1);</a>
+<a name="ln94">      FOR_NBORS_OF_ATOM(nbr, atom)</a>
+<a name="ln95">      {</a>
+<a name="ln96">         cout &lt;&lt; &quot;atom #&quot; &lt;&lt; atom-&gt;GetIdx() &lt;&lt; &quot; is attached to atom #&quot;</a>
+<a name="ln97">              &lt;&lt; nbr-&gt;GetIdx() &lt;&lt; endl;</a>
+<a name="ln98">      }</a>
+<a name="ln99">      \endcode</a>
+<a name="ln100"> </a>
+<a name="ln101">      should produce an output like</a>
+<a name="ln102">      \code</a>
+<a name="ln103">      atom #1 is attached to atom #2</a>
+<a name="ln104">      \endcode</a>
+<a name="ln105">  */</a>
+<a name="ln106"> </a>
+<a name="ln107">  extern THREAD_LOCAL OBAromaticTyper  aromtyper;</a>
+<a name="ln108">  extern THREAD_LOCAL OBAtomTyper      atomtyper;</a>
+<a name="ln109">  extern THREAD_LOCAL OBPhModel        phmodel;</a>
+<a name="ln110">  OB_EXTERN OBTypeTable      ttab;</a>
+<a name="ln111"> </a>
+<a name="ln112">  //</a>
+<a name="ln113">  // OBAtom member functions</a>
+<a name="ln114">  //</a>
+<a name="ln115"> </a>
+<a name="ln116">  OBAtom::OBAtom()</a>
+<a name="ln117">  {</a>
+<a name="ln118">    _parent = nullptr;</a>
+<a name="ln119">    Clear();</a>
+<a name="ln120">  }</a>
+<a name="ln121"> </a>
+<a name="ln122">  OBAtom::~OBAtom()</a>
+<a name="ln123">  {</a>
+<a name="ln124">    if (_residue != nullptr)</a>
+<a name="ln125">      {</a>
+<a name="ln126">        _residue-&gt;RemoveAtom(this);</a>
+<a name="ln127">      }</a>
+<a name="ln128">    /*</a>
+<a name="ln129">      if (!_vdata.empty())</a>
+<a name="ln130">      {</a>
+<a name="ln131">      vector&lt;OBGenericData*&gt;::iterator m;</a>
+<a name="ln132">      for (m = _vdata.begin();m != _vdata.end();++m)</a>
+<a name="ln133">      delete *m;</a>
+<a name="ln134">      _vdata.clear();</a>
+<a name="ln135">      }</a>
+<a name="ln136">    */</a>
+<a name="ln137">  }</a>
+<a name="ln138"> </a>
+<a name="ln139">  bool OBAtom::Clear()</a>
+<a name="ln140">  {</a>
+<a name="ln141">    _c = nullptr;</a>
+<a name="ln142">    _cidx = 0;</a>
+<a name="ln143">    _flags=0;</a>
+<a name="ln144">    _idx = 0;</a>
+<a name="ln145">    _hyb = 0;</a>
+<a name="ln146">    _ele = (char)0;</a>
+<a name="ln147">    _isotope = 0;</a>
+<a name="ln148">    _spinmultiplicity=0; // CM 18 Sept 2003</a>
+<a name="ln149">    _imph = 0;</a>
+<a name="ln150">    _fcharge = 0;</a>
+<a name="ln151">    _type[0] = '\0';</a>
+<a name="ln152">    _pcharge = 0.0;</a>
+<a name="ln153">    _vbond.clear();</a>
+<a name="ln154">    _vbond.reserve(4);</a>
+<a name="ln155">    _residue = nullptr;</a>
+<a name="ln156">    _id = NoId;</a>
+<a name="ln157"> </a>
+<a name="ln158">    return(OBBase::Clear());</a>
+<a name="ln159">  }</a>
+<a name="ln160"> </a>
+<a name="ln161">  OBAtom &amp;OBAtom::operator=(OBAtom &amp;src)</a>
+<a name="ln162">  //copy atom information</a>
+<a name="ln163">  //bond info is not copied here as ptrs may be invalid</a>
+<a name="ln164">  {</a>
+<a name="ln165">    if (this != &amp;src) {</a>
+<a name="ln166">      _idx = src.GetIdx();</a>
+<a name="ln167">      Duplicate(&amp;src);</a>
+<a name="ln168">    }</a>
+<a name="ln169">    return(*this);</a>
+<a name="ln170">  }</a>
+<a name="ln171"> </a>
+<a name="ln172">  void OBAtom::Duplicate(OBAtom *src)</a>
+<a name="ln173">  {</a>
+<a name="ln174">    if (!src)</a>
+<a name="ln175">      return;</a>
+<a name="ln176"> </a>
+<a name="ln177">    _hyb = src-&gt;_hyb;</a>
+<a name="ln178">    _ele = src-&gt;_ele;</a>
+<a name="ln179">    _imph = src-&gt;_imph;</a>
+<a name="ln180">    _isotope = src-&gt;_isotope;</a>
+<a name="ln181">    _fcharge = src-&gt;_fcharge;</a>
+<a name="ln182">    _spinmultiplicity = src-&gt;_spinmultiplicity;</a>
+<a name="ln183">    strncpy(_type,src-&gt;_type, sizeof(_type) - 1);</a>
+<a name="ln184">    _type[sizeof(_type) - 1] = '\0';</a>
+<a name="ln185">    _pcharge = src-&gt;_pcharge;</a>
+<a name="ln186">    _v = src-&gt;GetVector();</a>
+<a name="ln187">    _flags = src-&gt;_flags;</a>
+<a name="ln188">    _residue = nullptr;</a>
+<a name="ln189">    _id = src-&gt;_id;</a>
+<a name="ln190"> </a>
+<a name="ln191">    _vdata.clear();</a>
+<a name="ln192">    //Copy all the OBGenericData, providing the new atom</a>
+<a name="ln193">    vector&lt;OBGenericData*&gt;::iterator itr;</a>
+<a name="ln194">    for(itr=src-&gt;BeginData();itr!=src-&gt;EndData();++itr)</a>
+<a name="ln195">      {</a>
+<a name="ln196">        OBGenericData* pCopiedData = (*itr)-&gt;Clone(this);</a>
+<a name="ln197">        SetData(pCopiedData);</a>
+<a name="ln198">      }</a>
+<a name="ln199">  }</a>
+<a name="ln200"> </a>
+<a name="ln201">  bool OBAtom::IsConnected(OBAtom *a1)</a>
+<a name="ln202">  {</a>
+<a name="ln203">    OBBondIterator i;</a>
+<a name="ln204">    OBBond *bond;</a>
+<a name="ln205"> </a>
+<a name="ln206">    for (bond = BeginBond(i);bond;bond = NextBond(i))</a>
+<a name="ln207">      if (bond-&gt;GetBeginAtom() == a1 || bond-&gt;GetEndAtom() == a1)</a>
+<a name="ln208">        return(true);</a>
+<a name="ln209"> </a>
+<a name="ln210">    return(false);</a>
+<a name="ln211">  }</a>
+<a name="ln212"> </a>
+<a name="ln213">  bool OBAtom::IsOneThree(OBAtom *a1)</a>
+<a name="ln214">  {</a>
+<a name="ln215">    OBAtom *atom1,*atom2;</a>
+<a name="ln216">    OBBond *bond1,*bond2;</a>
+<a name="ln217">    OBBondIterator i,j;</a>
+<a name="ln218">    atom1 = this;</a>
+<a name="ln219">    atom2 = a1;</a>
+<a name="ln220"> </a>
+<a name="ln221">    for (bond1 = atom1-&gt;BeginBond(i);bond1;bond1 = atom1-&gt;NextBond(i))</a>
+<a name="ln222">      for (bond2 = atom2-&gt;BeginBond(j);bond2;bond2 = atom2-&gt;NextBond(j))</a>
+<a name="ln223">        if (bond1-&gt;GetNbrAtom(atom1) == bond2-&gt;GetNbrAtom(atom2))</a>
+<a name="ln224">          return(true);</a>
+<a name="ln225"> </a>
+<a name="ln226">    return(false);</a>
+<a name="ln227">  }</a>
+<a name="ln228"> </a>
+<a name="ln229">  bool OBAtom::IsOneFour(OBAtom *a1)</a>
+<a name="ln230">  {</a>
+<a name="ln231">    OBAtom *atom1,*atom2;</a>
+<a name="ln232">    OBBond *bond1,*bond2;</a>
+<a name="ln233">    OBBondIterator i,j;</a>
+<a name="ln234">    atom1 = this;</a>
+<a name="ln235">    atom2 = a1;</a>
+<a name="ln236"> </a>
+<a name="ln237">    for (bond1 = atom1-&gt;BeginBond(i);bond1;bond1 = atom1-&gt;NextBond(i))</a>
+<a name="ln238">      for (bond2 = atom2-&gt;BeginBond(j);bond2;bond2 = atom2-&gt;NextBond(j))</a>
+<a name="ln239">        if ((bond1-&gt;GetNbrAtom(atom1))-&gt;IsConnected(bond2-&gt;GetNbrAtom(atom2)))</a>
+<a name="ln240">          return(true);</a>
+<a name="ln241"> </a>
+<a name="ln242">    return(false);</a>
+<a name="ln243">  }</a>
+<a name="ln244"> </a>
+<a name="ln245">  bool OBAtom::IsAxial()</a>
+<a name="ln246">  {</a>
+<a name="ln247">    double tor;</a>
+<a name="ln248">    OBAtom *a,*b,*c;</a>
+<a name="ln249">    OBBondIterator i,j,k;</a>
+<a name="ln250"> </a>
+<a name="ln251">    for (a = BeginNbrAtom(i);a;a = NextNbrAtom(i))</a>
+<a name="ln252">      if (a-&gt;GetHyb() == 3 &amp;&amp; a-&gt;IsInRing() &amp;&amp; !(*i)-&gt;IsInRing())</a>
+<a name="ln253">        for (b = a-&gt;BeginNbrAtom(j);b;b = a-&gt;NextNbrAtom(j))</a>
+<a name="ln254">          if (b != this &amp;&amp; b-&gt;IsInRing() &amp;&amp; b-&gt;GetHyb() == 3)</a>
+<a name="ln255">            for (c = b-&gt;BeginNbrAtom(k);c;c = b-&gt;NextNbrAtom(k))</a>
+<a name="ln256">              if (c != a &amp;&amp; c-&gt;IsInRing())</a>
+<a name="ln257">                {</a>
+<a name="ln258">                  tor = fabs(((OBMol*)GetParent())-&gt;GetTorsion(this,a,b,c));</a>
+<a name="ln259">                  return(tor &gt; 55.0 &amp;&amp; tor &lt; 75.0);</a>
+<a name="ln260">                }</a>
+<a name="ln261"> </a>
+<a name="ln262">    return(false);</a>
+<a name="ln263">  }</a>
+<a name="ln264"> </a>
+<a name="ln265">  /**     This can be sketched as follows</a>
+<a name="ln266">          \code</a>
+<a name="ln267">              '*'</a>
+<a name="ln268">                 \</a>
+<a name="ln269">                  a=b</a>
+<a name="ln270">          \endcode</a>
+<a name="ln271">          where a and b are the 'apha' and 'beta' atoms, respectively and '*'</a>
+<a name="ln272">          indicates the current atom.</a>
+<a name="ln273">    **/</a>
+<a name="ln274">  bool OBAtom::HasAlphaBetaUnsat(bool includePandS)</a>
+<a name="ln275">  {</a>
+<a name="ln276">    OBAtom *a1,*a2;</a>
+<a name="ln277">    OBBondIterator i,j;</a>
+<a name="ln278"> </a>
+<a name="ln279">    for (a1 = BeginNbrAtom(i);a1;a1 = NextNbrAtom(i))</a>
+<a name="ln280">      if (includePandS || (a1-&gt;GetAtomicNum() != OBElements::Phosphorus &amp;&amp; a1-&gt;GetAtomicNum() != OBElements::Sulfur))</a>
+<a name="ln281">        for (a2 = a1-&gt;BeginNbrAtom(j);a2;a2 = a1-&gt;NextNbrAtom(j))</a>
+<a name="ln282">          if (a2 != this &amp;&amp; ((*j)-&gt;GetBondOrder() == 2 || (*j)-&gt;GetBondOrder() == 3 || (*j)-&gt;GetBondOrder() == 5))</a>
+<a name="ln283">            return(true);</a>
+<a name="ln284"> </a>
+<a name="ln285">    return(false);</a>
+<a name="ln286">  }</a>
+<a name="ln287"> </a>
+<a name="ln288">  bool OBAtom::HasBondOfOrder(unsigned int order)</a>
+<a name="ln289">  {</a>
+<a name="ln290">    OBBond *bond;</a>
+<a name="ln291">    OBBondIterator i;</a>
+<a name="ln292">    for (bond = BeginBond(i);bond;bond = NextBond(i))</a>
+<a name="ln293">      if (bond-&gt;GetBondOrder() == order)</a>
+<a name="ln294">        return(true);</a>
+<a name="ln295"> </a>
+<a name="ln296">    return(false);</a>
+<a name="ln297">  }</a>
+<a name="ln298"> </a>
+<a name="ln299">  int OBAtom::CountBondsOfOrder(unsigned int order)</a>
+<a name="ln300">  {</a>
+<a name="ln301">    int count = 0;</a>
+<a name="ln302">    OBBond *bond;</a>
+<a name="ln303">    OBBondIterator i;</a>
+<a name="ln304">    for (bond = BeginBond(i);bond;bond = NextBond(i))</a>
+<a name="ln305">      if (bond-&gt;GetBondOrder() == order)</a>
+<a name="ln306">        count++;</a>
+<a name="ln307"> </a>
+<a name="ln308">    return(count);</a>
+<a name="ln309">  }</a>
+<a name="ln310"> </a>
+<a name="ln311">  int OBAtom::HighestBondOrder()</a>
+<a name="ln312">  {</a>
+<a name="ln313">    unsigned int highest = 0;</a>
+<a name="ln314">    OBBond *bond;</a>
+<a name="ln315">    OBBondIterator i;</a>
+<a name="ln316">    for(bond = BeginBond(i); bond; bond = NextBond(i))</a>
+<a name="ln317">      if(bond-&gt;GetBondOrder() &gt; highest)</a>
+<a name="ln318">        highest = bond-&gt;GetBondOrder();</a>
+<a name="ln319"> </a>
+<a name="ln320">    return(highest);</a>
+<a name="ln321">  }</a>
+<a name="ln322"> </a>
+<a name="ln323">  bool OBAtom::HasNonSingleBond()</a>
+<a name="ln324">  {</a>
+<a name="ln325">    OBBond *bond;</a>
+<a name="ln326">    OBBondIterator i;</a>
+<a name="ln327">    for (bond = BeginBond(i);bond;bond = NextBond(i))</a>
+<a name="ln328">      if (bond-&gt;GetBondOrder() != 1)</a>
+<a name="ln329">        return(true);</a>
+<a name="ln330"> </a>
+<a name="ln331">    return(false);</a>
+<a name="ln332">  }</a>
+<a name="ln333"> </a>
+<a name="ln334">  bool OBAtom::IsPolarHydrogen()</a>
+<a name="ln335">  {</a>
+<a name="ln336">    if (GetAtomicNum() != OBElements::Hydrogen)</a>
+<a name="ln337">      return(false);</a>
+<a name="ln338"> </a>
+<a name="ln339">    OBAtom *atom;</a>
+<a name="ln340">    OBBond *bond;</a>
+<a name="ln341">    OBBondIterator i;</a>
+<a name="ln342">    for (bond = BeginBond(i);bond;bond = NextBond(i))</a>
+<a name="ln343">      {</a>
+<a name="ln344">        atom = bond-&gt;GetNbrAtom(this);</a>
+<a name="ln345">        if (atom-&gt;GetAtomicNum() == 7)</a>
+<a name="ln346">          return(true);</a>
+<a name="ln347">        if (atom-&gt;GetAtomicNum() == 8)</a>
+<a name="ln348">          return(true);</a>
+<a name="ln349">        if (atom-&gt;GetAtomicNum() == 15)</a>
+<a name="ln350">          return(true);</a>
+<a name="ln351">        if (atom-&gt;GetAtomicNum() == 16)</a>
+<a name="ln352">          return(true);</a>
+<a name="ln353">      }</a>
+<a name="ln354"> </a>
+<a name="ln355">    return(false);</a>
+<a name="ln356">  }</a>
+<a name="ln357"> </a>
+<a name="ln358">  bool OBAtom::IsNonPolarHydrogen()</a>
+<a name="ln359">  {</a>
+<a name="ln360">    if (GetAtomicNum() != OBElements::Hydrogen)</a>
+<a name="ln361">      return(false);</a>
+<a name="ln362"> </a>
+<a name="ln363">    OBAtom *atom;</a>
+<a name="ln364">    OBBond *bond;</a>
+<a name="ln365">    OBBondIterator i;</a>
+<a name="ln366">    for (bond = BeginBond(i);bond;bond = NextBond(i))</a>
+<a name="ln367">      {</a>
+<a name="ln368">        atom = bond-&gt;GetNbrAtom(this);</a>
+<a name="ln369">        if (atom-&gt;GetAtomicNum() == 6)</a>
+<a name="ln370">          return(true);</a>
+<a name="ln371">      }</a>
+<a name="ln372"> </a>
+<a name="ln373">    return(false);</a>
+<a name="ln374">  }</a>
+<a name="ln375"> </a>
+<a name="ln376">  vector3 &amp;OBAtom::GetVector()</a>
+<a name="ln377">  {</a>
+<a name="ln378">    if (!_c)</a>
+<a name="ln379">      return(_v);</a>
+<a name="ln380"> </a>
+<a name="ln381">    _v.Set((*_c)[_cidx],(*_c)[_cidx+1],(*_c)[_cidx+2]);</a>
+<a name="ln382">    return(_v);</a>
+<a name="ln383">  }</a>
+<a name="ln384"> </a>
+<a name="ln385">  const vector3 &amp;OBAtom::GetVector() const</a>
+<a name="ln386">  {</a>
+<a name="ln387">    if (!_c)</a>
+<a name="ln388">      return(_v);</a>
+<a name="ln389"> </a>
+<a name="ln390">    _v.Set((*_c)[_cidx],(*_c)[_cidx+1],(*_c)[_cidx+2]);</a>
+<a name="ln391">    return(_v);</a>
+<a name="ln392">  }</a>
+<a name="ln393"> </a>
+<a name="ln394">  void OBAtom::SetVector()</a>
+<a name="ln395">  {</a>
+<a name="ln396">    //    obAssert(_c);</a>
+<a name="ln397">    if (_c)</a>
+<a name="ln398">      _v.Set((*_c)[_cidx],(*_c)[_cidx+1],(*_c)[_cidx+2]);</a>
+<a name="ln399">  }</a>
+<a name="ln400"> </a>
+<a name="ln401">  void OBAtom::SetVector(const vector3 &amp;v)</a>
+<a name="ln402">  {</a>
+<a name="ln403">    if (!_c)</a>
+<a name="ln404">      _v = v;</a>
+<a name="ln405">    else</a>
+<a name="ln406">      {</a>
+<a name="ln407">        (*_c)[_cidx  ] = v.x();</a>
+<a name="ln408">        (*_c)[_cidx+1] = v.y();</a>
+<a name="ln409">        (*_c)[_cidx+2] = v.z();</a>
+<a name="ln410">      }</a>
+<a name="ln411">  }</a>
+<a name="ln412"> </a>
+<a name="ln413">  void OBAtom::SetVector(const double v_x,const double v_y,const double v_z)</a>
+<a name="ln414">  {</a>
+<a name="ln415">    if (!_c)</a>
+<a name="ln416">      _v.Set(v_x,v_y,v_z);</a>
+<a name="ln417">    else</a>
+<a name="ln418">      {</a>
+<a name="ln419">        (*_c)[_cidx  ] = v_x;</a>
+<a name="ln420">        (*_c)[_cidx+1] = v_y;</a>
+<a name="ln421">        (*_c)[_cidx+2] = v_z;</a>
+<a name="ln422">      }</a>
+<a name="ln423">  }</a>
+<a name="ln424"> </a>
+<a name="ln425">  void OBAtom::SetType(const char *type)</a>
+<a name="ln426">  {</a>
+<a name="ln427">    strncpy(_type,type, sizeof(_type) - 1);</a>
+<a name="ln428">    _type[sizeof(_type) - 1] = '\0';</a>
+<a name="ln429">    if (_ele == 1 &amp;&amp; type[0] == 'D')</a>
+<a name="ln430">      _isotope = 2;</a>
+<a name="ln431">  }</a>
+<a name="ln432"> </a>
+<a name="ln433">  void OBAtom::SetType(const string &amp;type)</a>
+<a name="ln434">  {</a>
+<a name="ln435">    strncpy(_type,type.c_str(), sizeof(_type) - 1);</a>
+<a name="ln436">    _type[sizeof(_type) - 1] = '\0';</a>
+<a name="ln437">    if (_ele == 1 &amp;&amp; type[0] == 'D')</a>
+<a name="ln438">      _isotope = 2;</a>
+<a name="ln439">  }</a>
+<a name="ln440"> </a>
+<a name="ln441">  void OBAtom::SetIsotope(unsigned int iso)</a>
+<a name="ln442">  {</a>
+<a name="ln443">    _isotope = iso;</a>
+<a name="ln444">  }</a>
+<a name="ln445"> </a>
+<a name="ln446">  OBResidue *OBAtom::GetResidue()</a>
+<a name="ln447">  {</a>
+<a name="ln448">    OBMol *mol = this-&gt;GetParent();</a>
+<a name="ln449">    if (!mol-&gt;HasChainsPerceived())</a>
+<a name="ln450">      chainsparser.PerceiveChains(*mol);</a>
+<a name="ln451"> </a>
+<a name="ln452">    return _residue;</a>
+<a name="ln453">  }</a>
+<a name="ln454"> </a>
+<a name="ln455">  double OBAtom::GetAtomicMass() const</a>
+<a name="ln456">  {</a>
+<a name="ln457">    if (_isotope == 0)</a>
+<a name="ln458">      return OBElements::GetMass(_ele);</a>
+<a name="ln459">    else</a>
+<a name="ln460">      return OBElements::GetExactMass(_ele, _isotope);</a>
+<a name="ln461">  }</a>
+<a name="ln462"> </a>
+<a name="ln463">  double OBAtom::GetExactMass() const</a>
+<a name="ln464">  {</a>
+<a name="ln465">    return OBElements::GetExactMass(_ele, _isotope);</a>
+<a name="ln466">  }</a>
+<a name="ln467"> </a>
+<a name="ln468">  char *OBAtom::GetType()</a>
+<a name="ln469">  {</a>
+<a name="ln470">    OBMol *mol = (OBMol*)GetParent();</a>
+<a name="ln471">    if (mol)</a>
+<a name="ln472">      if (!mol-&gt;HasAtomTypesPerceived())</a>
+<a name="ln473">        atomtyper.AssignTypes(*((OBMol*)GetParent()));</a>
+<a name="ln474"> </a>
+<a name="ln475">    if (strlen(_type) == 0) // Somehow we still don't have a type!</a>
+<a name="ln476">      {</a>
+<a name="ln477">        char num[6];</a>
+<a name="ln478">        string fromType = ttab.GetFromType(); // save previous types</a>
+<a name="ln479">        string toType = ttab.GetToType();</a>
+<a name="ln480"> </a>
+<a name="ln481">        ttab.SetFromType(&quot;ATN&quot;);</a>
+<a name="ln482">        ttab.SetToType(&quot;INT&quot;);</a>
+<a name="ln483">        snprintf(num, 6, &quot;%d&quot;, GetAtomicNum());</a>
+<a name="ln484">        ttab.Translate(_type, num);</a>
+<a name="ln485"> </a>
+<a name="ln486">        ttab.SetFromType(fromType.c_str());</a>
+<a name="ln487">        ttab.SetToType(toType.c_str());</a>
+<a name="ln488">      }</a>
+<a name="ln489">    if (_ele == 1 &amp;&amp; _isotope == 2)</a>
+<a name="ln490">      snprintf(_type, 6, &quot;%s&quot;, &quot;D&quot;);</a>
+<a name="ln491"> </a>
+<a name="ln492">    return(_type);</a>
+<a name="ln493">  }</a>
+<a name="ln494"> </a>
+<a name="ln495">  unsigned int OBAtom::GetHyb() const</a>
+<a name="ln496">  {</a>
+<a name="ln497">    //hybridization is assigned when atoms are typed</a>
+<a name="ln498">    OBMol *mol = (OBMol*)((OBAtom*)this)-&gt;GetParent();</a>
+<a name="ln499">    if (mol &amp;&amp; !mol-&gt;HasHybridizationPerceived())</a>
+<a name="ln500">      atomtyper.AssignHyb(*mol);</a>
+<a name="ln501"> </a>
+<a name="ln502">    return(_hyb);</a>
+<a name="ln503">  }</a>
+<a name="ln504"> </a>
+<a name="ln505"> </a>
+<a name="ln506">  unsigned int OBAtom::GetHvyDegree() const</a>
+<a name="ln507">  {</a>
+<a name="ln508">    unsigned int count=0;</a>
+<a name="ln509"> </a>
+<a name="ln510">    OBBond *bond;</a>
+<a name="ln511">    OBBondIterator i;</a>
+<a name="ln512">    for (bond = ((OBAtom*)this)-&gt;BeginBond(i); bond; bond = ((OBAtom*)this)-&gt;NextBond(i))</a>
+<a name="ln513">      if (bond-&gt;GetNbrAtom((OBAtom*)this)-&gt;GetAtomicNum() != OBElements::Hydrogen)</a>
+<a name="ln514">        count++;</a>
+<a name="ln515"> </a>
+<a name="ln516">    return(count);</a>
+<a name="ln517">  }</a>
+<a name="ln518"> </a>
+<a name="ln519">  unsigned int OBAtom::GetHeteroDegree() const</a>
+<a name="ln520">  {</a>
+<a name="ln521">    unsigned int count=0;</a>
+<a name="ln522">    OBBond *bond;</a>
+<a name="ln523">    OBBondIterator i;</a>
+<a name="ln524">    for (bond = ((OBAtom*)this)-&gt;BeginBond(i);bond;bond = ((OBAtom*)this)-&gt;NextBond(i))</a>
+<a name="ln525">      if (bond-&gt;GetNbrAtom((OBAtom*)this)-&gt;IsHeteroatom())</a>
+<a name="ln526">        count++;</a>
+<a name="ln527"> </a>
+<a name="ln528">    return((unsigned int)count);</a>
+<a name="ln529">  }</a>
+<a name="ln530"> </a>
+<a name="ln531">  double OBAtom::GetPartialCharge()</a>
+<a name="ln532">  {</a>
+<a name="ln533">    if (!GetParent())</a>
+<a name="ln534">      return(_pcharge);</a>
+<a name="ln535">    if (!((OBMol*)GetParent())-&gt;AutomaticPartialCharge())</a>
+<a name="ln536">      return(_pcharge);</a>
+<a name="ln537"> </a>
+<a name="ln538">    if (!((OBMol*)GetParent())-&gt;HasPartialChargesPerceived())</a>
+<a name="ln539">      {</a>
+<a name="ln540">        //seed partial charges are set in the atom typing procedure</a>
+<a name="ln541">        OBAtom *atom;</a>
+<a name="ln542">        OBMol *mol = (OBMol*)GetParent();</a>
+<a name="ln543">        vector&lt;OBAtom*&gt;::iterator i;</a>
+<a name="ln544">        for (atom = mol-&gt;BeginAtom(i); atom; atom = mol-&gt;NextAtom(i))</a>
+<a name="ln545">          atom-&gt;SetPartialCharge(0.0);</a>
+<a name="ln546"> </a>
+<a name="ln547">        phmodel.AssignSeedPartialCharge(*((OBMol*)GetParent()));</a>
+<a name="ln548">        OBGastChrg gc;</a>
+<a name="ln549">        gc.AssignPartialCharges(*((OBMol*)GetParent()));</a>
+<a name="ln550">      }</a>
+<a name="ln551"> </a>
+<a name="ln552">    return(_pcharge);</a>
+<a name="ln553">  }</a>
+<a name="ln554"> </a>
+<a name="ln555">  //! Returns true if nitrogen is part of an amide</a>
+<a name="ln556">  bool OBAtom::IsAmideNitrogen()</a>
+<a name="ln557">  {</a>
+<a name="ln558">    if (GetAtomicNum() != OBElements::Nitrogen)</a>
+<a name="ln559">      return(false);</a>
+<a name="ln560"> </a>
+<a name="ln561">    OBAtom *nbratom,*atom;</a>
+<a name="ln562">    OBBond *abbond,*bond;</a>
+<a name="ln563"> </a>
+<a name="ln564">    OBBondIterator i,j;</a>
+<a name="ln565">    atom = this;</a>
+<a name="ln566">    for (bond = BeginBond(i);bond;bond = NextBond(i))</a>
+<a name="ln567">      {</a>
+<a name="ln568">        nbratom = bond-&gt;GetNbrAtom(atom);</a>
+<a name="ln569">        for (abbond = nbratom-&gt;BeginBond(j);abbond;abbond = nbratom-&gt;NextBond(j))</a>
+<a name="ln570">          if (abbond-&gt;GetBondOrder() == 2 &amp;&amp;</a>
+<a name="ln571">              (((abbond-&gt;GetNbrAtom(nbratom))-&gt;GetAtomicNum() == 8) ||</a>
+<a name="ln572">               ((abbond-&gt;GetNbrAtom(nbratom))-&gt;GetAtomicNum() == 16)))</a>
+<a name="ln573">            return(true);</a>
+<a name="ln574">      }</a>
+<a name="ln575"> </a>
+<a name="ln576">    return(false);</a>
+<a name="ln577">  }</a>
+<a name="ln578"> </a>
+<a name="ln579">  bool OBAtom::IsAromaticNOxide()</a>
+<a name="ln580">  {</a>
+<a name="ln581">    if (GetAtomicNum() != OBElements::Nitrogen || !IsAromatic())</a>
+<a name="ln582">      return(false);</a>
+<a name="ln583"> </a>
+<a name="ln584">    OBAtom *atom;</a>
+<a name="ln585">    OBBondIterator i;</a>
+<a name="ln586"> </a>
+<a name="ln587">    for (atom = BeginNbrAtom(i);atom;atom = NextNbrAtom(i))</a>
+<a name="ln588">      if (atom-&gt;GetAtomicNum() == OBElements::Oxygen &amp;&amp; !(*i)-&gt;IsInRing() &amp;&amp; (*i)-&gt;GetBondOrder() == 2)</a>
+<a name="ln589">        return(true);</a>
+<a name="ln590"> </a>
+<a name="ln591">    return(false);</a>
+<a name="ln592">  }</a>
+<a name="ln593"> </a>
+<a name="ln594">  bool OBAtom::IsCarboxylOxygen()</a>
+<a name="ln595">  {</a>
+<a name="ln596">    if (GetAtomicNum() != OBElements::Oxygen)</a>
+<a name="ln597">      return(false);</a>
+<a name="ln598">    if (GetHvyDegree() != 1)</a>
+<a name="ln599">      return(false);</a>
+<a name="ln600"> </a>
+<a name="ln601">    OBAtom *atom;</a>
+<a name="ln602">    OBBond *bond;</a>
+<a name="ln603">    OBBondIterator i;</a>
+<a name="ln604"> </a>
+<a name="ln605">    atom = nullptr;</a>
+<a name="ln606">    for (bond = BeginBond(i);bond;bond = NextBond(i))</a>
+<a name="ln607">      if ((bond-&gt;GetNbrAtom(this))-&gt;GetAtomicNum() == OBElements::Carbon)</a>
+<a name="ln608">        {</a>
+<a name="ln609">          atom = bond-&gt;GetNbrAtom(this);</a>
+<a name="ln610">          break;</a>
+<a name="ln611">        }</a>
+<a name="ln612">    if (!atom)</a>
+<a name="ln613">      return(false);</a>
+<a name="ln614">    if (!(atom-&gt;CountFreeOxygens() == 2)</a>
+<a name="ln615">      &amp;&amp; !(atom-&gt;CountFreeOxygens() == 1 &amp;&amp; atom-&gt;CountFreeSulfurs() == 1))</a>
+<a name="ln616">      return(false);</a>
+<a name="ln617"> </a>
+<a name="ln618">    //atom is connected to a carbon that has a total</a>
+<a name="ln619">    //of 2 attached free oxygens or 1 free oxygen and 1 free sulfur</a>
+<a name="ln620">    return(true);</a>
+<a name="ln621">  }</a>
+<a name="ln622"> </a>
+<a name="ln623">  bool OBAtom::IsPhosphateOxygen()</a>
+<a name="ln624">  {</a>
+<a name="ln625">    if (GetAtomicNum() != OBElements::Oxygen)</a>
+<a name="ln626">      return(false);</a>
+<a name="ln627">    if (GetHvyDegree() != 1)</a>
+<a name="ln628">      return(false);</a>
+<a name="ln629">    OBAtom *atom;</a>
+<a name="ln630">    OBBond *bond;</a>
+<a name="ln631">    OBBondIterator i;</a>
+<a name="ln632"> </a>
+<a name="ln633">    atom = nullptr;</a>
+<a name="ln634">    for (bond = BeginBond(i);bond;bond = NextBond(i))</a>
+<a name="ln635">      if ((bond-&gt;GetNbrAtom(this))-&gt;GetAtomicNum() == OBElements::Phosphorus)</a>
+<a name="ln636">        {</a>
+<a name="ln637">          atom = bond-&gt;GetNbrAtom(this);</a>
+<a name="ln638">          break;</a>
+<a name="ln639">        }</a>
+<a name="ln640">    if (!atom)</a>
+<a name="ln641">      return(false);</a>
+<a name="ln642">    if (atom-&gt;CountFreeOxygens() &gt; 2)</a>
+<a name="ln643">      return(true);</a>
+<a name="ln644"> </a>
+<a name="ln645">    //atom is connected to a carbon that has a total</a>
+<a name="ln646">    //of 2 attached free oxygens</a>
+<a name="ln647">    return(false);</a>
+<a name="ln648">  }</a>
+<a name="ln649"> </a>
+<a name="ln650">  bool OBAtom::IsSulfateOxygen()</a>
+<a name="ln651">  {</a>
+<a name="ln652">    if (GetAtomicNum() != OBElements::Oxygen)</a>
+<a name="ln653">      return(false);</a>
+<a name="ln654">    if (GetHvyDegree() != 1)</a>
+<a name="ln655">      return(false);</a>
+<a name="ln656"> </a>
+<a name="ln657">    OBAtom *atom;</a>
+<a name="ln658">    OBBond *bond;</a>
+<a name="ln659">    OBBondIterator i;</a>
+<a name="ln660"> </a>
+<a name="ln661">    atom = nullptr;</a>
+<a name="ln662">    for (bond = BeginBond(i);bond;bond = NextBond(i))</a>
+<a name="ln663">      if ((bond-&gt;GetNbrAtom(this))-&gt;GetAtomicNum() == OBElements::Sulfur)</a>
+<a name="ln664">        {</a>
+<a name="ln665">          atom = bond-&gt;GetNbrAtom(this);</a>
+<a name="ln666">          break;</a>
+<a name="ln667">        }</a>
+<a name="ln668">    if (!atom)</a>
+<a name="ln669">      return(false);</a>
+<a name="ln670">    if (atom-&gt;CountFreeOxygens() &lt; 3)</a>
+<a name="ln671">      return(false);</a>
+<a name="ln672"> </a>
+<a name="ln673">    //atom is connected to a carbon that has a total</a>
+<a name="ln674">    //of 2 attached free oxygens</a>
+<a name="ln675">    return(true);</a>
+<a name="ln676">  }</a>
+<a name="ln677"> </a>
+<a name="ln678">  // Helper function for IsHBondAcceptor</a>
+<a name="ln679">  static bool IsSulfoneOxygen(OBAtom* atm)</a>
+<a name="ln680">  // Stefano Forli</a>
+<a name="ln681">  //atom is connected to a sulfur that has a total</a>
+<a name="ln682">  //of 2 attached free oxygens, and it's not a sulfonamide</a>
+<a name="ln683">  //e.g. C-SO2-C</a>
+<a name="ln684">  // Is this atom an oxygen in a sulfone(R1 - SO2 - R2) group ?</a>
+<a name="ln685">  {</a>
+<a name="ln686">    if (atm-&gt;GetAtomicNum() != OBElements::Oxygen)</a>
+<a name="ln687">      return(false);</a>
+<a name="ln688">    if (atm-&gt;GetHvyDegree() != 1){</a>
+<a name="ln689">      //cerr &lt;&lt; &quot;sulfone&gt; O valence is not 1\n&quot;;</a>
+<a name="ln690">      return(false);</a>
+<a name="ln691">      }</a>
+<a name="ln692"> </a>
+<a name="ln693">    OBAtom *nbr = nullptr;</a>
+<a name="ln694">    OBBond *bond1,*bond2;</a>
+<a name="ln695">    OBBondIterator i,j;</a>
+<a name="ln696"> </a>
+<a name="ln697">    // searching for attached sulfur</a>
+<a name="ln698">    for (bond1 = atm-&gt;BeginBond(i); bond1; bond1 = atm-&gt;NextBond(i))</a>
+<a name="ln699">      if ((bond1-&gt;GetNbrAtom(atm))-&gt;GetAtomicNum() == OBElements::Sulfur)</a>
+<a name="ln700">        { nbr = bond1-&gt;GetNbrAtom(atm);</a>
+<a name="ln701">          break; }</a>
+<a name="ln702">    if (!nbr){</a>
+<a name="ln703">      //cerr &lt;&lt; &quot;sulfone&gt; atom null\n&quot; ;</a>
+<a name="ln704">      return(false); }</a>
+<a name="ln705"> </a>
+<a name="ln706">    // check for sulfate</a>
+<a name="ln707">    //cerr &lt;&lt; &quot;sulfone&gt; If we're here... &quot; &lt;&lt; atom-&gt;GetAtomicNum() &lt;&lt;&quot;\n&quot; &lt;&lt; atom-&gt;GetAtomicNum() == OBElements::Sulfur &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln708">    //cerr &lt;&lt; &quot;sulfone&gt; number of free oxygens:&quot; &lt;&lt; atom-&gt;CountFreeOxygens() &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln709">    if (nbr-&gt;CountFreeOxygens() != 2){</a>
+<a name="ln710">      //cerr &lt;&lt; &quot;sulfone&gt; count of free oxygens not 2&quot; &lt;&lt; atom-&gt;CountFreeOxygens() &lt;&lt; '\n' ;</a>
+<a name="ln711">      return(false); }</a>
+<a name="ln712"> </a>
+<a name="ln713">    // check for sulfonamide</a>
+<a name="ln714">    for (bond2 = nbr-&gt;BeginBond(j);bond2;bond2 = nbr-&gt;NextBond(j)){</a>
+<a name="ln715">      //cerr&lt;&lt;&quot;NEIGH: &quot; &lt;&lt; (bond2-&gt;GetNbrAtom(atom))-&gt;GetAtomicNum()&lt;&lt;&quot;\n&quot;;</a>
+<a name="ln716">      if ((bond2-&gt;GetNbrAtom(nbr))-&gt;GetAtomicNum() == OBElements::Nitrogen){</a>
+<a name="ln717">        //cerr &lt;&lt; &quot;sulfone&gt; sulfonamide null\n&quot; ;</a>
+<a name="ln718">        return(false);}}</a>
+<a name="ln719">    //cerr &lt;&lt; &quot;sulfone&gt; none of the above\n&quot;;</a>
+<a name="ln720">    return(true); // true sulfone</a>
+<a name="ln721">  }</a>
+<a name="ln722"> </a>
+<a name="ln723"> </a>
+<a name="ln724"> </a>
+<a name="ln725"> </a>
+<a name="ln726"> </a>
+<a name="ln727">  bool OBAtom::IsNitroOxygen()</a>
+<a name="ln728">  {</a>
+<a name="ln729">    if (GetAtomicNum() != OBElements::Oxygen)</a>
+<a name="ln730">      return(false);</a>
+<a name="ln731">    if (GetHvyDegree() != 1)</a>
+<a name="ln732">      return(false);</a>
+<a name="ln733"> </a>
+<a name="ln734">    OBAtom *atom;</a>
+<a name="ln735">    OBBond *bond;</a>
+<a name="ln736">    OBBondIterator i;</a>
+<a name="ln737"> </a>
+<a name="ln738">    atom = nullptr;</a>
+<a name="ln739">    for (bond = BeginBond(i);bond;bond = NextBond(i))</a>
+<a name="ln740">      if ((bond-&gt;GetNbrAtom(this))-&gt;GetAtomicNum() == OBElements::Nitrogen)</a>
+<a name="ln741">        {</a>
+<a name="ln742">          atom = bond-&gt;GetNbrAtom(this);</a>
+<a name="ln743">          break;</a>
+<a name="ln744">        }</a>
+<a name="ln745">    if (!atom)</a>
+<a name="ln746">      return(false);</a>
+<a name="ln747">    if (atom-&gt;CountFreeOxygens() != 2)</a>
+<a name="ln748">      return(false);</a>
+<a name="ln749"> </a>
+<a name="ln750">    //atom is connected to a nitrogen that has a total</a>
+<a name="ln751">    //of 2 attached free oxygens</a>
+<a name="ln752">    return(true);</a>
+<a name="ln753">  }</a>
+<a name="ln754"> </a>
+<a name="ln755">  bool OBAtom::IsHeteroatom()</a>
+<a name="ln756">  {</a>
+<a name="ln757">    switch(GetAtomicNum())</a>
+<a name="ln758">      {</a>
+<a name="ln759">      case 7:</a>
+<a name="ln760">      case 8:</a>
+<a name="ln761">      case 15:</a>
+<a name="ln762">      case 16:</a>
+<a name="ln763">      case 33:</a>
+<a name="ln764">      case 34:</a>
+<a name="ln765">      case 51:</a>
+<a name="ln766">      case 52:</a>
+<a name="ln767">      case 83:</a>
+<a name="ln768">      case 84:</a>
+<a name="ln769">        return(true);</a>
+<a name="ln770">      }</a>
+<a name="ln771">    return(false);</a>
+<a name="ln772">  }</a>
+<a name="ln773"> </a>
+<a name="ln774">  bool OBAtom::IsAromatic() const</a>
+<a name="ln775">  {</a>
+<a name="ln776">    OBMol *mol = ((OBAtom*)this)-&gt;GetParent();</a>
+<a name="ln777">    if (!mol-&gt;HasAromaticPerceived())</a>
+<a name="ln778">      aromtyper.AssignAromaticFlags(*mol);</a>
+<a name="ln779"> </a>
+<a name="ln780">    if (((OBAtom*)this)-&gt;HasFlag(OB_AROMATIC_ATOM))</a>
+<a name="ln781">      return true;</a>
+<a name="ln782"> </a>
+<a name="ln783">    return false;</a>
+<a name="ln784">  }</a>
+<a name="ln785"> </a>
+<a name="ln786">  bool OBAtom::IsInRing() const</a>
+<a name="ln787">  {</a>
+<a name="ln788">    OBMol *mol = ((OBAtom*)this)-&gt;GetParent();</a>
+<a name="ln789">    if (!mol-&gt;HasRingAtomsAndBondsPerceived())</a>
+<a name="ln790">      mol-&gt;FindRingAtomsAndBonds();</a>
+<a name="ln791"> </a>
+<a name="ln792">    if (((OBAtom*)this)-&gt;HasFlag(OB_RING_ATOM))</a>
+<a name="ln793">      return true;</a>
+<a name="ln794"> </a>
+<a name="ln795">    return false;</a>
+<a name="ln796">  }</a>
+<a name="ln797"> </a>
+<a name="ln798">  //! @todo</a>
+<a name="ln799">  bool OBAtom::IsChiral()</a>
+<a name="ln800">  {</a>
+<a name="ln801">    OBMol *mol = (OBMol*) GetParent();</a>
+<a name="ln802">    OBStereoFacade stereoFacade(mol);</a>
+<a name="ln803">    return stereoFacade.HasTetrahedralStereo(_id);</a>
+<a name="ln804">  }</a>
+<a name="ln805"> </a>
+<a name="ln806">  bool OBAtom::IsPeriodic() const</a>
+<a name="ln807">  {</a>
+<a name="ln808">    OBMol *mol = (OBMol*)((OBAtom*)this)-&gt;GetParent();</a>
+<a name="ln809">    return mol-&gt;IsPeriodic();</a>
+<a name="ln810">  }</a>
+<a name="ln811"> </a>
+<a name="ln812">  bool OBAtom::IsInRingSize(int size) const</a>
+<a name="ln813">  {</a>
+<a name="ln814">    vector&lt;OBRing*&gt; rlist;</a>
+<a name="ln815">    vector&lt;OBRing*&gt;::iterator i;</a>
+<a name="ln816"> </a>
+<a name="ln817">    OBMol *mol = (OBMol*)((OBAtom*)this)-&gt;GetParent();</a>
+<a name="ln818">    if (!mol-&gt;HasSSSRPerceived())</a>
+<a name="ln819">      mol-&gt;FindSSSR();</a>
+<a name="ln820"> </a>
+<a name="ln821">    if (!((OBAtom*)this)-&gt;HasFlag(OB_RING_ATOM))</a>
+<a name="ln822">      return(false);</a>
+<a name="ln823"> </a>
+<a name="ln824">    rlist = mol-&gt;GetSSSR();</a>
+<a name="ln825">    for (i = rlist.begin();i != rlist.end();++i)</a>
+<a name="ln826">      if ((*i)-&gt;IsInRing(GetIdx()) &amp;&amp; static_cast&lt;int&gt;((*i)-&gt;PathSize()) == size)</a>
+<a name="ln827">        return(true);</a>
+<a name="ln828"> </a>
+<a name="ln829">    return(false);</a>
+<a name="ln830">  }</a>
+<a name="ln831"> </a>
+<a name="ln832">  unsigned int OBAtom::MemberOfRingCount() const</a>
+<a name="ln833">  {</a>
+<a name="ln834">    vector&lt;OBRing*&gt; rlist;</a>
+<a name="ln835">    vector&lt;OBRing*&gt;::iterator i;</a>
+<a name="ln836">    unsigned int count=0;</a>
+<a name="ln837"> </a>
+<a name="ln838">    OBMol *mol = (OBMol*)((OBAtom*)this)-&gt;GetParent();</a>
+<a name="ln839"> </a>
+<a name="ln840">    if (!mol-&gt;HasSSSRPerceived())</a>
+<a name="ln841">      mol-&gt;FindSSSR();</a>
+<a name="ln842"> </a>
+<a name="ln843">    if (!((OBAtom*)this)-&gt;IsInRing())</a>
+<a name="ln844">      return(0);</a>
+<a name="ln845"> </a>
+<a name="ln846">    rlist = mol-&gt;GetSSSR();</a>
+<a name="ln847"> </a>
+<a name="ln848">    for (i = rlist.begin();i != rlist.end();++i)</a>
+<a name="ln849">      if ((*i)-&gt;IsInRing(GetIdx()))</a>
+<a name="ln850">        count++;</a>
+<a name="ln851"> </a>
+<a name="ln852">    return((unsigned int)count);</a>
+<a name="ln853">  }</a>
+<a name="ln854"> </a>
+<a name="ln855">  unsigned int OBAtom::MemberOfRingSize() const</a>
+<a name="ln856">  {</a>
+<a name="ln857">    vector&lt;OBRing*&gt; rlist;</a>
+<a name="ln858">    vector&lt;OBRing*&gt;::iterator i;</a>
+<a name="ln859"> </a>
+<a name="ln860">    OBMol *mol = (OBMol*)((OBAtom*)this)-&gt;GetParent();</a>
+<a name="ln861"> </a>
+<a name="ln862">    if (!mol-&gt;HasSSSRPerceived())</a>
+<a name="ln863">      mol-&gt;FindSSSR();</a>
+<a name="ln864"> </a>
+<a name="ln865">    if (!((OBAtom*)this)-&gt;IsInRing())</a>
+<a name="ln866">      return(0);</a>
+<a name="ln867"> </a>
+<a name="ln868">    rlist = mol-&gt;GetSSSR();</a>
+<a name="ln869"> </a>
+<a name="ln870">    for (i = rlist.begin();i != rlist.end();++i)</a>
+<a name="ln871">      if ((*i)-&gt;IsInRing(GetIdx()))</a>
+<a name="ln872">        return((*i)-&gt;Size());</a>
+<a name="ln873"> </a>
+<a name="ln874">    return(0);</a>
+<a name="ln875">  }</a>
+<a name="ln876"> </a>
+<a name="ln877">  unsigned int OBAtom::CountRingBonds() const</a>
+<a name="ln878">  {</a>
+<a name="ln879">    unsigned int count = 0;</a>
+<a name="ln880">    OBBond *bond;</a>
+<a name="ln881">    OBBondIterator i;</a>
+<a name="ln882"> </a>
+<a name="ln883">    for (bond = ((OBAtom*)this)-&gt;BeginBond(i);</a>
+<a name="ln884">         bond;</a>
+<a name="ln885">         bond = ((OBAtom*)this)-&gt;NextBond(i))</a>
+<a name="ln886">      {</a>
+<a name="ln887">        if (bond-&gt;IsInRing())</a>
+<a name="ln888">          count++;</a>
+<a name="ln889">      }</a>
+<a name="ln890">    return count;</a>
+<a name="ln891">  }</a>
+<a name="ln892"> </a>
+<a name="ln893">  double	  OBAtom::SmallestBondAngle()</a>
+<a name="ln894">  {</a>
+<a name="ln895">    OBAtom *b, *c;</a>
+<a name="ln896">    vector3 v1, v2;</a>
+<a name="ln897">    double degrees, minDegrees;</a>
+<a name="ln898">    //    vector&lt;OBAtom*&gt;::iterator i;</a>
+<a name="ln899">    OBBondIterator j,k;</a>
+<a name="ln900"> </a>
+<a name="ln901">    minDegrees = 360.0;</a>
+<a name="ln902"> </a>
+<a name="ln903">    for (b = BeginNbrAtom(j); b; b = NextNbrAtom(j))</a>
+<a name="ln904">      {</a>
+<a name="ln905">        k = j;</a>
+<a name="ln906">        for (c = NextNbrAtom(k); c; c = NextNbrAtom(k))</a>
+<a name="ln907">          {</a>
+<a name="ln908">            degrees = b-&gt;GetAngle((OBAtom*)this, c);</a>
+<a name="ln909">            if (degrees &lt; minDegrees)</a>
+<a name="ln910">              minDegrees = degrees;</a>
+<a name="ln911">          }</a>
+<a name="ln912">      }</a>
+<a name="ln913">    return minDegrees;</a>
+<a name="ln914">  }</a>
+<a name="ln915"> </a>
+<a name="ln916">  double	  OBAtom::AverageBondAngle()</a>
+<a name="ln917">  {</a>
+<a name="ln918">    OBAtom *b, *c;</a>
+<a name="ln919">    vector3 v1, v2;</a>
+<a name="ln920">    double degrees, avgDegrees;</a>
+<a name="ln921">    //    vector&lt;OBAtom*&gt;::iterator i;</a>
+<a name="ln922">    OBBondIterator j,k;</a>
+<a name="ln923">    int n=0;</a>
+<a name="ln924"> </a>
+<a name="ln925">    avgDegrees = 0.0;</a>
+<a name="ln926"> </a>
+<a name="ln927">    for (b = BeginNbrAtom(j); b; b = NextNbrAtom(j))</a>
+<a name="ln928">      {</a>
+<a name="ln929">        k = j;</a>
+<a name="ln930">        for (c = NextNbrAtom(k); c; c = NextNbrAtom(k))</a>
+<a name="ln931">          {</a>
+<a name="ln932">            degrees = b-&gt;GetAngle((OBAtom*)this, c);</a>
+<a name="ln933">            avgDegrees += degrees;</a>
+<a name="ln934">            n++;</a>
+<a name="ln935">          }</a>
+<a name="ln936">      }</a>
+<a name="ln937"> </a>
+<a name="ln938">    if (n &gt;=1)</a>
+<a name="ln939">      avgDegrees /= n;</a>
+<a name="ln940"> </a>
+<a name="ln941">    return avgDegrees;</a>
+<a name="ln942">  }</a>
+<a name="ln943"> </a>
+<a name="ln944">  unsigned int OBAtom::CountFreeOxygens() const</a>
+<a name="ln945">  {</a>
+<a name="ln946">    unsigned int count = 0;</a>
+<a name="ln947">    OBAtom *atom;</a>
+<a name="ln948">    OBBond *bond;</a>
+<a name="ln949">    OBBondIterator i;</a>
+<a name="ln950"> </a>
+<a name="ln951">    for (bond = ((OBAtom*)this)-&gt;BeginBond(i);bond;bond = ((OBAtom*)this)-&gt;NextBond(i))</a>
+<a name="ln952">      {</a>
+<a name="ln953">        atom = bond-&gt;GetNbrAtom((OBAtom*)this);</a>
+<a name="ln954">        if (atom-&gt;GetAtomicNum() == OBElements::Oxygen &amp;&amp; atom-&gt;GetHvyDegree() == 1)</a>
+<a name="ln955">          count++;</a>
+<a name="ln956">      }</a>
+<a name="ln957"> </a>
+<a name="ln958">    return(count);</a>
+<a name="ln959">  }</a>
+<a name="ln960"> </a>
+<a name="ln961">  unsigned int OBAtom::CountFreeSulfurs() const</a>
+<a name="ln962">  {</a>
+<a name="ln963">    unsigned int count = 0;</a>
+<a name="ln964">    OBAtom *atom;</a>
+<a name="ln965">    OBBond *bond;</a>
+<a name="ln966">    OBBondIterator i;</a>
+<a name="ln967"> </a>
+<a name="ln968">    for (bond = ((OBAtom*)this)-&gt;BeginBond(i);bond;bond = ((OBAtom*)this)-&gt;NextBond(i))</a>
+<a name="ln969">      {</a>
+<a name="ln970">        atom = bond-&gt;GetNbrAtom((OBAtom*)this);</a>
+<a name="ln971">        if (atom-&gt;GetAtomicNum() == OBElements::Sulfur &amp;&amp; atom-&gt;GetHvyDegree() == 1)</a>
+<a name="ln972">          count++;</a>
+<a name="ln973">      }</a>
+<a name="ln974"> </a>
+<a name="ln975">    return(count);</a>
+<a name="ln976">  }</a>
+<a name="ln977"> </a>
+<a name="ln978">  unsigned int OBAtom::GetExplicitValence() const</a>
+<a name="ln979">  {</a>
+<a name="ln980">    unsigned int bosum = 0;</a>
+<a name="ln981"> </a>
+<a name="ln982">    OBBondIterator i;</a>
+<a name="ln983">    for (OBBond *bond = ((OBAtom*)this)-&gt;BeginBond(i); bond; bond = ((OBAtom*)this)-&gt;NextBond(i))</a>
+<a name="ln984">      bosum += bond-&gt;GetBondOrder();</a>
+<a name="ln985"> </a>
+<a name="ln986">    return bosum;</a>
+<a name="ln987">  }</a>
+<a name="ln988"> </a>
+<a name="ln989">  unsigned int OBAtom::GetTotalValence() const</a>
+<a name="ln990">  {</a>
+<a name="ln991">    return GetExplicitValence() + _imph;</a>
+<a name="ln992">  }</a>
+<a name="ln993"> </a>
+<a name="ln994">  unsigned int OBAtom::ExplicitHydrogenCount(bool ExcludeIsotopes) const</a>
+<a name="ln995">  {</a>
+<a name="ln996">    //If ExcludeIsotopes is true, H atoms with _isotope!=0 are not included.</a>
+<a name="ln997">    //This excludes D, T and H when _isotope exlicitly set to 1 rather than the default 0.</a>
+<a name="ln998">    int numH=0;</a>
+<a name="ln999">    OBAtom *atom;</a>
+<a name="ln1000">    OBBondIterator i;</a>
+<a name="ln1001">    for (atom = ((OBAtom*)this)-&gt;BeginNbrAtom(i);atom;atom = ((OBAtom*)this)-&gt;NextNbrAtom(i))</a>
+<a name="ln1002">      if (atom-&gt;GetAtomicNum() == OBElements::Hydrogen &amp;&amp; !(ExcludeIsotopes &amp;&amp; atom-&gt;GetIsotope()!=0))</a>
+<a name="ln1003">        numH++;</a>
+<a name="ln1004"> </a>
+<a name="ln1005">    return(numH);</a>
+<a name="ln1006">  }</a>
+<a name="ln1007"> </a>
+<a name="ln1008">  /**</a>
+<a name="ln1009">   *  The returned values count whole lone pairs, so the acid count is the number of</a>
+<a name="ln1010">   *  electron pairs desired and the base count is the number of electron pairs</a>
+<a name="ln1011">   *  available.</a>
+<a name="ln1012">   *</a>
+<a name="ln1013">   @verbatim</a>
+<a name="ln1014">   Algorithm from:</a>
+<a name="ln1015">   Clark, A. M. Accurate Specification of Molecular Structures: The Case for</a>
+<a name="ln1016">   Zero-Order Bonds and Explicit Hydrogen Counting. Journal of Chemical Information</a>
+<a name="ln1017">   and Modeling, 51, 3149-3157 (2011). http://pubs.acs.org/doi/abs/10.1021/ci200488k</a>
+<a name="ln1018">   @endverbatim</a>
+<a name="ln1019">  */</a>
+<a name="ln1020">  pair&lt;int, int&gt; OBAtom::LewisAcidBaseCounts() const</a>
+<a name="ln1021">  {</a>
+<a name="ln1022">    // TODO: Is this data stored elsewhere?</a>
+<a name="ln1023">    // The number of valence electrons in a free atom</a>
+<a name="ln1024">    const int VALENCE[113] = {0,1,2,1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8,1,2,3,4,5,6,7,8,9,10,</a>
+<a name="ln1025">                              11,12,3,4,5,6,7,8,1,2,3,4,5,6,7,8,9,10,11,12,3,4,5,6,7,8,1,2,</a>
+<a name="ln1026">                              4,4,4,4,4,4,4,4,4,4,4,4,4,4,3,4,5,6,7,8,9,10,11,12,3,4,5,6,7,</a>
+<a name="ln1027">                              8,1,1,4,4,4,4,4,4,4,4,4,4,4,4,4,4,3,4,5,6,7,8,9,10,11,12};</a>
+<a name="ln1028">    // The number of electrons required to make up a full valence shell</a>
+<a name="ln1029">    const int SHELL[113]   = {0,2,2,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,18,18,18,18,18,18,</a>
+<a name="ln1030">                              18,18,18,18,8,8,8,8,8,8,8,8,18,18,18,18,18,18,18,18,18,18,8,</a>
+<a name="ln1031">                              8,8,8,8,8,8,8,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,</a>
+<a name="ln1032">                              18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,8,8,18,18,18,18,</a>
+<a name="ln1033">                              18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18};</a>
+<a name="ln1034"> </a>
+<a name="ln1035">    pair&lt;int, int&gt; counts;</a>
+<a name="ln1036">    int N = GetAtomicNum();</a>
+<a name="ln1037">    if (N == 0 || N &gt; 112) {</a>
+<a name="ln1038">      counts.first = 0;</a>
+<a name="ln1039">      counts.second = 0;</a>
+<a name="ln1040">    } else {</a>
+<a name="ln1041">      int S = SHELL[N];</a>
+<a name="ln1042">      int V = VALENCE[N];</a>
+<a name="ln1043">      int C = GetFormalCharge();</a>
+<a name="ln1044">      int B = GetTotalValence();</a>
+<a name="ln1045">      // TODO: Do we actually want to divide by 2 here? (counting pairs instead of single)</a>
+<a name="ln1046">      counts.first = (S - V - B + C) / 2;  // Acid: Number of electrons pairs desired</a>
+<a name="ln1047">      counts.second = (V - B - C) / 2;     // Base: Number of electrons pairs available</a>
+<a name="ln1048">    }</a>
+<a name="ln1049">    return counts;</a>
+<a name="ln1050">  }</a>
+<a name="ln1051"> </a>
+<a name="ln1052">  bool OBAtom::DeleteBond(OBBond *bond)</a>
+<a name="ln1053">  {</a>
+<a name="ln1054">    OBBondIterator i;</a>
+<a name="ln1055">    for (i = _vbond.begin();i != _vbond.end();++i)</a>
+<a name="ln1056">      if ((OBBond*)bond == *i)</a>
+<a name="ln1057">        {</a>
+<a name="ln1058">          _vbond.erase(i);</a>
+<a name="ln1059">          return(true);</a>
+<a name="ln1060">        }</a>
+<a name="ln1061">    return(false);</a>
+<a name="ln1062">  }</a>
+<a name="ln1063"> </a>
+<a name="ln1064">  bool OBAtom::MatchesSMARTS(const char *pattern)</a>
+<a name="ln1065">  {</a>
+<a name="ln1066">    OBMol *mol = (OBMol*)((OBAtom*)this)-&gt;GetParent();</a>
+<a name="ln1067">    vector&lt;vector&lt;int&gt; &gt; mlist;</a>
+<a name="ln1068">    vector&lt;vector&lt;int&gt; &gt;::iterator l;</a>
+<a name="ln1069"> </a>
+<a name="ln1070">    OBSmartsPattern test;</a>
+<a name="ln1071">    test.Init(pattern);</a>
+<a name="ln1072">    if (test.Match(*mol))</a>
+<a name="ln1073">      {</a>
+<a name="ln1074">        mlist = test.GetUMapList();</a>
+<a name="ln1075">        for (l = mlist.begin(); l != mlist.end(); ++l)</a>
+<a name="ln1076">          if (GetIdx() == mol-&gt;GetAtom((*l)[0])-&gt;GetIdx())</a>
+<a name="ln1077">            return true;</a>
+<a name="ln1078">      }</a>
+<a name="ln1079">    return false;</a>
+<a name="ln1080">  }</a>
+<a name="ln1081"> </a>
+<a name="ln1082">  OBBond *OBAtom::BeginBond(OBBondIterator &amp;i)</a>
+<a name="ln1083">  {</a>
+<a name="ln1084">    i = _vbond.begin();</a>
+<a name="ln1085">    return i == _vbond.end() ? nullptr : (OBBond*)*i;</a>
+<a name="ln1086">  }</a>
+<a name="ln1087"> </a>
+<a name="ln1088">  OBBond *OBAtom::NextBond(OBBondIterator &amp;i)</a>
+<a name="ln1089">  {</a>
+<a name="ln1090">    i++;</a>
+<a name="ln1091">    return i == _vbond.end() ? nullptr : (OBBond*)*i;</a>
+<a name="ln1092">  }</a>
+<a name="ln1093"> </a>
+<a name="ln1094">  OBAtom *OBAtom::BeginNbrAtom(OBBondIterator &amp;i)</a>
+<a name="ln1095">  {</a>
+<a name="ln1096">    i = _vbond.begin();</a>
+<a name="ln1097">    return i != _vbond.end() ? ((OBBond*) *i)-&gt;GetNbrAtom(this) : nullptr;</a>
+<a name="ln1098">  }</a>
+<a name="ln1099"> </a>
+<a name="ln1100">  OBAtom *OBAtom::NextNbrAtom(OBBondIterator &amp;i)</a>
+<a name="ln1101">  {</a>
+<a name="ln1102">    i++;</a>
+<a name="ln1103">    return i != _vbond.end() ? ((OBBond*) *i)-&gt;GetNbrAtom(this) : nullptr;</a>
+<a name="ln1104">  }</a>
+<a name="ln1105"> </a>
+<a name="ln1106">  double OBAtom::GetDistance(OBAtom *b)</a>
+<a name="ln1107">  {</a>
+<a name="ln1108">    if (!IsPeriodic())</a>
+<a name="ln1109">      {</a>
+<a name="ln1110">        return(( this-&gt;GetVector() - b-&gt;GetVector() ).length());</a>
+<a name="ln1111">      }</a>
+<a name="ln1112">    else</a>
+<a name="ln1113">      {</a>
+<a name="ln1114">        OBUnitCell *box = (OBUnitCell*)GetParent()-&gt;GetData(OBGenericDataType::UnitCell);</a>
+<a name="ln1115">        return (box-&gt;MinimumImageCartesian(this-&gt;GetVector() - b-&gt;GetVector())).length();</a>
+<a name="ln1116">      }</a>
+<a name="ln1117">  }</a>
+<a name="ln1118"> </a>
+<a name="ln1119">  double OBAtom::GetDistance(int b)</a>
+<a name="ln1120">  {</a>
+<a name="ln1121">    OBMol *mol = (OBMol*)GetParent();</a>
+<a name="ln1122">    return( this-&gt;GetDistance(mol-&gt;GetAtom(b)) );</a>
+<a name="ln1123">  }</a>
+<a name="ln1124"> </a>
+<a name="ln1125">  double OBAtom::GetDistance(vector3 *v)</a>
+<a name="ln1126">  {</a>
+<a name="ln1127">    return(( this-&gt;GetVector() - *v ).length());</a>
+<a name="ln1128">  }</a>
+<a name="ln1129"> </a>
+<a name="ln1130">  double OBAtom::GetAngle(OBAtom *b, OBAtom *c)</a>
+<a name="ln1131">  {</a>
+<a name="ln1132">    vector3 v1,v2;</a>
+<a name="ln1133"> </a>
+<a name="ln1134">    v1 = this-&gt;GetVector() - b-&gt;GetVector();</a>
+<a name="ln1135">    v2 = c-&gt;GetVector() - b-&gt;GetVector();</a>
+<a name="ln1136">    if (IsPeriodic())</a>
+<a name="ln1137">      {</a>
+<a name="ln1138">        OBUnitCell *box = (OBUnitCell*)GetParent()-&gt;GetData(OBGenericDataType::UnitCell);</a>
+<a name="ln1139">        v1 = box-&gt;MinimumImageCartesian(v1);</a>
+<a name="ln1140">        v2 = box-&gt;MinimumImageCartesian(v2);</a>
+<a name="ln1141">      }</a>
+<a name="ln1142"> </a>
+<a name="ln1143">    if (IsNearZero(v1.length(), 1.0e-3)</a>
+<a name="ln1144">      || IsNearZero(v2.length(), 1.0e-3)) {</a>
+<a name="ln1145">        return(0.0);</a>
+<a name="ln1146">    }</a>
+<a name="ln1147"> </a>
+<a name="ln1148">    return(vectorAngle(v1, v2));</a>
+<a name="ln1149">  }</a>
+<a name="ln1150"> </a>
+<a name="ln1151">  double OBAtom::GetAngle(int b, int c)</a>
+<a name="ln1152">  {</a>
+<a name="ln1153">    OBMol *mol = (OBMol*)GetParent();</a>
+<a name="ln1154">    return(this-&gt;GetAngle(mol-&gt;GetAtom(b), mol-&gt;GetAtom(c)));</a>
+<a name="ln1155">  }</a>
+<a name="ln1156"> </a>
+<a name="ln1157">  bool OBAtom::GetNewBondVector(vector3 &amp;v,double length)</a>
+<a name="ln1158">  {</a>
+<a name="ln1159">    v = OBBuilder::GetNewBondVector(this, length);</a>
+<a name="ln1160">    return(true);</a>
+<a name="ln1161">  }</a>
+<a name="ln1162"> </a>
+<a name="ln1163">  //! \return a &quot;corrected&quot; bonding radius based on the hybridization.</a>
+<a name="ln1164">  //! Scales the covalent radius by 0.95 for sp2 and 0.90 for sp hybrids</a>
+<a name="ln1165">  static double CorrectedBondRad(unsigned int elem, unsigned int hyb)</a>
+<a name="ln1166">  {</a>
+<a name="ln1167">    double rad = OBElements::GetCovalentRad(elem);</a>
+<a name="ln1168">    switch (hyb) {</a>
+<a name="ln1169">    case 2:</a>
+<a name="ln1170">      return rad * 0.95;</a>
+<a name="ln1171">    case 1:</a>
+<a name="ln1172">      return rad * 0.90;</a>
+<a name="ln1173">    default:</a>
+<a name="ln1174">      return rad;</a>
+<a name="ln1175">    }</a>
+<a name="ln1176">  }</a>
+<a name="ln1177"> </a>
+<a name="ln1178">  bool OBAtom::HtoMethyl()</a>
+<a name="ln1179">  {</a>
+<a name="ln1180">    if (GetAtomicNum() != OBElements::Hydrogen)</a>
+<a name="ln1181">      return(false);</a>
+<a name="ln1182"> </a>
+<a name="ln1183">    obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln1184">                          &quot;Ran OpenBabel::HtoMethyl&quot;, obAuditMsg);</a>
+<a name="ln1185"> </a>
+<a name="ln1186">    OBMol *mol = (OBMol*)GetParent();</a>
+<a name="ln1187"> </a>
+<a name="ln1188">    mol-&gt;BeginModify();</a>
+<a name="ln1189"> </a>
+<a name="ln1190">    SetAtomicNum(6);</a>
+<a name="ln1191">    SetType(&quot;C3&quot;);</a>
+<a name="ln1192">    SetHyb(3);</a>
+<a name="ln1193"> </a>
+<a name="ln1194">    OBAtom *atom;</a>
+<a name="ln1195">    OBBond *bond;</a>
+<a name="ln1196">    OBBondIterator i;</a>
+<a name="ln1197">    atom  = BeginNbrAtom(i);</a>
+<a name="ln1198">    bond = (OBBond *)*i;</a>
+<a name="ln1199">    if (!atom)</a>
+<a name="ln1200">      {</a>
+<a name="ln1201">        mol-&gt;EndModify();</a>
+<a name="ln1202">        return(false);</a>
+<a name="ln1203">      }</a>
+<a name="ln1204"> </a>
+<a name="ln1205">    double br1,br2;</a>
+<a name="ln1206">    br1 = CorrectedBondRad(6,3);</a>
+<a name="ln1207">    br2 = CorrectedBondRad(atom-&gt;GetAtomicNum(),atom-&gt;GetHyb());</a>
+<a name="ln1208">    bond-&gt;SetLength(atom,br1+br2);</a>
+<a name="ln1209"> </a>
+<a name="ln1210">    OBAtom *hatom;</a>
+<a name="ln1211">    br2 = CorrectedBondRad(1,0);</a>
+<a name="ln1212">    vector3 v;</a>
+<a name="ln1213"> </a>
+<a name="ln1214">    for (int j = 0;j &lt; 3;++j)</a>
+<a name="ln1215">      {</a>
+<a name="ln1216">        hatom = mol-&gt;NewAtom();</a>
+<a name="ln1217">        hatom-&gt;SetAtomicNum(1);</a>
+<a name="ln1218">        hatom-&gt;SetType(&quot;H&quot;);</a>
+<a name="ln1219"> </a>
+<a name="ln1220">        GetNewBondVector(v,br1+br2);</a>
+<a name="ln1221">        hatom-&gt;SetVector(v);</a>
+<a name="ln1222">        mol-&gt;AddBond(GetIdx(),mol-&gt;NumAtoms(),1);</a>
+<a name="ln1223">      }</a>
+<a name="ln1224"> </a>
+<a name="ln1225">    mol-&gt;EndModify();</a>
+<a name="ln1226">    return(true);</a>
+<a name="ln1227">  }</a>
+<a name="ln1228"> </a>
+<a name="ln1229">  static void ApplyRotMatToBond(OBMol &amp;mol,matrix3x3 &amp;m,OBAtom *a1,OBAtom *a2)</a>
+<a name="ln1230">  {</a>
+<a name="ln1231">    vector&lt;int&gt; children;</a>
+<a name="ln1232">    mol.FindChildren(children,a1-&gt;GetIdx(),a2-&gt;GetIdx());</a>
+<a name="ln1233">    children.push_back(a2-&gt;GetIdx());</a>
+<a name="ln1234"> </a>
+<a name="ln1235">    vector3 v;</a>
+<a name="ln1236">    vector&lt;int&gt;::iterator i;</a>
+<a name="ln1237">    for (i = children.begin();i != children.end();++i)</a>
+<a name="ln1238">      {</a>
+<a name="ln1239">        v = mol.GetAtom(*i)-&gt;GetVector();</a>
+<a name="ln1240">        v -= a1-&gt;GetVector();</a>
+<a name="ln1241">        v *= m;</a>
+<a name="ln1242">        v += a1-&gt;GetVector();</a>
+<a name="ln1243">        mol.GetAtom(*i)-&gt;SetVector(v);</a>
+<a name="ln1244">      }</a>
+<a name="ln1245"> </a>
+<a name="ln1246">  }</a>
+<a name="ln1247"> </a>
+<a name="ln1248">  //! \deprecated This will be removed in future versions of Open Babel</a>
+<a name="ln1249">  bool OBAtom::SetHybAndGeom(int hyb)</a>
+<a name="ln1250">  {</a>
+<a name="ln1251">    obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln1252">                          &quot;Ran OpenBabel::SetHybridizationAndGeometry&quot;,</a>
+<a name="ln1253">                          obAuditMsg);</a>
+<a name="ln1254"> </a>
+<a name="ln1255">    //if (hyb == GetHyb()) return(true);</a>
+<a name="ln1256">    if (GetAtomicNum() == 1)</a>
+<a name="ln1257">      return(false);</a>
+<a name="ln1258">    if (hyb == 0 &amp;&amp; GetHvyDegree() &gt; 1)</a>
+<a name="ln1259">      return(false);</a>
+<a name="ln1260">    if (hyb == 1 &amp;&amp; GetHvyDegree() &gt; 2)</a>
+<a name="ln1261">      return(false);</a>
+<a name="ln1262">    if (hyb == 2 &amp;&amp; GetHvyDegree() &gt; 3)</a>
+<a name="ln1263">      return(false);</a>
+<a name="ln1264">    if (hyb == 3 &amp;&amp; GetHvyDegree() &gt; 4)</a>
+<a name="ln1265">      return(false);</a>
+<a name="ln1266"> </a>
+<a name="ln1267">    OBMol *mol = (OBMol*)GetParent();</a>
+<a name="ln1268"> </a>
+<a name="ln1269">    OBAtom *nbr;</a>
+<a name="ln1270">    vector&lt;OBAtom*&gt; delatm;</a>
+<a name="ln1271">    OBBondIterator i;</a>
+<a name="ln1272"> </a>
+<a name="ln1273">    for (nbr = BeginNbrAtom(i);nbr;nbr = NextNbrAtom(i))</a>
+<a name="ln1274">      if (nbr-&gt;GetAtomicNum() == OBElements::Hydrogen)</a>
+<a name="ln1275">        delatm.push_back(nbr);</a>
+<a name="ln1276"> </a>
+<a name="ln1277">    //delete attached hydrogens</a>
+<a name="ln1278">    mol-&gt;IncrementMod();</a>
+<a name="ln1279">    vector&lt;OBAtom*&gt;::iterator j;</a>
+<a name="ln1280">    for (j = delatm.begin();j != delatm.end();++j)</a>
+<a name="ln1281">      mol-&gt;DeleteAtom(*j);</a>
+<a name="ln1282">    mol-&gt;DecrementMod();</a>
+<a name="ln1283"> </a>
+<a name="ln1284">    double targetAngle;</a>
+<a name="ln1285">    if (hyb == 3)</a>
+<a name="ln1286">      targetAngle = 109.5;</a>
+<a name="ln1287">    else if (hyb == 2)</a>
+<a name="ln1288">      targetAngle = 120.0;</a>
+<a name="ln1289">    else if (hyb == 1)</a>
+<a name="ln1290">      targetAngle = 180.0;</a>
+<a name="ln1291">    else</a>
+<a name="ln1292">      targetAngle = 0.0;</a>
+<a name="ln1293"> </a>
+<a name="ln1294">    if (IsInRing())</a>
+<a name="ln1295">      targetAngle = 180.0 - (360.0 / MemberOfRingSize());</a>
+<a name="ln1296"> </a>
+<a name="ln1297">    //adjust attached acyclic bond lengths</a>
+<a name="ln1298">    double br1,br2, length;</a>
+<a name="ln1299">    br1 = CorrectedBondRad(GetAtomicNum(),hyb);</a>
+<a name="ln1300">    for (nbr = BeginNbrAtom(i);nbr;nbr = NextNbrAtom(i))</a>
+<a name="ln1301">      if (!(*i)-&gt;IsInRing())</a>
+<a name="ln1302">        {</a>
+<a name="ln1303">          br2 = CorrectedBondRad(nbr-&gt;GetAtomicNum(),nbr-&gt;GetHyb());</a>
+<a name="ln1304">          length = br1 + br2;</a>
+<a name="ln1305">          if ((*i)-&gt;IsAromatic())</a>
+<a name="ln1306">            length *= 0.93;</a>
+<a name="ln1307">          else if ((*i)-&gt;GetBondOrder() == 2)</a>
+<a name="ln1308">            length *= 0.91;</a>
+<a name="ln1309">          else if ((*i)-&gt;GetBondOrder() == 3)</a>
+<a name="ln1310">            length *= 0.87;</a>
+<a name="ln1311">          ((OBBond*) *i)-&gt;SetLength(this, length);</a>
+<a name="ln1312">        }</a>
+<a name="ln1313"> </a>
+<a name="ln1314">    if (GetExplicitDegree() &gt; 1)</a>
+<a name="ln1315">      {</a>
+<a name="ln1316">        double angle;</a>
+<a name="ln1317">        matrix3x3 m;</a>
+<a name="ln1318">        vector3 v1,v2,v3,v4,n,s;</a>
+<a name="ln1319">        OBAtom *r1,*r2,*r3,*a1,*a2,*a3,*a4;</a>
+<a name="ln1320">        r1 = r2 = r3 = a1 = a2 = a3 = a4 = nullptr;</a>
+<a name="ln1321"> </a>
+<a name="ln1322">        //find ring atoms first</a>
+<a name="ln1323">        for (nbr = BeginNbrAtom(i);nbr;nbr = NextNbrAtom(i))</a>
+<a name="ln1324">          if ((*i)-&gt;IsInRing()) {</a>
+<a name="ln1325">            if (!r1) {</a>
+<a name="ln1326">              r1 = nbr;</a>
+<a name="ln1327">            }</a>
+<a name="ln1328">            else if (!r2) {</a>
+<a name="ln1329">              r2 = nbr;</a>
+<a name="ln1330">            }</a>
+<a name="ln1331">            else if (!r3) {</a>
+<a name="ln1332">              r3 = nbr;</a>
+<a name="ln1333">            }</a>
+<a name="ln1334">          }</a>
+<a name="ln1335"> </a>
+<a name="ln1336">        //find non-ring atoms</a>
+<a name="ln1337">        for (nbr = BeginNbrAtom(i);nbr;nbr = NextNbrAtom(i))</a>
+<a name="ln1338">          if (!(*i)-&gt;IsInRing()) {</a>
+<a name="ln1339">            if (!a1) {</a>
+<a name="ln1340">              a1 = nbr;</a>
+<a name="ln1341">            }</a>
+<a name="ln1342">            else if (!a2) {</a>
+<a name="ln1343">              a2 = nbr;</a>
+<a name="ln1344">            }</a>
+<a name="ln1345">            else if (!a3) {</a>
+<a name="ln1346">              a3 = nbr;</a>
+<a name="ln1347">            }</a>
+<a name="ln1348">            else if (!a4) {</a>
+<a name="ln1349">              a4 = nbr;</a>
+<a name="ln1350">            }</a>
+<a name="ln1351">          }</a>
+<a name="ln1352"> </a>
+<a name="ln1353">        //adjust geometries of heavy atoms according to hybridization</a>
+<a name="ln1354">        if (hyb == 1)</a>
+<a name="ln1355">          {</a>
+<a name="ln1356">            if (a2)</a>
+<a name="ln1357">              {</a>
+<a name="ln1358">                v1 = a1-&gt;GetVector()-GetVector();</a>
+<a name="ln1359">                v1.normalize();</a>
+<a name="ln1360">                v2 = a2-&gt;GetVector()-GetVector();</a>
+<a name="ln1361">                v2.normalize();</a>
+<a name="ln1362">                n = cross(v1,v2);</a>
+<a name="ln1363">                angle = vectorAngle(v1,v2)-targetAngle;</a>
+<a name="ln1364">                m.RotAboutAxisByAngle(n,-angle);</a>
+<a name="ln1365">                ApplyRotMatToBond(*mol,m,this,a1);</a>
+<a name="ln1366">              }</a>
+<a name="ln1367">          }</a>
+<a name="ln1368">        else if (hyb == 2)</a>
+<a name="ln1369">          {</a>
+<a name="ln1370">            if (r1 &amp;&amp; r2 &amp;&amp; a1)</a>
+<a name="ln1371">              {</a>
+<a name="ln1372">                v1 = r1-&gt;GetVector()-GetVector();</a>
+<a name="ln1373">                v1.normalize();</a>
+<a name="ln1374">                v2 = r2-&gt;GetVector()-GetVector();</a>
+<a name="ln1375">                v2.normalize();</a>
+<a name="ln1376">                v3 = a1-&gt;GetVector()-GetVector();</a>
+<a name="ln1377">                s = v1+v2;</a>
+<a name="ln1378">                s.normalize();</a>
+<a name="ln1379">                s *= -1.0;</a>
+<a name="ln1380">                n = cross(s,v3);</a>
+<a name="ln1381">                angle = vectorAngle(s,v3);</a>
+<a name="ln1382">                m.RotAboutAxisByAngle(n,angle);</a>
+<a name="ln1383">                ApplyRotMatToBond(*mol,m,this,a1);</a>
+<a name="ln1384">              }</a>
+<a name="ln1385">            else</a>
+<a name="ln1386">              {</a>
+<a name="ln1387">                if (a2)</a>
+<a name="ln1388">                  {</a>
+<a name="ln1389">                    v1 = a1-&gt;GetVector()-GetVector();</a>
+<a name="ln1390">                    v1.normalize();</a>
+<a name="ln1391">                    v2 = a2-&gt;GetVector()-GetVector();</a>
+<a name="ln1392">                    v2.normalize();</a>
+<a name="ln1393">                    n = cross(v1,v2);</a>
+<a name="ln1394">                    angle = vectorAngle(v1,v2)-targetAngle;</a>
+<a name="ln1395">                    m.RotAboutAxisByAngle(n,-angle);</a>
+<a name="ln1396">                    ApplyRotMatToBond(*mol,m,this,a1);</a>
+<a name="ln1397">                  }</a>
+<a name="ln1398">                if (a3)</a>
+<a name="ln1399">                  {</a>
+<a name="ln1400">                    v1 = a1-&gt;GetVector()-GetVector();</a>
+<a name="ln1401">                    v1.normalize();</a>
+<a name="ln1402">                    v2 = a2-&gt;GetVector()-GetVector();</a>
+<a name="ln1403">                    v2.normalize();</a>
+<a name="ln1404">                    v3 = a3-&gt;GetVector()-GetVector();</a>
+<a name="ln1405">                    s = v1+v2;</a>
+<a name="ln1406">                    s.normalize();</a>
+<a name="ln1407">                    s *= -1.0;</a>
+<a name="ln1408">                    n = cross(s,v3);</a>
+<a name="ln1409">                    angle = vectorAngle(s,v3);</a>
+<a name="ln1410">                    m.RotAboutAxisByAngle(n,angle);</a>
+<a name="ln1411">                    ApplyRotMatToBond(*mol,m,this,a3);</a>
+<a name="ln1412">                  }</a>
+<a name="ln1413">              }</a>
+<a name="ln1414">          }</a>
+<a name="ln1415">        else if (hyb == 3)</a>
+<a name="ln1416">          {</a>
+<a name="ln1417">            if (r1 &amp;&amp; r2 &amp;&amp; r3 &amp;&amp; a1)</a>
+<a name="ln1418">              {</a>
+<a name="ln1419">                v1 = r1-&gt;GetVector()-GetVector();</a>
+<a name="ln1420">                v1.normalize();</a>
+<a name="ln1421">                v2 = r2-&gt;GetVector()-GetVector();</a>
+<a name="ln1422">                v2.normalize();</a>
+<a name="ln1423">                v3 = r3-&gt;GetVector()-GetVector();</a>
+<a name="ln1424">                v3.normalize();</a>
+<a name="ln1425">                v4 = a1-&gt;GetVector()-GetVector();</a>
+<a name="ln1426">                s = v1 + v2 + v3;</a>
+<a name="ln1427">                s *= -1.0;</a>
+<a name="ln1428">                s.normalize();</a>
+<a name="ln1429">                n = cross(s,v4);</a>
+<a name="ln1430">                angle = vectorAngle(s,v4);</a>
+<a name="ln1431">                m.RotAboutAxisByAngle(n,angle);</a>
+<a name="ln1432">                ApplyRotMatToBond(*mol,m,this,a1);</a>
+<a name="ln1433">              }</a>
+<a name="ln1434">            else if (r1 &amp;&amp; r2 &amp;&amp; !r3 &amp;&amp; a1)</a>
+<a name="ln1435">              {</a>
+<a name="ln1436">                v1 = r1-&gt;GetVector()-GetVector();</a>
+<a name="ln1437">                v1.normalize();</a>
+<a name="ln1438">                v2 = r2-&gt;GetVector()-GetVector();</a>
+<a name="ln1439">                v2.normalize();</a>
+<a name="ln1440">                v3 = a1-&gt;GetVector()-GetVector();</a>
+<a name="ln1441">                s = v1+v2;</a>
+<a name="ln1442">                s *= -1.0;</a>
+<a name="ln1443">                s.normalize();</a>
+<a name="ln1444">                n = cross(v1,v2);</a>
+<a name="ln1445">                n.normalize();</a>
+<a name="ln1446">#ifndef ONE_OVER_SQRT3</a>
+<a name="ln1447">#define ONE_OVER_SQRT3  0.57735026918962576451</a>
+<a name="ln1448">#endif //SQRT_TWO_THIRDS</a>
+<a name="ln1449">#ifndef SQRT_TWO_THIRDS</a>
+<a name="ln1450">#define SQRT_TWO_THIRDS 0.81649658092772603272</a>
+<a name="ln1451">#endif //ONE_OVER_SQRT3</a>
+<a name="ln1452">                s *= ONE_OVER_SQRT3; //1/sqrt(3)</a>
+<a name="ln1453">                n *= SQRT_TWO_THIRDS; //sqrt(2/3)</a>
+<a name="ln1454">                s += n;</a>
+<a name="ln1455">                s.normalize();</a>
+<a name="ln1456">                n = cross(s,v3);</a>
+<a name="ln1457">                angle = vectorAngle(s,v3);</a>
+<a name="ln1458">                m.RotAboutAxisByAngle(n,angle);</a>
+<a name="ln1459">                ApplyRotMatToBond(*mol,m,this,a1);</a>
+<a name="ln1460"> </a>
+<a name="ln1461">                if (a2)</a>
+<a name="ln1462">                  {</a>
+<a name="ln1463">                    v1 = r1-&gt;GetVector()-GetVector();</a>
+<a name="ln1464">                    v1.normalize();</a>
+<a name="ln1465">                    v2 = r2-&gt;GetVector()-GetVector();</a>
+<a name="ln1466">                    v2.normalize();</a>
+<a name="ln1467">                    v3 = a1-&gt;GetVector()-GetVector();</a>
+<a name="ln1468">                    v3.normalize();</a>
+<a name="ln1469">                    v4 = a2-&gt;GetVector()-GetVector();</a>
+<a name="ln1470">                    s = v1 + v2 + v3;</a>
+<a name="ln1471">                    s *= -1.0;</a>
+<a name="ln1472">                    s.normalize();</a>
+<a name="ln1473">                    n = cross(s,v4);</a>
+<a name="ln1474">                    angle = vectorAngle(s,v4);</a>
+<a name="ln1475">                    m.RotAboutAxisByAngle(n,angle);</a>
+<a name="ln1476">                    ApplyRotMatToBond(*mol,m,this,a2);</a>
+<a name="ln1477">                  }</a>
+<a name="ln1478">              }</a>
+<a name="ln1479">            else</a>
+<a name="ln1480">              {</a>
+<a name="ln1481">                if (a2)</a>
+<a name="ln1482">                  {</a>
+<a name="ln1483">                    v1 = a1-&gt;GetVector()-GetVector();</a>
+<a name="ln1484">                    v1.normalize();</a>
+<a name="ln1485">                    v2 = a2-&gt;GetVector()-GetVector();</a>
+<a name="ln1486">                    v2.normalize();</a>
+<a name="ln1487">                    n = cross(v1,v2);</a>
+<a name="ln1488">                    angle = vectorAngle(v1,v2)-targetAngle;</a>
+<a name="ln1489">                    m.RotAboutAxisByAngle(n,-angle);</a>
+<a name="ln1490">                    ApplyRotMatToBond(*mol,m,this,a1);</a>
+<a name="ln1491">                  }</a>
+<a name="ln1492">                if (a3)</a>
+<a name="ln1493">                  {</a>
+<a name="ln1494">                    v1 = a1-&gt;GetVector()-GetVector();</a>
+<a name="ln1495">                    v1.normalize();</a>
+<a name="ln1496">                    v2 = a2-&gt;GetVector()-GetVector();</a>
+<a name="ln1497">                    v2.normalize();</a>
+<a name="ln1498">                    v3 = a3-&gt;GetVector()-GetVector();</a>
+<a name="ln1499">                    s = v1+v2;</a>
+<a name="ln1500">                    s *= -1.0;</a>
+<a name="ln1501">                    s.normalize();</a>
+<a name="ln1502">                    n = cross(v1,v2);</a>
+<a name="ln1503">                    n.normalize();</a>
+<a name="ln1504">                    s *= ONE_OVER_SQRT3; //1/sqrt(3)</a>
+<a name="ln1505">                    n *= SQRT_TWO_THIRDS; //sqrt(2/3)</a>
+<a name="ln1506">                    s += n;</a>
+<a name="ln1507">                    s.normalize();</a>
+<a name="ln1508">                    n = cross(s,v3);</a>
+<a name="ln1509">                    angle = vectorAngle(s,v3);</a>
+<a name="ln1510">                    m.RotAboutAxisByAngle(n,angle);</a>
+<a name="ln1511">                    ApplyRotMatToBond(*mol,m,this,a3);</a>
+<a name="ln1512">                  }</a>
+<a name="ln1513">              }</a>
+<a name="ln1514">          }</a>
+<a name="ln1515">      }</a>
+<a name="ln1516"> </a>
+<a name="ln1517">    //add hydrogens back to atom</a>
+<a name="ln1518">    int impval=1;</a>
+<a name="ln1519">    switch (GetAtomicNum())</a>
+<a name="ln1520">      {</a>
+<a name="ln1521">      case 6:</a>
+<a name="ln1522">        if (hyb == 3)</a>
+<a name="ln1523">          impval = 4;</a>
+<a name="ln1524">        if (hyb == 2)</a>
+<a name="ln1525">          impval = 3;</a>
+<a name="ln1526">        if (hyb == 1)</a>
+<a name="ln1527">          impval = 2;</a>
+<a name="ln1528">        break;</a>
+<a name="ln1529">      case 7:</a>
+<a name="ln1530">        if (hyb == 3)</a>
+<a name="ln1531">          impval = 3;</a>
+<a name="ln1532">        if (hyb == 2)</a>
+<a name="ln1533">          impval = 2;</a>
+<a name="ln1534">        if (hyb == 1)</a>
+<a name="ln1535">          impval = 1;</a>
+<a name="ln1536">        break;</a>
+<a name="ln1537">      case 8:</a>
+<a name="ln1538">        if (hyb == 3)</a>
+<a name="ln1539">          impval = 2;</a>
+<a name="ln1540">        if (hyb == 2)</a>
+<a name="ln1541">          impval = 2;</a>
+<a name="ln1542">        if (hyb == 1)</a>
+<a name="ln1543">          impval = 2;</a>
+<a name="ln1544">        break;</a>
+<a name="ln1545">      case 16:</a>
+<a name="ln1546">        if (hyb == 3)</a>
+<a name="ln1547">          impval = 2;</a>
+<a name="ln1548">        if (hyb == 2)</a>
+<a name="ln1549">          impval = 2;</a>
+<a name="ln1550">        if (hyb == 1)</a>
+<a name="ln1551">          impval = 0;</a>
+<a name="ln1552">        break;</a>
+<a name="ln1553">      case 15:</a>
+<a name="ln1554">        if (hyb == 3)</a>
+<a name="ln1555">          impval = 4;</a>
+<a name="ln1556">        if (hyb == 2)</a>
+<a name="ln1557">          impval = 3;</a>
+<a name="ln1558">        if (hyb == 1)</a>
+<a name="ln1559">          impval = 2;</a>
+<a name="ln1560">        break;</a>
+<a name="ln1561">      default:</a>
+<a name="ln1562">        impval = 1;</a>
+<a name="ln1563">      }</a>
+<a name="ln1564"> </a>
+<a name="ln1565">    int hcount = impval-GetHvyDegree();</a>
+<a name="ln1566">    if (hcount)</a>
+<a name="ln1567">      {</a>
+<a name="ln1568">        int k;</a>
+<a name="ln1569">        vector3 v;</a>
+<a name="ln1570">        OBAtom *atom;</a>
+<a name="ln1571">        double brsum = CorrectedBondRad(1,0)+</a>
+<a name="ln1572">          CorrectedBondRad(GetAtomicNum(),GetHyb());</a>
+<a name="ln1573">        SetHyb(hyb);</a>
+<a name="ln1574"> </a>
+<a name="ln1575">        mol-&gt;BeginModify();</a>
+<a name="ln1576">        for (k = 0;k &lt; hcount;++k)</a>
+<a name="ln1577">          {</a>
+<a name="ln1578">            GetNewBondVector(v,brsum);</a>
+<a name="ln1579">            atom = mol-&gt;NewAtom();</a>
+<a name="ln1580">            atom-&gt;SetAtomicNum(1);</a>
+<a name="ln1581">            atom-&gt;SetType(&quot;H&quot;);</a>
+<a name="ln1582">            atom-&gt;SetVector(v);</a>
+<a name="ln1583">            mol-&gt;AddBond(atom-&gt;GetIdx(),GetIdx(),1);</a>
+<a name="ln1584">          }</a>
+<a name="ln1585">        mol-&gt;EndModify();</a>
+<a name="ln1586">      }</a>
+<a name="ln1587"> </a>
+<a name="ln1588"> </a>
+<a name="ln1589">    return(true);</a>
+<a name="ln1590">  }</a>
+<a name="ln1591"> </a>
+<a name="ln1592">  OBBond *OBAtom::GetBond(OBAtom *nbr)</a>
+<a name="ln1593">  {</a>
+<a name="ln1594">    OBBond *bond;</a>
+<a name="ln1595">    vector&lt;OBBond *&gt;::iterator i;</a>
+<a name="ln1596">    for (bond = BeginBond(i) ; bond ; bond = NextBond(i))</a>
+<a name="ln1597">      if (bond-&gt;GetNbrAtom(this) == nbr)</a>
+<a name="ln1598">        return bond;</a>
+<a name="ln1599">    return nullptr;</a>
+<a name="ln1600">  }</a>
+<a name="ln1601"> </a>
+<a name="ln1602">  /*Now in OBBase</a>
+<a name="ln1603">  // OBGenericData methods</a>
+<a name="ln1604">  bool OBAtom::HasData(string &amp;s)</a>
+<a name="ln1605">  //returns true if the generic attribute/value pair exists</a>
+<a name="ln1606">  {</a>
+<a name="ln1607">  if (_vdata.empty())</a>
+<a name="ln1608">  return(false);</a>
+<a name="ln1609"> </a>
+<a name="ln1610">  vector&lt;OBGenericData*&gt;::iterator i;</a>
+<a name="ln1611"> </a>
+<a name="ln1612">  for (i = _vdata.begin();i != _vdata.end();++i)</a>
+<a name="ln1613">  if ((*i)-&gt;GetAttribute() == s)</a>
+<a name="ln1614">  return(true);</a>
+<a name="ln1615"> </a>
+<a name="ln1616">  return(false);</a>
+<a name="ln1617">  }</a>
+<a name="ln1618"> </a>
+<a name="ln1619">  bool OBAtom::HasData(const char *s)</a>
+<a name="ln1620">  //returns true if the generic attribute/value pair exists</a>
+<a name="ln1621">  {</a>
+<a name="ln1622">  if (_vdata.empty())</a>
+<a name="ln1623">  return(false);</a>
+<a name="ln1624"> </a>
+<a name="ln1625">  vector&lt;OBGenericData*&gt;::iterator i;</a>
+<a name="ln1626"> </a>
+<a name="ln1627">  for (i = _vdata.begin();i != _vdata.end();++i)</a>
+<a name="ln1628">  if ((*i)-&gt;GetAttribute() == s)</a>
+<a name="ln1629">  return(true);</a>
+<a name="ln1630"> </a>
+<a name="ln1631">  return(false);</a>
+<a name="ln1632">  }</a>
+<a name="ln1633"> </a>
+<a name="ln1634">  bool OBAtom::HasData(unsigned int dt)</a>
+<a name="ln1635">  //returns true if the generic attribute/value pair exists</a>
+<a name="ln1636">  {</a>
+<a name="ln1637">  if (_vdata.empty())</a>
+<a name="ln1638">  return(false);</a>
+<a name="ln1639"> </a>
+<a name="ln1640">  vector&lt;OBGenericData*&gt;::iterator i;</a>
+<a name="ln1641"> </a>
+<a name="ln1642">  for (i = _vdata.begin();i != _vdata.end();++i)</a>
+<a name="ln1643">  if ((*i)-&gt;GetDataType() == dt)</a>
+<a name="ln1644">  return(true);</a>
+<a name="ln1645"> </a>
+<a name="ln1646">  return(false);</a>
+<a name="ln1647">  }</a>
+<a name="ln1648"> </a>
+<a name="ln1649">  OBGenericData *OBAtom::GetData(string &amp;s)</a>
+<a name="ln1650">  //returns the value given an attribute</a>
+<a name="ln1651">  {</a>
+<a name="ln1652">  vector&lt;OBGenericData*&gt;::iterator i;</a>
+<a name="ln1653"> </a>
+<a name="ln1654">  for (i = _vdata.begin();i != _vdata.end();++i)</a>
+<a name="ln1655">  if ((*i)-&gt;GetAttribute() == s)</a>
+<a name="ln1656">  return(*i);</a>
+<a name="ln1657"> </a>
+<a name="ln1658">  return(NULL);</a>
+<a name="ln1659">  }</a>
+<a name="ln1660"> </a>
+<a name="ln1661">  OBGenericData *OBAtom::GetData(const char *s)</a>
+<a name="ln1662">  //returns the value given an attribute</a>
+<a name="ln1663">  {</a>
+<a name="ln1664">  vector&lt;OBGenericData*&gt;::iterator i;</a>
+<a name="ln1665"> </a>
+<a name="ln1666">  for (i = _vdata.begin();i != _vdata.end();++i)</a>
+<a name="ln1667">  if ((*i)-&gt;GetAttribute() == s)</a>
+<a name="ln1668">  return(*i);</a>
+<a name="ln1669"> </a>
+<a name="ln1670">  return(NULL);</a>
+<a name="ln1671">  }</a>
+<a name="ln1672"> </a>
+<a name="ln1673">  OBGenericData *OBAtom::GetData(unsigned int dt)</a>
+<a name="ln1674">  {</a>
+<a name="ln1675">  vector&lt;OBGenericData*&gt;::iterator i;</a>
+<a name="ln1676">  for (i = _vdata.begin();i != _vdata.end();++i)</a>
+<a name="ln1677">  if ((*i)-&gt;GetDataType() == dt)</a>
+<a name="ln1678">  return(*i);</a>
+<a name="ln1679">  return(NULL);</a>
+<a name="ln1680">  }</a>
+<a name="ln1681"> </a>
+<a name="ln1682">  void OBAtom::DeleteData(unsigned int dt)</a>
+<a name="ln1683">  {</a>
+<a name="ln1684">  vector&lt;OBGenericData*&gt; vdata;</a>
+<a name="ln1685">  vector&lt;OBGenericData*&gt;::iterator i;</a>
+<a name="ln1686">  for (i = _vdata.begin();i != _vdata.end();++i)</a>
+<a name="ln1687">  if ((*i)-&gt;GetDataType() == dt)</a>
+<a name="ln1688">  delete *i;</a>
+<a name="ln1689">  else</a>
+<a name="ln1690">  vdata.push_back(*i);</a>
+<a name="ln1691">  _vdata = vdata;</a>
+<a name="ln1692">  }</a>
+<a name="ln1693"> </a>
+<a name="ln1694">  void OBAtom::DeleteData(vector&lt;OBGenericData*&gt; &amp;vg)</a>
+<a name="ln1695">  {</a>
+<a name="ln1696">  vector&lt;OBGenericData*&gt; vdata;</a>
+<a name="ln1697">  vector&lt;OBGenericData*&gt;::iterator i,j;</a>
+<a name="ln1698"> </a>
+<a name="ln1699">  bool del;</a>
+<a name="ln1700">  for (i = _vdata.begin();i != _vdata.end();++i)</a>
+<a name="ln1701">  {</a>
+<a name="ln1702">  del = false;</a>
+<a name="ln1703">  for (j = vg.begin();j != vg.end();++j)</a>
+<a name="ln1704">  if (*i == *j)</a>
+<a name="ln1705">  {</a>
+<a name="ln1706">  del = true;</a>
+<a name="ln1707">  break;</a>
+<a name="ln1708">  }</a>
+<a name="ln1709">  if (del)</a>
+<a name="ln1710">  delete *i;</a>
+<a name="ln1711">  else</a>
+<a name="ln1712">  vdata.push_back(*i);</a>
+<a name="ln1713">  }</a>
+<a name="ln1714">  _vdata = vdata;</a>
+<a name="ln1715">  }</a>
+<a name="ln1716"> </a>
+<a name="ln1717">  void OBAtom::DeleteData(OBGenericData *gd)</a>
+<a name="ln1718">  {</a>
+<a name="ln1719">  vector&lt;OBGenericData*&gt;::iterator i;</a>
+<a name="ln1720">  for (i = _vdata.begin();i != _vdata.end();++i)</a>
+<a name="ln1721">  if (*i == gd)</a>
+<a name="ln1722">  {</a>
+<a name="ln1723">  delete *i;</a>
+<a name="ln1724">  _vdata.erase(i);</a>
+<a name="ln1725">  }</a>
+<a name="ln1726"> </a>
+<a name="ln1727">  }</a>
+<a name="ln1728">  */</a>
+<a name="ln1729"> </a>
+<a name="ln1730">  bool OBAtom::IsHbondAcceptorSimple()</a>
+<a name="ln1731">  {</a>
+<a name="ln1732">    // Changes from Liu Zhiguo</a>
+<a name="ln1733">    if (_ele == 8 || _ele == 9)</a>
+<a name="ln1734">      return true;</a>
+<a name="ln1735">    if (_ele == 7) {</a>
+<a name="ln1736">      // N+ ions and sp2 hybrid N with 3 valences should not be Hbond acceptors</a>
+<a name="ln1737">      if (!((GetExplicitDegree() == 4 &amp;&amp; GetHyb() == 3)</a>
+<a name="ln1738">            || (GetExplicitDegree() == 3 &amp;&amp; GetHyb() == 2)))</a>
+<a name="ln1739">            return true;</a>
+<a name="ln1740">    }</a>
+<a name="ln1741">    // Changes from Paolo Tosco</a>
+<a name="ln1742">    if (_ele == 16 &amp;&amp; GetFormalCharge() == -1)</a>
+<a name="ln1743">      return true;</a>
+<a name="ln1744">    return false;</a>
+<a name="ln1745">  }</a>
+<a name="ln1746"> </a>
+<a name="ln1747">  // new function, Stefano Forli</a>
+<a name="ln1748">  // Incorporate ideas and data from Kubyni and others.</a>
+<a name="ln1749">  // [1] Kubinyi, H. &quot;Changing paradigms in drug discovery.</a>
+<a name="ln1750">  //    &quot;SPECIAL PUBLICATION-ROYAL SOCIETY OF CHEMISTRY 304.1 (2006): 219-232.</a>
+<a name="ln1751">  //</a>
+<a name="ln1752">  // [2] Kingsbury, Charles A. &quot;Why are the Nitro and Sulfone</a>
+<a name="ln1753">  //     Groups Poor Hydrogen Bonders?.&quot; (2015).</a>
+<a name="ln1754">  //</a>
+<a name="ln1755">  // [3] Per Restorp, Orion B. Berryman, Aaron C. Sather, Dariush Ajami</a>
+<a name="ln1756">  //     and Julius Rebek Jr., Chem. Commun., 2009, 5692 DOI: 10.1039/b914171e</a>
+<a name="ln1757">  //</a>
+<a name="ln1758">  // [4] Dunitz, Taylor. &quot;Organic fluorine hardly ever accepts</a>
+<a name="ln1759">  //     hydrogen bonds.&quot; Chemistry-A European Journal 3.1 (1997): 83-92.</a>
+<a name="ln1760">  //</a>
+<a name="ln1761">  // This function has a finer grain than the original</a>
+<a name="ln1762">  // implementation, checking also the neighbor atoms.</a>
+<a name="ln1763">  // Accordingly to these rules, the function will return:</a>
+<a name="ln1764">  //</a>
+<a name="ln1765">  //    aliph-O-aliph ether   -&gt; true   [1]</a>
+<a name="ln1766">  //    hydroxy O-sp3         -&gt; true   [1]</a>
+<a name="ln1767">  //    aro-O-aliph ether     -&gt; true   [1]</a>
+<a name="ln1768">  //    ester O-sp2           -&gt; true   [1]</a>
+<a name="ln1769">  //    sulfate O (R-SO3)     -&gt; true   [2]</a>
+<a name="ln1770">  //    sulfoxyde O (R-SO-R)  -&gt; true   [2]</a>
+<a name="ln1771">  //    organoboron-F (R-BF3) -&gt; true   [3]</a>
+<a name="ln1772">  //    ester O-sp3           -&gt; false  [1]</a>
+<a name="ln1773">  //    sulfone (R1-SO2-R2 )  -&gt; false  [2]</a>
+<a name="ln1774">  //    aro-O-aro             -&gt; false  [1]</a>
+<a name="ln1775">  //    aromatic O            -&gt; false  [1]</a>
+<a name="ln1776">  //    O-nitro               -&gt; false  [2]</a>
+<a name="ln1777">  //    organic F (R-F)       -&gt; false  [4]</a>
+<a name="ln1778">  //</a>
+<a name="ln1779">  bool OBAtom::IsHbondAcceptor() {</a>
+<a name="ln1780">      if (_ele == 8) {</a>
+<a name="ln1781">        // oxygen; this should likely be a separate function</a>
+<a name="ln1782">        // something like IsHbondAcceptorOxygen()</a>
+<a name="ln1783">        unsigned int aroCount = 0;</a>
+<a name="ln1784"> </a>
+<a name="ln1785">        OBBond *bond;</a>
+<a name="ln1786">        OBBondIterator i;</a>
+<a name="ln1787">        if (IsNitroOxygen()){ // maybe could be a bool option in the function?</a>
+<a name="ln1788">          return (false);</a>
+<a name="ln1789">          }</a>
+<a name="ln1790">        if (IsAromatic()){ // aromatic oxygen (furan) (NO)</a>
+<a name="ln1791">          return(false);</a>
+<a name="ln1792">          }</a>
+<a name="ln1793">        if (IsSulfoneOxygen(this)){ // sulfone (NO)</a>
+<a name="ln1794">          return(false);</a>
+<a name="ln1795">          }</a>
+<a name="ln1796">        FOR_NBORS_OF_ATOM(nbr, this){</a>
+<a name="ln1797">          if (nbr-&gt;IsAromatic()){</a>
+<a name="ln1798">            aroCount += 1;</a>
+<a name="ln1799">            if (aroCount == 2){ // aromatic ether (aro-O-aro) (NO)</a>
+<a name="ln1800">              return(false);</a>
+<a name="ln1801">            }</a>
+<a name="ln1802">          }</a>
+<a name="ln1803">          else {</a>
+<a name="ln1804">            if (nbr-&gt;GetAtomicNum() == OBElements::Hydrogen) { // hydroxyl (YES)</a>
+<a name="ln1805">              return(true);</a>
+<a name="ln1806">            }</a>
+<a name="ln1807">            else {</a>
+<a name="ln1808">              bond = nbr-&gt;GetBond(this);</a>
+<a name="ln1809">              if ( (bond-&gt;IsEster()) &amp;&amp; (!(IsCarboxylOxygen())))</a>
+<a name="ln1810">                 return(false);</a>
+<a name="ln1811">            }</a>
+<a name="ln1812">          }</a>
+<a name="ln1813">        }</a>
+<a name="ln1814">        return(true); // any other oxygen</a>
+<a name="ln1815">    } // oxygen END</a>
+<a name="ln1816">    // fluorine</a>
+<a name="ln1817">    if (_ele == 9 ) {</a>
+<a name="ln1818">        OBBondIterator i;</a>
+<a name="ln1819">        // organic fluorine (NO)</a>
+<a name="ln1820">        for (OBAtom* nbr = BeginNbrAtom(i);nbr;nbr=NextNbrAtom(i))</a>
+<a name="ln1821">          if (nbr-&gt;GetAtomicNum() == 6)</a>
+<a name="ln1822">            return (false);</a>
+<a name="ln1823">          else</a>
+<a name="ln1824">            return (true);</a>
+<a name="ln1825">    };</a>
+<a name="ln1826">    if (_ele == 7) {</a>
+<a name="ln1827">      // N+ ions and sp2 hybrid N with 3 valences should not be Hbond acceptors</a>
+<a name="ln1828">      if (!((GetExplicitDegree() == 4 &amp;&amp; GetHyb() == 3)</a>
+<a name="ln1829">        || (GetExplicitDegree() == 3 &amp;&amp; GetHyb() == 2)))</a>
+<a name="ln1830">        return true;</a>
+<a name="ln1831">    };</a>
+<a name="ln1832">    // Changes from Paolo Tosco</a>
+<a name="ln1833">    if (_ele == 16 &amp;&amp; GetFormalCharge() == -1){</a>
+<a name="ln1834">          return (true); }</a>
+<a name="ln1835">    // everything else</a>
+<a name="ln1836">    return (false);</a>
+<a name="ln1837">  }</a>
+<a name="ln1838"> </a>
+<a name="ln1839">  bool OBAtom::IsHbondDonor()</a>
+<a name="ln1840">  {</a>
+<a name="ln1841">    // return MatchesSMARTS(&quot;[$([#8,#7H,#9;!H0])]&quot;);</a>
+<a name="ln1842">    if (!(_ele == 7 || _ele == 8 || _ele == 9))</a>
+<a name="ln1843">      return false;</a>
+<a name="ln1844"> </a>
+<a name="ln1845">    OBAtom *nbr;</a>
+<a name="ln1846">    OBBondIterator i;</a>
+<a name="ln1847">    for (nbr = BeginNbrAtom(i);nbr;nbr = NextNbrAtom(i))</a>
+<a name="ln1848">      if (nbr-&gt;GetAtomicNum() == OBElements::Hydrogen)</a>
+<a name="ln1849">        return true;</a>
+<a name="ln1850"> </a>
+<a name="ln1851">    return false;</a>
+<a name="ln1852">  }</a>
+<a name="ln1853"> </a>
+<a name="ln1854">  bool OBAtom::IsHbondDonorH()</a>
+<a name="ln1855">  {</a>
+<a name="ln1856">    if (GetAtomicNum() != OBElements::Hydrogen) return(false);</a>
+<a name="ln1857"> </a>
+<a name="ln1858">    // Recursive definition -- this atom is an H atom</a>
+<a name="ln1859">    // are any neighbors HbondDonors?</a>
+<a name="ln1860"> </a>
+<a name="ln1861">    OBAtom *atom;</a>
+<a name="ln1862">    OBBond *bond;</a>
+<a name="ln1863">    OBBondIterator i;</a>
+<a name="ln1864">    for (bond = BeginBond(i);bond;bond = NextBond(i)) {</a>
+<a name="ln1865">        atom = bond-&gt;GetNbrAtom(this);</a>
+<a name="ln1866">      if (atom-&gt;IsHbondDonor()) return(true);</a>
+<a name="ln1867">      }</a>
+<a name="ln1868"> </a>
+<a name="ln1869">    return(false);</a>
+<a name="ln1870">  }</a>
+<a name="ln1871"> </a>
+<a name="ln1872">  bool OBAtom::IsMetal()</a>
+<a name="ln1873">  {</a>
+<a name="ln1874">    const unsigned NMETALS = 78;</a>
+<a name="ln1875">    const int metals[NMETALS] = {</a>
+<a name="ln1876">    3,4,11,12,13,19,20,21,22,23,24,25,26,27,28,29,</a>
+<a name="ln1877">    30,31,37,38,39,40,41,42,43,44,45,46,47,48,49,50,55,56,57,58,59,60,61,62,63,</a>
+<a name="ln1878">    64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,87,88,89,90,91,</a>
+<a name="ln1879">    92,93,94,95,96,97,98,99,100,101,102,103};</a>
+<a name="ln1880">    return std::find(metals, metals+78, GetAtomicNum())!=metals+78;</a>
+<a name="ln1881">  }</a>
+<a name="ln1882"> </a>
+<a name="ln1883">} // end namespace OpenBabel</a>
+<a name="ln1884"> </a>
+<a name="ln1885">//! \file atom.cpp</a>
+<a name="ln1886">//! \brief Handle OBAtom class</a>
+
+</code></pre>
+<div class="balloon" rel="1522"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 1522, 1554</p></div>
+<div class="balloon" rel="116"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v730/" target="_blank">V730</a> It is possible that not all members of a class are initialized inside the constructor. Consider inspecting: Visit.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

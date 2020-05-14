@@ -1,0 +1,1400 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>ichirvr6.c</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/*</a>
+<a name="ln2"> * International Chemical Identifier (InChI)</a>
+<a name="ln3"> * Version 1</a>
+<a name="ln4"> * Software version 1.04</a>
+<a name="ln5"> * September 9, 2011</a>
+<a name="ln6"> *</a>
+<a name="ln7"> * The InChI library and programs are free software developed under the</a>
+<a name="ln8"> * auspices of the International Union of Pure and Applied Chemistry (IUPAC).</a>
+<a name="ln9"> * Originally developed at NIST. Modifications and additions by IUPAC </a>
+<a name="ln10"> * and the InChI Trust.</a>
+<a name="ln11"> *</a>
+<a name="ln12"> * IUPAC/InChI-Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln13"> * Software version 1.0.</a>
+<a name="ln14"> * Copyright (C) IUPAC and InChI Trust Limited</a>
+<a name="ln15"> * </a>
+<a name="ln16"> * This library is free software; you can redistribute it and/or modify it under the </a>
+<a name="ln17"> * terms of the IUPAC/InChI Trust Licence for the International Chemical Identifier </a>
+<a name="ln18"> * (InChI) Software version 1.0; either version 1.0 of the License, or </a>
+<a name="ln19"> * (at your option) any later version.</a>
+<a name="ln20"> * </a>
+<a name="ln21"> * This library is distributed in the hope that it will be useful, </a>
+<a name="ln22"> * but WITHOUT ANY WARRANTY; without even the implied warranty of </a>
+<a name="ln23"> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  </a>
+<a name="ln24"> * See the IUPAC/InChI Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln25"> * Software version 1.0 for more details.</a>
+<a name="ln26"> * </a>
+<a name="ln27"> * You should have received a copy of the IUPAC/InChI Trust Licence for the </a>
+<a name="ln28"> * International Chemical Identifier (InChI) Software version 1.0 along with </a>
+<a name="ln29"> * this library; if not, write to:</a>
+<a name="ln30"> * </a>
+<a name="ln31"> * The InChI Trust</a>
+<a name="ln32"> * c/o FIZ CHEMIE Berlin</a>
+<a name="ln33"> * Franklinstrasse 11</a>
+<a name="ln34"> * 10587 Berlin</a>
+<a name="ln35"> * GERMANY</a>
+<a name="ln36"> * </a>
+<a name="ln37"> */</a>
+<a name="ln38"> </a>
+<a name="ln39"> </a>
+<a name="ln40">#include &lt;stdio.h&gt;</a>
+<a name="ln41">#include &lt;stdlib.h&gt;</a>
+<a name="ln42">#include &lt;string.h&gt;</a>
+<a name="ln43"> </a>
+<a name="ln44">/*#define CHECK_WIN32_VC_HEAP*/</a>
+<a name="ln45">#include &quot;mode.h&quot;</a>
+<a name="ln46"> </a>
+<a name="ln47">#if ( READ_INCHI_STRING == 1 )</a>
+<a name="ln48"> </a>
+<a name="ln49">#include &quot;ichi.h&quot;</a>
+<a name="ln50">#include &quot;ichitime.h&quot;</a>
+<a name="ln51"> </a>
+<a name="ln52">#include &quot;inpdef.h&quot;</a>
+<a name="ln53">#include &quot;ichimain.h&quot;</a>
+<a name="ln54">#include &quot;ichierr.h&quot;</a>
+<a name="ln55">#include &quot;incomdef.h&quot;</a>
+<a name="ln56">#include &quot;ichiring.h&quot;</a>
+<a name="ln57">#include &quot;extr_ct.h&quot;</a>
+<a name="ln58">#include &quot;ichitaut.h&quot;</a>
+<a name="ln59">#include &quot;ichinorm.h&quot;</a>
+<a name="ln60">#include &quot;util.h&quot;</a>
+<a name="ln61"> </a>
+<a name="ln62">#include &quot;ichicomp.h&quot;</a>
+<a name="ln63">#include &quot;ichister.h&quot;</a>
+<a name="ln64"> </a>
+<a name="ln65">#include &quot;ichi_bns.h&quot;</a>
+<a name="ln66"> </a>
+<a name="ln67">#include &quot;strutil.h&quot;</a>
+<a name="ln68"> </a>
+<a name="ln69">#include &quot;ichirvrs.h&quot;</a>
+<a name="ln70"> </a>
+<a name="ln71"> </a>
+<a name="ln72">#define INC_ADD_EDGE 64</a>
+<a name="ln73">/***********************************************************************************************/</a>
+<a name="ln74">int FixRestoredStructureStereo( INCHI_MODE cmpInChI, ICR *icr, INCHI_MODE cmpInChI2, ICR *icr2,</a>
+<a name="ln75">                        ICHICONST INPUT_PARMS *ip, STRUCT_DATA *sd, BN_STRUCT *pBNS, BN_DATA *pBD,</a>
+<a name="ln76">                        StrFromINChI *pStruct, inp_ATOM *at, inp_ATOM *at2, inp_ATOM *at3, VAL_AT *pVA,</a>
+<a name="ln77">                        ALL_TC_GROUPS *pTCGroups, T_GROUP_INFO **ppt_group_info, inp_ATOM **ppat_norm,</a>
+<a name="ln78">                        inp_ATOM **ppat_prep, INChI *pInChI[], long num_inp,</a>
+<a name="ln79">                        int *pnNumRunBNS, int *pnTotalDelta, int forbidden_edge_mask, int forbidden_stereo_edge_mask)</a>
+<a name="ln80">{</a>
+<a name="ln81">    /*--------- process extra or missing Fixed-H on non-tautomeric atoms ------*/</a>
+<a name="ln82">    /* at2 should be the most recently restored atom, Fixed-H */</a>
+<a name="ln83">    int i, j, k, delta, tot_succes, max_success, cur_success, ret = 0;</a>
+<a name="ln84">    int err, iOrigInChI, iRevrInChI;</a>
+<a name="ln85">    int j12, v1, v2, e, vRad;</a>
+<a name="ln86">    BNS_VERTEX *pv1, *pv2, *pvRad;</a>
+<a name="ln87">    BNS_EDGE   *pe, *peRad;</a>
+<a name="ln88">    EDGE_LIST AllChargeEdges, CurrEdges, NFlowerEdges, OtherNFlowerEdges, FixedStereoEdges, AllRadList;</a>
+<a name="ln89">    EDGE_LIST TautMinusEdges[2]; /* 0 -&gt; O &amp; O(+), 1=&gt; N &amp; N(+) */</a>
+<a name="ln90"> </a>
+<a name="ln91">    Vertex     vPathStart, vPathEnd;</a>
+<a name="ln92">    int        nPathLen, nDeltaH, nDeltaCharge, nNumVisitedAtoms;</a>
+<a name="ln93">    INChI_Stereo *pStereoInChI, *pStereo2InChI, *pStereoRevrs, *pStereo2Revrs; </a>
+<a name="ln94">    </a>
+<a name="ln95">    /* Stereo */</a>
+<a name="ln96"> </a>
+<a name="ln97">    /* currently being processed layer */</a>
+<a name="ln98">    pStereoInChI = (pInChI[0]-&gt;StereoIsotopic &amp;&amp;</a>
+<a name="ln99">               pInChI[0]-&gt;StereoIsotopic-&gt;nNumberOfStereoBonds +</a>
+<a name="ln100">               pInChI[0]-&gt;StereoIsotopic-&gt;nNumberOfStereoCenters)?</a>
+<a name="ln101">               pInChI[0]-&gt;StereoIsotopic : pInChI[0]-&gt;Stereo;</a>
+<a name="ln102"> </a>
+<a name="ln103">    /* mobile-H layer in case of Fixed-H */</a>
+<a name="ln104">    pStereo2InChI = (pStruct-&gt;bMobileH == TAUT_YES || !pInChI[1] ||</a>
+<a name="ln105">               !pInChI[1]-&gt;nNumberOfAtoms || pInChI[1]-&gt;bDeleted)?</a>
+<a name="ln106">                        NULL:</a>
+<a name="ln107">               (pInChI[1]-&gt;StereoIsotopic &amp;&amp;</a>
+<a name="ln108">               pInChI[1]-&gt;StereoIsotopic-&gt;nNumberOfStereoBonds +</a>
+<a name="ln109">               pInChI[1]-&gt;StereoIsotopic-&gt;nNumberOfStereoCenters)?</a>
+<a name="ln110">                        pInChI[1]-&gt;StereoIsotopic :</a>
+<a name="ln111">                        pInChI[1]-&gt;Stereo;</a>
+<a name="ln112"> </a>
+<a name="ln113">    /* currently being processed layer */</a>
+<a name="ln114">    pStereoRevrs = (pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic &amp;&amp;</a>
+<a name="ln115">               pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic-&gt;nNumberOfStereoBonds +</a>
+<a name="ln116">               pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic-&gt;nNumberOfStereoCenters)?</a>
+<a name="ln117">               pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic : pStruct-&gt;pOneINChI[0]-&gt;Stereo;</a>
+<a name="ln118"> </a>
+<a name="ln119">    /* mobile-H layer in case of Fixed-H */</a>
+<a name="ln120">    pStereo2Revrs = (pStruct-&gt;bMobileH == TAUT_YES || !pStruct-&gt;pOneINChI[1] ||</a>
+<a name="ln121">               !pStruct-&gt;pOneINChI[1]-&gt;nNumberOfAtoms || pStruct-&gt;pOneINChI[1]-&gt;bDeleted)?</a>
+<a name="ln122">                        NULL:</a>
+<a name="ln123">               (pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic &amp;&amp;</a>
+<a name="ln124">               pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic-&gt;nNumberOfStereoBonds +</a>
+<a name="ln125">               pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic-&gt;nNumberOfStereoCenters)?</a>
+<a name="ln126">                        pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic :</a>
+<a name="ln127">                        pStruct-&gt;pOneINChI[1]-&gt;Stereo;</a>
+<a name="ln128">    </a>
+<a name="ln129">    INCHI_HEAPCHK</a>
+<a name="ln130"> </a>
+<a name="ln131">    AllocEdgeList( &amp;AllChargeEdges, EDGE_LIST_CLEAR );</a>
+<a name="ln132">    AllocEdgeList( &amp;CurrEdges, EDGE_LIST_CLEAR );</a>
+<a name="ln133">    AllocEdgeList( &amp;NFlowerEdges, EDGE_LIST_CLEAR );</a>
+<a name="ln134">    AllocEdgeList( &amp;OtherNFlowerEdges, EDGE_LIST_CLEAR );</a>
+<a name="ln135">    AllocEdgeList( &amp;FixedStereoEdges, EDGE_LIST_CLEAR );</a>
+<a name="ln136">    AllocEdgeList( &amp;AllRadList, EDGE_LIST_CLEAR );</a>
+<a name="ln137"> </a>
+<a name="ln138">    AllocEdgeList( TautMinusEdges+0, EDGE_LIST_CLEAR );</a>
+<a name="ln139">    AllocEdgeList( TautMinusEdges+1, EDGE_LIST_CLEAR );</a>
+<a name="ln140"> </a>
+<a name="ln141">    cmpInChI = CompareReversedINChI2( pStruct-&gt;pOneINChI[0], pInChI[0], pStruct-&gt;pOneINChI_Aux[0], NULL /*INChI_Aux *v2*/, icr, &amp;err );</a>
+<a name="ln142">    if ( cmpInChI &amp; IDIF_PROBLEM ) {</a>
+<a name="ln143">        ret = RI_ERR_PROGR; /* severe restore problem */</a>
+<a name="ln144">        goto exit_function;</a>
+<a name="ln145">    }</a>
+<a name="ln146">    if ( err ) {</a>
+<a name="ln147">        ret = RI_ERR_ALLOC;</a>
+<a name="ln148">        goto exit_function;</a>
+<a name="ln149">    }</a>
+<a name="ln150"> </a>
+<a name="ln151">    cmpInChI2 = 0;</a>
+<a name="ln152"> </a>
+<a name="ln153">    if ( pStruct-&gt;bMobileH == TAUT_NON ) {</a>
+<a name="ln154">        /* these indexes are used to compare Mobile-H InChI */</a>
+<a name="ln155">        iOrigInChI = (pInChI[1] &amp;&amp; pInChI[1]-&gt;nNumberOfAtoms &amp;&amp; !pInChI[1]-&gt;bDeleted)? 1 : 0;</a>
+<a name="ln156">        iRevrInChI = (pStruct-&gt;pOneINChI[1] &amp;&amp;pStruct-&gt;pOneINChI[1]-&gt;nNumberOfAtoms &amp;&amp; !pStruct-&gt;pOneINChI[1]-&gt;bDeleted)? 1 : 0;</a>
+<a name="ln157">    } else {</a>
+<a name="ln158">        iOrigInChI = 0;</a>
+<a name="ln159">        iRevrInChI = 0;</a>
+<a name="ln160">    }</a>
+<a name="ln161"> </a>
+<a name="ln162">    memset ( icr2, 0, sizeof(*icr2) );</a>
+<a name="ln163">    if ( iRevrInChI || iOrigInChI ) {</a>
+<a name="ln164">        /* additional mobile-H compare in case of Fixed-H */</a>
+<a name="ln165">        cmpInChI2 = CompareReversedINChI2( pStruct-&gt;pOneINChI[iRevrInChI], pInChI[iOrigInChI], pStruct-&gt;pOneINChI_Aux[iRevrInChI], NULL /*INChI_Aux *v2*/, icr2, &amp;err );</a>
+<a name="ln166">        if ( cmpInChI &amp; IDIF_PROBLEM ) {</a>
+<a name="ln167">            ret = RI_ERR_PROGR; /* severe restore problem */</a>
+<a name="ln168">            goto exit_function;</a>
+<a name="ln169">        }</a>
+<a name="ln170">        if ( err ) {</a>
+<a name="ln171">            ret = RI_ERR_ALLOC;</a>
+<a name="ln172">            goto exit_function;</a>
+<a name="ln173">        }</a>
+<a name="ln174">    }</a>
+<a name="ln175"> </a>
+<a name="ln176"> </a>
+<a name="ln177">    if ( !(cmpInChI &amp; IDIFF_SB) &amp;&amp; !(cmpInChI2 &amp; IDIFF_SB) ) {</a>
+<a name="ln178">        goto exit_function;</a>
+<a name="ln179">    }</a>
+<a name="ln180">    /* need to temporarily remove fixing of stereogenic bonds */</a>
+<a name="ln181">    for ( i = 0; i &lt; pStruct-&gt;num_atoms; i ++ ) {</a>
+<a name="ln182">        pv1 = pBNS-&gt;vert + i;</a>
+<a name="ln183">        for ( j = 0; j &lt; at2[i].valence; j ++ ) {</a>
+<a name="ln184">            pe = pBNS-&gt;edge + (e=pv1-&gt;iedge[j]);</a>
+<a name="ln185">            if ( j == pe-&gt;neighbor1 ) {</a>
+<a name="ln186">                /* do not store same bond 2 times */</a>
+<a name="ln187">                if ( (pe-&gt;forbidden &amp; forbidden_stereo_edge_mask) &amp;&amp;</a>
+<a name="ln188">                     (ret = AddToEdgeList( &amp;FixedStereoEdges, e, INC_ADD_EDGE ) ) ) {</a>
+<a name="ln189">                    goto exit_function;</a>
+<a name="ln190">                }</a>
+<a name="ln191">            }</a>
+<a name="ln192">        }</a>
+<a name="ln193">    }</a>
+<a name="ln194"> </a>
+<a name="ln195"> </a>
+<a name="ln196">    tot_succes  = 0;</a>
+<a name="ln197">    cur_success = 0;</a>
+<a name="ln198">    if ( (cmpInChI &amp; IDIF_SB_MISS) &amp;&amp; (!cmpInChI2 || (cmpInChI2 &amp; IDIF_SB_MISS)) &amp;&amp;</a>
+<a name="ln199">         0 &lt; (max_success = pBNS-&gt;tot_st_cap - pBNS-&gt;tot_st_flow) ) {</a>
+<a name="ln200">        /*----------------------------------------------------*/</a>
+<a name="ln201">        /* case 01: extra stereogenic bond, radical present   */</a>
+<a name="ln202">        /* X=N-O*  =&gt; X=N=O and eliminate radical             */</a>
+<a name="ln203">        /*----------------------------------------------------*/</a>
+<a name="ln204">        int aN;</a>
+<a name="ln205">        BNS_VERTEX *pvO, *pvN;</a>
+<a name="ln206">        BNS_EDGE   *peNO;</a>
+<a name="ln207"> </a>
+<a name="ln208">        RemoveForbiddenEdgeMask( pBNS, &amp;FixedStereoEdges, forbidden_stereo_edge_mask  );</a>
+<a name="ln209"> </a>
+<a name="ln210">        for ( i = 0; i &lt; icr-&gt;num_sb_in2_only &amp;&amp; cur_success &lt; max_success; i ++ ) {</a>
+<a name="ln211">            j12 = icr-&gt;sb_in2_only[i];</a>
+<a name="ln212">            pv1 = pBNS-&gt;vert + (v1 = pStereoInChI-&gt;nBondAtom1[j12]-1);</a>
+<a name="ln213">            pv2 = pBNS-&gt;vert + (v2 = pStereoInChI-&gt;nBondAtom2[j12]-1);</a>
+<a name="ln214">            for ( k = 0; k &lt; at2[v1].valence; k ++ ) {</a>
+<a name="ln215">                pe = pBNS-&gt;edge + (e = pv1-&gt;iedge[k]);</a>
+<a name="ln216">                if ( v2 == (pe-&gt;neighbor12 ^ v1) )</a>
+<a name="ln217">                    break; /* the edge has been found */</a>
+<a name="ln218">            }</a>
+<a name="ln219">            if ( k == at2[v1].valence ) {</a>
+<a name="ln220">                ret = RI_ERR_SYNTAX;</a>
+<a name="ln221">                goto exit_function;</a>
+<a name="ln222">            }</a>
+<a name="ln223">            /* check v1 */</a>
+<a name="ln224">            pv1-&gt;st_edge.cap --;</a>
+<a name="ln225">            pv1-&gt;st_edge.flow --;</a>
+<a name="ln226">            pv2-&gt;st_edge.flow --;</a>
+<a name="ln227">            pe-&gt;flow --; /* new radical on v2 */</a>
+<a name="ln228">            vRad = NO_VERTEX;</a>
+<a name="ln229">            ret = RunBnsTestOnce( pBNS, pBD, pVA, &amp;vPathStart, &amp;vPathEnd, &amp;nPathLen,</a>
+<a name="ln230">                                  &amp;nDeltaH, &amp;nDeltaCharge, &amp;nNumVisitedAtoms );</a>
+<a name="ln231">            pv1-&gt;st_edge.cap ++;</a>
+<a name="ln232">            pv1-&gt;st_edge.flow ++;</a>
+<a name="ln233">            pv2-&gt;st_edge.flow ++;</a>
+<a name="ln234">            pe-&gt;flow ++; /* remove new radical on v2 */</a>
+<a name="ln235"> </a>
+<a name="ln236">            if ( ret == 1 /*&amp;&amp; !nDeltaH*/ &amp;&amp; !nDeltaCharge &amp;&amp; (v2 == vPathStart || v2 == vPathEnd) ) {</a>
+<a name="ln237">                vRad = (v2 == vPathStart)? vPathEnd : vPathStart;</a>
+<a name="ln238">            } else {</a>
+<a name="ln239">                pv2-&gt;st_edge.cap --;</a>
+<a name="ln240">                pv2-&gt;st_edge.flow --;</a>
+<a name="ln241">                pv1-&gt;st_edge.flow --;</a>
+<a name="ln242">                pe-&gt;flow --; /* new radical on v1 */</a>
+<a name="ln243">                vRad = NO_VERTEX;</a>
+<a name="ln244">                ret = RunBnsTestOnce( pBNS, pBD, pVA, &amp;vPathStart, &amp;vPathEnd, &amp;nPathLen,</a>
+<a name="ln245">                                      &amp;nDeltaH, &amp;nDeltaCharge, &amp;nNumVisitedAtoms );</a>
+<a name="ln246">                pv2-&gt;st_edge.cap ++;</a>
+<a name="ln247">                pv2-&gt;st_edge.flow ++;</a>
+<a name="ln248">                pv1-&gt;st_edge.flow ++;</a>
+<a name="ln249">                pe-&gt;flow ++; /* remove new radical on v1 */</a>
+<a name="ln250">                if ( ret == 1 /*&amp;&amp; !nDeltaH*/ &amp;&amp; !nDeltaCharge &amp;&amp; (v1 == vPathStart || v1 == vPathEnd) ) {</a>
+<a name="ln251">                    vRad = (v1 == vPathStart)? vPathEnd : vPathStart;</a>
+<a name="ln252">                }</a>
+<a name="ln253">            }</a>
+<a name="ln254">            if ( vRad == NO_VERTEX ) {</a>
+<a name="ln255">                continue; /* radical did not affect this bond */</a>
+<a name="ln256">            }</a>
+<a name="ln257">            pvRad = pBNS-&gt;vert + vRad;</a>
+<a name="ln258">            /* detect =N-O*  */</a>
+<a name="ln259">            if ( pVA[vRad].cNumValenceElectrons == 6 &amp;&amp; at2[vRad].valence == 1 &amp;&amp;</a>
+<a name="ln260">                 (peRad = pBNS-&gt;edge + pvRad-&gt;iedge[0])-&gt;flow == 0 &amp;&amp;</a>
+<a name="ln261">                 pVA[aN = peRad-&gt;neighbor12 ^ vRad].cNumValenceElectrons == 5 &amp;&amp;</a>
+<a name="ln262">                 at2[aN].valence == 2 ) {</a>
+<a name="ln263">                /*------------------------------------------------------------ </a>
+<a name="ln264">                  Fix Metal disconnection/normalization inconsistency :</a>
+<a name="ln265">                                         disconnected  restored</a>
+<a name="ln266">                  R=N(+)-M     R=N--M     R=N  + M     R=N   + M                         </a>
+<a name="ln267">                    |       -&gt;   ||    -&gt;   ||     -&gt;    |</a>
+<a name="ln268">                    O(-)         O          O            O* &lt;- radical                        </a>
+<a name="ln269"> </a>
+<a name="ln270">                  The correct     R=N    + M(+)      </a>
+<a name="ln271">                  disconnection     |</a>
+<a name="ln272">                  would be this:    O(-)        </a>
+<a name="ln273">                --------------------------------------------------------------*/</a>
+<a name="ln274">                pvN  = pBNS-&gt;vert + aN;</a>
+<a name="ln275">                pvO  = pvRad;</a>
+<a name="ln276">                peNO = peRad;</a>
+<a name="ln277"> </a>
+<a name="ln278">                /* N-O*  =&gt; N=O */</a>
+<a name="ln279">                peNO-&gt;flow ++;</a>
+<a name="ln280">                pvO-&gt;st_edge.flow ++;</a>
+<a name="ln281">                pvN-&gt;st_edge.cap  ++;</a>
+<a name="ln282">                pvN-&gt;st_edge.flow ++;</a>
+<a name="ln283">                pBNS-&gt;tot_st_cap  += 1;</a>
+<a name="ln284">                pBNS-&gt;tot_st_flow += 2;</a>
+<a name="ln285">                cur_success ++;</a>
+<a name="ln286">            } else {</a>
+<a name="ln287">                /* all other radicals that affect stereo */</a>
+<a name="ln288">                delta = pvRad-&gt;st_edge.cap - pvRad-&gt;st_edge.flow;</a>
+<a name="ln289">                pvRad-&gt;st_edge.cap -= delta;</a>
+<a name="ln290">                pBNS-&gt;tot_st_cap   -= delta;</a>
+<a name="ln291">            }</a>
+<a name="ln292">        }</a>
+<a name="ln293">/*exit_case_01:*/</a>
+<a name="ln294">        SetForbiddenEdgeMask( pBNS, &amp;FixedStereoEdges, forbidden_stereo_edge_mask  );</a>
+<a name="ln295">        if ( cur_success ) {</a>
+<a name="ln296">            tot_succes += cur_success;</a>
+<a name="ln297">            /* recalculate InChI from the structure */</a>
+<a name="ln298">            if ( 0 &gt; (ret = MakeOneInChIOutOfStrFromINChI2( ip, sd, pBNS, pStruct, at, at2, at3, pVA, pTCGroups,</a>
+<a name="ln299">                                                            ppt_group_info, ppat_norm, ppat_prep ) ) ) {</a>
+<a name="ln300">                goto exit_function;</a>
+<a name="ln301">            }</a>
+<a name="ln302">            if ( (ret = FillOutExtraFixedHDataRestr( pStruct )) ) {</a>
+<a name="ln303">                goto exit_function;</a>
+<a name="ln304">            }</a>
+<a name="ln305">            /*</a>
+<a name="ln306">            if ( ret = FillOutCMP2MHINCHI( pStruct, pTCGroups, at2, pVA, pInChI, pc2i ) ) {</a>
+<a name="ln307">                goto exit_function;</a>
+<a name="ln308">            }</a>
+<a name="ln309">            */</a>
+<a name="ln310">            cmpInChI = CompareReversedINChI2( pStruct-&gt;pOneINChI[0], pInChI[0], pStruct-&gt;pOneINChI_Aux[0], NULL /*INChI_Aux *v2*/, icr, &amp;err );</a>
+<a name="ln311">            if ( cmpInChI &amp; IDIF_PROBLEM ) {</a>
+<a name="ln312">                ret = RI_ERR_PROGR; /* severe restore problem */</a>
+<a name="ln313">                goto exit_function;</a>
+<a name="ln314">            }</a>
+<a name="ln315">            if ( err ) {</a>
+<a name="ln316">                ret = RI_ERR_ALLOC;</a>
+<a name="ln317">                goto exit_function;</a>
+<a name="ln318">            }</a>
+<a name="ln319">            cmpInChI2 = 0;</a>
+<a name="ln320">            memset ( icr2, 0, sizeof(*icr2) );</a>
+<a name="ln321">            if ( iRevrInChI || iOrigInChI ) {</a>
+<a name="ln322">                /* additional mobile-H compare in case of Fixed-H */</a>
+<a name="ln323">                cmpInChI2 = CompareReversedINChI2( pStruct-&gt;pOneINChI[iRevrInChI], pInChI[iOrigInChI], pStruct-&gt;pOneINChI_Aux[iRevrInChI], NULL /*INChI_Aux *v2*/, icr2, &amp;err );</a>
+<a name="ln324">                if ( cmpInChI &amp; IDIF_PROBLEM ) {</a>
+<a name="ln325">                    ret = RI_ERR_PROGR; /* severe restore problem */</a>
+<a name="ln326">                    goto exit_function;</a>
+<a name="ln327">                }</a>
+<a name="ln328">                if ( err ) {</a>
+<a name="ln329">                    ret = RI_ERR_ALLOC;</a>
+<a name="ln330">                    goto exit_function;</a>
+<a name="ln331">                }</a>
+<a name="ln332">            }</a>
+<a name="ln333"> </a>
+<a name="ln334">            pStereoRevrs = (pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic &amp;&amp;</a>
+<a name="ln335">                       pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic-&gt;nNumberOfStereoBonds +</a>
+<a name="ln336">                       pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic-&gt;nNumberOfStereoCenters)?</a>
+<a name="ln337">                       pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic : pStruct-&gt;pOneINChI[0]-&gt;Stereo;</a>
+<a name="ln338"> </a>
+<a name="ln339">            </a>
+<a name="ln340">            pStereo2Revrs = (pStruct-&gt;bMobileH == TAUT_YES || !pStruct-&gt;pOneINChI[1] ||</a>
+<a name="ln341">                       !pStruct-&gt;pOneINChI[1]-&gt;nNumberOfAtoms || pStruct-&gt;pOneINChI[1]-&gt;bDeleted)?</a>
+<a name="ln342">                                NULL:</a>
+<a name="ln343">                       (pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic &amp;&amp;</a>
+<a name="ln344">                       pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic-&gt;nNumberOfStereoBonds +</a>
+<a name="ln345">                       pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic-&gt;nNumberOfStereoCenters)?</a>
+<a name="ln346">                                pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic :</a>
+<a name="ln347">                                pStruct-&gt;pOneINChI[1]-&gt;Stereo;</a>
+<a name="ln348"> </a>
+<a name="ln349">        }</a>
+<a name="ln350">    }</a>
+<a name="ln351"> </a>
+<a name="ln352">    cur_success = 0;</a>
+<a name="ln353">    if ( !(cmpInChI &amp; IDIF_SB_MISS) &amp;&amp; (cmpInChI2 &amp; IDIF_SB_MISS) &amp;&amp;</a>
+<a name="ln354">         icr2-&gt;num_sb_in2_only &amp;&amp;</a>
+<a name="ln355">         0 &lt; (max_success = pBNS-&gt;tot_st_cap - pBNS-&gt;tot_st_flow) ) {</a>
+<a name="ln356">        /*----------------------------------------------------*/</a>
+<a name="ln357">        /* case 02: missing stereogenic bond in Mobile-H only */</a>
+<a name="ln358">        /* X=N-O*  =&gt; X=N=O and eliminate radical             */</a>
+<a name="ln359">        /*----------------------------------------------------*/</a>
+<a name="ln360">        int retC, ret2C, retS, ret2S;</a>
+<a name="ln361">        INCHI_MODE cmpInChI_Prev, cmpInChI2_Prev;</a>
+<a name="ln362">        ICR  icr_Prev, icr2_Prev;</a>
+<a name="ln363"> </a>
+<a name="ln364">        /* blind attepmt */</a>
+<a name="ln365">        icr_Prev       = *icr;</a>
+<a name="ln366">        icr2_Prev      = *icr2;</a>
+<a name="ln367">        cmpInChI_Prev  = cmpInChI;</a>
+<a name="ln368">        cmpInChI2_Prev = cmpInChI2;</a>
+<a name="ln369">        for ( i = AllRadList.num_edges = 0; i &lt; pStruct-&gt;num_atoms; i ++ ) {</a>
+<a name="ln370">            if ( pBNS-&gt;vert[i].st_edge.cap - pBNS-&gt;vert[i].st_edge.flow == 1 &amp;&amp;</a>
+<a name="ln371">                 (ret = AddToEdgeList( &amp;AllRadList, i, INC_ADD_EDGE ) ) ) {</a>
+<a name="ln372">                goto exit_function;</a>
+<a name="ln373">            }</a>
+<a name="ln374">        }</a>
+<a name="ln375">        for ( i = 0; i &lt; AllRadList.num_edges; i ++ ) {</a>
+<a name="ln376">            j = AllRadList.pnEdges[i];</a>
+<a name="ln377">            pBNS-&gt;vert[j].st_edge.cap -= 1;</a>
+<a name="ln378">            pBNS-&gt;tot_st_cap -= 1;</a>
+<a name="ln379">        }</a>
+<a name="ln380">        /*-------------------------------------------------*/</a>
+<a name="ln381">        /* re-create InChI and see whether it looks better */</a>
+<a name="ln382">        /*-------------------------------------------------*/</a>
+<a name="ln383">        if ( 0 &gt; (ret = MakeOneInChIOutOfStrFromINChI2( ip, sd, pBNS, pStruct, at, at2, at3, pVA, pTCGroups,</a>
+<a name="ln384">                                                        ppt_group_info, ppat_norm, ppat_prep ) ) ) {</a>
+<a name="ln385">            goto exit_function;</a>
+<a name="ln386">        }</a>
+<a name="ln387">        if ( (ret = FillOutExtraFixedHDataRestr( pStruct )) ) {</a>
+<a name="ln388">            goto exit_function;</a>
+<a name="ln389">        }</a>
+<a name="ln390">        /*</a>
+<a name="ln391">        if ( ret = FillOutCMP2MHINCHI( pStruct, pTCGroups, at2, pVA, pInChI, pc2i ) ) {</a>
+<a name="ln392">            goto exit_function;</a>
+<a name="ln393">        }</a>
+<a name="ln394">        */</a>
+<a name="ln395">        cmpInChI = CompareReversedINChI2( pStruct-&gt;pOneINChI[0], pInChI[0], pStruct-&gt;pOneINChI_Aux[0], NULL /*INChI_Aux *v2*/, icr, &amp;err );</a>
+<a name="ln396">        if ( cmpInChI &amp; IDIF_PROBLEM ) {</a>
+<a name="ln397">            ret = RI_ERR_PROGR; /* severe restore problem */</a>
+<a name="ln398">            goto exit_function;</a>
+<a name="ln399">        }</a>
+<a name="ln400">        if ( err ) {</a>
+<a name="ln401">            ret = RI_ERR_ALLOC;</a>
+<a name="ln402">            goto exit_function;</a>
+<a name="ln403">        }</a>
+<a name="ln404">        cmpInChI2 = 0;</a>
+<a name="ln405">        memset ( icr2, 0, sizeof(*icr2) );</a>
+<a name="ln406">        if ( iRevrInChI || iOrigInChI ) {</a>
+<a name="ln407">            /* additional mobile-H compare in case of Fixed-H */</a>
+<a name="ln408">            cmpInChI2 = CompareReversedINChI2( pStruct-&gt;pOneINChI[iRevrInChI], pInChI[iOrigInChI], pStruct-&gt;pOneINChI_Aux[iRevrInChI], NULL /*INChI_Aux *v2*/, icr2, &amp;err );</a>
+<a name="ln409">            if ( cmpInChI &amp; IDIF_PROBLEM ) {</a>
+<a name="ln410">                ret = RI_ERR_PROGR; /* severe restore problem */</a>
+<a name="ln411">                goto exit_function;</a>
+<a name="ln412">            }</a>
+<a name="ln413">            if ( err ) {</a>
+<a name="ln414">                ret = RI_ERR_ALLOC;</a>
+<a name="ln415">                goto exit_function;</a>
+<a name="ln416">            }</a>
+<a name="ln417">        }</a>
+<a name="ln418">        retC  = CompareIcr( icr, &amp;icr_Prev, NULL, NULL, IDIFF_CONSTIT );</a>
+<a name="ln419">        retS  = CompareIcr( icr, &amp;icr_Prev, NULL, NULL, IDIFF_STEREO );</a>
+<a name="ln420">        ret2C = CompareIcr( icr2, &amp;icr2_Prev, NULL, NULL, IDIFF_CONSTIT );</a>
+<a name="ln421">        ret2S = CompareIcr( icr2, &amp;icr2_Prev, NULL, NULL, IDIFF_STEREO );</a>
+<a name="ln422"> </a>
+<a name="ln423">        if ( 0 &gt;= retC &amp;&amp;</a>
+<a name="ln424">             0 &gt;= retS &amp;&amp;</a>
+<a name="ln425">             0 &gt;= ret2C &amp;&amp;</a>
+<a name="ln426">             0 &gt; ret2S ) {</a>
+<a name="ln427">            ; /* accept */</a>
+<a name="ln428">        } else {</a>
+<a name="ln429">            /* reject */</a>
+<a name="ln430">            for ( i = 0; i &lt; AllRadList.num_edges; i ++ ) {</a>
+<a name="ln431">                j = AllRadList.pnEdges[i];</a>
+<a name="ln432">                pBNS-&gt;vert[j].st_edge.cap += 1;</a>
+<a name="ln433">                pBNS-&gt;tot_st_cap += 1;</a>
+<a name="ln434">            }</a>
+<a name="ln435"> </a>
+<a name="ln436">            /*-------------------------------------------------*/</a>
+<a name="ln437">            /* re-create InChI-- return to previous state      */</a>
+<a name="ln438">            /*-------------------------------------------------*/</a>
+<a name="ln439">            if ( 0 &gt; (ret = MakeOneInChIOutOfStrFromINChI2( ip, sd, pBNS, pStruct, at, at2, at3, pVA, pTCGroups,</a>
+<a name="ln440">                                                            ppt_group_info, ppat_norm, ppat_prep ) ) ) {</a>
+<a name="ln441">                goto exit_function;</a>
+<a name="ln442">            }</a>
+<a name="ln443">            if ( (ret = FillOutExtraFixedHDataRestr( pStruct )) ) {</a>
+<a name="ln444">                goto exit_function;</a>
+<a name="ln445">            }</a>
+<a name="ln446">            /*</a>
+<a name="ln447">            if ( ret = FillOutCMP2MHINCHI( pStruct, pTCGroups, at2, pVA, pInChI, pc2i ) ) {</a>
+<a name="ln448">                goto exit_function;</a>
+<a name="ln449">            }</a>
+<a name="ln450">            */</a>
+<a name="ln451">            cmpInChI = CompareReversedINChI2( pStruct-&gt;pOneINChI[0], pInChI[0], pStruct-&gt;pOneINChI_Aux[0], NULL /*INChI_Aux *v2*/, icr, &amp;err );</a>
+<a name="ln452">            if ( cmpInChI &amp; IDIF_PROBLEM ) {</a>
+<a name="ln453">                ret = RI_ERR_PROGR; /* severe restore problem */</a>
+<a name="ln454">                goto exit_function;</a>
+<a name="ln455">            }</a>
+<a name="ln456">            if ( err ) {</a>
+<a name="ln457">                ret = RI_ERR_ALLOC;</a>
+<a name="ln458">                goto exit_function;</a>
+<a name="ln459">            }</a>
+<a name="ln460">            cmpInChI2 = 0;</a>
+<a name="ln461">            memset ( icr2, 0, sizeof(*icr2) );</a>
+<a name="ln462">            if ( iRevrInChI || iOrigInChI ) {</a>
+<a name="ln463">                /* additional mobile-H compare in case of Fixed-H */</a>
+<a name="ln464">                cmpInChI2 = CompareReversedINChI2( pStruct-&gt;pOneINChI[iRevrInChI], pInChI[iOrigInChI], pStruct-&gt;pOneINChI_Aux[iRevrInChI], NULL /*INChI_Aux *v2*/, icr2, &amp;err );</a>
+<a name="ln465">                if ( cmpInChI &amp; IDIF_PROBLEM ) {</a>
+<a name="ln466">                    ret = RI_ERR_PROGR; /* severe restore problem */</a>
+<a name="ln467">                    goto exit_function;</a>
+<a name="ln468">                }</a>
+<a name="ln469">                if ( err ) {</a>
+<a name="ln470">                    ret = RI_ERR_ALLOC;</a>
+<a name="ln471">                    goto exit_function;</a>
+<a name="ln472">                }</a>
+<a name="ln473">            }</a>
+<a name="ln474">            pStereoRevrs = (pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic &amp;&amp;</a>
+<a name="ln475">                       pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic-&gt;nNumberOfStereoBonds +</a>
+<a name="ln476">                       pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic-&gt;nNumberOfStereoCenters)?</a>
+<a name="ln477">                       pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic : pStruct-&gt;pOneINChI[0]-&gt;Stereo;</a>
+<a name="ln478"> </a>
+<a name="ln479">            </a>
+<a name="ln480">            pStereo2Revrs = (pStruct-&gt;bMobileH == TAUT_YES || !pStruct-&gt;pOneINChI[1] ||</a>
+<a name="ln481">                       !pStruct-&gt;pOneINChI[1]-&gt;nNumberOfAtoms || pStruct-&gt;pOneINChI[1]-&gt;bDeleted)?</a>
+<a name="ln482">                                NULL:</a>
+<a name="ln483">                       (pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic &amp;&amp;</a>
+<a name="ln484">                       pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic-&gt;nNumberOfStereoBonds +</a>
+<a name="ln485">                       pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic-&gt;nNumberOfStereoCenters)?</a>
+<a name="ln486">                                pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic :</a>
+<a name="ln487">                                pStruct-&gt;pOneINChI[1]-&gt;Stereo;</a>
+<a name="ln488">        }</a>
+<a name="ln489">/*exit_case_02:;*/</a>
+<a name="ln490">    }</a>
+<a name="ln491"> </a>
+<a name="ln492">    cur_success = 0;</a>
+<a name="ln493">    if ( pStruct-&gt;bMobileH == TAUT_NON &amp;&amp; (cmpInChI &amp; IDIF_SB_EXTRA_UNDF) &amp;&amp;</a>
+<a name="ln494">         pStruct-&gt;endpoint ) {</a>
+<a name="ln495">        /*------------------------------------------------------*/</a>
+<a name="ln496">        /* case 03: extra stereogenic bond in Fixed-H  only     */</a>
+<a name="ln497">        /* in Mobile-H this bond is not stereogenic.            */</a>
+<a name="ln498">        /* Since this bond parity is not known, it is UNDEFINED */</a>
+<a name="ln499">        /*------------------------------------------------------*/</a>
+<a name="ln500">        int bDone, num_endpoints;</a>
+<a name="ln501"> </a>
+<a name="ln502">        TautMinusEdges[0].num_edges = 0;</a>
+<a name="ln503">        TautMinusEdges[1].num_edges = 0;</a>
+<a name="ln504">        AllChargeEdges.num_edges = 0;</a>
+<a name="ln505">        /* in1 =&gt; in restored structure; in2 =&gt; in original InChI */</a>
+<a name="ln506">        for ( i = 0; i &lt; icr-&gt;num_sb_undef_in1_only; i ++ ) {</a>
+<a name="ln507">            j12 = icr-&gt;sb_undef_in1_only[i];</a>
+<a name="ln508">            pv1 = pBNS-&gt;vert + (v1 = pStereoRevrs-&gt;nBondAtom1[j12]-1);</a>
+<a name="ln509">            pv2 = pBNS-&gt;vert + (v2 = pStereoRevrs-&gt;nBondAtom2[j12]-1);</a>
+<a name="ln510"> </a>
+<a name="ln511">            if ( pStereo2Revrs ) {</a>
+<a name="ln512">                /* reject if it is extra in Mobile-H also */</a>
+<a name="ln513">                if ( icr2-&gt;num_sb_undef_in1_only ) {</a>
+<a name="ln514">                    for ( j = 0; j &lt; icr2-&gt;num_sb_undef_in1_only; j ++ ) {</a>
+<a name="ln515">                        k = icr2-&gt;sb_undef_in1_only[j];</a>
+<a name="ln516">                        if ( v1 == pStereo2Revrs-&gt;nBondAtom1[k] &amp;&amp;</a>
+<a name="ln517">                             v2 == pStereo2Revrs-&gt;nBondAtom2[k] ) {</a>
+<a name="ln518">                            break;</a>
+<a name="ln519">                        }</a>
+<a name="ln520">                    }</a>
+<a name="ln521">                    if ( j &lt; icr-&gt;num_sb_in1_only ) {</a>
+<a name="ln522">                        continue; /* extra stereobond in Mobile H also */</a>
+<a name="ln523">                    }</a>
+<a name="ln524">                }</a>
+<a name="ln525">            }</a>
+<a name="ln526">            /* reject if it is a stereobond in Mobile-H also */</a>
+<a name="ln527">            if ( pStereo2InChI &amp;&amp; pStereo2InChI-&gt;nNumberOfStereoBonds ) {</a>
+<a name="ln528">                for ( j = 0; j &lt; pStereo2InChI-&gt;nNumberOfStereoBonds; j ++ ) {</a>
+<a name="ln529">                    if ( v1 == pStereo2InChI-&gt;nBondAtom1[j] &amp;&amp;</a>
+<a name="ln530">                         v2 == pStereo2InChI-&gt;nBondAtom1[j]  ) {</a>
+<a name="ln531">                        break;</a>
+<a name="ln532">                    }</a>
+<a name="ln533">                }</a>
+<a name="ln534">                if ( j &lt; pStereo2InChI-&gt;nNumberOfStereoBonds ) {</a>
+<a name="ln535">                    continue; /* ignore this extra stereo bond: it is in Mobile-H */</a>
+<a name="ln536">                }</a>
+<a name="ln537">            }</a>
+<a name="ln538">            /* find the edge between v1 and v2 */</a>
+<a name="ln539">            for ( k = 0; k &lt; at2[v1].valence; k ++ ) {</a>
+<a name="ln540">                pe = pBNS-&gt;edge + (e = pv1-&gt;iedge[k]);</a>
+<a name="ln541">                if ( v2 == (pe-&gt;neighbor12 ^ v1) )</a>
+<a name="ln542">                    break; /* the edge has been found */</a>
+<a name="ln543">            }</a>
+<a name="ln544">            if ( k == at2[v1].valence ) {</a>
+<a name="ln545">                ret = RI_ERR_SYNTAX;</a>
+<a name="ln546">                goto exit_function;</a>
+<a name="ln547">            }</a>
+<a name="ln548">            /* Fix all charges except negative charges on tautomeric endpoints */</a>
+<a name="ln549">            if ( !AllChargeEdges.num_edges &amp;&amp; !TautMinusEdges[0].num_edges &amp;&amp; !TautMinusEdges[1].num_edges ) {</a>
+<a name="ln550">                for ( j = 0; j &lt; pStruct-&gt;num_atoms; j ++ ) {</a>
+<a name="ln551">                    if ( (k=pVA[j].nCMinusGroupEdge-1) &gt;= 0 &amp;&amp; !pBNS-&gt;edge[k].forbidden ) {</a>
+<a name="ln552">                        if ( !pStruct-&gt;endpoint[j] ) {</a>
+<a name="ln553">                            if ( (ret = AddToEdgeList( &amp;AllChargeEdges, k, INC_ADD_EDGE )) ) {</a>
+<a name="ln554">                                goto exit_function;</a>
+<a name="ln555">                            }</a>
+<a name="ln556">                        } else</a>
+<a name="ln557">                        if ( pVA[j].cNumValenceElectrons == 6 ) {</a>
+<a name="ln558">                            /* O */</a>
+<a name="ln559">                            if ( (ret = AddToEdgeList( TautMinusEdges+0, k, INC_ADD_EDGE )) ) {</a>
+<a name="ln560">                                goto exit_function;</a>
+<a name="ln561">                            }</a>
+<a name="ln562">                        } else {</a>
+<a name="ln563">                            /* N */</a>
+<a name="ln564">                            if ( (ret = AddToEdgeList( TautMinusEdges+1, k, INC_ADD_EDGE )) ) {</a>
+<a name="ln565">                                goto exit_function;</a>
+<a name="ln566">                            }</a>
+<a name="ln567">                        }</a>
+<a name="ln568">                    }</a>
+<a name="ln569">                    if ( (k=pVA[j].nCPlusGroupEdge-1) &gt;= 0 &amp;&amp; !pBNS-&gt;edge[k].forbidden ) {</a>
+<a name="ln570">                        if ( (ret = AddToEdgeList( &amp;AllChargeEdges, k, INC_ADD_EDGE )) ) {</a>
+<a name="ln571">                            goto exit_function;</a>
+<a name="ln572">                        }</a>
+<a name="ln573">                        /* in addition, disallow N(V) creation by forbidding charge flower edge that has flow=1 */</a>
+<a name="ln574">                        if ( pVA[j].cNumValenceElectrons == 5 &amp;&amp; !pVA[j].cMetal &amp;&amp; /* N, P, As */</a>
+<a name="ln575">                             NO_VERTEX != (k = GetChargeFlowerUpperEdge( pBNS, pVA, k ))) {</a>
+<a name="ln576"> </a>
+<a name="ln577">                            if ( !pBNS-&gt;edge[j].forbidden &amp;&amp; pBNS-&gt;edge[k].flow ) {</a>
+<a name="ln578">                                if ( (ret = AddToEdgeList( &amp;AllChargeEdges, k, INC_ADD_EDGE )) ) {</a>
+<a name="ln579">                                    goto exit_function;</a>
+<a name="ln580">                                }</a>
+<a name="ln581">                            }</a>
+<a name="ln582">                        }</a>
+<a name="ln583">                    }</a>
+<a name="ln584">                }</a>
+<a name="ln585">            }</a>
+<a name="ln586">            if ( !pe-&gt;flow )</a>
+<a name="ln587">                continue;</a>
+<a name="ln588">            /* fix all charges except tautomeric; first allow only O, then only N, finally both N and O */</a>
+<a name="ln589">            SetForbiddenEdgeMask( pBNS, &amp;AllChargeEdges, forbidden_edge_mask  );</a>
+<a name="ln590">            for ( k = 1, bDone = 0; k &lt; 4 &amp;&amp; !bDone; k ++ ) {</a>
+<a name="ln591">                /* fix tautomeric charges */</a>
+<a name="ln592">                num_endpoints = (TautMinusEdges+0)-&gt;num_edges + (TautMinusEdges+1)-&gt;num_edges;</a>
+<a name="ln593">                if ( k == 2 ) {</a>
+<a name="ln594">                    /* fix charges on O */</a>
+<a name="ln595">                    SetForbiddenEdgeMask( pBNS, TautMinusEdges+0, forbidden_edge_mask  );</a>
+<a name="ln596">                    num_endpoints -= (TautMinusEdges+0)-&gt;num_edges;</a>
+<a name="ln597">                }</a>
+<a name="ln598">                if ( k == 1 ) {</a>
+<a name="ln599">                    SetForbiddenEdgeMask( pBNS, TautMinusEdges+1, forbidden_edge_mask  );</a>
+<a name="ln600">                    num_endpoints -= (TautMinusEdges+1)-&gt;num_edges;</a>
+<a name="ln601">                }</a>
+<a name="ln602">                if ( num_endpoints &gt;= 2 ) {</a>
+<a name="ln603">                    delta = 1;</a>
+<a name="ln604">                    pv1 = pBNS-&gt;vert + (v1 = pe-&gt;neighbor1);</a>
+<a name="ln605">                    pv2 = pBNS-&gt;vert + (v2 = pe-&gt;neighbor12 ^ v1);</a>
+<a name="ln606"> </a>
+<a name="ln607">                    pe-&gt;forbidden |= forbidden_edge_mask; /* fix stereobond */</a>
+<a name="ln608">                    pe-&gt;flow -= delta;                    /* decrement stereobond order */</a>
+<a name="ln609">                    pv1-&gt;st_edge.flow -= delta;</a>
+<a name="ln610">                    pv2-&gt;st_edge.flow -= delta;</a>
+<a name="ln611">                    pBNS-&gt;tot_st_flow -= 2*delta;</a>
+<a name="ln612"> </a>
+<a name="ln613">                    ret = RunBnsTestOnce( pBNS, pBD, pVA, &amp;vPathStart, &amp;vPathEnd, &amp;nPathLen,</a>
+<a name="ln614">                                          &amp;nDeltaH, &amp;nDeltaCharge, &amp;nNumVisitedAtoms );</a>
+<a name="ln615"> </a>
+<a name="ln616">                    if ( ret == 1 &amp;&amp; ((vPathEnd == v1 &amp;&amp; vPathStart == v2) ||</a>
+<a name="ln617">                                      (vPathEnd == v2 &amp;&amp; vPathStart == v1)) &amp;&amp; nDeltaCharge == 0 ) {</a>
+<a name="ln618">                        /* Negative charge has been moved, no change in number of charges */</a>
+<a name="ln619">                        ret = RunBnsRestoreOnce( pBNS, pBD, pVA, pTCGroups );</a>
+<a name="ln620">                        if ( ret &gt; 0 ) {</a>
+<a name="ln621">                            (*pnNumRunBNS) ++;</a>
+<a name="ln622">                            cur_success ++; /* 01 */</a>
+<a name="ln623">                            bDone = 1;</a>
+<a name="ln624">                        }</a>
+<a name="ln625">                    } else {</a>
+<a name="ln626">                        pe-&gt;forbidden &amp;= ~forbidden_edge_mask;</a>
+<a name="ln627">                        pe-&gt;flow += delta;</a>
+<a name="ln628">                        pv1-&gt;st_edge.flow += delta;</a>
+<a name="ln629">                        pv2-&gt;st_edge.flow += delta;</a>
+<a name="ln630">                        pBNS-&gt;tot_st_flow += 2*delta;</a>
+<a name="ln631">                    }</a>
+<a name="ln632">                }</a>
+<a name="ln633">                /* unfix tautomeric charges */</a>
+<a name="ln634">                if ( k == 2 )</a>
+<a name="ln635">                    RemoveForbiddenEdgeMask( pBNS, TautMinusEdges+0, forbidden_edge_mask  );</a>
+<a name="ln636">                if ( k == 1 )</a>
+<a name="ln637">                    RemoveForbiddenEdgeMask( pBNS, TautMinusEdges+1, forbidden_edge_mask  );</a>
+<a name="ln638">            }</a>
+<a name="ln639">            RemoveForbiddenEdgeMask( pBNS, &amp;AllChargeEdges, forbidden_edge_mask  );</a>
+<a name="ln640">        }</a>
+<a name="ln641">/*exit_case_03:*/</a>
+<a name="ln642">        if ( cur_success ) {</a>
+<a name="ln643">            tot_succes += cur_success;</a>
+<a name="ln644">            /* recalculate InChI from the structure */</a>
+<a name="ln645">            if ( 0 &gt; (ret = MakeOneInChIOutOfStrFromINChI2( ip, sd, pBNS, pStruct, at, at2, at3, pVA, pTCGroups,</a>
+<a name="ln646">                                                            ppt_group_info, ppat_norm, ppat_prep ) ) ) {</a>
+<a name="ln647">                goto exit_function;</a>
+<a name="ln648">            }</a>
+<a name="ln649">            if ( (ret = FillOutExtraFixedHDataRestr( pStruct )) ) {</a>
+<a name="ln650">                goto exit_function;</a>
+<a name="ln651">            }</a>
+<a name="ln652">            /*</a>
+<a name="ln653">            if ( ret = FillOutCMP2MHINCHI( pStruct, pTCGroups, at2, pVA, pInChI, pc2i ) ) {</a>
+<a name="ln654">                goto exit_function;</a>
+<a name="ln655">            }</a>
+<a name="ln656">            */</a>
+<a name="ln657">            cmpInChI = CompareReversedINChI2( pStruct-&gt;pOneINChI[0], pInChI[0], pStruct-&gt;pOneINChI_Aux[0], NULL /*INChI_Aux *v2*/, icr, &amp;err );</a>
+<a name="ln658">            if ( cmpInChI &amp; IDIF_PROBLEM ) {</a>
+<a name="ln659">                ret = RI_ERR_PROGR; /* severe restore problem */</a>
+<a name="ln660">                goto exit_function;</a>
+<a name="ln661">            }</a>
+<a name="ln662">            if ( err ) {</a>
+<a name="ln663">                ret = RI_ERR_ALLOC;</a>
+<a name="ln664">                goto exit_function;</a>
+<a name="ln665">            }</a>
+<a name="ln666">            cmpInChI2 = 0;</a>
+<a name="ln667">            memset ( icr2, 0, sizeof(*icr2) );</a>
+<a name="ln668">            if ( iRevrInChI || iOrigInChI ) {</a>
+<a name="ln669">                /* additional mobile-H compare in case of Fixed-H */</a>
+<a name="ln670">                cmpInChI2 = CompareReversedINChI2( pStruct-&gt;pOneINChI[iRevrInChI], pInChI[iOrigInChI], pStruct-&gt;pOneINChI_Aux[iRevrInChI], NULL /*INChI_Aux *v2*/, icr2, &amp;err );</a>
+<a name="ln671">                if ( cmpInChI &amp; IDIF_PROBLEM ) {</a>
+<a name="ln672">                    ret = RI_ERR_PROGR; /* severe restore problem */</a>
+<a name="ln673">                    goto exit_function;</a>
+<a name="ln674">                }</a>
+<a name="ln675">                if ( err ) {</a>
+<a name="ln676">                    ret = RI_ERR_ALLOC;</a>
+<a name="ln677">                    goto exit_function;</a>
+<a name="ln678">                }</a>
+<a name="ln679">            }</a>
+<a name="ln680">            pStereoRevrs = (pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic &amp;&amp;</a>
+<a name="ln681">                       pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic-&gt;nNumberOfStereoBonds +</a>
+<a name="ln682">                       pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic-&gt;nNumberOfStereoCenters)?</a>
+<a name="ln683">                       pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic : pStruct-&gt;pOneINChI[0]-&gt;Stereo;</a>
+<a name="ln684"> </a>
+<a name="ln685">            </a>
+<a name="ln686">            pStereo2Revrs = (pStruct-&gt;bMobileH == TAUT_YES || !pStruct-&gt;pOneINChI[1] ||</a>
+<a name="ln687">                       !pStruct-&gt;pOneINChI[1]-&gt;nNumberOfAtoms || pStruct-&gt;pOneINChI[1]-&gt;bDeleted)?</a>
+<a name="ln688">                                NULL:</a>
+<a name="ln689">                       (pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic &amp;&amp;</a>
+<a name="ln690">                       pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic-&gt;nNumberOfStereoBonds +</a>
+<a name="ln691">                       pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic-&gt;nNumberOfStereoCenters)?</a>
+<a name="ln692">                                pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic :</a>
+<a name="ln693">                                pStruct-&gt;pOneINChI[1]-&gt;Stereo;</a>
+<a name="ln694"> </a>
+<a name="ln695">        }</a>
+<a name="ln696">    }</a>
+<a name="ln697"> </a>
+<a name="ln698">    cur_success = 0;</a>
+<a name="ln699">    if ( (cmpInChI &amp; IDIF_SB_EXTRA_UNDF) ) {</a>
+<a name="ln700">        /*------------------------------------------------------*/</a>
+<a name="ln701">        /* case 04: extra stereogenic bond                      */</a>
+<a name="ln702">        /* Since this bond parity is not known, it is UNDEFINED */</a>
+<a name="ln703">        /*------------------------------------------------------*/</a>
+<a name="ln704">        int bDone, num_endpoints;</a>
+<a name="ln705"> </a>
+<a name="ln706">        TautMinusEdges[0].num_edges = 0;</a>
+<a name="ln707">        TautMinusEdges[1].num_edges = 0;</a>
+<a name="ln708">        AllChargeEdges.num_edges = 0;</a>
+<a name="ln709">        /* in1 =&gt; in restored structure; in2 =&gt; in original InChI */</a>
+<a name="ln710">        for ( i = 0; i &lt; icr-&gt;num_sb_undef_in1_only; i ++ ) {</a>
+<a name="ln711">            j12 = icr-&gt;sb_undef_in1_only[i];</a>
+<a name="ln712">            pv1 = pBNS-&gt;vert + (v1 = pStereoRevrs-&gt;nBondAtom1[j12]-1);</a>
+<a name="ln713">            pv2 = pBNS-&gt;vert + (v2 = pStereoRevrs-&gt;nBondAtom2[j12]-1);</a>
+<a name="ln714"> </a>
+<a name="ln715">            /* find the edge between v1 and v2 */</a>
+<a name="ln716">            for ( k = 0; k &lt; at2[v1].valence; k ++ ) {</a>
+<a name="ln717">                pe = pBNS-&gt;edge + (e = pv1-&gt;iedge[k]);</a>
+<a name="ln718">                if ( v2 == (pe-&gt;neighbor12 ^ v1) )</a>
+<a name="ln719">                    break; /* the edge has been found */</a>
+<a name="ln720">            }</a>
+<a name="ln721">            if ( k == at2[v1].valence ) {</a>
+<a name="ln722">                ret = RI_ERR_SYNTAX;</a>
+<a name="ln723">                goto exit_function;</a>
+<a name="ln724">            }</a>
+<a name="ln725">            if ( pStereo2Revrs ) {</a>
+<a name="ln726">                /* reject if it is not extra in Mobile-H also */</a>
+<a name="ln727">                if ( icr2-&gt;num_sb_undef_in1_only ) {</a>
+<a name="ln728">                    for ( j = 0; j &lt; icr2-&gt;num_sb_undef_in1_only; j ++ ) {</a>
+<a name="ln729">                        k = icr2-&gt;sb_undef_in1_only[j];</a>
+<a name="ln730">                        if ( v1 == pStereo2Revrs-&gt;nBondAtom1[k] &amp;&amp;</a>
+<a name="ln731">                             v2 == pStereo2Revrs-&gt;nBondAtom2[k] ) {</a>
+<a name="ln732">                            break;</a>
+<a name="ln733">                        }</a>
+<a name="ln734">                    }</a>
+<a name="ln735">                    if ( j == icr-&gt;num_sb_in1_only ) {</a>
+<a name="ln736">                        continue; /* extra stereobond only in Fixed-H, not in Mobile H also */</a>
+<a name="ln737">                    }</a>
+<a name="ln738">                }</a>
+<a name="ln739">            }</a>
+<a name="ln740">            </a>
+<a name="ln741">            /* Fix all charges except negative charges on tautomeric endpoints */</a>
+<a name="ln742">            if ( !AllChargeEdges.num_edges &amp;&amp; !TautMinusEdges[0].num_edges &amp;&amp; !TautMinusEdges[1].num_edges ) {</a>
+<a name="ln743">                for ( j = 0; j &lt; pStruct-&gt;num_atoms; j ++ ) {</a>
+<a name="ln744">                    if ( (k=pVA[j].nCMinusGroupEdge-1) &gt;= 0 &amp;&amp; !pBNS-&gt;edge[k].forbidden ) {</a>
+<a name="ln745">                        if ( (ret = AddToEdgeList( &amp;AllChargeEdges, k, INC_ADD_EDGE )) ) {</a>
+<a name="ln746">                            goto exit_function;</a>
+<a name="ln747">                        }</a>
+<a name="ln748">                    }</a>
+<a name="ln749">                    if ( (k=pVA[j].nCPlusGroupEdge-1) &gt;= 0 &amp;&amp; !pBNS-&gt;edge[k].forbidden ) {</a>
+<a name="ln750">                        int bMayBeUnfixed = !at2[j].num_H &amp;&amp; !(pStruct-&gt;endpoint &amp;&amp; pStruct-&gt;endpoint[j]);</a>
+<a name="ln751">                        if ( (bMayBeUnfixed &amp;&amp; pVA[j].cNumValenceElectrons == 6) ||</a>
+<a name="ln752">                             (pVA[j].cNumValenceElectrons == 5 &amp;&amp; pVA[j].cPeriodicRowNumber &gt; 1) ) {</a>
+<a name="ln753">                            /* O &amp; P */</a>
+<a name="ln754">                            if ( (ret = AddToEdgeList( TautMinusEdges+0, k, INC_ADD_EDGE )) ) {</a>
+<a name="ln755">                                goto exit_function;</a>
+<a name="ln756">                            }</a>
+<a name="ln757">                        } else</a>
+<a name="ln758">                        if ( bMayBeUnfixed &amp;&amp;</a>
+<a name="ln759">                             pVA[j].cNumValenceElectrons == 5 &amp;&amp; pVA[j].cPeriodicRowNumber == 1 ) {</a>
+<a name="ln760">                            /* N */</a>
+<a name="ln761">                            if ( (ret = AddToEdgeList( TautMinusEdges+1, k, INC_ADD_EDGE )) ) {</a>
+<a name="ln762">                                goto exit_function;</a>
+<a name="ln763">                            }</a>
+<a name="ln764">                        } else {</a>
+<a name="ln765">                            if ( (ret = AddToEdgeList( &amp;AllChargeEdges, k, INC_ADD_EDGE )) ) {</a>
+<a name="ln766">                                goto exit_function;</a>
+<a name="ln767">                            }</a>
+<a name="ln768">                        }</a>
+<a name="ln769">                        /* in addition, disallow N(V) creation by forbidding charge flower edge that has flow=1 */</a>
+<a name="ln770">                        if ( pVA[j].cNumValenceElectrons == 5 &amp;&amp; !pVA[j].cMetal &amp;&amp; /* N, P, As */</a>
+<a name="ln771">                             NO_VERTEX != (k = GetChargeFlowerUpperEdge( pBNS, pVA, k ))) {</a>
+<a name="ln772">                            if ( !pBNS-&gt;edge[j].forbidden &amp;&amp; pBNS-&gt;edge[k].flow ) {</a>
+<a name="ln773">                                if ( (ret = AddToEdgeList( &amp;AllChargeEdges, k, INC_ADD_EDGE )) ) {</a>
+<a name="ln774">                                    goto exit_function;</a>
+<a name="ln775">                                }</a>
+<a name="ln776">                            }</a>
+<a name="ln777">                        }</a>
+<a name="ln778">                    }</a>
+<a name="ln779">                }</a>
+<a name="ln780">            }</a>
+<a name="ln781">            if ( !pe-&gt;flow )</a>
+<a name="ln782">                continue;</a>
+<a name="ln783">            /* fix all charges except tautomeric; first allow only O, then only N, finally both N and O */</a>
+<a name="ln784">            SetForbiddenEdgeMask( pBNS, &amp;AllChargeEdges, forbidden_edge_mask  );</a>
+<a name="ln785">            for ( k = 1, bDone = 0; k &lt; 4 &amp;&amp; !bDone; k ++ ) {</a>
+<a name="ln786">                /* fix positive charges on heteroatoms */</a>
+<a name="ln787">                num_endpoints = (TautMinusEdges+0)-&gt;num_edges + (TautMinusEdges+1)-&gt;num_edges;</a>
+<a name="ln788">                if ( k == 2 ) {</a>
+<a name="ln789">                    /* fix charges on O */</a>
+<a name="ln790">                    SetForbiddenEdgeMask( pBNS, TautMinusEdges+0, forbidden_edge_mask  );</a>
+<a name="ln791">                    num_endpoints -= (TautMinusEdges+0)-&gt;num_edges;</a>
+<a name="ln792">                }</a>
+<a name="ln793">                if ( k == 1 ) {</a>
+<a name="ln794">                    /* fix charges on N */</a>
+<a name="ln795">                    SetForbiddenEdgeMask( pBNS, TautMinusEdges+1, forbidden_edge_mask  );</a>
+<a name="ln796">                    num_endpoints -= (TautMinusEdges+1)-&gt;num_edges;</a>
+<a name="ln797">                }</a>
+<a name="ln798">                if ( num_endpoints &gt;= 2 ) {</a>
+<a name="ln799">                    delta = 1;</a>
+<a name="ln800">                    pv1 = pBNS-&gt;vert + (v1 = pe-&gt;neighbor1);</a>
+<a name="ln801">                    pv2 = pBNS-&gt;vert + (v2 = pe-&gt;neighbor12 ^ v1);</a>
+<a name="ln802"> </a>
+<a name="ln803">                    pe-&gt;forbidden |= forbidden_edge_mask; /* fix stereobond */</a>
+<a name="ln804">                    pe-&gt;flow -= delta;                    /* decrement stereobond order */</a>
+<a name="ln805">                    pv1-&gt;st_edge.flow -= delta;</a>
+<a name="ln806">                    pv2-&gt;st_edge.flow -= delta;</a>
+<a name="ln807">                    pBNS-&gt;tot_st_flow -= 2*delta;</a>
+<a name="ln808"> </a>
+<a name="ln809">                    ret = RunBnsTestOnce( pBNS, pBD, pVA, &amp;vPathStart, &amp;vPathEnd, &amp;nPathLen,</a>
+<a name="ln810">                                          &amp;nDeltaH, &amp;nDeltaCharge, &amp;nNumVisitedAtoms );</a>
+<a name="ln811"> </a>
+<a name="ln812">                    if ( ret == 1 &amp;&amp; ((vPathEnd == v1 &amp;&amp; vPathStart == v2) ||</a>
+<a name="ln813">                                      (vPathEnd == v2 &amp;&amp; vPathStart == v1)) &amp;&amp; nDeltaCharge == 0 ) {</a>
+<a name="ln814">                        /* Negative charge has been moved, no change in number of charges */</a>
+<a name="ln815">                        ret = RunBnsRestoreOnce( pBNS, pBD, pVA, pTCGroups );</a>
+<a name="ln816">                        if ( ret &gt; 0 ) {</a>
+<a name="ln817">                            (*pnNumRunBNS) ++;</a>
+<a name="ln818">                            cur_success ++; /* 01 */</a>
+<a name="ln819">                            bDone = 1;</a>
+<a name="ln820">                        }</a>
+<a name="ln821">                    } else {</a>
+<a name="ln822">                        pe-&gt;forbidden &amp;= ~forbidden_edge_mask;</a>
+<a name="ln823">                        pe-&gt;flow += delta;</a>
+<a name="ln824">                        pv1-&gt;st_edge.flow += delta;</a>
+<a name="ln825">                        pv2-&gt;st_edge.flow += delta;</a>
+<a name="ln826">                        pBNS-&gt;tot_st_flow += 2*delta;</a>
+<a name="ln827">                    }</a>
+<a name="ln828">                }</a>
+<a name="ln829">                /* unfix tautomeric charges */</a>
+<a name="ln830">                if ( k == 2 )</a>
+<a name="ln831">                    RemoveForbiddenEdgeMask( pBNS, TautMinusEdges+0, forbidden_edge_mask  );</a>
+<a name="ln832">                if ( k == 1 )</a>
+<a name="ln833">                    RemoveForbiddenEdgeMask( pBNS, TautMinusEdges+1, forbidden_edge_mask  );</a>
+<a name="ln834">            }</a>
+<a name="ln835">            RemoveForbiddenEdgeMask( pBNS, &amp;AllChargeEdges, forbidden_edge_mask  );</a>
+<a name="ln836">        }</a>
+<a name="ln837">/*exit_case_04:*/</a>
+<a name="ln838">        if ( cur_success ) {</a>
+<a name="ln839">            tot_succes += cur_success;</a>
+<a name="ln840">            /* recalculate InChI from the structure */</a>
+<a name="ln841">            if ( 0 &gt; (ret = MakeOneInChIOutOfStrFromINChI2( ip, sd, pBNS, pStruct, at, at2, at3, pVA, pTCGroups,</a>
+<a name="ln842">                                                            ppt_group_info, ppat_norm, ppat_prep ) ) ) {</a>
+<a name="ln843">                goto exit_function;</a>
+<a name="ln844">            }</a>
+<a name="ln845">            if ( (ret = FillOutExtraFixedHDataRestr( pStruct )) ) {</a>
+<a name="ln846">                goto exit_function;</a>
+<a name="ln847">            }</a>
+<a name="ln848">            /*</a>
+<a name="ln849">            if ( ret = FillOutCMP2MHINCHI( pStruct, pTCGroups, at2, pVA, pInChI, pc2i ) ) {</a>
+<a name="ln850">                goto exit_function;</a>
+<a name="ln851">            }</a>
+<a name="ln852">            */</a>
+<a name="ln853">            cmpInChI = CompareReversedINChI2( pStruct-&gt;pOneINChI[0], pInChI[0], pStruct-&gt;pOneINChI_Aux[0], NULL /*INChI_Aux *v2*/, icr, &amp;err );</a>
+<a name="ln854">            if ( cmpInChI &amp; IDIF_PROBLEM ) {</a>
+<a name="ln855">                ret = RI_ERR_PROGR; /* severe restore problem */</a>
+<a name="ln856">                goto exit_function;</a>
+<a name="ln857">            }</a>
+<a name="ln858">            if ( err ) {</a>
+<a name="ln859">                ret = RI_ERR_ALLOC;</a>
+<a name="ln860">                goto exit_function;</a>
+<a name="ln861">            }</a>
+<a name="ln862">            cmpInChI2 = 0;</a>
+<a name="ln863">            memset ( icr2, 0, sizeof(*icr2) );</a>
+<a name="ln864">            if ( iRevrInChI || iOrigInChI ) {</a>
+<a name="ln865">                /* additional mobile-H compare in case of Fixed-H */</a>
+<a name="ln866">                cmpInChI2 = CompareReversedINChI2( pStruct-&gt;pOneINChI[iRevrInChI], pInChI[iOrigInChI], pStruct-&gt;pOneINChI_Aux[iRevrInChI], NULL /*INChI_Aux *v2*/, icr2, &amp;err );</a>
+<a name="ln867">                if ( cmpInChI &amp; IDIF_PROBLEM ) {</a>
+<a name="ln868">                    ret = RI_ERR_PROGR; /* severe restore problem */</a>
+<a name="ln869">                    goto exit_function;</a>
+<a name="ln870">                }</a>
+<a name="ln871">                if ( err ) {</a>
+<a name="ln872">                    ret = RI_ERR_ALLOC;</a>
+<a name="ln873">                    goto exit_function;</a>
+<a name="ln874">                }</a>
+<a name="ln875">            }</a>
+<a name="ln876">            pStereoRevrs = (pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic &amp;&amp;</a>
+<a name="ln877">                       pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic-&gt;nNumberOfStereoBonds +</a>
+<a name="ln878">                       pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic-&gt;nNumberOfStereoCenters)?</a>
+<a name="ln879">                       pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic : pStruct-&gt;pOneINChI[0]-&gt;Stereo;</a>
+<a name="ln880"> </a>
+<a name="ln881">            </a>
+<a name="ln882">            pStereo2Revrs = (pStruct-&gt;bMobileH == TAUT_YES || !pStruct-&gt;pOneINChI[1] ||</a>
+<a name="ln883">                       !pStruct-&gt;pOneINChI[1]-&gt;nNumberOfAtoms || pStruct-&gt;pOneINChI[1]-&gt;bDeleted)?</a>
+<a name="ln884">                                NULL:</a>
+<a name="ln885">                       (pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic &amp;&amp;</a>
+<a name="ln886">                       pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic-&gt;nNumberOfStereoBonds +</a>
+<a name="ln887">                       pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic-&gt;nNumberOfStereoCenters)?</a>
+<a name="ln888">                                pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic :</a>
+<a name="ln889">                                pStruct-&gt;pOneINChI[1]-&gt;Stereo;</a>
+<a name="ln890"> </a>
+<a name="ln891">        }</a>
+<a name="ln892">    }</a>
+<a name="ln893"> </a>
+<a name="ln894">    cur_success = 0;</a>
+<a name="ln895">    if ( pStruct-&gt;bMobileH == TAUT_YES &amp;&amp;</a>
+<a name="ln896">         (cmpInChI &amp; IDIF_SB_EXTRA_UNDF &amp;&amp;</a>
+<a name="ln897">         !pStruct-&gt;ti.num_t_groups)</a>
+<a name="ln898">         /*pStruct-&gt;bMobileH == TAUT_NON &amp;&amp; (cmpInChI2 &amp; IDIF_SB_EXTRA_UNDF)*/) {</a>
+<a name="ln899">        /*----------------------------------------------------------*/</a>
+<a name="ln900">        /* case 05: extra stereogenic bond on =NH2(+), (B, Mobile-H)*/</a>
+<a name="ln901">        /*                   H             H                        */</a>
+<a name="ln902">        /* original: N(+)=-N&lt;   -&gt;  N--==N/                         */</a>
+<a name="ln903">        /* (A)               H                                      */</a>
+<a name="ln904">        /*                             double bond is marked as     */</a>
+<a name="ln905">        /*                             not stereogenic due to       */</a>
+<a name="ln906">        /*                             its change during proton     */</a>
+<a name="ln907">        /*                             removal =&gt; No Stereo bond    */</a>
+<a name="ln908">        /*                             (=NH may be tautomeric)      */</a>
+<a name="ln909">        /*                                                          */</a>
+<a name="ln910">        /*                   H             H                        */</a>
+<a name="ln911">        /* original: N=-N(+)&lt;   -&gt;  N--==N/                         */</a>
+<a name="ln912">        /* (B)               H                                      */</a>
+<a name="ln913">        /*                             double bond was not          */</a>
+<a name="ln914">        /*                             changed during proton        */</a>
+<a name="ln915">        /* In Fixed-H this bond        removal =&gt; Undef Stereo      */</a>
+<a name="ln916">        /* may not be stereogenic      (=NH is not tautomeric)      */</a>
+<a name="ln917">        /* (a) due to (+) movement                                  */</a>
+<a name="ln918">        /* (b) due to symmetry (2H), even if isotopic               */</a>
+<a name="ln919">        /*                                                          */</a>
+<a name="ln920">        /* Fixed-H: move (+) to or from NH2 for Undef or No stereo  */</a>
+<a name="ln921">        /*          respectively                                    */</a>
+<a name="ln922">        /* Mobile-H: Add H(+) to =NH and move the charge to =N-     */</a>
+<a name="ln923">        /*           to eliminate Undef stereo                      */</a>
+<a name="ln924">        /*          Move charge from N to -NH2 to create            */</a>
+<a name="ln925">        /*           Undef Stereo                                   */</a>
+<a name="ln926">        /* Since this bond parity is not known, it is UNDEFINED     */</a>
+<a name="ln927">        /*                                                          */</a>
+<a name="ln928">        /* Solution: Add H(+) to =NH and move charge to -N=         */</a>
+<a name="ln929">        /*                                                          */</a>
+<a name="ln930">        /*----------------------------------------------------------*/</a>
+<a name="ln931">        int aN, aC, i1, i2, vPlusMinus;</a>
+<a name="ln932">        AllChargeEdges.num_edges = 0;</a>
+<a name="ln933">        /* in1 =&gt; in restored structure; in2 =&gt; in original InChI */</a>
+<a name="ln934">        for ( i = 0; i &lt; icr-&gt;num_sb_undef_in1_only; i ++ ) {</a>
+<a name="ln935">            j12 = icr-&gt;sb_undef_in1_only[i];</a>
+<a name="ln936">            pv1 = pBNS-&gt;vert + (v1 = pStereoRevrs-&gt;nBondAtom1[j12]-1);</a>
+<a name="ln937">            pv2 = pBNS-&gt;vert + (v2 = pStereoRevrs-&gt;nBondAtom2[j12]-1);</a>
+<a name="ln938">            /* indicators of -NH: */</a>
+<a name="ln939">            i1 = at2[v1].valence == 1 &amp;&amp; at2[v1].num_H == 1 &amp;&amp; !at2[v1].endpoint &amp;&amp;</a>
+<a name="ln940">                 pVA[v1].cNumValenceElectrons == 5 &amp;&amp; pVA[v1].cPeriodicRowNumber == 1;</a>
+<a name="ln941">            i2 = at2[v2].valence == 1 &amp;&amp; at2[v2].num_H == 1 &amp;&amp; !at2[v2].endpoint &amp;&amp;</a>
+<a name="ln942">                 pVA[v2].cNumValenceElectrons == 5 &amp;&amp; pVA[v2].cPeriodicRowNumber == 1;</a>
+<a name="ln943">            if ( (!i1 &amp;&amp; !i2)  || (i1 &amp;&amp; i2) ) {</a>
+<a name="ln944">                continue;</a>
+<a name="ln945">            }</a>
+<a name="ln946">            /* find the edge between v1 and v2 */</a>
+<a name="ln947">            for ( k = 0; k &lt; at2[v1].valence; k ++ ) {</a>
+<a name="ln948">                pe = pBNS-&gt;edge + (e = pv1-&gt;iedge[k]);</a>
+<a name="ln949">                if ( v2 == (pe-&gt;neighbor12 ^ v1) )</a>
+<a name="ln950">                    break; /* the edge has been found */</a>
+<a name="ln951">            }</a>
+<a name="ln952">            if ( k == at2[v1].valence ) {</a>
+<a name="ln953">                ret = RI_ERR_SYNTAX;</a>
+<a name="ln954">                goto exit_function;</a>
+<a name="ln955">            }</a>
+<a name="ln956">            if ( pe-&gt;flow != 1 ) {</a>
+<a name="ln957">                continue; /* already charged */</a>
+<a name="ln958">            }</a>
+<a name="ln959">            aN = i1? v1 : v2; /* -NH atom */</a>
+<a name="ln960">            aC = i1? v2 : v1; /* neighbor */</a>
+<a name="ln961">            /* Replace =NH with -NH2</a>
+<a name="ln962">               Create such a charge on some -N&lt; that may be moved to NH2 to remove H(+):</a>
+<a name="ln963">               transformation:</a>
+<a name="ln964">               from:  HN=C-=-N=(+vert)-Y=(+super)-(+/-)</a>
+<a name="ln965">               to:   2HN-C*-=-N=(+vert)-Y=(+super)-(+/-)*</a>
+<a name="ln966">               Run BNS to obtain:</a>
+<a name="ln967">                     2HN-C=-=N(+)-(+vert)=Y-(+super)=(+/-)</a>
+<a name="ln968">            */</a>
+<a name="ln969">            vPlusMinus = GetPlusMinusVertex( pBNS, pTCGroups, 1, 0 );</a>
+<a name="ln970">            if ( NO_VERTEX == vPlusMinus ) {</a>
+<a name="ln971">                break; /* cannot do anything */</a>
+<a name="ln972">            }</a>
+<a name="ln973">            /* increase edges to -Y-(+/-)-Y- capacities */</a>
+<a name="ln974">            delta = 1;</a>
+<a name="ln975">            for ( i1 = 0; i1 &lt; pBNS-&gt;vert[vPlusMinus].num_adj_edges; i1 ++ ) {</a>
+<a name="ln976">                i2 = pBNS-&gt;edge[pBNS-&gt;vert[vPlusMinus].iedge[i1]].neighbor12 ^ vPlusMinus;</a>
+<a name="ln977">                for ( k = 0; k &lt; pBNS-&gt;vert[i2].num_adj_edges; k ++ ) {</a>
+<a name="ln978">                    pBNS-&gt;edge[pBNS-&gt;vert[i2].iedge[k]].cap += delta;</a>
+<a name="ln979">                }</a>
+<a name="ln980">            }</a>
+<a name="ln981">            /* Fix all charges except (+) on -N&lt; */</a>
+<a name="ln982">            if ( !AllChargeEdges.num_edges ) {</a>
+<a name="ln983">                for ( j = 0; j &lt; pStruct-&gt;num_atoms; j ++ ) {</a>
+<a name="ln984">                    if ( (k=pVA[j].nCMinusGroupEdge-1) &gt;= 0 &amp;&amp; !pBNS-&gt;edge[k].forbidden ) {</a>
+<a name="ln985">                        if ( (ret = AddToEdgeList( &amp;AllChargeEdges, k, INC_ADD_EDGE )) ) {</a>
+<a name="ln986">                            goto exit_function;</a>
+<a name="ln987">                        }</a>
+<a name="ln988">                    }</a>
+<a name="ln989">                    if ( (k=pVA[j].nCPlusGroupEdge-1) &gt;= 0 &amp;&amp; !pBNS-&gt;edge[k].forbidden ) {</a>
+<a name="ln990">                        if ( pVA[j].cNumValenceElectrons == 5 &amp;&amp; pVA[j].cPeriodicRowNumber == 1 &amp;&amp;</a>
+<a name="ln991">                             !at2[j].num_H &amp;&amp; at2[j].valence == 3 &amp;&amp;</a>
+<a name="ln992">                             !(at2[j].endpoint || (pStruct-&gt;endpoint &amp;&amp; pStruct-&gt;endpoint[j])) ) {</a>
+<a name="ln993">                                 ; /* do not fix -N&lt; or =N(+)&lt; */</a>
+<a name="ln994">                        } else {</a>
+<a name="ln995">                            /* all others */</a>
+<a name="ln996">                            if ( (ret = AddToEdgeList( TautMinusEdges+0, k, INC_ADD_EDGE )) ) {</a>
+<a name="ln997">                                goto exit_function;</a>
+<a name="ln998">                            }</a>
+<a name="ln999">                        } </a>
+<a name="ln1000">                        /* in addition, disallow N(V) creation by forbidding charge flower edge that has flow=1 */</a>
+<a name="ln1001">                        if ( pVA[j].cNumValenceElectrons == 5 &amp;&amp; !pVA[j].cMetal &amp;&amp; /* N, P, As */</a>
+<a name="ln1002">                             NO_VERTEX != (k = GetChargeFlowerUpperEdge( pBNS, pVA, k ))) {</a>
+<a name="ln1003">                            if ( !pBNS-&gt;edge[j].forbidden &amp;&amp; pBNS-&gt;edge[k].flow ) {</a>
+<a name="ln1004">                                if ( (ret = AddToEdgeList( &amp;AllChargeEdges, k, INC_ADD_EDGE )) ) {</a>
+<a name="ln1005">                                    goto exit_function;</a>
+<a name="ln1006">                                }</a>
+<a name="ln1007">                            }</a>
+<a name="ln1008">                        }</a>
+<a name="ln1009">                    }</a>
+<a name="ln1010">                }</a>
+<a name="ln1011">            }</a>
+<a name="ln1012">            /* Make bond to =NH single, add radical to aC */</a>
+<a name="ln1013">            pe-&gt;flow                    -= delta; /* make single bond */</a>
+<a name="ln1014">            pBNS-&gt;vert[aN].st_edge.flow -= delta;</a>
+<a name="ln1015">            pBNS-&gt;vert[aN].st_edge.cap  -= delta; /* avoid radical on N */</a>
+<a name="ln1016">            pBNS-&gt;vert[aC].st_edge.flow -= delta; /* create radical on C */</a>
+<a name="ln1017">            pBNS-&gt;vert[vPlusMinus].st_edge.cap += delta; /* create radical on (+/-) */</a>
+<a name="ln1018">            pBNS-&gt;tot_st_flow           -=  2*delta;</a>
+<a name="ln1019">            /* fix C-NH bond */</a>
+<a name="ln1020">            if ( (ret = AddToEdgeList( &amp;AllChargeEdges, e, INC_ADD_EDGE )) ) {</a>
+<a name="ln1021">                goto exit_function;</a>
+<a name="ln1022">            }</a>
+<a name="ln1023">            /* pBNS-&gt;tot_st_cap is unchanged */</a>
+<a name="ln1024">            /* find all aC edges except pe to fix them */</a>
+<a name="ln1025">            /* 2. Check whether it would work and do if it would */</a>
+<a name="ln1026">            SetForbiddenEdgeMask( pBNS, &amp;AllChargeEdges, forbidden_edge_mask  );/* fix aC edges */</a>
+<a name="ln1027">            pe-&gt;cap ++;</a>
+<a name="ln1028">            ret = RunBnsTestOnce( pBNS, pBD, pVA, &amp;vPathStart, &amp;vPathEnd, &amp;nPathLen,</a>
+<a name="ln1029">                                  &amp;nDeltaH, &amp;nDeltaCharge, &amp;nNumVisitedAtoms );</a>
+<a name="ln1030"> </a>
+<a name="ln1031">            if ( ret == 1 &amp;&amp; ((vPathEnd == vPlusMinus &amp;&amp; vPathStart == aC) ||</a>
+<a name="ln1032">                              (vPathEnd == aC &amp;&amp; vPathStart == vPlusMinus)) &amp;&amp; nDeltaCharge == 1 ) {</a>
+<a name="ln1033">                /* Negative charge has been moved, no change in number of charges */</a>
+<a name="ln1034">                ret = RunBnsRestoreOnce( pBNS, pBD, pVA, pTCGroups );</a>
+<a name="ln1035">                if ( ret &gt; 0 ) {</a>
+<a name="ln1036">                    (*pnNumRunBNS) ++;</a>
+<a name="ln1037">                    /* 3. Add  H to -NH and register increaded charge */</a>
+<a name="ln1038">                    pStruct-&gt;at[aN].num_H ++;</a>
+<a name="ln1039">                    pTCGroups-&gt;total_charge ++;</a>
+<a name="ln1040">                    cur_success ++; /* 01 */</a>
+<a name="ln1041">                }</a>
+<a name="ln1042">            } else {</a>
+<a name="ln1043">                pe-&gt;flow                    += delta; /* make single bond */</a>
+<a name="ln1044">                pBNS-&gt;vert[aN].st_edge.flow += delta;</a>
+<a name="ln1045">                pBNS-&gt;vert[aN].st_edge.cap  += delta; /* avoid radical on N */</a>
+<a name="ln1046">                pBNS-&gt;vert[aC].st_edge.flow += delta; /* create radical on C */</a>
+<a name="ln1047">                pBNS-&gt;vert[vPlusMinus].st_edge.cap -= delta; /* create radical on (+/-) */</a>
+<a name="ln1048">                pBNS-&gt;tot_st_flow           +=  2*delta;</a>
+<a name="ln1049">                RemoveForbiddenEdgeMask( pBNS, &amp;AllChargeEdges, forbidden_edge_mask  );/* fix aC edges */</a>
+<a name="ln1050">                AllChargeEdges.num_edges --; /* remove pe from the list */</a>
+<a name="ln1051">                CurrEdges.num_edges = 0;</a>
+<a name="ln1052">                continue; /* should not happen */</a>
+<a name="ln1053">            }</a>
+<a name="ln1054">            RemoveForbiddenEdgeMask( pBNS, &amp;AllChargeEdges, forbidden_edge_mask  );/* fix aC edges */</a>
+<a name="ln1055">            AllChargeEdges.num_edges --; /* remove pe from the list */</a>
+<a name="ln1056">            CurrEdges.num_edges = 0;</a>
+<a name="ln1057">        }</a>
+<a name="ln1058">/*exit_case_05:*/</a>
+<a name="ln1059">        if ( cur_success ) {</a>
+<a name="ln1060">            tot_succes += cur_success;</a>
+<a name="ln1061">            /* recalculate InChI from the structure */</a>
+<a name="ln1062">            if ( 0 &gt; (ret = MakeOneInChIOutOfStrFromINChI2( ip, sd, pBNS, pStruct, at, at2, at3, pVA, pTCGroups,</a>
+<a name="ln1063">                                                            ppt_group_info, ppat_norm, ppat_prep ) ) ) {</a>
+<a name="ln1064">                goto exit_function;</a>
+<a name="ln1065">            }</a>
+<a name="ln1066">            if ( (ret = FillOutExtraFixedHDataRestr( pStruct )) ) {</a>
+<a name="ln1067">                goto exit_function;</a>
+<a name="ln1068">            }</a>
+<a name="ln1069">            /*</a>
+<a name="ln1070">            if ( ret = FillOutCMP2MHINCHI( pStruct, pTCGroups, at2, pVA, pInChI, pc2i ) ) {</a>
+<a name="ln1071">                goto exit_function;</a>
+<a name="ln1072">            }</a>
+<a name="ln1073">            */</a>
+<a name="ln1074">            cmpInChI = CompareReversedINChI2( pStruct-&gt;pOneINChI[0], pInChI[0], pStruct-&gt;pOneINChI_Aux[0], NULL /*INChI_Aux *v2*/, icr, &amp;err );</a>
+<a name="ln1075">            if ( cmpInChI &amp; IDIF_PROBLEM ) {</a>
+<a name="ln1076">                ret = RI_ERR_PROGR; /* severe restore problem */</a>
+<a name="ln1077">                goto exit_function;</a>
+<a name="ln1078">            }</a>
+<a name="ln1079">            if ( err ) {</a>
+<a name="ln1080">                ret = RI_ERR_ALLOC;</a>
+<a name="ln1081">                goto exit_function;</a>
+<a name="ln1082">            }</a>
+<a name="ln1083">            cmpInChI2 = 0;</a>
+<a name="ln1084">            memset ( icr2, 0, sizeof(*icr2) );</a>
+<a name="ln1085">            if ( iRevrInChI || iOrigInChI ) {</a>
+<a name="ln1086">                /* additional mobile-H compare in case of Fixed-H */</a>
+<a name="ln1087">                cmpInChI2 = CompareReversedINChI2( pStruct-&gt;pOneINChI[iRevrInChI], pInChI[iOrigInChI], pStruct-&gt;pOneINChI_Aux[iRevrInChI], NULL /*INChI_Aux *v2*/, icr2, &amp;err );</a>
+<a name="ln1088">                if ( cmpInChI &amp; IDIF_PROBLEM ) {</a>
+<a name="ln1089">                    ret = RI_ERR_PROGR; /* severe restore problem */</a>
+<a name="ln1090">                    goto exit_function;</a>
+<a name="ln1091">                }</a>
+<a name="ln1092">                if ( err ) {</a>
+<a name="ln1093">                    ret = RI_ERR_ALLOC;</a>
+<a name="ln1094">                    goto exit_function;</a>
+<a name="ln1095">                }</a>
+<a name="ln1096">            }</a>
+<a name="ln1097">            pStereoRevrs = (pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic &amp;&amp;</a>
+<a name="ln1098">                       pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic-&gt;nNumberOfStereoBonds +</a>
+<a name="ln1099">                       pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic-&gt;nNumberOfStereoCenters)?</a>
+<a name="ln1100">                       pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic : pStruct-&gt;pOneINChI[0]-&gt;Stereo;</a>
+<a name="ln1101"> </a>
+<a name="ln1102">            </a>
+<a name="ln1103">            pStereo2Revrs = (pStruct-&gt;bMobileH == TAUT_YES || !pStruct-&gt;pOneINChI[1] ||</a>
+<a name="ln1104">                       !pStruct-&gt;pOneINChI[1]-&gt;nNumberOfAtoms || pStruct-&gt;pOneINChI[1]-&gt;bDeleted)?</a>
+<a name="ln1105">                                NULL:</a>
+<a name="ln1106">                       (pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic &amp;&amp;</a>
+<a name="ln1107">                       pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic-&gt;nNumberOfStereoBonds +</a>
+<a name="ln1108">                       pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic-&gt;nNumberOfStereoCenters)?</a>
+<a name="ln1109">                                pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic :</a>
+<a name="ln1110">                                pStruct-&gt;pOneINChI[1]-&gt;Stereo;</a>
+<a name="ln1111"> </a>
+<a name="ln1112">        }</a>
+<a name="ln1113">    }</a>
+<a name="ln1114"> </a>
+<a name="ln1115">    cur_success = 0;</a>
+<a name="ln1116">    if ( pStruct-&gt;bMobileH == TAUT_NON &amp;&amp; pStereo2Revrs /* added check 2006-04-05 */ &amp;&amp;</a>
+<a name="ln1117">         (cmpInChI2 &amp; IDIF_SB_EXTRA_UNDF &amp;&amp;</a>
+<a name="ln1118">         !pStruct-&gt;ti.num_t_groups)</a>
+<a name="ln1119">         /*pStruct-&gt;bMobileH == TAUT_NON &amp;&amp; (cmpInChI2 &amp; IDIF_SB_EXTRA_UNDF)*/) {</a>
+<a name="ln1120">        /*----------------------------------------------------------*/</a>
+<a name="ln1121">        /* case 06: extra stereogenic bond on =NH2(+), (B, Fixed-H) */</a>
+<a name="ln1122">        /*                   H                H        ===========  */</a>
+<a name="ln1123">        /* original: N(+)=-N&lt;   -&gt;  N--==N(+)&lt;                      */</a>
+<a name="ln1124">        /* (A)               H                H                     */</a>
+<a name="ln1125">        /*                             double bond in Mobile-H      */</a>
+<a name="ln1126">        /*                             layer has Undef stereo       */</a>
+<a name="ln1127">        /*                                                          */</a>
+<a name="ln1128">        /*                                                          */</a>
+<a name="ln1129">        /* Fixed-H: move (+) to or from NH2 for Undef or No stereo  */</a>
+<a name="ln1130">        /*          respectively                                    */</a>
+<a name="ln1131">        /* Mobile-H: Add H(+) to =NH and move the charge to =N-     */</a>
+<a name="ln1132">        /*           to eliminate Undef stereo                      */</a>
+<a name="ln1133">        /*          Move charge from N to -NH2 to create            */</a>
+<a name="ln1134">        /*           Undef Stereo                                   */</a>
+<a name="ln1135">        /* Since this bond parity is not known, it is UNDEFINED     */</a>
+<a name="ln1136">        /*                                                          */</a>
+<a name="ln1137">        /* Solution: Move (+) from -NH2(+) to othe -N&lt;              */</a>
+<a name="ln1138">        /*                                                          */</a>
+<a name="ln1139">        /*----------------------------------------------------------*/</a>
+<a name="ln1140">        int aN, aC, i1, i2, ePlus;</a>
+<a name="ln1141">        BNS_EDGE   *pePlus;</a>
+<a name="ln1142">        AllChargeEdges.num_edges = 0;</a>
+<a name="ln1143">        /* in1 =&gt; in restored structure; in2 =&gt; in original InChI */</a>
+<a name="ln1144">        for ( i = 0; i &lt; icr2-&gt;num_sb_undef_in1_only; i ++ ) {</a>
+<a name="ln1145">            j12 = icr2-&gt;sb_undef_in1_only[i];</a>
+<a name="ln1146">            pv1 = pBNS-&gt;vert + (v1 = pStereo2Revrs-&gt;nBondAtom1[j12]-1);</a>
+<a name="ln1147">            pv2 = pBNS-&gt;vert + (v2 = pStereo2Revrs-&gt;nBondAtom2[j12]-1);</a>
+<a name="ln1148">            /* indicators of -NH: */</a>
+<a name="ln1149">            i1 = at2[v1].valence == 1 &amp;&amp; at2[v1].num_H == 2 &amp;&amp; !at2[v1].endpoint &amp;&amp;</a>
+<a name="ln1150">                 pVA[v1].cNumValenceElectrons == 5 &amp;&amp; pVA[v1].cPeriodicRowNumber == 1;</a>
+<a name="ln1151">            i2 = at2[v2].valence == 1 &amp;&amp; at2[v2].num_H == 2 &amp;&amp; !at2[v2].endpoint &amp;&amp;</a>
+<a name="ln1152">                 pVA[v2].cNumValenceElectrons == 5 &amp;&amp; pVA[v2].cPeriodicRowNumber == 1;</a>
+<a name="ln1153">            if ( (!i1 &amp;&amp; !i2)  || (i1 &amp;&amp; i2) ) {</a>
+<a name="ln1154">                continue;</a>
+<a name="ln1155">            }</a>
+<a name="ln1156">            /* find the edge between v1 and v2 */</a>
+<a name="ln1157">            for ( k = 0; k &lt; at2[v1].valence; k ++ ) {</a>
+<a name="ln1158">                pe = pBNS-&gt;edge + (e = pv1-&gt;iedge[k]);</a>
+<a name="ln1159">                if ( v2 == (pe-&gt;neighbor12 ^ v1) )</a>
+<a name="ln1160">                    break; /* the edge has been found */</a>
+<a name="ln1161">            }</a>
+<a name="ln1162">            if ( k == at2[v1].valence ) {</a>
+<a name="ln1163">                ret = RI_ERR_SYNTAX;</a>
+<a name="ln1164">                goto exit_function;</a>
+<a name="ln1165">            }</a>
+<a name="ln1166">            if ( pe-&gt;flow != 1 ) {</a>
+<a name="ln1167">                continue; /* already charged */</a>
+<a name="ln1168">            }</a>
+<a name="ln1169">            aN = i1? v1 : v2; /* -NH atom */</a>
+<a name="ln1170">            aC = i1? v2 : v1; /* neighbor */</a>
+<a name="ln1171">            if ( 0 &gt; (ePlus = pVA[aN].nCPlusGroupEdge-1) ||</a>
+<a name="ln1172">                 (pePlus = pBNS-&gt;edge + ePlus)-&gt;flow ||  /* must be (+) charged */</a>
+<a name="ln1173">                 pePlus-&gt;forbidden ) {</a>
+<a name="ln1174">                continue;</a>
+<a name="ln1175">            }</a>
+<a name="ln1176">            /* Move (+) from =NH2(+) to some other -N&lt;</a>
+<a name="ln1177">            */</a>
+<a name="ln1178">            /* Fix all charges except (+) on -N&lt; */</a>
+<a name="ln1179">            if ( !AllChargeEdges.num_edges ) {</a>
+<a name="ln1180">                for ( j = 0; j &lt; pStruct-&gt;num_atoms; j ++ ) {</a>
+<a name="ln1181">                    if ( (k=pVA[j].nCMinusGroupEdge-1) &gt;= 0 &amp;&amp; !pBNS-&gt;edge[k].forbidden ) {</a>
+<a name="ln1182">                        if ( (ret = AddToEdgeList( &amp;AllChargeEdges, k, INC_ADD_EDGE )) ) {</a>
+<a name="ln1183">                            goto exit_function;</a>
+<a name="ln1184">                        }</a>
+<a name="ln1185">                    }</a>
+<a name="ln1186">                    if ( (k=pVA[j].nCPlusGroupEdge-1) &gt;= 0 &amp;&amp; !pBNS-&gt;edge[k].forbidden ) {</a>
+<a name="ln1187">                        if ( pVA[j].cNumValenceElectrons == 5 &amp;&amp; pVA[j].cPeriodicRowNumber == 1 &amp;&amp;</a>
+<a name="ln1188">                             !at2[j].num_H &amp;&amp; at2[j].valence == 3 &amp;&amp;</a>
+<a name="ln1189">                             !(at2[j].endpoint || (pStruct-&gt;endpoint &amp;&amp; pStruct-&gt;endpoint[j])) ) {</a>
+<a name="ln1190">                                 ; /* do not fix -N&lt; or =N(+)&lt; */</a>
+<a name="ln1191">                        } else {</a>
+<a name="ln1192">                            /* all others */</a>
+<a name="ln1193">                            if ( (ret = AddToEdgeList( TautMinusEdges+0, k, INC_ADD_EDGE )) ) {</a>
+<a name="ln1194">                                goto exit_function;</a>
+<a name="ln1195">                            }</a>
+<a name="ln1196">                        } </a>
+<a name="ln1197">                        /* in addition, disallow N(V) creation by forbidding charge flower edge that has flow=1 */</a>
+<a name="ln1198">                        if ( pVA[j].cNumValenceElectrons == 5 &amp;&amp; !pVA[j].cMetal &amp;&amp; /* N, P, As */</a>
+<a name="ln1199">                             NO_VERTEX != (k = GetChargeFlowerUpperEdge( pBNS, pVA, k ))) {</a>
+<a name="ln1200">                            if ( !pBNS-&gt;edge[j].forbidden &amp;&amp; pBNS-&gt;edge[k].flow ) {</a>
+<a name="ln1201">                                if ( (ret = AddToEdgeList( &amp;AllChargeEdges, k, INC_ADD_EDGE )) ) {</a>
+<a name="ln1202">                                    goto exit_function;</a>
+<a name="ln1203">                                }</a>
+<a name="ln1204">                            }</a>
+<a name="ln1205">                        }</a>
+<a name="ln1206">                    }</a>
+<a name="ln1207">                }</a>
+<a name="ln1208">            }</a>
+<a name="ln1209">            /* pePlus edge is already fixed; unfix it */</a>
+<a name="ln1210">            /* To decrement (+) on =NH2(+) decrement its double bond order */</a>
+<a name="ln1211">            delta = 1;</a>
+<a name="ln1212">            if ( !pe-&gt;flow )</a>
+<a name="ln1213">                continue;</a>
+<a name="ln1214">            pv1 = pBNS-&gt;vert + (v1 = pe-&gt;neighbor1);</a>
+<a name="ln1215">            pv2 = pBNS-&gt;vert + (v2 = pe-&gt;neighbor12 ^ v1);</a>
+<a name="ln1216"> </a>
+<a name="ln1217">            delta = 1;</a>
+<a name="ln1218">            pe-&gt;flow -= delta;</a>
+<a name="ln1219">            pv1-&gt;st_edge.flow -= delta;</a>
+<a name="ln1220">            pv2-&gt;st_edge.flow -= delta;</a>
+<a name="ln1221">            pBNS-&gt;tot_st_flow -= 2*delta;</a>
+<a name="ln1222"> </a>
+<a name="ln1223">            pe-&gt;forbidden     |= forbidden_edge_mask;</a>
+<a name="ln1224">            pePlus-&gt;forbidden &amp;= ~forbidden_edge_mask;</a>
+<a name="ln1225"> </a>
+<a name="ln1226">            ret = RunBnsTestOnce( pBNS, pBD, pVA, &amp;vPathStart, &amp;vPathEnd, &amp;nPathLen,</a>
+<a name="ln1227">                                  &amp;nDeltaH, &amp;nDeltaCharge, &amp;nNumVisitedAtoms );</a>
+<a name="ln1228"> </a>
+<a name="ln1229">            if ( ret == 1 &amp;&amp; ((vPathEnd == v1 &amp;&amp; vPathStart == v2) ||</a>
+<a name="ln1230">                              (vPathEnd == v2 &amp;&amp; vPathStart == v1)) &amp;&amp; nDeltaCharge == 0 ) {</a>
+<a name="ln1231">                /* (+)charge was just moved, no change in number of charges */</a>
+<a name="ln1232">                ret = RunBnsRestoreOnce( pBNS, pBD, pVA, pTCGroups );</a>
+<a name="ln1233">                if ( ret &gt; 0 ) {</a>
+<a name="ln1234">                    (*pnNumRunBNS) ++;</a>
+<a name="ln1235">                    cur_success ++; /* 01 */</a>
+<a name="ln1236">                }</a>
+<a name="ln1237">            } else {</a>
+<a name="ln1238">                pe-&gt;flow += delta; /* roll back */</a>
+<a name="ln1239">                pv1-&gt;st_edge.flow += delta;</a>
+<a name="ln1240">                pv2-&gt;st_edge.flow += delta;</a>
+<a name="ln1241">                pBNS-&gt;tot_st_flow += 2*delta;</a>
+<a name="ln1242">            }</a>
+<a name="ln1243">            pe-&gt;forbidden     &amp;= ~forbidden_edge_mask;</a>
+<a name="ln1244">            RemoveForbiddenEdgeMask( pBNS, &amp;AllChargeEdges, forbidden_edge_mask  );/* fix aC edges */</a>
+<a name="ln1245">        }</a>
+<a name="ln1246">/*exit_case_06:*/</a>
+<a name="ln1247">        if ( cur_success ) {</a>
+<a name="ln1248">            tot_succes += cur_success;</a>
+<a name="ln1249">            /* recalculate InChI from the structure */</a>
+<a name="ln1250">            if ( 0 &gt; (ret = MakeOneInChIOutOfStrFromINChI2( ip, sd, pBNS, pStruct, at, at2, at3, pVA, pTCGroups,</a>
+<a name="ln1251">                                                            ppt_group_info, ppat_norm, ppat_prep ) ) ) {</a>
+<a name="ln1252">                goto exit_function;</a>
+<a name="ln1253">            }</a>
+<a name="ln1254">            if ( (ret = FillOutExtraFixedHDataRestr( pStruct )) ) {</a>
+<a name="ln1255">                goto exit_function;</a>
+<a name="ln1256">            }</a>
+<a name="ln1257">            /*</a>
+<a name="ln1258">            if ( ret = FillOutCMP2MHINCHI( pStruct, pTCGroups, at2, pVA, pInChI, pc2i ) ) {</a>
+<a name="ln1259">                goto exit_function;</a>
+<a name="ln1260">            }</a>
+<a name="ln1261">            */</a>
+<a name="ln1262">            cmpInChI = CompareReversedINChI2( pStruct-&gt;pOneINChI[0], pInChI[0], pStruct-&gt;pOneINChI_Aux[0], NULL /*INChI_Aux *v2*/, icr2, &amp;err );</a>
+<a name="ln1263">            if ( cmpInChI &amp; IDIF_PROBLEM ) {</a>
+<a name="ln1264">                ret = RI_ERR_PROGR; /* severe restore problem */</a>
+<a name="ln1265">                goto exit_function;</a>
+<a name="ln1266">            }</a>
+<a name="ln1267">            if ( err ) {</a>
+<a name="ln1268">                ret = RI_ERR_ALLOC;</a>
+<a name="ln1269">                goto exit_function;</a>
+<a name="ln1270">            }</a>
+<a name="ln1271">            cmpInChI2 = 0;</a>
+<a name="ln1272">            memset ( icr2, 0, sizeof(*icr2) );</a>
+<a name="ln1273">            if ( iRevrInChI || iOrigInChI ) {</a>
+<a name="ln1274">                /* additional mobile-H compare in case of Fixed-H */</a>
+<a name="ln1275">                cmpInChI2 = CompareReversedINChI2( pStruct-&gt;pOneINChI[iRevrInChI], pInChI[iOrigInChI], pStruct-&gt;pOneINChI_Aux[iRevrInChI], NULL /*INChI_Aux *v2*/, icr2, &amp;err );</a>
+<a name="ln1276">                if ( cmpInChI &amp; IDIF_PROBLEM ) {</a>
+<a name="ln1277">                    ret = RI_ERR_PROGR; /* severe restore problem */</a>
+<a name="ln1278">                    goto exit_function;</a>
+<a name="ln1279">                }</a>
+<a name="ln1280">                if ( err ) {</a>
+<a name="ln1281">                    ret = RI_ERR_ALLOC;</a>
+<a name="ln1282">                    goto exit_function;</a>
+<a name="ln1283">                }</a>
+<a name="ln1284">            }</a>
+<a name="ln1285">            pStereoRevrs = (pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic &amp;&amp;</a>
+<a name="ln1286">                       pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic-&gt;nNumberOfStereoBonds +</a>
+<a name="ln1287">                       pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic-&gt;nNumberOfStereoCenters)?</a>
+<a name="ln1288">                       pStruct-&gt;pOneINChI[0]-&gt;StereoIsotopic : pStruct-&gt;pOneINChI[0]-&gt;Stereo;</a>
+<a name="ln1289"> </a>
+<a name="ln1290">            </a>
+<a name="ln1291">            pStereo2Revrs = (pStruct-&gt;bMobileH == TAUT_YES || !pStruct-&gt;pOneINChI[1] ||</a>
+<a name="ln1292">                       !pStruct-&gt;pOneINChI[1]-&gt;nNumberOfAtoms || pStruct-&gt;pOneINChI[1]-&gt;bDeleted)?</a>
+<a name="ln1293">                                NULL:</a>
+<a name="ln1294">                       (pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic &amp;&amp;</a>
+<a name="ln1295">                       pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic-&gt;nNumberOfStereoBonds +</a>
+<a name="ln1296">                       pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic-&gt;nNumberOfStereoCenters)?</a>
+<a name="ln1297">                                pStruct-&gt;pOneINChI[1]-&gt;StereoIsotopic :</a>
+<a name="ln1298">                                pStruct-&gt;pOneINChI[1]-&gt;Stereo;</a>
+<a name="ln1299"> </a>
+<a name="ln1300">        }</a>
+<a name="ln1301">    }</a>
+<a name="ln1302"> </a>
+<a name="ln1303"> </a>
+<a name="ln1304">exit_function:</a>
+<a name="ln1305">    SetForbiddenEdgeMask( pBNS, &amp;FixedStereoEdges, forbidden_stereo_edge_mask  );</a>
+<a name="ln1306">    AllocEdgeList( &amp;AllChargeEdges, EDGE_LIST_FREE );</a>
+<a name="ln1307">    AllocEdgeList( &amp;CurrEdges, EDGE_LIST_FREE );</a>
+<a name="ln1308">    AllocEdgeList( &amp;NFlowerEdges, EDGE_LIST_FREE );</a>
+<a name="ln1309">    AllocEdgeList( &amp;OtherNFlowerEdges, EDGE_LIST_FREE );</a>
+<a name="ln1310">    AllocEdgeList( &amp;FixedStereoEdges, EDGE_LIST_FREE );</a>
+<a name="ln1311">    AllocEdgeList( &amp;AllRadList, EDGE_LIST_FREE ); /* eliminate memory leak */</a>
+<a name="ln1312">    AllocEdgeList( TautMinusEdges+0, EDGE_LIST_FREE );</a>
+<a name="ln1313">    AllocEdgeList( TautMinusEdges+1, EDGE_LIST_FREE );</a>
+<a name="ln1314"> </a>
+<a name="ln1315">    return ret;</a>
+<a name="ln1316">}</a>
+<a name="ln1317">#endif</a>
+
+</code></pre>
+<div class="balloon" rel="99"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v793/" target="_blank">V793</a> It is odd that the result of the '+' operator is a part of the condition. Perhaps, this statement should have been compared with something else.</p></div>
+<div class="balloon" rel="108"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v793/" target="_blank">V793</a> It is odd that the result of the '+' operator is a part of the condition. Perhaps, this statement should have been compared with something else.</p></div>
+<div class="balloon" rel="115"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v793/" target="_blank">V793</a> It is odd that the result of the '+' operator is a part of the condition. Perhaps, this statement should have been compared with something else.</p></div>
+<div class="balloon" rel="124"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v793/" target="_blank">V793</a> It is odd that the result of the '+' operator is a part of the condition. Perhaps, this statement should have been compared with something else.</p></div>
+<div class="balloon" rel="166"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1051/" target="_blank">V1051</a> Consider checking for misprints. It's possible that the 'cmpInChI2' should be checked here.</p></div>
+<div class="balloon" rel="324"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1051/" target="_blank">V1051</a> Consider checking for misprints. It's possible that the 'cmpInChI2' should be checked here.</p></div>
+<div class="balloon" rel="335"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v793/" target="_blank">V793</a> It is odd that the result of the '+' operator is a part of the condition. Perhaps, this statement should have been compared with something else.</p></div>
+<div class="balloon" rel="344"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v793/" target="_blank">V793</a> It is odd that the result of the '+' operator is a part of the condition. Perhaps, this statement should have been compared with something else.</p></div>
+<div class="balloon" rel="409"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1051/" target="_blank">V1051</a> Consider checking for misprints. It's possible that the 'cmpInChI2' should be checked here.</p></div>
+<div class="balloon" rel="465"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1051/" target="_blank">V1051</a> Consider checking for misprints. It's possible that the 'cmpInChI2' should be checked here.</p></div>
+<div class="balloon" rel="475"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v793/" target="_blank">V793</a> It is odd that the result of the '+' operator is a part of the condition. Perhaps, this statement should have been compared with something else.</p></div>
+<div class="balloon" rel="484"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v793/" target="_blank">V793</a> It is odd that the result of the '+' operator is a part of the condition. Perhaps, this statement should have been compared with something else.</p></div>
+<div class="balloon" rel="492"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'cur_success' variable was assigned the same value.</p></div>
+<div class="balloon" rel="592"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v619/" target="_blank">V619</a> The array 'TautMinusEdges + 0' is being utilized as a pointer to single object.</p></div>
+<div class="balloon" rel="592"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v619/" target="_blank">V619</a> The array 'TautMinusEdges + 1' is being utilized as a pointer to single object.</p></div>
+<div class="balloon" rel="596"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v619/" target="_blank">V619</a> The array 'TautMinusEdges + 0' is being utilized as a pointer to single object.</p></div>
+<div class="balloon" rel="600"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v619/" target="_blank">V619</a> The array 'TautMinusEdges + 1' is being utilized as a pointer to single object.</p></div>
+<div class="balloon" rel="671"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1051/" target="_blank">V1051</a> Consider checking for misprints. It's possible that the 'cmpInChI2' should be checked here.</p></div>
+<div class="balloon" rel="681"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v793/" target="_blank">V793</a> It is odd that the result of the '+' operator is a part of the condition. Perhaps, this statement should have been compared with something else.</p></div>
+<div class="balloon" rel="690"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v793/" target="_blank">V793</a> It is odd that the result of the '+' operator is a part of the condition. Perhaps, this statement should have been compared with something else.</p></div>
+<div class="balloon" rel="787"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v619/" target="_blank">V619</a> The array 'TautMinusEdges + 0' is being utilized as a pointer to single object.</p></div>
+<div class="balloon" rel="787"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v619/" target="_blank">V619</a> The array 'TautMinusEdges + 1' is being utilized as a pointer to single object.</p></div>
+<div class="balloon" rel="791"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v619/" target="_blank">V619</a> The array 'TautMinusEdges + 0' is being utilized as a pointer to single object.</p></div>
+<div class="balloon" rel="796"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v619/" target="_blank">V619</a> The array 'TautMinusEdges + 1' is being utilized as a pointer to single object.</p></div>
+<div class="balloon" rel="867"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1051/" target="_blank">V1051</a> Consider checking for misprints. It's possible that the 'cmpInChI2' should be checked here.</p></div>
+<div class="balloon" rel="877"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v793/" target="_blank">V793</a> It is odd that the result of the '+' operator is a part of the condition. Perhaps, this statement should have been compared with something else.</p></div>
+<div class="balloon" rel="886"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v793/" target="_blank">V793</a> It is odd that the result of the '+' operator is a part of the condition. Perhaps, this statement should have been compared with something else.</p></div>
+<div class="balloon" rel="943"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v728/" target="_blank">V728</a> An excessive check can be simplified. The '(A && B) || (!A && !B)' expression is equivalent to the 'bool(A) == bool(B)' expression.</p></div>
+<div class="balloon" rel="1088"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1051/" target="_blank">V1051</a> Consider checking for misprints. It's possible that the 'cmpInChI2' should be checked here.</p></div>
+<div class="balloon" rel="1098"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v793/" target="_blank">V793</a> It is odd that the result of the '+' operator is a part of the condition. Perhaps, this statement should have been compared with something else.</p></div>
+<div class="balloon" rel="1107"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v793/" target="_blank">V793</a> It is odd that the result of the '+' operator is a part of the condition. Perhaps, this statement should have been compared with something else.</p></div>
+<div class="balloon" rel="1153"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v728/" target="_blank">V728</a> An excessive check can be simplified. The '(A && B) || (!A && !B)' expression is equivalent to the 'bool(A) == bool(B)' expression.</p></div>
+<div class="balloon" rel="1212"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression '!pe->flow' is always false.</p></div>
+<div class="balloon" rel="1217"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'delta' variable was assigned the same value.</p></div>
+<div class="balloon" rel="1276"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1051/" target="_blank">V1051</a> Consider checking for misprints. It's possible that the 'cmpInChI2' should be checked here.</p></div>
+<div class="balloon" rel="1286"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v793/" target="_blank">V793</a> It is odd that the result of the '+' operator is a part of the condition. Perhaps, this statement should have been compared with something else.</p></div>
+<div class="balloon" rel="1295"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v793/" target="_blank">V793</a> It is odd that the result of the '+' operator is a part of the condition. Perhaps, this statement should have been compared with something else.</p></div>
+<div class="balloon" rel="141"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v763/" target="_blank">V763</a> Parameter 'cmpInChI' is always rewritten in function body before being used.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

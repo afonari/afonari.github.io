@@ -1,0 +1,296 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>formula.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">formula.cpp - Test molecular formula, weight &amp; exact mass</a>
+<a name="ln3"> </a>
+<a name="ln4">This file is part of the Open Babel project.</a>
+<a name="ln5">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln6"> </a>
+<a name="ln7">Some portions Copyright (C) 2005-2006 Geoffrey R. Hutchison</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln10">it under the terms of the GNU General Public License as published by</a>
+<a name="ln11">the Free Software Foundation version 2 of the License.</a>
+<a name="ln12"> </a>
+<a name="ln13">This program is distributed in the hope that it will be useful,</a>
+<a name="ln14">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln15">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln16">GNU General Public License for more details.</a>
+<a name="ln17">***********************************************************************/</a>
+<a name="ln18"> </a>
+<a name="ln19">// used to set import/export for Cygwin DLLs</a>
+<a name="ln20">#ifdef WIN32</a>
+<a name="ln21">#define USING_OBDLL</a>
+<a name="ln22">#endif</a>
+<a name="ln23"> </a>
+<a name="ln24">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln25"> </a>
+<a name="ln26">#include &lt;fstream&gt;</a>
+<a name="ln27">#include &lt;cstdlib&gt;</a>
+<a name="ln28"> </a>
+<a name="ln29">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln30">#include &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln31">#include &lt;openbabel/obutil.h&gt;</a>
+<a name="ln32"> </a>
+<a name="ln33">using namespace std;</a>
+<a name="ln34">using namespace OpenBabel;</a>
+<a name="ln35"> </a>
+<a name="ln36">#ifdef TESTDATADIR</a>
+<a name="ln37">  string gtestdatadir = TESTDATADIR;</a>
+<a name="ln38">  string gresults_file = gtestdatadir + &quot;formularesults.txt&quot;;</a>
+<a name="ln39">  string gsmilestypes_file = gtestdatadir + &quot;attype.00.smi&quot;;</a>
+<a name="ln40">#else</a>
+<a name="ln41">  string gresults_file = &quot;files/formularesults.txt&quot;;</a>
+<a name="ln42">  string gsmilestypes_file = &quot;files/attype.00.smi&quot;;</a>
+<a name="ln43">#endif</a>
+<a name="ln44"> </a>
+<a name="ln45">void GenerateFormulaReference();</a>
+<a name="ln46"> </a>
+<a name="ln47">int formula(int argc, char* argv[])</a>
+<a name="ln48">{</a>
+<a name="ln49">  int defaultchoice = 1;</a>
+<a name="ln50">  </a>
+<a name="ln51">  int choice = defaultchoice;</a>
+<a name="ln52"> </a>
+<a name="ln53">  if (argc &gt; 1) {</a>
+<a name="ln54">    if(sscanf(argv[1], &quot;%d&quot;, &amp;choice) != 1) {</a>
+<a name="ln55">      printf(&quot;Couldn't parse that input as a number\n&quot;);</a>
+<a name="ln56">      return -1;</a>
+<a name="ln57">    }</a>
+<a name="ln58">  }</a>
+<a name="ln59"> </a>
+<a name="ln60">  // Define location of file formats for testing</a>
+<a name="ln61">#ifdef FORMATDIR</a>
+<a name="ln62">  char env[BUFF_SIZE];</a>
+<a name="ln63">  snprintf(env, BUFF_SIZE, &quot;BABEL_LIBDIR=%s&quot;, FORMATDIR);</a>
+<a name="ln64">  putenv(env);</a>
+<a name="ln65">#endif</a>
+<a name="ln66"> </a>
+<a name="ln67">  bool check = true;</a>
+<a name="ln68">  string filename;</a>
+<a name="ln69">  if (choice == 99)</a>
+<a name="ln70">    {</a>
+<a name="ln71">      GenerateFormulaReference();</a>
+<a name="ln72">      return 0;</a>
+<a name="ln73">    }</a>
+<a name="ln74"> </a>
+<a name="ln75">  cout &lt;&lt; &quot;# Testing molecular formulas...&quot; &lt;&lt; endl;</a>
+<a name="ln76"> </a>
+<a name="ln77">  std::ifstream mifs;</a>
+<a name="ln78">  char buffer[BUFF_SIZE];</a>
+<a name="ln79">  vector&lt;string&gt; vs;</a>
+<a name="ln80">  OBMol mol;</a>
+<a name="ln81">  OBConversion conv(&amp;mifs, &amp;cout);</a>
+<a name="ln82">  unsigned int currentTest = 0;</a>
+<a name="ln83"> </a>
+<a name="ln84">  if (check) {</a>
+<a name="ln85">    filename = gsmilestypes_file;</a>
+<a name="ln86">  }</a>
+<a name="ln87"> </a>
+<a name="ln88">  if (!SafeOpen(mifs, filename.c_str()))</a>
+<a name="ln89">    {</a>
+<a name="ln90">      cout &lt;&lt; &quot;Bail out! Cannot read file &quot; &lt;&lt; filename &lt;&lt; endl;</a>
+<a name="ln91">      return -1; // test failed</a>
+<a name="ln92">    }</a>
+<a name="ln93"> </a>
+<a name="ln94">  OBFormat *format = conv.FormatFromExt(filename.c_str());</a>
+<a name="ln95"> </a>
+<a name="ln96">  std::ifstream rifs;</a>
+<a name="ln97">  if (check) {</a>
+<a name="ln98">    if (!SafeOpen(rifs, gresults_file.c_str()))</a>
+<a name="ln99">      {</a>
+<a name="ln100">        cout &lt;&lt; &quot;Bail out! Cannot read file &quot; &lt;&lt; gresults_file &lt;&lt; endl;</a>
+<a name="ln101">        return -1; // test failed</a>
+<a name="ln102">      }</a>
+<a name="ln103">  }</a>
+<a name="ln104"> </a>
+<a name="ln105">  if(! conv.SetInFormat(format))</a>
+<a name="ln106">    {</a>
+<a name="ln107">      cout &lt;&lt; &quot;Bail out! SMILES format is not loaded&quot; &lt;&lt; endl;</a>
+<a name="ln108">      return -1;</a>
+<a name="ln109">    }</a>
+<a name="ln110"> </a>
+<a name="ln111">  for (;mifs;)</a>
+<a name="ln112">    {</a>
+<a name="ln113">      mol.Clear();</a>
+<a name="ln114">      conv.Read(&amp;mol);</a>
+<a name="ln115">      if (mol.Empty())</a>
+<a name="ln116">        continue;</a>
+<a name="ln117"> </a>
+<a name="ln118">      if (!check) {</a>
+<a name="ln119">        // just give the molecular formula</a>
+<a name="ln120">        cout &lt;&lt; &quot;Formula: &quot; &lt;&lt; mol.GetFormula() &lt;&lt; '\n';</a>
+<a name="ln121">        continue;</a>
+<a name="ln122">      }</a>
+<a name="ln123"> </a>
+<a name="ln124">      if (!rifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln125">        {</a>
+<a name="ln126">          cout &lt;&lt; &quot;Bail out! error reading reference data&quot; &lt;&lt; endl;</a>
+<a name="ln127">          return -1; // test failed</a>
+<a name="ln128">        }</a>
+<a name="ln129"> </a>
+<a name="ln130">      tokenize(vs,buffer);</a>
+<a name="ln131">      if (vs.size() != 3)</a>
+<a name="ln132">        {</a>
+<a name="ln133">          cout &lt;&lt; &quot;Bail out! Reference data has incorrect format&quot; &lt;&lt; endl;</a>
+<a name="ln134">          return -1; // test failed</a>
+<a name="ln135">        }</a>
+<a name="ln136"> </a>
+<a name="ln137">      if (vs[0] != mol.GetFormula())</a>
+<a name="ln138">        {</a>
+<a name="ln139">          cout &lt;&lt; &quot;not ok &quot; &lt;&lt; ++currentTest &lt;&lt; &quot; # molecular formula incorrect&quot;</a>
+<a name="ln140">               &lt;&lt; &quot; for molecule &quot; &lt;&lt; mol.GetTitle() &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln141">        }</a>
+<a name="ln142">      else</a>
+<a name="ln143">        cout &lt;&lt; &quot;ok &quot; &lt;&lt; ++currentTest &lt;&lt; &quot; # molecular formula\n&quot;;</a>
+<a name="ln144"> </a>
+<a name="ln145">      if ( fabs(atof(vs[1].c_str()) - mol.GetMolWt() ) &gt; 1.0e-3)</a>
+<a name="ln146">        {</a>
+<a name="ln147">          cout &lt;&lt; &quot;not ok &quot; &lt;&lt; ++currentTest &lt;&lt; &quot; # molecular weight incorrect&quot;</a>
+<a name="ln148">               &lt;&lt; &quot; for molecule &quot; &lt;&lt; mol.GetTitle() &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln149">          cout &lt;&lt; &quot;# Expected &quot; &lt;&lt; atof(vs[1].c_str()) &lt;&lt; &quot; found &quot; &lt;&lt;</a>
+<a name="ln150">            mol.GetMolWt() &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln151">        }</a>
+<a name="ln152">      else</a>
+<a name="ln153">        cout &lt;&lt; &quot;ok &quot; &lt;&lt; ++currentTest &lt;&lt; &quot; # molecular weight\n&quot;;</a>
+<a name="ln154"> </a>
+<a name="ln155">      if ( fabs(atof(vs[2].c_str()) - mol.GetExactMass() ) &gt; 1.0e-3)</a>
+<a name="ln156">        {</a>
+<a name="ln157">          cout &lt;&lt; &quot;not ok &quot; &lt;&lt; ++currentTest &lt;&lt; &quot; # exact mass incorrect&quot;</a>
+<a name="ln158">               &lt;&lt; &quot; for molecule &quot; &lt;&lt; mol.GetTitle() &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln159">          cout &lt;&lt; &quot;# Expected &quot; &lt;&lt; atof(vs[2].c_str()) &lt;&lt; &quot; found &quot; &lt;&lt;</a>
+<a name="ln160">            mol.GetExactMass() &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln161">        }</a>
+<a name="ln162">      else</a>
+<a name="ln163">        cout &lt;&lt; &quot;ok &quot; &lt;&lt; ++currentTest &lt;&lt; &quot; # molecular exact mass\n&quot;;</a>
+<a name="ln164"> </a>
+<a name="ln165"> </a>
+<a name="ln166">      // now after adding explicit hydrogens -- should be identical</a>
+<a name="ln167">      //  since we'll add hydrogens that were implicit before</a>
+<a name="ln168"> </a>
+<a name="ln169">      // PR#1485580</a>
+<a name="ln170">      mol.AddHydrogens();</a>
+<a name="ln171"> </a>
+<a name="ln172">      if (vs[0] != mol.GetFormula())</a>
+<a name="ln173">        {</a>
+<a name="ln174">          cout &lt;&lt; &quot;not ok &quot; &lt;&lt; ++currentTest &lt;&lt; &quot; # molecular formula incorrect&quot;</a>
+<a name="ln175">               &lt;&lt; &quot; for hydrogen-added molecule &quot; &lt;&lt; mol.GetTitle() &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln176">        }</a>
+<a name="ln177">      else</a>
+<a name="ln178">        cout &lt;&lt; &quot;ok &quot; &lt;&lt; ++currentTest &lt;&lt; &quot; # molecular hydrogen-added formula\n&quot;;</a>
+<a name="ln179"> </a>
+<a name="ln180">      if ( fabs(atof(vs[1].c_str()) - mol.GetMolWt() ) &gt; 1.0e-3)</a>
+<a name="ln181">        {</a>
+<a name="ln182">          cout &lt;&lt; &quot;not ok &quot; &lt;&lt; ++currentTest &lt;&lt; &quot; # molecular weight incorrect&quot;</a>
+<a name="ln183">               &lt;&lt; &quot; for hydrogen-added molecule &quot; &lt;&lt; mol.GetTitle() &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln184">          cout &lt;&lt; &quot;# Expected &quot; &lt;&lt; atof(vs[1].c_str()) &lt;&lt; &quot; found &quot; &lt;&lt;</a>
+<a name="ln185">            mol.GetMolWt() &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln186">          cout &lt;&lt; &quot;# Difference &quot; &lt;&lt; fabs(atof(vs[1].c_str()) - mol.GetMolWt())</a>
+<a name="ln187">               &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln188">        }</a>
+<a name="ln189">      else</a>
+<a name="ln190">        cout &lt;&lt; &quot;ok &quot; &lt;&lt; ++currentTest &lt;&lt; &quot; # molecule + hydrogens weight\n&quot;;</a>
+<a name="ln191"> </a>
+<a name="ln192">      if ( fabs(atof(vs[2].c_str()) - mol.GetExactMass() ) &gt; 1.0e-3)</a>
+<a name="ln193">        {</a>
+<a name="ln194">          cout &lt;&lt; &quot;not ok &quot; &lt;&lt; ++currentTest &lt;&lt; &quot; # exact mass incorrect&quot;</a>
+<a name="ln195">               &lt;&lt; &quot; for hydrogen-added molecule &quot; &lt;&lt; mol.GetTitle() &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln196">          cout &lt;&lt; &quot;# Expected &quot; &lt;&lt; atof(vs[2].c_str()) &lt;&lt; &quot; found &quot; &lt;&lt;</a>
+<a name="ln197">            mol.GetExactMass() &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln198">          cout &lt;&lt; &quot;# Difference &quot; &lt;&lt; fabs(atof(vs[2].c_str()) - mol.GetExactMass())</a>
+<a name="ln199">               &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln200">        }</a>
+<a name="ln201">      else</a>
+<a name="ln202">        cout &lt;&lt; &quot;ok &quot; &lt;&lt; ++currentTest &lt;&lt; &quot; # molecular exact mass&quot;</a>
+<a name="ln203">             &lt;&lt; &quot; after hydrogen addition\n&quot;;</a>
+<a name="ln204"> </a>
+<a name="ln205">    }</a>
+<a name="ln206"> </a>
+<a name="ln207">  // return number of tests run</a>
+<a name="ln208">  cout &lt;&lt; &quot;1..&quot; &lt;&lt; currentTest &lt;&lt; endl;</a>
+<a name="ln209"> </a>
+<a name="ln210">  // Passed tests</a>
+<a name="ln211">  return 0;</a>
+<a name="ln212">}</a>
+<a name="ln213"> </a>
+<a name="ln214">void GenerateFormulaReference()</a>
+<a name="ln215">{</a>
+<a name="ln216">  std::ifstream ifs;</a>
+<a name="ln217">  if (!SafeOpen(ifs, gsmilestypes_file.c_str()))</a>
+<a name="ln218">    return;</a>
+<a name="ln219"> </a>
+<a name="ln220">  std::ofstream ofs;</a>
+<a name="ln221">  if (!SafeOpen(ofs, gresults_file.c_str()))</a>
+<a name="ln222">    return;</a>
+<a name="ln223"> </a>
+<a name="ln224">  OBMol mol;</a>
+<a name="ln225">  OBConversion conv(&amp;ifs, &amp;cout);</a>
+<a name="ln226"> </a>
+<a name="ln227">  if(! conv.SetInAndOutFormats(&quot;SMI&quot;,&quot;SMI&quot;))</a>
+<a name="ln228">    {</a>
+<a name="ln229">      cerr &lt;&lt; &quot;SMILES format is not loaded&quot; &lt;&lt; endl;</a>
+<a name="ln230">      return;</a>
+<a name="ln231">    }</a>
+<a name="ln232"> </a>
+<a name="ln233">  for (;ifs;)</a>
+<a name="ln234">    {</a>
+<a name="ln235">      mol.Clear();</a>
+<a name="ln236">      conv.Read(&amp;mol);</a>
+<a name="ln237">      if (mol.Empty())</a>
+<a name="ln238">        continue;</a>
+<a name="ln239"> </a>
+<a name="ln240">      //write out formula, molecular weight and exact mass</a>
+<a name="ln241">      ofs &lt;&lt; mol.GetFormula() &lt;&lt; &quot; &quot; &lt;&lt; mol.GetMolWt() &lt;&lt; &quot; &quot;</a>
+<a name="ln242">          &lt;&lt; mol.GetExactMass() &lt;&lt; endl;</a>
+<a name="ln243">    }</a>
+<a name="ln244"> </a>
+<a name="ln245">	cerr &lt;&lt; &quot; Molecular formula results written successfully&quot; &lt;&lt; endl;</a>
+<a name="ln246">  return;</a>
+<a name="ln247">}</a>
+
+</code></pre>
+<div class="balloon" rel="84"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'check' is always true.</p></div>
+<div class="balloon" rel="97"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'check' is always true.</p></div>
+<div class="balloon" rel="118"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression '!check' is always false.</p></div>
+<div class="balloon" rel="233"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1044/" target="_blank">V1044</a> Loop break conditions do not depend on the number of iterations.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,1729 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>ichimap4.c</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/*</a>
+<a name="ln2"> * International Chemical Identifier (InChI)</a>
+<a name="ln3"> * Version 1</a>
+<a name="ln4"> * Software version 1.04</a>
+<a name="ln5"> * September 9, 2011</a>
+<a name="ln6"> *</a>
+<a name="ln7"> * The InChI library and programs are free software developed under the</a>
+<a name="ln8"> * auspices of the International Union of Pure and Applied Chemistry (IUPAC).</a>
+<a name="ln9"> * Originally developed at NIST. Modifications and additions by IUPAC </a>
+<a name="ln10"> * and the InChI Trust.</a>
+<a name="ln11"> *</a>
+<a name="ln12"> * IUPAC/InChI-Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln13"> * Software version 1.0.</a>
+<a name="ln14"> * Copyright (C) IUPAC and InChI Trust Limited</a>
+<a name="ln15"> * </a>
+<a name="ln16"> * This library is free software; you can redistribute it and/or modify it under the </a>
+<a name="ln17"> * terms of the IUPAC/InChI Trust Licence for the International Chemical Identifier </a>
+<a name="ln18"> * (InChI) Software version 1.0; either version 1.0 of the License, or </a>
+<a name="ln19"> * (at your option) any later version.</a>
+<a name="ln20"> * </a>
+<a name="ln21"> * This library is distributed in the hope that it will be useful, </a>
+<a name="ln22"> * but WITHOUT ANY WARRANTY; without even the implied warranty of </a>
+<a name="ln23"> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  </a>
+<a name="ln24"> * See the IUPAC/InChI Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln25"> * Software version 1.0 for more details.</a>
+<a name="ln26"> * </a>
+<a name="ln27"> * You should have received a copy of the IUPAC/InChI Trust Licence for the </a>
+<a name="ln28"> * International Chemical Identifier (InChI) Software version 1.0 along with </a>
+<a name="ln29"> * this library; if not, write to:</a>
+<a name="ln30"> * </a>
+<a name="ln31"> * The InChI Trust</a>
+<a name="ln32"> * c/o FIZ CHEMIE Berlin</a>
+<a name="ln33"> * Franklinstrasse 11</a>
+<a name="ln34"> * 10587 Berlin</a>
+<a name="ln35"> * GERMANY</a>
+<a name="ln36"> * </a>
+<a name="ln37"> */</a>
+<a name="ln38"> </a>
+<a name="ln39"> </a>
+<a name="ln40">#include &lt;stdio.h&gt;</a>
+<a name="ln41">#include &lt;stdlib.h&gt;</a>
+<a name="ln42">#include &lt;string.h&gt;</a>
+<a name="ln43"> </a>
+<a name="ln44">#include &quot;mode.h&quot;</a>
+<a name="ln45"> </a>
+<a name="ln46">#include &quot;incomdef.h&quot;</a>
+<a name="ln47">#include &quot;extr_ct.h&quot;</a>
+<a name="ln48">#include &quot;ichitaut.h&quot;</a>
+<a name="ln49">#include &quot;ichicant.h&quot;</a>
+<a name="ln50">#include &quot;ichicomn.h&quot;</a>
+<a name="ln51"> </a>
+<a name="ln52">#include &quot;ichicomp.h&quot;</a>
+<a name="ln53"> </a>
+<a name="ln54"> </a>
+<a name="ln55"> </a>
+<a name="ln56"> </a>
+<a name="ln57">#define SB_DEPTH 6</a>
+<a name="ln58">/************************************************</a>
+<a name="ln59">   map_stereo_bonds4 and map_stereo_atoms4 use</a>
+<a name="ln60">   the following members of CANON_STAT *pCS:</a>
+<a name="ln61"> </a>
+<a name="ln62">        pCS-&gt;bKeepSymmRank  // ??? almost unused, replaced with nSymmStereo != NULL ???</a>
+<a name="ln63">        pCS-&gt;bFirstCT</a>
+<a name="ln64">        pCS-&gt;bStereoIsBetter</a>
+<a name="ln65">        pCS-&gt;lNumNeighListIter</a>
+<a name="ln66">        pCS-&gt;lNumBreakTies</a>
+<a name="ln67">        pCS-&gt;lNumRejectedCT</a>
+<a name="ln68">        pCS-&gt;lNumTotCT</a>
+<a name="ln69">        pCS-&gt;lNumEqualCT</a>
+<a name="ln70">        pCS-&gt;lNumDecreasedCT</a>
+<a name="ln71">        pCS-&gt;bExtract (bRELEASE_VERSION == 0)</a>
+<a name="ln72">        pCS-&gt;ulTimeOutTime</a>
+<a name="ln73"> </a>
+<a name="ln74">        pCS-&gt;bRankUsedForStereo</a>
+<a name="ln75">        pCS-&gt;bAtomUsedForStereo</a>
+<a name="ln76"> </a>
+<a name="ln77">        pCS-&gt;LinearCTStereoDble</a>
+<a name="ln78">        pCS-&gt;LinearCTStereoCarb</a>
+<a name="ln79">        pCS-&gt;nLenLinearCTStereoCarb</a>
+<a name="ln80">        pCS-&gt;nLenLinearCTStereoDble</a>
+<a name="ln81"> </a>
+<a name="ln82">        pCS-&gt;nPrevAtomNumber</a>
+<a name="ln83"> ************************************************/</a>
+<a name="ln84">/********************************************************************************/</a>
+<a name="ln85">int map_stereo_bonds4 ( </a>
+<a name="ln86">                sp_ATOM *at, int num_atoms, int num_at_tg, int num_max, int bAllene,</a>
+<a name="ln87">                const AT_RANK *nCanonRankFrom, const AT_RANK *nAtomNumberCanonFrom, /*  non-stereo canon ranking */</a>
+<a name="ln88">                AT_RANK *nCanonRankTo, /* output canonical stereo numbering*/</a>
+<a name="ln89">                const AT_RANK *nSymmRank, AT_RANK   **pRankStack1/*from*/,  AT_RANK **pRankStack2/*to*/,</a>
+<a name="ln90">                AT_RANK *nTempRank,       int         nNumMappedRanksInput,</a>
+<a name="ln91">                AT_RANK *nSymmStereo,     NEIGH_LIST *NeighList,</a>
+<a name="ln92">                CANON_STAT *pCS,          CUR_TREE   *cur_tree,  int nNumMappedBonds,</a>
+<a name="ln93">                int vABParityUnknown)</a>
+<a name="ln94">{</a>
+<a name="ln95">    int nTotSuccess = 0; /* 1=&gt;full mapping has been completed;</a>
+<a name="ln96">                          * 2=&gt;obtained a better stereo;</a>
+<a name="ln97">                          * 4=&gt;restart (stereo bond or atom removed from the stereo CT)</a>
+<a name="ln98">                          */</a>
+<a name="ln99">    int tpos1;</a>
+<a name="ln100">    AT_STEREO_DBLE prevBond;</a>
+<a name="ln101">    tpos1 = CurTreeGetPos( cur_tree );</a>
+<a name="ln102"> </a>
+<a name="ln103">total_restart:</a>
+<a name="ln104"> </a>
+<a name="ln105">    if ( !nNumMappedBonds ) {</a>
+<a name="ln106">        </a>
+<a name="ln107">        memset( pCS-&gt;bRankUsedForStereo, 0, sizeof( pCS-&gt;bRankUsedForStereo[0] )*num_atoms );</a>
+<a name="ln108">        SetUseAtomForStereo( pCS-&gt;bAtomUsedForStereo, at, num_atoms );</a>
+<a name="ln109"> </a>
+<a name="ln110">        if ( pCS-&gt;bFirstCT &amp;&amp; nSymmStereo &amp;&amp; !pCS-&gt;bKeepSymmRank ) {</a>
+<a name="ln111">            int i;</a>
+<a name="ln112">            for ( i = 0; i &lt; num_at_tg; i ++ ) {</a>
+<a name="ln113">                                    /*  nSymmStereo[i] = min. {k | at[k] stereo eq. to at[i]} */</a>
+<a name="ln114">                nSymmStereo[i] = i; /*  for union-join to keep track of stereo-equivalent atoms */</a>
+<a name="ln115">            }</a>
+<a name="ln116">        }</a>
+<a name="ln117">    }</a>
+<a name="ln118"> </a>
+<a name="ln119"> </a>
+<a name="ln120">    if ( nNumMappedBonds &lt; pCS-&gt;nLenLinearCTStereoDble ) {</a>
+<a name="ln121"> </a>
+<a name="ln122">        int at_rank1, at_rank2, bStereoIsBetterWasSetHere;</a>
+<a name="ln123">        /* AT_RANK *nRankFrom=*pRankStack1++,  AT_RANK *nAtomNumberFrom=pRankStack1++; */</a>
+<a name="ln124">        /* AT_RANK *nRankTo  =*pRankStack2++,  AT_RANK *nAtomNumberTo  =pRankStack2++; */</a>
+<a name="ln125">        AT_RANK canon_min1, canon_min2;</a>
+<a name="ln126">        int bFirstCanonRank;</a>
+<a name="ln127">        int i, j, j1, j2, at_from1, at_from2, at_to1, at_to2, iMax, c;</a>
+<a name="ln128">        int nStackPtr[SB_DEPTH], nNumMappedRanks[SB_DEPTH], LastMappedTo1;</a>
+<a name="ln129">        int istk, istk2, istk3, bAddStack, nNumAtTo1Success;</a>
+<a name="ln130">        int ret1, ret2, parity1, parity2;</a>
+<a name="ln131"> </a>
+<a name="ln132">        AT_RANK at_rank_canon1; /*  = pCS-&gt;LinearCTStereoDble[nNumMappedBonds].at_num1; */ /*  canonical numbers of atoms */</a>
+<a name="ln133">        AT_RANK at_rank_canon2; /*  = pCS-&gt;LinearCTStereoDble[nNumMappedBonds].at_num2; */ /*  adjacent to the stereogenic bond */</a>
+<a name="ln134">        int nNumChoices, nNumUnkn, nNumUndf, nNumBest, nNumWorse, nNumCalc, sb_parity_calc;</a>
+<a name="ln135">        int stereo_bond_parity, prev_stereo_bond_parity, pass, bAllParitiesIdentical, bAllParitiesIdentical2;</a>
+<a name="ln136">        AT_STEREO_DBLE prevBond2;</a>
+<a name="ln137"> </a>
+<a name="ln138">        prevBond = pCS-&gt;LinearCTStereoDble[nNumMappedBonds];</a>
+<a name="ln139">        bFirstCanonRank=1;</a>
+<a name="ln140">        canon_min1=canon_min2=0;</a>
+<a name="ln141">/*        </a>
+<a name="ln142">        // find candidates for atom_from1, atom_to1; they must have identical mapping ranks</a>
+<a name="ln143">        at_rank1=pRankStack1[0][at_from1=nAtomNumberCanonFrom[(int)at_rank_canon1 - 1]]; // rank &quot;from&quot; for mapping</a>
+<a name="ln144">        at_rank2=pRankStack1[0][at_from2=nAtomNumberCanonFrom[(int)at_rank_canon2 - 1]]; // rank &quot;from&quot; for mapping</a>
+<a name="ln145">*/</a>
+<a name="ln146">        if ( nNumMappedBonds ) {</a>
+<a name="ln147">            at_rank_canon1 = pCS-&gt;LinearCTStereoDble[nNumMappedBonds-1].at_num1;</a>
+<a name="ln148">            at_rank_canon2 = pCS-&gt;LinearCTStereoDble[nNumMappedBonds-1].at_num2;</a>
+<a name="ln149">        } else {</a>
+<a name="ln150">            at_rank_canon1 = 0;</a>
+<a name="ln151">            at_rank_canon2 = 0;</a>
+<a name="ln152">        }</a>
+<a name="ln153">        goto bypass_next_canon_ranks_check;</a>
+<a name="ln154"> </a>
+<a name="ln155">next_canon_ranks:</a>
+<a name="ln156"> </a>
+<a name="ln157">        /*  Save time: avoid calling Next_SB_At_CanonRanks2() */</a>
+<a name="ln158">        if ( (!pCS-&gt;bStereoIsBetter /* ??? &amp;&amp; !pCS-&gt;bFirstCT ???*/ &amp;&amp;</a>
+<a name="ln159">              at_rank_canon1 &gt;  pCS-&gt;LinearCTStereoDble[nNumMappedBonds].at_num1) ||</a>
+<a name="ln160">              (at_rank_canon1 == pCS-&gt;LinearCTStereoDble[nNumMappedBonds].at_num1 &amp;&amp;</a>
+<a name="ln161">              at_rank_canon2 &gt;= pCS-&gt;LinearCTStereoDble[nNumMappedBonds].at_num2)  ) {</a>
+<a name="ln162"> </a>
+<a name="ln163">            if ( !nTotSuccess ) {</a>
+<a name="ln164">                pCS-&gt;LinearCTStereoDble[nNumMappedBonds] = prevBond;</a>
+<a name="ln165">            }</a>
+<a name="ln166">            CurTreeSetPos( cur_tree, tpos1 );</a>
+<a name="ln167">            return nTotSuccess;</a>
+<a name="ln168">        }</a>
+<a name="ln169"> </a>
+<a name="ln170">bypass_next_canon_ranks_check:</a>
+<a name="ln171"> </a>
+<a name="ln172">        CurTreeSetPos( cur_tree, tpos1 );</a>
+<a name="ln173"> </a>
+<a name="ln174">        /*  find next available canon. numbers for a stereogenic bond pair of atoms */</a>
+<a name="ln175">        /*  process allenes AFTER all double bonds and odd-number-of-double-bonds cumulenes */</a>
+<a name="ln176">        if ( !(ret1 = Next_SB_At_CanonRanks2( &amp;at_rank_canon1, &amp;at_rank_canon2, /*  canonical numbers */</a>
+<a name="ln177">                                              &amp;canon_min1, &amp;canon_min2,</a>
+<a name="ln178">                                              &amp;bFirstCanonRank, pCS-&gt;bAtomUsedForStereo,</a>
+<a name="ln179">                                              pRankStack1, pRankStack2,</a>
+<a name="ln180">                                              nCanonRankFrom, nAtomNumberCanonFrom,</a>
+<a name="ln181">                                              at, num_atoms, bAllene ) ) ) {</a>
+<a name="ln182">            /* failed to find next stereo bond to assign parity */</a>
+<a name="ln183">            if ( !bAllene &amp;&amp; bFirstCanonRank ) {</a>
+<a name="ln184">                /* all stereobond have been processed; try to find allene to continue */</a>
+<a name="ln185">                AT_RANK at_rank_canon1_Allene = 0, canon_min1_Allene = 0;</a>
+<a name="ln186">                AT_RANK at_rank_canon2_Allene = 0, canon_min2_Allene = 0;</a>
+<a name="ln187">                if ( (ret1 = Next_SB_At_CanonRanks2( &amp;at_rank_canon1_Allene, &amp;at_rank_canon2_Allene,</a>
+<a name="ln188">                                              &amp;canon_min1_Allene, &amp;canon_min2_Allene,</a>
+<a name="ln189">                                              &amp;bFirstCanonRank, pCS-&gt;bAtomUsedForStereo,</a>
+<a name="ln190">                                              pRankStack1, pRankStack2,</a>
+<a name="ln191">                                              nCanonRankFrom, nAtomNumberCanonFrom,</a>
+<a name="ln192">                                              at, num_atoms, 1 )) ) {</a>
+<a name="ln193">                    at_rank_canon1 = at_rank_canon1_Allene;</a>
+<a name="ln194">                    at_rank_canon2 = at_rank_canon2_Allene;</a>
+<a name="ln195">                    canon_min1     = canon_min1_Allene;</a>
+<a name="ln196">                    canon_min2     = canon_min2_Allene;</a>
+<a name="ln197">                    bAllene        = 1; /* switch to allenes */</a>
+<a name="ln198">                } </a>
+<a name="ln199">            }</a>
+<a name="ln200">        }</a>
+<a name="ln201">        </a>
+<a name="ln202">        if ( !ret1 || (!pCS-&gt;bStereoIsBetter &amp;&amp;</a>
+<a name="ln203">             (at_rank_canon1 &gt;  pCS-&gt;LinearCTStereoDble[nNumMappedBonds].at_num1 ||</a>
+<a name="ln204">              (at_rank_canon1 == pCS-&gt;LinearCTStereoDble[nNumMappedBonds].at_num1 &amp;&amp;</a>
+<a name="ln205">              at_rank_canon2 &gt;  pCS-&gt;LinearCTStereoDble[nNumMappedBonds].at_num2) )) ) {</a>
+<a name="ln206">            /* new ranks provide greater pCS-&gt;LinearCTStereoDble[nNumMappedBonds] and therefore rejected */</a>
+<a name="ln207">            if ( !nTotSuccess ) {</a>
+<a name="ln208">                pCS-&gt;LinearCTStereoDble[nNumMappedBonds] = prevBond; /* restore stereo bond CT for the current bond */</a>
+<a name="ln209">            }</a>
+<a name="ln210">            return nTotSuccess;</a>
+<a name="ln211">        }</a>
+<a name="ln212">        /* current stereo bond initialization */</a>
+<a name="ln213">        nNumChoices = 0;</a>
+<a name="ln214">        nNumUnkn  = 0;</a>
+<a name="ln215">        nNumUndf  = 0;</a>
+<a name="ln216">        nNumBest  = 0;</a>
+<a name="ln217">        nNumWorse = 0;</a>
+<a name="ln218">        nNumCalc  = 0;</a>
+<a name="ln219">        pass=0;</a>
+<a name="ln220">        prev_stereo_bond_parity = 0;</a>
+<a name="ln221"> </a>
+<a name="ln222">        at_rank1=pRankStack1[0][at_from1=nAtomNumberCanonFrom[(int)at_rank_canon1 - 1]]; /* atom 1 rank &quot;from&quot; for mapping */</a>
+<a name="ln223">        at_rank2=pRankStack1[0][at_from2=nAtomNumberCanonFrom[(int)at_rank_canon2 - 1]]; /* atom 2 rank &quot;from&quot; for mapping */</a>
+<a name="ln224">        /* we are going to map bond (at[at_from1], at[at_from2]) and</a>
+<a name="ln225">           canonical ranks of its atoms (at_rank_canon1, at_rank_canon2)</a>
+<a name="ln226">           onto a stereogenic bond (at[at_to1], at[at_to2])</a>
+<a name="ln227">         */</a>
+<a name="ln228">        iMax = at_rank1-1;</a>
+<a name="ln229">        /*  test correctness: sorted pRankStack2[0][] and pRankStack1[0][] should have same ranks for both atoms */</a>
+<a name="ln230">        if ( at_rank1 != pRankStack2[0][pRankStack2[1][at_rank1-1]] ||</a>
+<a name="ln231">             at_rank2 != pRankStack2[0][pRankStack2[1][at_rank2-1]] ) {</a>
+<a name="ln232">            /* program error: &quot;from&quot; and &quot;to&quot; mapping ranks are not equal */</a>
+<a name="ln233">            return CT_STEREOCOUNT_ERR; /*   &lt;BRKPT&gt; */</a>
+<a name="ln234">        }</a>
+<a name="ln235">        /* -- do not check stereo features of &quot;from&quot; atoms:</a>
+<a name="ln236">           -- in case of &quot;bond/charge isomerism&quot; they may be missing.</a>
+<a name="ln237">        if ( !at[at_from1].stereo_bond_neighbor[0] ||</a>
+<a name="ln238">             !at[at_from2].stereo_bond_neighbor[0] )</a>
+<a name="ln239">            return CT_STEREOCOUNT_ERR; // program error</a>
+<a name="ln240">        */</a>
+<a name="ln241"> </a>
+<a name="ln242">        /*  find out if we have a choice in mapping: check all possible pairs (at_to1, at_to2)</a>
+<a name="ln243">            such that at_from1 is possibly constitutionally equivalent to at_to1, at_from2 to at_to2 */</a>
+<a name="ln244">        for ( j1 = 0; j1 &lt;= iMax &amp;&amp; at_rank1 == pRankStack2[0][at_to1=pRankStack2[1][iMax-j1]]; j1 ++ ) {</a>
+<a name="ln245">            if ( !at[at_to1].stereo_bond_neighbor[0] )</a>
+<a name="ln246">                continue; /*  at_to1 does not belong to a stereo bond */</a>
+<a name="ln247">            for( j2 = 0; j2 &lt; MAX_NUM_STEREO_BONDS &amp;&amp;</a>
+<a name="ln248">                         (at_to2  =at[at_to1].stereo_bond_neighbor[j2]); j2 ++ ) {</a>
+<a name="ln249">                at_to2 --;</a>
+<a name="ln250">                if ( pRankStack1[0][at_from2] != pRankStack2[0][at_to2] )</a>
+<a name="ln251">                    continue; /*  at_from2 cannot be mapped on at_to2 */</a>
+<a name="ln252">                stereo_bond_parity = PARITY_VAL(at[at_to1].stereo_bond_parity[j2]);</a>
+<a name="ln253">                i = 0;</a>
+<a name="ln254">                switch(stereo_bond_parity) {</a>
+<a name="ln255"> </a>
+<a name="ln256">                case AB_PARITY_UNDF: nNumUndf  ++; </a>
+<a name="ln257">                                     break; /*  4 */</a>
+<a name="ln258">                case AB_PARITY_UNKN: nNumUnkn  ++; </a>
+<a name="ln259">                                     break; /*  3 (occurs if forced different to UNDF)*/</a>
+<a name="ln260"> </a>
+<a name="ln261">                case BEST_PARITY:    nNumBest  ++; break; /*  1 */</a>
+<a name="ln262">                case WORSE_PARITY:   nNumWorse ++; break; /*  2 */</a>
+<a name="ln263">                case AB_PARITY_CALC: nNumCalc  ++; break; /*  6 */</a>
+<a name="ln264">                case AB_PARITY_NONE: i ++;         break; /*  0 */</a>
+<a name="ln265">                }</a>
+<a name="ln266">                nNumChoices += !i;</a>
+<a name="ln267">            }</a>
+<a name="ln268">        }</a>
+<a name="ln269">        if ( nNumChoices != nNumCalc + nNumUndf + nNumUnkn + nNumBest + nNumWorse ) {</a>
+<a name="ln270">            return CT_STEREOCOUNT_ERR; /*  program error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln271">        }</a>
+<a name="ln272">        if ( !nNumChoices ) {</a>
+<a name="ln273">            goto next_canon_ranks;</a>
+<a name="ln274">        }</a>
+<a name="ln275">        /*  Determine the first parity to search */</a>
+<a name="ln276">        sb_parity_calc = ( nNumCalc &gt; 0 )? BEST_PARITY : 0;</a>
+<a name="ln277"> </a>
+<a name="ln278">        /*  ==============================================================</a>
+<a name="ln279">            Search sequence:           sb_parity_calc    stereo_bond_parity</a>
+<a name="ln280">            ==============================================================</a>
+<a name="ln281">            BEST_PARITY   (calc)       BEST_PARITY     BEST_PARITY</a>
+<a name="ln282">            BEST_PARITY   (known)      BEST_PARITY     WORSE_PARITY  or 0</a>
+<a name="ln283">            WORSE_PARITY  (calc)       WORSE_PARITY    WORSE_PARITY</a>
+<a name="ln284">            WORSE_PARITY  (known)      WORSE_PARITY    0</a>
+<a name="ln285">            AB_PARITY_UNKN(known)      AB_PARITY_UNKN  0</a>
+<a name="ln286">            AB_PARITY_UNDF(known)      AB_PARITY_UNDF  0</a>
+<a name="ln287"> </a>
+<a name="ln288">            if (sb_parity_calc==stereo_bond_parity) then &quot;calc&quot; else &quot;known&quot;</a>
+<a name="ln289">         */</a>
+<a name="ln290"> </a>
+<a name="ln291">repeat_all:</a>
+<a name="ln292"> </a>
+<a name="ln293">        if ( !nNumMappedBonds )</a>
+<a name="ln294">            pCS-&gt;bStereoIsBetter = 0;  /*  the first stereo feature in the canonical CT; moved here 7-13-2002 */</a>
+<a name="ln295"> </a>
+<a name="ln296">        if ( !pass ++ ) {</a>
+<a name="ln297">            /*  select the smallest (best) parity to search */</a>
+<a name="ln298">            if ( sb_parity_calc ) {</a>
+<a name="ln299">                stereo_bond_parity = BEST_PARITY;</a>
+<a name="ln300">            } else {</a>
+<a name="ln301">                stereo_bond_parity = nNumBest?   BEST_PARITY :</a>
+<a name="ln302">                                     nNumWorse?  WORSE_PARITY :</a>
+<a name="ln303">                                     nNumUnkn?   AB_PARITY_UNKN :</a>
+<a name="ln304">                                     nNumUndf?   AB_PARITY_UNDF : AB_PARITY_NONE;</a>
+<a name="ln305">            }</a>
+<a name="ln306">        } else {</a>
+<a name="ln307">            /* second pass: since the first pass failed, search for a worse result */</a>
+<a name="ln308">            prev_stereo_bond_parity = stereo_bond_parity;</a>
+<a name="ln309">            i = NextStereoParity2Test( &amp;stereo_bond_parity, &amp;sb_parity_calc,</a>
+<a name="ln310">                                     nNumBest, nNumWorse, nNumUnkn, nNumUndf, nNumCalc, vABParityUnknown);</a>
+<a name="ln311">            switch ( i ) {</a>
+<a name="ln312">            case 0:</a>
+<a name="ln313">                break; /* obtained next parity to test */</a>
+<a name="ln314">            case 1:</a>
+<a name="ln315">                goto next_canon_ranks;</a>
+<a name="ln316">            default:</a>
+<a name="ln317">                return i; /* program error */</a>
+<a name="ln318">            }</a>
+<a name="ln319">        }</a>
+<a name="ln320">        if ( stereo_bond_parity == AB_PARITY_NONE ) {</a>
+<a name="ln321">            /*  error? */</a>
+<a name="ln322">            return CT_STEREOCOUNT_ERR;                   /*   &lt;BRKPT&gt; */</a>
+<a name="ln323">        }</a>
+<a name="ln324">        /*  check if the new requested parity is good (small) enough */</a>
+<a name="ln325">        if ( !pCS-&gt;bStereoIsBetter ) {</a>
+<a name="ln326">            c = CompareLinCtStereoDoubleToValues( nTotSuccess? pCS-&gt;LinearCTStereoDble+nNumMappedBonds : &amp;prevBond,</a>
+<a name="ln327">                              at_rank_canon1, at_rank_canon2, (U_CHAR)stereo_bond_parity );</a>
+<a name="ln328">            if ( c &lt; 0 ) {</a>
+<a name="ln329">                if ( !nTotSuccess ) {</a>
+<a name="ln330">                    pCS-&gt;LinearCTStereoDble[nNumMappedBonds] = prevBond;</a>
+<a name="ln331">                }</a>
+<a name="ln332">                CurTreeSetPos( cur_tree, tpos1 );</a>
+<a name="ln333">                return nTotSuccess;</a>
+<a name="ln334">            }</a>
+<a name="ln335">        }</a>
+<a name="ln336"> </a>
+<a name="ln337">        bAllParitiesIdentical     =  0;</a>
+<a name="ln338">        bAllParitiesIdentical2    =  0;</a>
+<a name="ln339">        LastMappedTo1             = -1;</a>
+<a name="ln340">        bStereoIsBetterWasSetHere =  0;</a>
+<a name="ln341">        istk = istk2 = istk3      =  0;</a>
+<a name="ln342"> </a>
+<a name="ln343">        if ( !nNumMappedBonds &amp;&amp; prev_stereo_bond_parity != stereo_bond_parity )</a>
+<a name="ln344">            pCS-&gt;bStereoIsBetter = 0;  /*  the first stereo feature in the canonical CT; moved here 5-24-2002 */</a>
+<a name="ln345"> </a>
+<a name="ln346">        if ( prev_stereo_bond_parity != stereo_bond_parity ) {</a>
+<a name="ln347">            CurTreeSetPos( cur_tree, tpos1 );  /*  start over */</a>
+<a name="ln348">        }</a>
+<a name="ln349"> </a>
+<a name="ln350">        /* Mapping: here at_rank1 = nRankTo, at_to1 = nAtomNumberTo */</a>
+<a name="ln351">        for ( j1 = 0; j1 &lt;= iMax &amp;&amp; at_rank1 == pRankStack2[0][at_to1=pRankStack2[1][iMax-j1]]; j1 ++ ) {</a>
+<a name="ln352">            nNumAtTo1Success = 0;</a>
+<a name="ln353">            if ( !at[at_to1].stereo_bond_neighbor[0] )</a>
+<a name="ln354">                continue; /*  at_to1 does not belong to a stereo bond */</a>
+<a name="ln355">            if ( tpos1 &lt; CurTreeGetPos( cur_tree ) &amp;&amp;</a>
+<a name="ln356">                 1 == CurTreeIsLastRank( cur_tree, at_rank_canon1 )  &amp;&amp;</a>
+<a name="ln357">                 1 == CurTreeIsLastAtomEqu( cur_tree, at_to1, nSymmStereo ) ) {</a>
+<a name="ln358">                /* at_to1 is known to be stereogenically equivalent to another atom tried with at_rank_canon1 */</a>
+<a name="ln359">                continue;</a>
+<a name="ln360">            }</a>
+<a name="ln361">            bAllParitiesIdentical2 = 0;</a>
+<a name="ln362">            for( j2 = 0; j2 &lt; MAX_NUM_STEREO_BONDS &amp;&amp; (at_to2  =at[at_to1].stereo_bond_neighbor[j2]); j2 ++ ) {</a>
+<a name="ln363">                EQ_NEIGH  EN1[2], EN2[2];</a>
+<a name="ln364">                int bond_parity, num1, num2;</a>
+<a name="ln365">                AT_RANK at_rank_canon_n1, at_rank_canon_n2;</a>
+<a name="ln366"> </a>
+<a name="ln367">                at_to2 --;</a>
+<a name="ln368">                if ( pRankStack1[0][at_from2] != pRankStack2[0][at_to2] )</a>
+<a name="ln369">                    continue; /*  at_from2 cannot be mapped on at_to2 even without mapping at_from1 to at_to1 */</a>
+<a name="ln370">                </a>
+<a name="ln371">                /*  check whether the bond parity corresponds to the requested bond parity */</a>
+<a name="ln372">                if ( PARITY_KNOWN(at[at_to1].stereo_bond_parity[j2]) ) {</a>
+<a name="ln373">                    if ( stereo_bond_parity == sb_parity_calc ) {</a>
+<a name="ln374">                        continue;  /*  requested parity to be calculated, found known parity */</a>
+<a name="ln375">                    }</a>
+<a name="ln376">                    if ( stereo_bond_parity != PARITY_VAL(at[at_to1].stereo_bond_parity[j2]) ) {</a>
+<a name="ln377">                        continue;  /*  parity differs from the requested parity */</a>
+<a name="ln378">                    }</a>
+<a name="ln379">                } else</a>
+<a name="ln380">                if ( PARITY_CALCULATE( at[at_to1].stereo_bond_parity[j2]) ) {</a>
+<a name="ln381">                    if ( stereo_bond_parity != sb_parity_calc ) {</a>
+<a name="ln382">                        continue;  /*  requested known parity, found parity to be calculated */</a>
+<a name="ln383">                    }</a>
+<a name="ln384">                } else {</a>
+<a name="ln385">                    return CT_STEREOCOUNT_ERR;  /*  unknown parity type */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln386">                }</a>
+<a name="ln387">                /*  initialize stack pointer nStackPtr[istk] for &quot;hand-made&quot; recursion */</a>
+<a name="ln388">                /*  stacks are pRankStack1[], pRankStack2[], nNumMappedRanks[] */</a>
+<a name="ln389">                istk                = 0;</a>
+<a name="ln390">                nStackPtr[0]        = 0;</a>
+<a name="ln391">                nNumMappedRanks[0]  = nNumMappedRanksInput;</a>
+<a name="ln392">                bAddStack           = 0;</a>
+<a name="ln393">                bAllParitiesIdentical  = ((at[at_to1].stereo_bond_parity[j2] &amp; KNOWN_PARITIES_EQL )) &amp;&amp;</a>
+<a name="ln394">                                          PARITY_KNOWN(at[at_to1].stereo_bond_parity[j2]);</a>
+<a name="ln395">                </a>
+<a name="ln396">                if ( !bAllParitiesIdentical &amp;&amp; !nNumCalc &amp;&amp;</a>
+<a name="ln397">                     (!nNumUndf + !nNumUnkn + !nNumBest + !nNumWorse )==3) {</a>
+<a name="ln398">                    /* only one kind of bond parity is present; check whether all parities are really same */</a>
+<a name="ln399">                    bAllParitiesIdentical = All_SB_Same(  at_rank_canon1, at_rank_canon2, /*  canonical numbers */</a>
+<a name="ln400">                                                          pRankStack1, pRankStack2,</a>
+<a name="ln401">                                                          nAtomNumberCanonFrom, at );</a>
+<a name="ln402">                    if ( bAllParitiesIdentical &lt; 0 ) {</a>
+<a name="ln403">                        return CT_STEREOCOUNT_ERR;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln404">                    }</a>
+<a name="ln405">                }</a>
+<a name="ln406">                </a>
+<a name="ln407">                /*****************************************************************</a>
+<a name="ln408">                 * do the mapping only if parities are not same</a>
+<a name="ln409">                 */</a>
+<a name="ln410">                if ( !bAllParitiesIdentical ) {</a>
+<a name="ln411">                    /*  map atom 1 or reuse previous mapping */</a>
+<a name="ln412">                    if ( LastMappedTo1 != at_to1 ) {</a>
+<a name="ln413">                        /*  avoid repetitve mapping to the same first at_to1 using LastMappedTo1 variable */</a>
+<a name="ln414">                        /*  map atom 1 */</a>
+<a name="ln415">                        ret1 = map_an_atom2( num_at_tg, num_max, at_from1, at_to1,</a>
+<a name="ln416">                                            nTempRank, nNumMappedRanks[istk], &amp;nNumMappedRanks[istk+1], pCS,</a>
+<a name="ln417">                                            NeighList, pRankStack1+nStackPtr[istk], pRankStack2+nStackPtr[istk],</a>
+<a name="ln418">                                            &amp;bAddStack );</a>
+<a name="ln419">                        if ( RETURNED_ERROR(ret1) ) {</a>
+<a name="ln420">                            return ret1; /*  error */</a>
+<a name="ln421">                        }</a>
+<a name="ln422">                        nStackPtr[istk+1] = nStackPtr[istk]+bAddStack;</a>
+<a name="ln423">                        LastMappedTo1 = at_to1;</a>
+<a name="ln424">                        if ( bAddStack ) {</a>
+<a name="ln425">                            if ( tpos1 == CurTreeGetPos( cur_tree ) ||</a>
+<a name="ln426">                                 0 == CurTreeIsLastRank( cur_tree, at_rank_canon1 ) ) {</a>
+<a name="ln427">                                CurTreeAddRank( cur_tree, at_rank_canon1 );</a>
+<a name="ln428">                            }</a>
+<a name="ln429">                            CurTreeAddAtom( cur_tree, at_to1 );</a>
+<a name="ln430">                        }</a>
+<a name="ln431">                    }</a>
+<a name="ln432">                    istk ++; /*  = 1 */</a>
+<a name="ln433">                    /*  check if we can map atom 2 */</a>
+<a name="ln434">                    if ( pRankStack1[nStackPtr[istk]][at_from2] != pRankStack2[nStackPtr[istk]][at_to2] ) {</a>
+<a name="ln435">                        /*</a>
+<a name="ln436">                         * This may happen when:</a>
+<a name="ln437">                         * A) Charge/bond isomerism, for example cyclopentadiene(-), or</a>
+<a name="ln438">                         * B) possibly stereogenic bond in an alternating ring has heighbors</a>
+<a name="ln439">                         * in 2 symmetrically attached rings.</a>
+<a name="ln440">                         * Such an alternating bond cannot be mapped on possibly stereogenic bond</a>
+<a name="ln441">                         * that has neighbors belonging to 1 of the symmetrically attached rings only.</a>
+<a name="ln442">                         * For example:</a>
+<a name="ln443">                         *   A---B---C---D  If all atoms are Carbons then B, C, F, G are constitutionally</a>
+<a name="ln444">                         *  ||  ||  ||  ||  equivalent. However, bonds B-C, F-G are not equivalent to</a>
+<a name="ln445">                         *  ||  ||  ||  ||  B-F and C-G and cannot be mapped on them.</a>
+<a name="ln446">                         *   E---F---G---H  If at_from1=B, at_from2=F, at_to1=B, then at_from2 cannot be mapped on at_to2=C</a>
+<a name="ln447">                         *                  If at_from1=B, at_from2=F, at_to1=C, then at_from2 cannot be mapped on at_to2=B</a>
+<a name="ln448">                         *                  etc.</a>
+<a name="ln449">                         */</a>
+<a name="ln450">                        if ( sb_parity_calc != stereo_bond_parity) {</a>
+<a name="ln451">                            /* can be passed only once for each bond */</a>
+<a name="ln452">                            nNumChoices --;</a>
+<a name="ln453">                            nNumUndf -= (stereo_bond_parity == AB_PARITY_UNDF);</a>
+<a name="ln454">                            nNumUnkn -= (stereo_bond_parity == AB_PARITY_UNKN);</a>
+<a name="ln455">                            nNumBest -= (stereo_bond_parity == BEST_PARITY);</a>
+<a name="ln456">                            nNumWorse-= (stereo_bond_parity == WORSE_PARITY);</a>
+<a name="ln457">                            /* nNumCalc  = nNumChoices - (nNumUndf + nNumUnkn + nNumBest + nNumWorse); */</a>
+<a name="ln458">                        } else</a>
+<a name="ln459">                        if ( sb_parity_calc == BEST_PARITY ) {</a>
+<a name="ln460">                            /* can be passed 2 times: for BEST_PARITY and WORSE_PARITY in this order */</a>
+<a name="ln461">                            nNumChoices --; /*  do not repeate for WORSE_PARITY */</a>
+<a name="ln462">                            nNumCalc    --;</a>
+<a name="ln463">                        }</a>
+<a name="ln464">                        continue;  /*  Happens for ID=80036,80253,91354,95532,101532,103788 */</a>
+<a name="ln465">                    }</a>
+<a name="ln466">                    if ( nStackPtr[istk] &gt; nStackPtr[istk-1] ) { </a>
+<a name="ln467">                        bAllParitiesIdentical2 = All_SB_Same(  at_rank_canon1, at_rank_canon2,</a>
+<a name="ln468">                                                  pRankStack1+nStackPtr[istk], pRankStack2+nStackPtr[istk],</a>
+<a name="ln469">                                                  nAtomNumberCanonFrom, at );</a>
+<a name="ln470">                        if ( bAllParitiesIdentical2 &lt; 0 ) {</a>
+<a name="ln471">                            return CT_STEREOBOND_ERROR;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln472">                        }</a>
+<a name="ln473">                    } else {</a>
+<a name="ln474">                        bAllParitiesIdentical2 = 0;</a>
+<a name="ln475">                    }</a>
+<a name="ln476">                    if ( bAllParitiesIdentical2 ) {</a>
+<a name="ln477">                        /*  do no mapping when all equivalent bonds have same parity */</a>
+<a name="ln478">                        /*  stereo_bond_parity = PARITY_VAL(at[at_to1].stereo_bond_parity[j2]); */</a>
+<a name="ln479">                        ClearPreviousMappings( pRankStack1+nStackPtr[istk]+2 );</a>
+<a name="ln480">                    } else {</a>
+<a name="ln481">                        if ( tpos1 &lt; CurTreeGetPos( cur_tree ) &amp;&amp;</a>
+<a name="ln482">                             1 == CurTreeIsLastRank( cur_tree, at_rank_canon2 ) &amp;&amp;</a>
+<a name="ln483">                             1 == CurTreeIsLastAtomEqu( cur_tree, at_to2, nSymmStereo ) ) {</a>
+<a name="ln484">                                continue;</a>
+<a name="ln485">                        }</a>
+<a name="ln486">                        /*  map atom 2 */</a>
+<a name="ln487">                        ret2 = map_an_atom2( num_at_tg, num_max, at_from2, at_to2,</a>
+<a name="ln488">                                            nTempRank, nNumMappedRanks[istk], &amp;nNumMappedRanks[istk+1], pCS,</a>
+<a name="ln489">                                            NeighList, pRankStack1+nStackPtr[istk], pRankStack2+nStackPtr[istk],</a>
+<a name="ln490">                                            &amp;bAddStack );</a>
+<a name="ln491">                        if ( RETURNED_ERROR(ret2) ) {</a>
+<a name="ln492">                            return ret2; /*  program error */</a>
+<a name="ln493">                        }</a>
+<a name="ln494">                        nStackPtr[istk+1] = nStackPtr[istk]+bAddStack;</a>
+<a name="ln495">                        istk ++; /*  = 2 */</a>
+<a name="ln496">                        if ( bAddStack ) {</a>
+<a name="ln497">                            if ( tpos1 == CurTreeGetPos( cur_tree ) ||</a>
+<a name="ln498">                                 0 == CurTreeIsLastRank( cur_tree, at_rank_canon2 ) ) {</a>
+<a name="ln499">                                CurTreeAddRank( cur_tree, at_rank_canon2 );</a>
+<a name="ln500">                            }</a>
+<a name="ln501">                            CurTreeAddAtom( cur_tree, at_to2 );</a>
+<a name="ln502">                        }</a>
+<a name="ln503">                    }</a>
+<a name="ln504">                } else {</a>
+<a name="ln505">                    /*  do no mapping when all equivalent bonds have same parity */</a>
+<a name="ln506">                    /*  stereo_bond_parity = PARITY_VAL(at[at_to1].stereo_bond_parity[j2]); */</a>
+<a name="ln507">                    ClearPreviousMappings( pRankStack1+2 );</a>
+<a name="ln508">                }</a>
+<a name="ln509"> </a>
+<a name="ln510">                /*  we have a precalculated (known) bond parity */</a>
+<a name="ln511">                </a>
+<a name="ln512">                </a>
+<a name="ln513">                /************************************************************</a>
+<a name="ln514">                 *</a>
+<a name="ln515">                 *   Known Bond Parity case: do not map stereo bond neighbors</a>
+<a name="ln516">                 */</a>
+<a name="ln517">                if ( stereo_bond_parity != sb_parity_calc ) /*  parity is known */</a>
+<a name="ln518">                {</a>
+<a name="ln519">                    /*  accept bond parity and do not map the neighbors */</a>
+<a name="ln520">                    bond_parity = stereo_bond_parity;</a>
+<a name="ln521">                    /*  same code as under &quot; make a decision to accept current mapping&quot; comment below */</a>
+<a name="ln522">                    /*  with one exception: istk instead of istk3 */</a>
+<a name="ln523">                    c = CompareLinCtStereoDoubleToValues( pCS-&gt;LinearCTStereoDble+nNumMappedBonds,</a>
+<a name="ln524">                                              at_rank_canon1, at_rank_canon2, (U_CHAR)bond_parity );</a>
+<a name="ln525">                    if ( c &lt; 0 &amp;&amp; !pCS-&gt;bStereoIsBetter ) {</a>
+<a name="ln526">                        </a>
+<a name="ln527">                        /*  reject */</a>
+<a name="ln528">                        </a>
+<a name="ln529">                        pCS-&gt;lNumRejectedCT ++;</a>
+<a name="ln530">                        /*  remove failed atom2 from the tree */</a>
+<a name="ln531">                        if ( tpos1 &lt; CurTreeGetPos( cur_tree ) &amp;&amp;</a>
+<a name="ln532">                             1 == CurTreeIsLastRank( cur_tree, at_rank_canon2 ) ) {</a>
+<a name="ln533">                            CurTreeRemoveIfLastAtom( cur_tree, at_to2 );</a>
+<a name="ln534">                            CurTreeRemoveLastRankIfNoAtoms( cur_tree );</a>
+<a name="ln535">                        }</a>
+<a name="ln536">                        continue;  /*  to next at_to2; Reject this at_to2: not a minimal CT. */</a>
+<a name="ln537">                    }  else {</a>
+<a name="ln538"> </a>
+<a name="ln539">                        /*  accept */</a>
+<a name="ln540"> </a>
+<a name="ln541">                        if ( c &gt; 0 &amp;&amp; !pCS-&gt;bStereoIsBetter ) {</a>
+<a name="ln542">                            /*  bond entry is less than the previusly found */</a>
+<a name="ln543">                            pCS-&gt;bStereoIsBetter = bStereoIsBetterWasSetHere = 1;</a>
+<a name="ln544">                            prevBond2 = pCS-&gt;LinearCTStereoDble[nNumMappedBonds];</a>
+<a name="ln545">                        }</a>
+<a name="ln546">                        pCS-&gt;LinearCTStereoDble[nNumMappedBonds].at_num1 = at_rank_canon1;</a>
+<a name="ln547">                        pCS-&gt;LinearCTStereoDble[nNumMappedBonds].at_num2 = at_rank_canon2;</a>
+<a name="ln548">                        pCS-&gt;LinearCTStereoDble[nNumMappedBonds].parity  = bond_parity;</a>
+<a name="ln549">                        /*  recursive call */</a>
+<a name="ln550">                        pCS-&gt;bRankUsedForStereo[at_from1] ++;</a>
+<a name="ln551">                        pCS-&gt;bRankUsedForStereo[at_from2] ++;</a>
+<a name="ln552">                        if ( !bAllParitiesIdentical ) {</a>
+<a name="ln553">                            pCS-&gt;bAtomUsedForStereo[at_to1] --;</a>
+<a name="ln554">                            pCS-&gt;bAtomUsedForStereo[at_to2] --;</a>
+<a name="ln555">                        }</a>
+<a name="ln556">                        ret2 = map_stereo_bonds4 ( at, num_atoms, num_at_tg, num_max, bAllene, nCanonRankFrom, nAtomNumberCanonFrom, nCanonRankTo,</a>
+<a name="ln557">                                                  nSymmRank, pRankStack1+nStackPtr[istk],  pRankStack2+nStackPtr[istk],</a>
+<a name="ln558">                                                  nTempRank, nNumMappedRanks[istk], nSymmStereo, NeighList,</a>
+<a name="ln559">                                                  pCS, cur_tree, nNumMappedBonds+1 ,</a>
+<a name="ln560">                                                  vABParityUnknown);</a>
+<a name="ln561">                        if ( !bAllParitiesIdentical ) {</a>
+<a name="ln562">                            pCS-&gt;bAtomUsedForStereo[at_to1] ++;</a>
+<a name="ln563">                            pCS-&gt;bAtomUsedForStereo[at_to2] ++;</a>
+<a name="ln564">                        }</a>
+<a name="ln565">                        pCS-&gt;bRankUsedForStereo[at_from1] --;</a>
+<a name="ln566">                        pCS-&gt;bRankUsedForStereo[at_from2] --;</a>
+<a name="ln567">                        if ( ret2 == 4 ) {</a>
+<a name="ln568">                            if ( nNumMappedBonds ) {</a>
+<a name="ln569">                                return ret2;</a>
+<a name="ln570">                            } else {</a>
+<a name="ln571">                                pCS-&gt;bFirstCT = 1;</a>
+<a name="ln572">                                goto total_restart;</a>
+<a name="ln573">                            }</a>
+<a name="ln574">                        }</a>
+<a name="ln575"> </a>
+<a name="ln576">                        if ( RETURNED_ERROR(ret2) ) {</a>
+<a name="ln577">                            if ( ret2 == CT_TIMEOUT_ERR )</a>
+<a name="ln578">                                return ret2;</a>
+<a name="ln579">                            else</a>
+<a name="ln580">                                return ret2; /*  program error */</a>
+<a name="ln581">                        }</a>
+<a name="ln582">                        if ( ret2 &gt; 0 ) {</a>
+<a name="ln583">                            nTotSuccess |= 1;</a>
+<a name="ln584">                            nNumAtTo1Success ++;</a>
+<a name="ln585">                            if ( bStereoIsBetterWasSetHere || (ret2 &amp; 2) ) {</a>
+<a name="ln586">                                CurTreeKeepLastAtomsOnly( cur_tree, tpos1, 1 );  /*  start over */</a>
+<a name="ln587">                                nTotSuccess |= 2; /*  Obtained a smaller CT */</a>
+<a name="ln588">                            }</a>
+<a name="ln589">                        } else {</a>
+<a name="ln590">                            if ( bStereoIsBetterWasSetHere ) { /*  rollback */</a>
+<a name="ln591">                                pCS-&gt;bStereoIsBetter = 0;</a>
+<a name="ln592">                                pCS-&gt;LinearCTStereoDble[nNumMappedBonds] = prevBond2;</a>
+<a name="ln593">                            }</a>
+<a name="ln594">                            /*  remove failed atom2 from the tree */</a>
+<a name="ln595">                            if ( tpos1 &lt; CurTreeGetPos( cur_tree ) &amp;&amp;</a>
+<a name="ln596">                                 1 == CurTreeIsLastRank( cur_tree, at_rank_canon2 ) ) {</a>
+<a name="ln597">                                CurTreeRemoveIfLastAtom( cur_tree, at_to2 );</a>
+<a name="ln598">                                CurTreeRemoveLastRankIfNoAtoms( cur_tree );</a>
+<a name="ln599">                            }</a>
+<a name="ln600">                            /*</a>
+<a name="ln601">                            if ( 1 == CurTreeIsLastRank( cur_tree, at_rank_canon1 ) ) {</a>
+<a name="ln602">                                CurTreeRemoveLastAtom( cur_tree, at_to1 );</a>
+<a name="ln603">                                CurTreeRemoveLastRankIfNoAtoms( cur_tree );</a>
+<a name="ln604">                            }</a>
+<a name="ln605">                            */</a>
+<a name="ln606">                        }</a>
+<a name="ln607">                        bStereoIsBetterWasSetHere = 0;</a>
+<a name="ln608">                    }</a>
+<a name="ln609">                    if ( bAllParitiesIdentical || bAllParitiesIdentical2 ) {</a>
+<a name="ln610">                        break; /* j2 cycle, at_to2 (no need to repeat) */</a>
+<a name="ln611">                    }</a>
+<a name="ln612">                    continue; /*  to next at_to2 */</a>
+<a name="ln613">                }</a>
+<a name="ln614">                /***************************************************************************</a>
+<a name="ln615">                 *</a>
+<a name="ln616">                 *   Unknown Bond Parity case: may need to map stereo bond neighbors</a>
+<a name="ln617">                 *</a>
+<a name="ln618">                 ****************************************************************************</a>
+<a name="ln619">                 * Ranks are not known in advance</a>
+<a name="ln620">                 * check if at_from1/at_to1 half-bond has neighbors with equal mapping ranks</a>
+<a name="ln621">                 */</a>
+<a name="ln622"> </a>
+<a name="ln623">                parity1 = parity_of_mapped_half_bond( at_from1, at_to1, at_from2, at_to2, at, &amp;EN1[0],</a>
+<a name="ln624">                           nCanonRankFrom, pRankStack1[nStackPtr[istk]], pRankStack2[nStackPtr[istk]] );</a>
+<a name="ln625">                /* old approach -- before E/Z parities </a>
+<a name="ln626">                parity1 = parity_of_mapped_atom2( at_from1, at_to1, at, &amp;EN1[0],</a>
+<a name="ln627">                               nCanonRankFrom, pRankStack1[nStackPtr[istk]], pRankStack2[nStackPtr[istk]] );</a>
+<a name="ln628">                 */</a>
+<a name="ln629">                /*  the following commented out statement is not needed here. */</a>
+<a name="ln630">                /*  parity2 = parity_of_mapped_atom2( at_from2, at_to2, at, &amp;EN2[0], </a>
+<a name="ln631">                                                     nCanonRankFrom, pRankStack1[nStackPtr[istk]],</a>
+<a name="ln632">                                                     pRankStack2[nStackPtr[istk]] );</a>
+<a name="ln633">                 */</a>
+<a name="ln634">                if ( !parity1 ) {</a>
+<a name="ln635">                    return CT_STEREOCOUNT_ERR; /*  program error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln636">                }</a>
+<a name="ln637">                num1 = parity1 &gt; 0? 1:2; /*  parity &lt; 0 means additional mapping is needed to set parity */</a>
+<a name="ln638">                /*  --- try all possible mappings of the stereo bond ending atoms' neighbors --- */</a>
+<a name="ln639">                at_rank_canon_n1 = 0;</a>
+<a name="ln640">                at_rank_canon_n2 = 0;</a>
+<a name="ln641">                for ( i = 0; i &lt; num1; i ++ ) {</a>
+<a name="ln642">                    int at_from_n1, at_to_n1, at_no_n1_num_success = 0;</a>
+<a name="ln643">                    istk2 = istk;</a>
+<a name="ln644">                    if ( num1 == 2 ) {</a>
+<a name="ln645">                        at_rank_canon_n1 = nCanonRankFrom[EN1[0].from_at];</a>
+<a name="ln646">                        /*  an additional neighbor mapping is necessary; */</a>
+<a name="ln647">                        /*  we need to map only one at_from1 neighbor to make all neighbors have different ranks */</a>
+<a name="ln648"> </a>
+<a name="ln649">                        at_from_n1 = EN1[0].from_at;</a>
+<a name="ln650">                        at_to_n1   = EN1[0].to_at[i];</a>
+<a name="ln651"> </a>
+<a name="ln652">                        if ( tpos1 &lt; CurTreeGetPos( cur_tree ) &amp;&amp;</a>
+<a name="ln653">                             1 == CurTreeIsLastRank( cur_tree, at_rank_canon_n1 ) &amp;&amp;</a>
+<a name="ln654">                             1 == CurTreeIsLastAtomEqu( cur_tree, at_to_n1, nSymmStereo ) )</a>
+<a name="ln655">                            continue;</a>
+<a name="ln656">                        /*</a>
+<a name="ln657">                        if ( nSymmStereo &amp;&amp; !pCS-&gt;bFirstCT ) {</a>
+<a name="ln658">                            if ( i &amp;&amp; nSymmStereo[at_to_n1] == nSymmStereo[(int)EN1[0].to_at[0]] ) {</a>
+<a name="ln659">                                continue; // do not test stereo equivalent atoms except the first one</a>
+<a name="ln660">                            }</a>
+<a name="ln661">                        }</a>
+<a name="ln662">                        */</a>
+<a name="ln663">                        /*  neighbors are tied. Untie them by breaking a tie on ONE of them. */</a>
+<a name="ln664">                        ret1 = map_an_atom2( num_at_tg, num_max, at_from_n1, at_to_n1,</a>
+<a name="ln665">                                            nTempRank, nNumMappedRanks[istk2], &amp;nNumMappedRanks[istk2+1], pCS,</a>
+<a name="ln666">                                            NeighList, pRankStack1+nStackPtr[istk2], pRankStack2+nStackPtr[istk2],</a>
+<a name="ln667">                                            &amp;bAddStack );</a>
+<a name="ln668">                        if ( RETURNED_ERROR(ret1) ) {</a>
+<a name="ln669">                            return ret1; /*  program error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln670">                        }</a>
+<a name="ln671">                        nStackPtr[istk2+1] = nStackPtr[istk2] + bAddStack;</a>
+<a name="ln672">                        istk2 ++;  /*  &lt;= 3 */</a>
+<a name="ln673">                        /*  debug */</a>
+<a name="ln674">                        if ( istk2 &gt;= SB_DEPTH ) {</a>
+<a name="ln675">                            return CT_OVERFLOW; /*  program error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln676">                        }</a>
+<a name="ln677">                        if ( bAddStack ) {</a>
+<a name="ln678">                            if ( tpos1 == CurTreeGetPos( cur_tree ) ||</a>
+<a name="ln679">                                 0 == CurTreeIsLastRank( cur_tree, at_rank_canon_n1 ) ) {</a>
+<a name="ln680">                                CurTreeAddRank( cur_tree, at_rank_canon_n1 );</a>
+<a name="ln681">                            }</a>
+<a name="ln682">                            CurTreeAddAtom( cur_tree, at_to_n1 );</a>
+<a name="ln683">                        }</a>
+<a name="ln684"> </a>
+<a name="ln685"> </a>
+<a name="ln686">                        /*  now that all at_from1 neighbors have been mapped the parity must be defined */</a>
+<a name="ln687">                        parity1 = parity_of_mapped_half_bond( at_from1, at_to1, at_from2, at_to2, at, &amp;EN1[1],</a>
+<a name="ln688">                           nCanonRankFrom, pRankStack1[nStackPtr[istk2]], pRankStack2[nStackPtr[istk2]] );</a>
+<a name="ln689">                        if ( parity1 &lt;= 0 )</a>
+<a name="ln690">                            return CT_STEREOCOUNT_ERR;  /*  program error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln691">                    } else {</a>
+<a name="ln692">                        nNumMappedRanks[istk2+1] = nNumMappedRanks[istk2];</a>
+<a name="ln693">                        nStackPtr[istk2+1] = nStackPtr[istk2];</a>
+<a name="ln694">                        istk2 ++;  /*  &lt;= 3 */</a>
+<a name="ln695">                    }</a>
+<a name="ln696"> </a>
+<a name="ln697">                    /*  check if at_from2/at_to2 half-bond has neighbors with equal mapping ranks */</a>
+<a name="ln698">                    parity2 = parity_of_mapped_half_bond( at_from2, at_to2, at_from1, at_to1, at, &amp;EN2[0],</a>
+<a name="ln699">                           nCanonRankFrom, pRankStack1[nStackPtr[istk2]], pRankStack2[nStackPtr[istk2]] );</a>
+<a name="ln700">                    if ( !parity2 ) {</a>
+<a name="ln701">                        return CT_STEREOCOUNT_ERR; /*  program error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln702">                    }</a>
+<a name="ln703">                    num2 = parity2 &gt; 0? 1:2;</a>
+<a name="ln704">                    at_rank_canon_n2 = 0;</a>
+<a name="ln705">                    for ( j = 0; j &lt; num2; j ++ ) {</a>
+<a name="ln706">                        int at_from_n2, at_to_n2;</a>
+<a name="ln707">                        istk3 = istk2;</a>
+<a name="ln708">                        if ( num2 == 2 ) {</a>
+<a name="ln709">                            at_rank_canon_n2 = nCanonRankFrom[EN2[0].from_at];</a>
+<a name="ln710">                            /*  we need to map only one at_from2 neighbor to make its neighbors have different ranks */</a>
+<a name="ln711">                            at_from_n2 = EN2[0].from_at;</a>
+<a name="ln712">                            at_to_n2   = EN2[0].to_at[j];</a>
+<a name="ln713"> </a>
+<a name="ln714">                            if ( tpos1 &lt; CurTreeGetPos( cur_tree ) &amp;&amp;</a>
+<a name="ln715">                                 1 == CurTreeIsLastRank( cur_tree, at_rank_canon_n2 ) &amp;&amp;</a>
+<a name="ln716">                                 1 == CurTreeIsLastAtomEqu( cur_tree, at_to_n2, nSymmStereo ) )</a>
+<a name="ln717">                                continue;</a>
+<a name="ln718">                            </a>
+<a name="ln719">                            /*</a>
+<a name="ln720">                            if ( nSymmStereo &amp;&amp; !pCS-&gt;bFirstCT ) {</a>
+<a name="ln721">                                if ( j &amp;&amp; nSymmStereo[at_to_n2] == nSymmStereo[(int)EN2[0].to_at[0]] ) {</a>
+<a name="ln722">                                    continue; // do not test stereo equivalent atoms except the first one</a>
+<a name="ln723">                                }</a>
+<a name="ln724">                            }</a>
+<a name="ln725">                            */</a>
+<a name="ln726">                            /*  neighbors are tied. Untie them by breaking a tie on ONE of them. */</a>
+<a name="ln727">                            ret1 = map_an_atom2( num_at_tg, num_max, at_from_n2, at_to_n2,</a>
+<a name="ln728">                                                nTempRank, nNumMappedRanks[istk3], &amp;nNumMappedRanks[istk3+1], pCS,</a>
+<a name="ln729">                                                NeighList, pRankStack1+nStackPtr[istk3],</a>
+<a name="ln730">                                                pRankStack2+nStackPtr[istk3],</a>
+<a name="ln731">                                                &amp;bAddStack );</a>
+<a name="ln732">                            if ( RETURNED_ERROR(ret1) ) {</a>
+<a name="ln733">                                return ret1; /*  program error */</a>
+<a name="ln734">                            }</a>
+<a name="ln735">                            nStackPtr[istk3+1] = nStackPtr[istk3]+bAddStack;</a>
+<a name="ln736">                            istk3 ++;  /*  &lt;= 4 */</a>
+<a name="ln737"> </a>
+<a name="ln738">                            if ( bAddStack ) {</a>
+<a name="ln739">                                if ( tpos1 == CurTreeGetPos( cur_tree ) ||</a>
+<a name="ln740">                                     0 == CurTreeIsLastRank( cur_tree, at_rank_canon_n2 ) ) {</a>
+<a name="ln741">                                    CurTreeAddRank( cur_tree, at_rank_canon_n2 );</a>
+<a name="ln742">                                }</a>
+<a name="ln743">                                CurTreeAddAtom( cur_tree, at_to_n2 );</a>
+<a name="ln744">                            }</a>
+<a name="ln745"> </a>
+<a name="ln746">                            parity2 = parity_of_mapped_half_bond( at_from2, at_to2, at_from1, at_to1, at, &amp;EN2[1],</a>
+<a name="ln747">                                     nCanonRankFrom, pRankStack1[nStackPtr[istk3]], pRankStack2[nStackPtr[istk3]] );</a>
+<a name="ln748">                            if ( parity2 &lt;= 0 ) {</a>
+<a name="ln749">                                return CT_STEREOCOUNT_ERR;  /*  program error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln750">                            }</a>
+<a name="ln751">                        } else {</a>
+<a name="ln752">                            /*  no additional mapping is needed to set atom's parity */</a>
+<a name="ln753">                            nNumMappedRanks[istk3+1] = nNumMappedRanks[istk3];</a>
+<a name="ln754">                            nStackPtr[istk3+1] = nStackPtr[istk3];</a>
+<a name="ln755">                            istk3 ++;  /*  &lt;= 4 */</a>
+<a name="ln756">                        }</a>
+<a name="ln757">                        </a>
+<a name="ln758">                        /*******************************************************************</a>
+<a name="ln759">                         * at this point the stereo bond is fully mapped to find its parity</a>
+<a name="ln760">                         *******************************************************************/</a>
+<a name="ln761"> </a>
+<a name="ln762">                        if ( parity1 &lt;= 0 || parity2 &lt;= 0 ) {</a>
+<a name="ln763">                            return CT_STEREOCOUNT_ERR; /*  program error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln764">                        }</a>
+<a name="ln765">                        </a>
+<a name="ln766">                        /*  find current bond parity  AB_PARITY_ODD */</a>
+<a name="ln767">                        if ( ATOM_PARITY_WELL_DEF(parity1) &amp;&amp; ATOM_PARITY_WELL_DEF(parity2) ) {</a>
+<a name="ln768">                            bond_parity = 2 - (parity1 + parity2)%2;</a>
+<a name="ln769">                        } else {</a>
+<a name="ln770">                            bond_parity = inchi_max(parity1, parity2);</a>
+<a name="ln771">                        }</a>
+<a name="ln772">                        if ( ATOM_PARITY_WELL_DEF(bond_parity) &amp;&amp; at[at_to1].stereo_bond_z_prod[j2] &lt; 0 )</a>
+<a name="ln773">                            bond_parity = 2 - (bond_parity+1)%2; /*  invert the bond parity */</a>
+<a name="ln774"> </a>
+<a name="ln775"> </a>
+<a name="ln776">                        /********************************************************</a>
+<a name="ln777">                         * make a decision whether to accept the current mapping</a>
+<a name="ln778">                         */</a>
+<a name="ln779">                        c = CompareLinCtStereoDoubleToValues( pCS-&gt;LinearCTStereoDble+nNumMappedBonds,</a>
+<a name="ln780">                                                  at_rank_canon1, at_rank_canon2, (U_CHAR)bond_parity );</a>
+<a name="ln781">                        if ( sb_parity_calc != bond_parity ||</a>
+<a name="ln782">                             (c &lt; 0 &amp;&amp; !pCS-&gt;bStereoIsBetter) ) {</a>
+<a name="ln783">                            /*  reject */</a>
+<a name="ln784">                            pCS-&gt;lNumRejectedCT ++;</a>
+<a name="ln785">                            /*  remove failed atom2 from the tree */</a>
+<a name="ln786">                            if ( tpos1 &lt; CurTreeGetPos( cur_tree ) &amp;&amp;</a>
+<a name="ln787">                                 1 == CurTreeIsLastRank( cur_tree, at_rank_canon_n2 ) ) {</a>
+<a name="ln788">                                CurTreeRemoveIfLastAtom( cur_tree, at_to_n2 );</a>
+<a name="ln789">                                CurTreeRemoveLastRankIfNoAtoms( cur_tree );</a>
+<a name="ln790">                            }</a>
+<a name="ln791">                            continue;  /*  Reject: not a minimal CT. */</a>
+<a name="ln792"> </a>
+<a name="ln793">                        }  else {</a>
+<a name="ln794"> </a>
+<a name="ln795">                            /*  try to accept */</a>
+<a name="ln796"> </a>
+<a name="ln797">                            if ( c &gt; 0 &amp;&amp; !pCS-&gt;bStereoIsBetter ) {</a>
+<a name="ln798">                                /*  bond_parity is less than the previusly found */</a>
+<a name="ln799">                                pCS-&gt;bStereoIsBetter = bStereoIsBetterWasSetHere = 1;</a>
+<a name="ln800">                                prevBond2 = pCS-&gt;LinearCTStereoDble[nNumMappedBonds];</a>
+<a name="ln801">                            }</a>
+<a name="ln802">                            /*  accept */</a>
+<a name="ln803">                            pCS-&gt;LinearCTStereoDble[nNumMappedBonds].at_num1 = at_rank_canon1;</a>
+<a name="ln804">                            pCS-&gt;LinearCTStereoDble[nNumMappedBonds].at_num2 = at_rank_canon2;</a>
+<a name="ln805">                            pCS-&gt;LinearCTStereoDble[nNumMappedBonds].parity  = bond_parity;</a>
+<a name="ln806">                            /*  recursive call */</a>
+<a name="ln807">                            pCS-&gt;bRankUsedForStereo[at_from1] ++;</a>
+<a name="ln808">                            pCS-&gt;bRankUsedForStereo[at_from2] ++;</a>
+<a name="ln809">                            pCS-&gt;bAtomUsedForStereo[at_to1] --;</a>
+<a name="ln810">                            pCS-&gt;bAtomUsedForStereo[at_to2] --;</a>
+<a name="ln811">                            ret2 = map_stereo_bonds4 ( at, num_atoms, num_at_tg, num_max, bAllene, nCanonRankFrom, nAtomNumberCanonFrom, nCanonRankTo,</a>
+<a name="ln812">                                                      nSymmRank, pRankStack1+nStackPtr[istk3],  pRankStack2+nStackPtr[istk3],</a>
+<a name="ln813">                                                      nTempRank, nNumMappedRanks[istk3], nSymmStereo, NeighList,</a>
+<a name="ln814">                                                      pCS, cur_tree, nNumMappedBonds+1 ,</a>
+<a name="ln815">                                                      vABParityUnknown);</a>
+<a name="ln816">                            pCS-&gt;bRankUsedForStereo[at_from1] --;</a>
+<a name="ln817">                            pCS-&gt;bRankUsedForStereo[at_from2] --;</a>
+<a name="ln818">                            pCS-&gt;bAtomUsedForStereo[at_to1] ++;</a>
+<a name="ln819">                            pCS-&gt;bAtomUsedForStereo[at_to2] ++;</a>
+<a name="ln820">                            if ( ret2 == 4 ) {</a>
+<a name="ln821">                                if ( nNumMappedBonds ) {</a>
+<a name="ln822">                                    return ret2;</a>
+<a name="ln823">                                } else {</a>
+<a name="ln824">                                    pCS-&gt;bFirstCT = 1;</a>
+<a name="ln825">                                    goto total_restart;</a>
+<a name="ln826">                                }</a>
+<a name="ln827">                            }</a>
+<a name="ln828">                            if ( RETURNED_ERROR(ret2) ) {</a>
+<a name="ln829">                                if ( ret2 == CT_TIMEOUT_ERR )</a>
+<a name="ln830">                                    return ret2;</a>
+<a name="ln831">                                else</a>
+<a name="ln832">                                    return ret2; /*  program error */</a>
+<a name="ln833">                            }</a>
+<a name="ln834">                            if ( ret2 &gt; 0 ) {</a>
+<a name="ln835">                                nTotSuccess |= 1;</a>
+<a name="ln836">                                nNumAtTo1Success ++;</a>
+<a name="ln837">                                if ( bStereoIsBetterWasSetHere || (ret2 &amp; 2) ) {</a>
+<a name="ln838">                                    CurTreeKeepLastAtomsOnly( cur_tree, tpos1, 1 );  /*  start over */</a>
+<a name="ln839">                                    nTotSuccess |= 2; /*  Obtained a smaller CT */</a>
+<a name="ln840">                                }</a>
+<a name="ln841">                                at_no_n1_num_success ++;</a>
+<a name="ln842">                            } else {</a>
+<a name="ln843">                                if ( bStereoIsBetterWasSetHere ) {  /*  rollback */</a>
+<a name="ln844">                                    pCS-&gt;bStereoIsBetter = 0;</a>
+<a name="ln845">                                    pCS-&gt;LinearCTStereoDble[nNumMappedBonds] = prevBond2;</a>
+<a name="ln846">                                }</a>
+<a name="ln847">                                if ( tpos1 &lt; CurTreeGetPos( cur_tree ) &amp;&amp;</a>
+<a name="ln848">                                     1 == CurTreeIsLastRank( cur_tree, at_rank_canon_n2 ) ) {</a>
+<a name="ln849">                                    CurTreeRemoveIfLastAtom( cur_tree, at_to_n2 );</a>
+<a name="ln850">                                    CurTreeRemoveLastRankIfNoAtoms( cur_tree );</a>
+<a name="ln851">                                }</a>
+<a name="ln852">                            }</a>
+<a name="ln853">                            bStereoIsBetterWasSetHere = 0;</a>
+<a name="ln854">                        }</a>
+<a name="ln855">                    } /*  end choices in mapping neighbors of the 2nd half-bond */</a>
+<a name="ln856">                    if ( tpos1 &lt; CurTreeGetPos( cur_tree ) &amp;&amp;</a>
+<a name="ln857">                         1 == CurTreeIsLastRank( cur_tree, at_rank_canon_n2 ) ) {</a>
+<a name="ln858">                         CurTreeRemoveLastRank( cur_tree );</a>
+<a name="ln859">                    }</a>
+<a name="ln860">                    /* added 2006-07-20 */</a>
+<a name="ln861">                    if ( !at_no_n1_num_success &amp;&amp; tpos1 &lt; CurTreeGetPos( cur_tree ) &amp;&amp;</a>
+<a name="ln862">                        1 == CurTreeIsLastRank( cur_tree, at_rank_canon_n1 ) ) {</a>
+<a name="ln863">                         CurTreeRemoveIfLastAtom( cur_tree, at_to_n1 );</a>
+<a name="ln864">                    }</a>
+<a name="ln865">                         </a>
+<a name="ln866">                } /*  end choices in mapping neighbors of the 1st half-bond */</a>
+<a name="ln867">                if ( tpos1 &lt; CurTreeGetPos( cur_tree ) &amp;&amp;</a>
+<a name="ln868">                      1 == CurTreeIsLastRank( cur_tree, at_rank_canon_n1 ) ) {</a>
+<a name="ln869">                     CurTreeRemoveLastRank( cur_tree );</a>
+<a name="ln870">                }</a>
+<a name="ln871">            } /*  end of choices in mapping at_from2 */</a>
+<a name="ln872">            if ( tpos1 &lt; CurTreeGetPos( cur_tree ) &amp;&amp;</a>
+<a name="ln873">                 1 == CurTreeIsLastRank( cur_tree, at_rank_canon2 ) ) {</a>
+<a name="ln874">                 CurTreeRemoveLastRank( cur_tree );</a>
+<a name="ln875">            }</a>
+<a name="ln876">            if ( !nNumAtTo1Success ) {</a>
+<a name="ln877">                if ( tpos1 &lt; CurTreeGetPos( cur_tree ) &amp;&amp;</a>
+<a name="ln878">                     1 == CurTreeIsLastRank( cur_tree, at_rank_canon1 ) ) {</a>
+<a name="ln879">                    CurTreeRemoveIfLastAtom( cur_tree, at_to1 );</a>
+<a name="ln880">                    CurTreeRemoveLastRankIfNoAtoms( cur_tree );</a>
+<a name="ln881">                }</a>
+<a name="ln882">            }</a>
+<a name="ln883">            if ( bAllParitiesIdentical /*&amp;&amp; !nSymmStereo*/ ) {</a>
+<a name="ln884">                break;</a>
+<a name="ln885">            }</a>
+<a name="ln886">        } /*  end of choices in mapping at_from1 */</a>
+<a name="ln887">        </a>
+<a name="ln888">        if ( tpos1 &lt; CurTreeGetPos( cur_tree ) &amp;&amp;</a>
+<a name="ln889">             1 == CurTreeIsLastRank( cur_tree, at_rank_canon1 ) ) {</a>
+<a name="ln890">            CurTreeRemoveLastRank( cur_tree );</a>
+<a name="ln891">        } else</a>
+<a name="ln892">        /*  CurTree consistecy check (debug only) */</a>
+<a name="ln893">        if ( tpos1 != CurTreeGetPos( cur_tree ) ) {</a>
+<a name="ln894">            return CT_STEREOCOUNT_ERR;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln895">        }</a>
+<a name="ln896"> </a>
+<a name="ln897">        if ( !nTotSuccess || stereo_bond_parity == sb_parity_calc ) {</a>
+<a name="ln898">            goto repeat_all; /*  repeat with next parity if no success or with the same parity, now known */</a>
+<a name="ln899">        }</a>
+<a name="ln900"> </a>
+<a name="ln901">        /*  Previously the control flow never came here... */</a>
+<a name="ln902">        if ( !nTotSuccess ) {</a>
+<a name="ln903">            pCS-&gt;LinearCTStereoDble[nNumMappedBonds] = prevBond;</a>
+<a name="ln904">            CurTreeSetPos( cur_tree, tpos1 );</a>
+<a name="ln905">            /*  Occurs when atoms are not really equvalent ( -O= without positive charge in &quot;aromatic&quot; ring) */</a>
+<a name="ln906">            return 0; /* Happens for ID=92439,100318,100319 when EXCL_ALL_AROM_BOND_PARITY=0 and</a>
+<a name="ln907">                       * nNumChoices=0.</a>
+<a name="ln908">                       * Results from impossible previous mapping of symmetric relatively</a>
+<a name="ln909">                       * to a central ring aromatic circles while central ring is not symmetrical due to</a>
+<a name="ln910">                       * alternate bonds (in the central ring number of pi-electrons, atoms and bonds</a>
+<a name="ln911">                       * are symmetrical).</a>
+<a name="ln912">                       * Does not happen when alternate bonds of the central ring</a>
+<a name="ln913">                       * are treated as aromatic by attaching a (+) charge to the oxygen.</a>
+<a name="ln914">                       */</a>
+<a name="ln915">        }</a>
+<a name="ln916">    } else</a>
+<a name="ln917"> </a>
+<a name="ln918">    {</a>
+<a name="ln919">        int ret;</a>
+<a name="ln920"> </a>
+<a name="ln921">        if ( !nNumMappedBonds ) {</a>
+<a name="ln922">            pCS-&gt;bStereoIsBetter = 0;  /*  the first stereo feature in the canonical CT has not been processed yet */</a>
+<a name="ln923">        }</a>
+<a name="ln924"> </a>
+<a name="ln925">        if ( nNumMappedBonds &lt; pCS-&gt;nLenLinearCTStereoDble ) {</a>
+<a name="ln926">            prevBond = pCS-&gt;LinearCTStereoDble[nNumMappedBonds];</a>
+<a name="ln927">        }</a>
+<a name="ln928"> </a>
+<a name="ln929">        /*  all stereo bonds have been mapped; now start processing stereo atoms... */</a>
+<a name="ln930">        ret = map_stereo_atoms4 ( at, num_atoms, num_at_tg, num_max, nCanonRankFrom, nAtomNumberCanonFrom, nCanonRankTo,</a>
+<a name="ln931">                        nSymmRank, pRankStack1,  pRankStack2, nTempRank, nNumMappedRanksInput,</a>
+<a name="ln932">                        nSymmStereo,  NeighList, pCS, cur_tree,  0 , vABParityUnknown);</a>
+<a name="ln933">        if ( ret == 4 ) {</a>
+<a name="ln934">            if ( nNumMappedBonds ) {</a>
+<a name="ln935">                return ret;</a>
+<a name="ln936">            } else {</a>
+<a name="ln937">                pCS-&gt;bFirstCT = 1;</a>
+<a name="ln938">                goto total_restart;</a>
+<a name="ln939">            }</a>
+<a name="ln940">        }</a>
+<a name="ln941">        if ( RETURNED_ERROR(ret) ) {</a>
+<a name="ln942">            if ( ret == CT_TIMEOUT_ERR )</a>
+<a name="ln943">                return ret;</a>
+<a name="ln944">            else</a>
+<a name="ln945">                return ret; /*  program error */</a>
+<a name="ln946">        }</a>
+<a name="ln947">        if ( ret &gt; 0 ) {</a>
+<a name="ln948">            nTotSuccess |= 1;</a>
+<a name="ln949">            if ( ret &amp; 2 ) {</a>
+<a name="ln950">                CurTreeKeepLastAtomsOnly( cur_tree, tpos1, 1 );  /*  start over */</a>
+<a name="ln951">                nTotSuccess |= 2; /*  Obtained a smaller CT */</a>
+<a name="ln952">            }</a>
+<a name="ln953">        }</a>
+<a name="ln954">    }</a>
+<a name="ln955">    if ( !nTotSuccess &amp;&amp; pCS-&gt;nLenLinearCTStereoDble &amp;&amp;</a>
+<a name="ln956">         nNumMappedBonds &lt; pCS-&gt;nLenLinearCTStereoDble ) {</a>
+<a name="ln957">        pCS-&gt;LinearCTStereoDble[nNumMappedBonds] = prevBond;</a>
+<a name="ln958">    }</a>
+<a name="ln959">    return nTotSuccess;  /*  ok */</a>
+<a name="ln960">}</a>
+<a name="ln961"> </a>
+<a name="ln962"> </a>
+<a name="ln963"> </a>
+<a name="ln964"> </a>
+<a name="ln965"> </a>
+<a name="ln966"> </a>
+<a name="ln967"> </a>
+<a name="ln968">/****************************************************************************************</a>
+<a name="ln969"> */</a>
+<a name="ln970">int map_stereo_atoms4 ( </a>
+<a name="ln971">                sp_ATOM *at, int num_atoms, int num_at_tg, int num_max,</a>
+<a name="ln972">                const AT_RANK *nCanonRankFrom, const AT_RANK *nAtomNumberCanonFrom, AT_RANK *nCanonRankTo, /*  canonical numbering to be mapped */</a>
+<a name="ln973">                const AT_RANK *nSymmRank,      AT_RANK **pRankStack1/*from*/, AT_RANK **pRankStack2/*to*/,</a>
+<a name="ln974">                AT_RANK *nTempRank,      int nNumMappedRanksInput,</a>
+<a name="ln975">                AT_RANK *nSymmStereo,    NEIGH_LIST *NeighList,</a>
+<a name="ln976">                CANON_STAT *pCS,         CUR_TREE *cur_tree, int nNumMappedAtoms ,</a>
+<a name="ln977">                int vABParityUnknown )</a>
+<a name="ln978">{</a>
+<a name="ln979">/*</a>
+<a name="ln980"> *   Do not check whether &quot;from&quot; atoms have any stereo features.</a>
+<a name="ln981"> */</a>
+<a name="ln982">    int            nTotSuccess = 0;</a>
+<a name="ln983">    AT_STEREO_CARB prevAtom;</a>
+<a name="ln984">    int            tpos1;</a>
+<a name="ln985"> </a>
+<a name="ln986">    tpos1 = CurTreeGetPos( cur_tree );</a>
+<a name="ln987"> </a>
+<a name="ln988">    if ( nNumMappedAtoms &lt; pCS-&gt;nLenLinearCTStereoCarb ) {</a>
+<a name="ln989">        /* AT_RANK *nRankFrom=*pRankStack1++,  AT_RANK *nAtomNumberFrom=pRankStack1++; */</a>
+<a name="ln990">        /* AT_RANK *nRankTo  =*pRankStack2++,  AT_RANK *nAtomNumberTo  =pRankStack2++; */</a>
+<a name="ln991">        int j1, at_from1, at_to1, /*at_from2, at_to2,*/ iMax, lvl, bStereoIsBetterWasSetHere;</a>
+<a name="ln992">        int istk, istk2, bAddStack, nNumAtTo1Success, c, bFirstTime=1, bAllParitiesIdentical;</a>
+<a name="ln993">        EQ_NEIGH EN[5], *pEN;</a>
+<a name="ln994">        int nStackPtr[5], nMappedRanks[5], j[5], *nSP, *nMR, bLastLvlFailed;</a>
+<a name="ln995">        </a>
+<a name="ln996">        AT_RANK at_rank_canon1, cr[5], at_to[5];</a>
+<a name="ln997">        AT_RANK canon_rank1_min = 0;</a>
+<a name="ln998">        int at_rank1; /*  rank for mapping */</a>
+<a name="ln999">        int nNumChoices, nNumUnkn, nNumUndf, nNumWorse, nNumBest, nNumCalc;</a>
+<a name="ln1000">        int stereo_center_parity, prev_stereo_center_parity, sb_parity_calc, pass;</a>
+<a name="ln1001">        AT_STEREO_CARB prevAtom2;</a>
+<a name="ln1002"> </a>
+<a name="ln1003">        prevAtom = pCS-&gt;LinearCTStereoCarb[nNumMappedAtoms]; /*  save to restore in case of failure */</a>
+<a name="ln1004">        at_rank_canon1 = nNumMappedAtoms? pCS-&gt;LinearCTStereoCarb[nNumMappedAtoms-1].at_num:0;</a>
+<a name="ln1005"> </a>
+<a name="ln1006">        goto bypass_next_canon_rank_check;</a>
+<a name="ln1007"> </a>
+<a name="ln1008">next_canon_rank:</a>
+<a name="ln1009"> </a>
+<a name="ln1010">        if ( !pCS-&gt;bStereoIsBetter /*??? &amp;&amp; !pCS-&gt;bFirstCT ???*/ &amp;&amp;</a>
+<a name="ln1011">              at_rank_canon1 &gt;= pCS-&gt;LinearCTStereoCarb[nNumMappedAtoms].at_num) {</a>
+<a name="ln1012">            /*  cannot find next available canonical number */</a>
+<a name="ln1013">            if ( !nTotSuccess ) {</a>
+<a name="ln1014">                pCS-&gt;LinearCTStereoCarb[nNumMappedAtoms] = prevAtom; /*  restore because of failure */</a>
+<a name="ln1015">            }</a>
+<a name="ln1016">            CurTreeSetPos( cur_tree, tpos1 );</a>
+<a name="ln1017">            return nTotSuccess;</a>
+<a name="ln1018">        }</a>
+<a name="ln1019"> </a>
+<a name="ln1020">bypass_next_canon_rank_check:</a>
+<a name="ln1021"> </a>
+<a name="ln1022">        CurTreeSetPos( cur_tree, tpos1 );</a>
+<a name="ln1023"> </a>
+<a name="ln1024">        /*  find next available canon. number for a stereogenic atom */</a>
+<a name="ln1025">        if ( !Next_SC_At_CanonRank2( &amp;at_rank_canon1, &amp;canon_rank1_min, &amp;bFirstTime,</a>
+<a name="ln1026">                          pCS-&gt;bAtomUsedForStereo, pRankStack1, pRankStack2,</a>
+<a name="ln1027">                          nAtomNumberCanonFrom, num_atoms ) ||</a>
+<a name="ln1028">              (!pCS-&gt;bStereoIsBetter &amp;&amp;</a>
+<a name="ln1029">              at_rank_canon1 &gt; pCS-&gt;LinearCTStereoCarb[nNumMappedAtoms].at_num)) {</a>
+<a name="ln1030">            /*  cannot find next available canonical number */</a>
+<a name="ln1031">            if ( !nTotSuccess ) {</a>
+<a name="ln1032">                pCS-&gt;LinearCTStereoCarb[nNumMappedAtoms] = prevAtom; /*  restore because of failure */</a>
+<a name="ln1033">            }</a>
+<a name="ln1034">            return nTotSuccess;</a>
+<a name="ln1035">        }</a>
+<a name="ln1036"> </a>
+<a name="ln1037">        nNumChoices = 0;</a>
+<a name="ln1038">        nNumUnkn    = 0;</a>
+<a name="ln1039">        nNumUndf    = 0;</a>
+<a name="ln1040">        nNumBest    = 0;</a>
+<a name="ln1041">        nNumWorse   = 0;</a>
+<a name="ln1042">        nNumCalc    = 0;</a>
+<a name="ln1043">        pass        = 0;</a>
+<a name="ln1044">        prev_stereo_center_parity = 0;</a>
+<a name="ln1045"> </a>
+<a name="ln1046">        /*  get mapping rank for the canon. number */</a>
+<a name="ln1047">        at_rank1 = pRankStack1[0][at_from1=(int)nAtomNumberCanonFrom[at_rank_canon1 - 1]];</a>
+<a name="ln1048">        iMax = at_rank1-1;</a>
+<a name="ln1049">        /*  for debug only */</a>
+<a name="ln1050">        if ( at_rank1 != pRankStack2[0][pRankStack2[1][at_rank1-1]] )</a>
+<a name="ln1051">            return CT_STEREOCOUNT_ERR; /*  program error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln1052"> </a>
+<a name="ln1053">        /*  count special parities of the not mapped yet &quot;to&quot; atoms */</a>
+<a name="ln1054">        for ( j1 = 0; j1 &lt;= iMax &amp;&amp; at_rank1 == pRankStack2[0][at_to1  =pRankStack2[1][iMax-j1]]; j1 ++ ) {</a>
+<a name="ln1055">            if ( !at[at_to1].stereo_bond_neighbor[0] &amp;&amp; pCS-&gt;bAtomUsedForStereo[at_to1] == STEREO_AT_MARK ) {</a>
+<a name="ln1056">                int no_choice = 0;</a>
+<a name="ln1057">                stereo_center_parity = PARITY_VAL(at[at_to1].stereo_atom_parity);</a>
+<a name="ln1058">                switch(stereo_center_parity) {</a>
+<a name="ln1059"> </a>
+<a name="ln1060">                case AB_PARITY_UNDF: nNumUndf  ++; break; /*  4 */</a>
+<a name="ln1061"> </a>
+<a name="ln1062">                case AB_PARITY_UNKN: nNumUnkn  ++; </a>
+<a name="ln1063">                                     break; /*  3 */</a>
+<a name="ln1064"> </a>
+<a name="ln1065">                case BEST_PARITY:    nNumBest  ++; break; /*  1 */</a>
+<a name="ln1066">                case WORSE_PARITY:   nNumWorse ++; break; /*  2 */</a>
+<a name="ln1067">                case AB_PARITY_CALC: nNumCalc  ++; break;</a>
+<a name="ln1068">                case AB_PARITY_NONE: no_choice ++; break; /*  0 */</a>
+<a name="ln1069">                }</a>
+<a name="ln1070">                nNumChoices += !no_choice;</a>
+<a name="ln1071">            }</a>
+<a name="ln1072">        }</a>
+<a name="ln1073">        if ( nNumChoices != nNumCalc + nNumUndf + nNumUnkn + nNumBest + nNumWorse ) {</a>
+<a name="ln1074">            return CT_STEREOCOUNT_ERR; /*  program error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln1075">        }</a>
+<a name="ln1076">        if ( !nNumChoices ) {</a>
+<a name="ln1077">            goto next_canon_rank;</a>
+<a name="ln1078">        }</a>
+<a name="ln1079">        /*  Determine the first parity to search */</a>
+<a name="ln1080">        sb_parity_calc = ( nNumCalc &gt; 0 )? BEST_PARITY : 0;</a>
+<a name="ln1081"> </a>
+<a name="ln1082">        /*  ==============================================================</a>
+<a name="ln1083">            Search sequence:           sb_parity_calc    stereo_center_parity</a>
+<a name="ln1084">            ==============================================================</a>
+<a name="ln1085">            BEST_PARITY   (calc)       BEST_PARITY     BEST_PARITY</a>
+<a name="ln1086">            BEST_PARITY   (known)      BEST_PARITY     WORSE_PARITY  or 0</a>
+<a name="ln1087">            WORSE_PARITY  (calc)       WORSE_PARITY    WORSE_PARITY</a>
+<a name="ln1088">            WORSE_PARITY  (known)      WORSE_PARITY    0</a>
+<a name="ln1089">            AB_PARITY_UNKN(known)      AB_PARITY_UNKN  0</a>
+<a name="ln1090">            AB_PARITY_UNDF(known)      AB_PARITY_UNDF  0</a>
+<a name="ln1091"> </a>
+<a name="ln1092">            if (sb_parity_calc==stereo_center_parity) then &quot;calc&quot; else &quot;known&quot;</a>
+<a name="ln1093">         */</a>
+<a name="ln1094"> </a>
+<a name="ln1095">repeat_all:</a>
+<a name="ln1096"> </a>
+<a name="ln1097">        if ( !pass ++ ) {</a>
+<a name="ln1098">            /*  select the smallest parity to search */</a>
+<a name="ln1099">            if ( sb_parity_calc ) {</a>
+<a name="ln1100">                stereo_center_parity = BEST_PARITY;</a>
+<a name="ln1101">            } else {</a>
+<a name="ln1102">                stereo_center_parity = nNumBest?   BEST_PARITY :</a>
+<a name="ln1103">                                       nNumWorse?  WORSE_PARITY :</a>
+<a name="ln1104">                                       nNumUnkn?   AB_PARITY_UNKN :</a>
+<a name="ln1105">                                       nNumUndf?   AB_PARITY_UNDF : AB_PARITY_NONE;</a>
+<a name="ln1106">            }</a>
+<a name="ln1107">        } else {</a>
+<a name="ln1108">            prev_stereo_center_parity = stereo_center_parity;</a>
+<a name="ln1109">            j1 = NextStereoParity2Test( &amp;stereo_center_parity, &amp;sb_parity_calc,</a>
+<a name="ln1110">                                     nNumBest, nNumWorse, nNumUnkn, nNumUndf, nNumCalc, </a>
+<a name="ln1111">                                     vABParityUnknown );</a>
+<a name="ln1112">            switch ( j1 ) {</a>
+<a name="ln1113">            case 0:</a>
+<a name="ln1114">                break; /* obtained next parity to test */</a>
+<a name="ln1115">            case 1:</a>
+<a name="ln1116">                goto next_canon_rank;</a>
+<a name="ln1117">            default:</a>
+<a name="ln1118">                return j1; /* program error */</a>
+<a name="ln1119">            }</a>
+<a name="ln1120">        }</a>
+<a name="ln1121">        if ( stereo_center_parity == AB_PARITY_NONE ) {</a>
+<a name="ln1122">            /*  error? */</a>
+<a name="ln1123">            return CT_STEREOCOUNT_ERR;                  /*   &lt;BRKPT&gt; */</a>
+<a name="ln1124">        }</a>
+<a name="ln1125">        /*  check if the new requested parity is small enough */</a>
+<a name="ln1126">        if ( !pCS-&gt;bStereoIsBetter ) {</a>
+<a name="ln1127">            c = CompareLinCtStereoAtomToValues( nTotSuccess? pCS-&gt;LinearCTStereoCarb+nNumMappedAtoms : &amp;prevAtom,</a>
+<a name="ln1128">                              at_rank_canon1, (U_CHAR)stereo_center_parity );</a>
+<a name="ln1129">            if ( c &lt; 0 ) {</a>
+<a name="ln1130">                if ( !nTotSuccess ) {</a>
+<a name="ln1131">                    pCS-&gt;LinearCTStereoCarb[nNumMappedAtoms] = prevAtom;</a>
+<a name="ln1132">                }</a>
+<a name="ln1133">                CurTreeSetPos( cur_tree, tpos1 );</a>
+<a name="ln1134">                return nTotSuccess;</a>
+<a name="ln1135">            }</a>
+<a name="ln1136">        }</a>
+<a name="ln1137"> </a>
+<a name="ln1138"> </a>
+<a name="ln1139">        bAllParitiesIdentical     = 0;</a>
+<a name="ln1140">        bStereoIsBetterWasSetHere = 0;</a>
+<a name="ln1141">        istk = istk2              = 0;</a>
+<a name="ln1142">        CurTreeSetPos( cur_tree, tpos1 );  /*  start over */</a>
+<a name="ln1143">        /*</a>
+<a name="ln1144">        if ( prev_stereo_center_parity != stereo_center_parity ) {</a>
+<a name="ln1145">            CurTreeSetPos( cur_tree, tpos1 );</a>
+<a name="ln1146">        }</a>
+<a name="ln1147">        */                                      /*  nRankTo                 nAtomNumberTo */</a>
+<a name="ln1148">        for ( j1 = 0; j1 &lt;= iMax &amp;&amp; at_rank1 == pRankStack2[0][at_to1  =pRankStack2[1][iMax-j1]]; j1 ++ ) {</a>
+<a name="ln1149">            int ret, ret1, ret2, parity1;</a>
+<a name="ln1150">            nNumAtTo1Success = 0;</a>
+<a name="ln1151">            /*</a>
+<a name="ln1152">            if ( !(at[at_to1].stereo_atom_parity &amp;&amp; !at[at_to1].stereo_bond_neighbor[0] &amp;&amp;</a>
+<a name="ln1153">                   pCS-&gt;bAtomUsedForStereo[at_to1] == STEREO_AT_MARK ) )</a>
+<a name="ln1154">            */</a>
+<a name="ln1155">            if ( !at[at_to1].stereo_atom_parity || at[at_to1].stereo_bond_neighbor[0] ||</a>
+<a name="ln1156">                  pCS-&gt;bAtomUsedForStereo[at_to1] != STEREO_AT_MARK ) /* simplify 12-17-2003 */</a>
+<a name="ln1157">                continue;  </a>
+<a name="ln1158">                           /* Do not map on non-stereogenic atom constitutionally</a>
+<a name="ln1159">                            * equivalent to a steregenic atom. Here</a>
+<a name="ln1160">                            * at[at_to1] is not a sterereo center;  |       |</a>
+<a name="ln1161">                            * bonds tautomerism is a usual cause.  -P(+)-CH=P-</a>
+<a name="ln1162">                            * For example, consider a fragment:     |       |</a>
+<a name="ln1163">                            * The two atoms P may be constitutionally</a>
+<a name="ln1164">                            * equivalent, P(+) may be seen as a stereocenter</a>
+<a name="ln1165">                            * while another P has a double bond (Now such a P(V) IS a stereocenter).</a>
+<a name="ln1166">                           */</a>
+<a name="ln1167">            /*  check whether the stereocenter parity corresponds to the requested stereocenter parity */</a>
+<a name="ln1168">            if ( PARITY_KNOWN(at[at_to1].stereo_atom_parity) ) {</a>
+<a name="ln1169">                if ( stereo_center_parity == sb_parity_calc ) {</a>
+<a name="ln1170">                    continue;  /*  requested parity to be calculated, found known parity */</a>
+<a name="ln1171">                }</a>
+<a name="ln1172">                if ( stereo_center_parity != PARITY_VAL(at[at_to1].stereo_atom_parity) ) {</a>
+<a name="ln1173">                    continue;  /*  parity differs from the requested parity */</a>
+<a name="ln1174">                }</a>
+<a name="ln1175">            } else</a>
+<a name="ln1176">            if ( PARITY_CALCULATE( at[at_to1].stereo_atom_parity) ) {</a>
+<a name="ln1177">                if ( stereo_center_parity != sb_parity_calc ) {</a>
+<a name="ln1178">                    continue;  /*  requested known parity, found patity to be calculated */</a>
+<a name="ln1179">                }</a>
+<a name="ln1180">            } else {</a>
+<a name="ln1181">                return CT_STEREOCOUNT_ERR;  /*  unknown parity type */</a>
+<a name="ln1182">            }</a>
+<a name="ln1183">            </a>
+<a name="ln1184">            bAllParitiesIdentical = (( at[at_to1].stereo_atom_parity &amp; KNOWN_PARITIES_EQL ) &amp;&amp;</a>
+<a name="ln1185">                                     PARITY_KNOWN(at[at_to1].stereo_atom_parity));</a>
+<a name="ln1186"> </a>
+<a name="ln1187">            if ( !bAllParitiesIdentical &amp;&amp; !nNumCalc &amp;&amp;</a>
+<a name="ln1188">                 (!nNumUndf + !nNumUnkn + !nNumBest + !nNumWorse)==3   ) {</a>
+<a name="ln1189">                /* only one kind of stereocenter parity is present; check whether all parities are really same */</a>
+<a name="ln1190">                bAllParitiesIdentical = All_SC_Same(  at_rank_canon1, /*  canonical number */</a>
+<a name="ln1191">                                                      pRankStack1, pRankStack2,</a>
+<a name="ln1192">                                                      nAtomNumberCanonFrom, at );</a>
+<a name="ln1193">                if ( bAllParitiesIdentical &lt; 0 ) {</a>
+<a name="ln1194">                    return CT_STEREOCOUNT_ERR;</a>
+<a name="ln1195">                }</a>
+<a name="ln1196">            }</a>
+<a name="ln1197">            if ( tpos1 &lt; CurTreeGetPos( cur_tree ) &amp;&amp;</a>
+<a name="ln1198">                 1 == CurTreeIsLastRank( cur_tree, at_rank_canon1 )  &amp;&amp;</a>
+<a name="ln1199">                 1 == CurTreeIsLastAtomEqu( cur_tree, at_to1, nSymmStereo ) )</a>
+<a name="ln1200">                continue;</a>
+<a name="ln1201"> </a>
+<a name="ln1202">            /*  initialize stack pointer nStackPtr[istk] for &quot;hand-made&quot; recursion */</a>
+<a name="ln1203">            /*  stacks are pRankStack1[], pRankStack2[], nNumMappedRanks[] */</a>
+<a name="ln1204">            istk               = 0;</a>
+<a name="ln1205">            nStackPtr[istk]    = 0;</a>
+<a name="ln1206">            nMappedRanks[istk] = nNumMappedRanksInput;</a>
+<a name="ln1207">            bAddStack          = 0;</a>
+<a name="ln1208">            /*  if all equivalent atoms have same known parity, do not map any of them here */</a>
+<a name="ln1209">            if ( !bAllParitiesIdentical ) {</a>
+<a name="ln1210">                /*  map the central atom */</a>
+<a name="ln1211">                /*  this mapping is always possible */</a>
+<a name="ln1212">                ret1 = map_an_atom2( num_at_tg, num_max, at_from1, at_to1,</a>
+<a name="ln1213">                                    nTempRank, nMappedRanks[istk], &amp;nMappedRanks[istk+1], pCS,</a>
+<a name="ln1214">                                    NeighList, pRankStack1+nStackPtr[istk], pRankStack2+nStackPtr[istk],</a>
+<a name="ln1215">                                    &amp;bAddStack );</a>
+<a name="ln1216">                if ( RETURNED_ERROR(ret1) ) {</a>
+<a name="ln1217">                    return ret1; /*  error */</a>
+<a name="ln1218">                }</a>
+<a name="ln1219">                nStackPtr[istk+1] = nStackPtr[istk] + bAddStack;</a>
+<a name="ln1220">                istk ++;</a>
+<a name="ln1221">            } else {</a>
+<a name="ln1222">                ClearPreviousMappings( pRankStack1+2 ); /*  precaution */</a>
+<a name="ln1223">            }</a>
+<a name="ln1224">            </a>
+<a name="ln1225">            /*********************************************************************************</a>
+<a name="ln1226">             *</a>
+<a name="ln1227">             *   Unknown Stereocenter Parity case: possibly need to map stereo center neighbors</a>
+<a name="ln1228">             */</a>
+<a name="ln1229">            if ( stereo_center_parity == sb_parity_calc )</a>
+<a name="ln1230">            {</a>
+<a name="ln1231">                /*  find out the parity */</a>
+<a name="ln1232">                parity1 = parity_of_mapped_atom2( at_from1, at_to1, at, &amp;EN[istk],</a>
+<a name="ln1233">                                                 nCanonRankFrom, pRankStack1[nStackPtr[istk]],</a>
+<a name="ln1234">                                                 pRankStack2[nStackPtr[istk]] );</a>
+<a name="ln1235">                /*  if parity is well-defined then returned EN[istk].num_to=0 */</a>
+<a name="ln1236">                if ( !parity1 ) {</a>
+<a name="ln1237">                    return CT_STEREOCOUNT_ERR; /*  program error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln1238">                }</a>
+<a name="ln1239">                if ( !EN[istk].num_to &amp;&amp; parity1 != sb_parity_calc ) {</a>
+<a name="ln1240">                    continue; /*  looking for the parity value = sb_parity_calc */</a>
+<a name="ln1241">                }</a>
+<a name="ln1242"> </a>
+<a name="ln1243">            } else {</a>
+<a name="ln1244">                /*  Known parity */</a>
+<a name="ln1245">                parity1 = stereo_center_parity;</a>
+<a name="ln1246">                EN[istk].num_to = 0;</a>
+<a name="ln1247">            }</a>
+<a name="ln1248"> </a>
+<a name="ln1249">            /***********************************************************************</a>
+<a name="ln1250">             * no need to map the neighbors: parity is known or has been calculated</a>
+<a name="ln1251">             */</a>
+<a name="ln1252">            if ( (stereo_center_parity == sb_parity_calc &amp;&amp; !EN[istk].num_to) ||</a>
+<a name="ln1253">                 /*  now well-defined, but unknown in advance atom parity  OR   */</a>
+<a name="ln1254">                 stereo_center_parity != sb_parity_calc )</a>
+<a name="ln1255">                 /*  known in advance parity = stereo_center_parity */</a>
+<a name="ln1256">            {</a>
+<a name="ln1257">                /*  do not need to map the neighbors */</a>
+<a name="ln1258">                c = CompareLinCtStereoAtomToValues( pCS-&gt;LinearCTStereoCarb+nNumMappedAtoms,</a>
+<a name="ln1259">                                            at_rank_canon1, (U_CHAR)parity1 );</a>
+<a name="ln1260">                if ( c &lt; 0 &amp;&amp; !pCS-&gt;bStereoIsBetter ) {</a>
+<a name="ln1261">                    /*  reject */</a>
+<a name="ln1262">                    pCS-&gt;lNumRejectedCT ++;</a>
+<a name="ln1263">                    continue;  /*  Reject: not a minimal CT. Should not happen */</a>
+<a name="ln1264">                }  else  {</a>
+<a name="ln1265">                    /*  accept */</a>
+<a name="ln1266"> </a>
+<a name="ln1267">                    if ( bAddStack ) {</a>
+<a name="ln1268">                        if ( tpos1 == CurTreeGetPos( cur_tree ) ||</a>
+<a name="ln1269">                             0 == CurTreeIsLastRank( cur_tree, at_rank_canon1 ) ) {</a>
+<a name="ln1270">                            CurTreeAddRank( cur_tree, at_rank_canon1 );</a>
+<a name="ln1271">                        }</a>
+<a name="ln1272">                        CurTreeAddAtom( cur_tree, at_to1 );</a>
+<a name="ln1273">                    }</a>
+<a name="ln1274"> </a>
+<a name="ln1275">                    if ( c &gt; 0 &amp;&amp; !pCS-&gt;bStereoIsBetter ) {</a>
+<a name="ln1276">                        /*  stereo center entry is less than the previusly found */</a>
+<a name="ln1277">                        pCS-&gt;bStereoIsBetter = bStereoIsBetterWasSetHere = 1;</a>
+<a name="ln1278">                        prevAtom2 = pCS-&gt;LinearCTStereoCarb[nNumMappedAtoms];</a>
+<a name="ln1279">                    }</a>
+<a name="ln1280">                    pCS-&gt;LinearCTStereoCarb[nNumMappedAtoms].parity = parity1;</a>
+<a name="ln1281">                    pCS-&gt;LinearCTStereoCarb[nNumMappedAtoms].at_num = at_rank_canon1;</a>
+<a name="ln1282">                    pCS-&gt;bRankUsedForStereo[at_from1] = 3;</a>
+<a name="ln1283">#if ( FIX_ChCh_STEREO_CANON_BUG == 1 )</a>
+<a name="ln1284">                    if ( !bAllParitiesIdentical )</a>
+<a name="ln1285">#endif</a>
+<a name="ln1286">                        pCS-&gt;bAtomUsedForStereo[at_to1] -= STEREO_AT_MARK;</a>
+<a name="ln1287"> </a>
+<a name="ln1288">                    ret = map_stereo_atoms4 ( at, num_atoms, num_at_tg, num_max, nCanonRankFrom, nAtomNumberCanonFrom, nCanonRankTo,</a>
+<a name="ln1289">                                       nSymmRank, pRankStack1+nStackPtr[istk],  pRankStack2+nStackPtr[istk],</a>
+<a name="ln1290">                                       nTempRank,  nMappedRanks[istk],  nSymmStereo,  NeighList,</a>
+<a name="ln1291">                                       pCS, cur_tree, nNumMappedAtoms+1 ,</a>
+<a name="ln1292">                                       vABParityUnknown);</a>
+<a name="ln1293">                    pCS-&gt;bRankUsedForStereo[at_from1] = 0;</a>
+<a name="ln1294">#if ( FIX_ChCh_STEREO_CANON_BUG == 1 )</a>
+<a name="ln1295">                    if ( !bAllParitiesIdentical )</a>
+<a name="ln1296">#endif</a>
+<a name="ln1297">                        pCS-&gt;bAtomUsedForStereo[at_to1] += STEREO_AT_MARK;</a>
+<a name="ln1298">                    if ( ret == 4 ) {</a>
+<a name="ln1299">                        return ret;</a>
+<a name="ln1300">                    }</a>
+<a name="ln1301">                    if ( RETURNED_ERROR(ret) ) {</a>
+<a name="ln1302">                        if ( ret == CT_TIMEOUT_ERR )</a>
+<a name="ln1303">                            return ret;</a>
+<a name="ln1304">                        else</a>
+<a name="ln1305">                            return ret; /*  program error */</a>
+<a name="ln1306">                    }</a>
+<a name="ln1307">                    if ( ret &gt; 0 ) {</a>
+<a name="ln1308">                        nTotSuccess |= 1;</a>
+<a name="ln1309">                        nNumAtTo1Success ++;</a>
+<a name="ln1310">                        if ( bStereoIsBetterWasSetHere || (ret &amp; 2) ) {</a>
+<a name="ln1311">                            CurTreeKeepLastAtomsOnly( cur_tree, tpos1, 1 );  /*  start over */</a>
+<a name="ln1312">                            nTotSuccess |= 2; /*  Obtained a smaller CT */</a>
+<a name="ln1313">                        }</a>
+<a name="ln1314">                    } else {</a>
+<a name="ln1315">                        if ( bStereoIsBetterWasSetHere ) {</a>
+<a name="ln1316">                            pCS-&gt;bStereoIsBetter = 0;</a>
+<a name="ln1317">                            pCS-&gt;LinearCTStereoCarb[nNumMappedAtoms] = prevAtom2;</a>
+<a name="ln1318">                        }</a>
+<a name="ln1319">                        /*  remove failed atom1 from the tree */</a>
+<a name="ln1320">                        if ( tpos1 &lt; CurTreeGetPos( cur_tree ) &amp;&amp;</a>
+<a name="ln1321">                             1 == CurTreeIsLastRank( cur_tree, at_rank_canon1 ) ) {</a>
+<a name="ln1322">                            CurTreeRemoveIfLastAtom( cur_tree, at_to1 );</a>
+<a name="ln1323">                            CurTreeRemoveLastRankIfNoAtoms( cur_tree );</a>
+<a name="ln1324">                        }</a>
+<a name="ln1325"> </a>
+<a name="ln1326">                    }</a>
+<a name="ln1327">                    bStereoIsBetterWasSetHere = 0;</a>
+<a name="ln1328">                }</a>
+<a name="ln1329">                /*</a>
+<a name="ln1330">                if ( (at[at_to1].stereo_atom_parity &amp; KNOWN_PARITIES_EQL ) &amp;&amp;</a>
+<a name="ln1331">                     ATOM_PARITY_KNOWN(stereo_center_parity) &amp;&amp; !nSymmStereo ) { // ??? add &amp;&amp; !nSymmStereo ???</a>
+<a name="ln1332">                    break; // do not repeat for the same kind of stereo atom with the parity known in advance</a>
+<a name="ln1333">                }</a>
+<a name="ln1334">                */</a>
+<a name="ln1335">                if ( bAllParitiesIdentical ) {</a>
+<a name="ln1336">                    break;  /*  do not repeat for the same kind of stereo atom with the parity known in advance */</a>
+<a name="ln1337">                }</a>
+<a name="ln1338">                continue;</a>
+<a name="ln1339">                </a>
+<a name="ln1340">            }</a>
+<a name="ln1341">            </a>
+<a name="ln1342">            /***************************************************</a>
+<a name="ln1343">             *</a>
+<a name="ln1344">             * Need to map the neighbors</a>
+<a name="ln1345">             */</a>
+<a name="ln1346">            if ( stereo_center_parity != sb_parity_calc ) {</a>
+<a name="ln1347">                return CT_STEREOCOUNT_ERR;  /*  program error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln1348">            }</a>
+<a name="ln1349">            /* -- has already been calculated --</a>
+<a name="ln1350">            parity1 = parity_of_mapped_atom2( at_from1, at_to1, at, &amp;EN[istk],</a>
+<a name="ln1351">                                             nCanonRankFrom, pRankStack1[nStackPtr[istk]], pRankStack2[nStackPtr[istk]] );</a>
+<a name="ln1352">            */</a>
+<a name="ln1353">            if ( !parity1 ) {</a>
+<a name="ln1354">                return CT_STEREOCOUNT_ERR; /*  1/25/2002 */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln1355">            }</a>
+<a name="ln1356">            </a>
+<a name="ln1357">            if ( bAddStack ) {</a>
+<a name="ln1358">                if ( tpos1 == CurTreeGetPos( cur_tree ) ||</a>
+<a name="ln1359">                     0 == CurTreeIsLastRank( cur_tree, at_rank_canon1 ) ) {</a>
+<a name="ln1360">                    CurTreeAddRank( cur_tree, at_rank_canon1 );</a>
+<a name="ln1361">                }</a>
+<a name="ln1362">                CurTreeAddAtom( cur_tree, at_to1 );</a>
+<a name="ln1363">            }</a>
+<a name="ln1364">            /******************************************************</a>
+<a name="ln1365">             * Need to fix the neighbors to define the atom parity</a>
+<a name="ln1366">             ******************************************************/</a>
+<a name="ln1367">            /*  a recursion replaced with the hand-made stack */</a>
+<a name="ln1368">            lvl = 0;              /*  the &quot;recursion&quot; depth level */</a>
+<a name="ln1369">            nSP = &amp;nStackPtr[istk];</a>
+<a name="ln1370">            nMR = &amp;nMappedRanks[istk];</a>
+<a name="ln1371">            pEN = &amp;EN[istk];</a>
+<a name="ln1372">            bLastLvlFailed = 0;</a>
+<a name="ln1373"> </a>
+<a name="ln1374">            /*  entering &quot;recursion&quot; depth level lvl */</a>
+<a name="ln1375">next_lvl:            </a>
+<a name="ln1376">            if ( pEN[lvl].num_to ) {</a>
+<a name="ln1377">                /* Found tied neighbors. Try all transpositions of the tied neighbors.</a>
+<a name="ln1378">                 * j is a number of the &quot;to&quot; tied neighbor in the pEN[lvl].to_at[*] to</a>
+<a name="ln1379">                 * which the pEN[lvl].from_at &quot;from&quot; neighbor's canonical number is mapped</a>
+<a name="ln1380">                 */</a>
+<a name="ln1381">                j[lvl] = 0;</a>
+<a name="ln1382">next_j:         </a>
+<a name="ln1383">                cr[lvl]    = nCanonRankFrom[pEN[lvl].from_at];</a>
+<a name="ln1384">                at_to[lvl] = pEN[lvl].to_at[j[lvl]];</a>
+<a name="ln1385">                if ( j[lvl] &amp;&amp;  tpos1 &lt; CurTreeGetPos( cur_tree ) &amp;&amp;</a>
+<a name="ln1386">                     1 == CurTreeIsLastRank( cur_tree, cr[lvl] ) &amp;&amp;</a>
+<a name="ln1387">                     1 == CurTreeIsLastAtomEqu( cur_tree, at_to[lvl], nSymmStereo ) ) {</a>
+<a name="ln1388">                    lvl ++;</a>
+<a name="ln1389">                    bLastLvlFailed = 0;</a>
+<a name="ln1390">                    goto backup; /*  do not test stereo equivalent atoms except the first one */</a>
+<a name="ln1391">                }</a>
+<a name="ln1392"> </a>
+<a name="ln1393">                ret2 = map_an_atom2( num_at_tg, num_max,</a>
+<a name="ln1394">                                    pEN[lvl].from_at,        /* from */</a>
+<a name="ln1395">                                    pEN[lvl].to_at[j[lvl]],  /* to */</a>
+<a name="ln1396">                                    nTempRank, nMR[lvl], &amp;nMR[lvl+1], pCS,</a>
+<a name="ln1397">                                    NeighList, pRankStack1+nSP[lvl], pRankStack2+nSP[lvl],</a>
+<a name="ln1398">                                    &amp;bAddStack );</a>
+<a name="ln1399">                if ( RETURNED_ERROR(ret2) ) {</a>
+<a name="ln1400">                    return ret2; /*  program error */</a>
+<a name="ln1401">                }</a>
+<a name="ln1402"> </a>
+<a name="ln1403">                /*  next recursion depth level */</a>
+<a name="ln1404">                if ( bAddStack ) {</a>
+<a name="ln1405">                    if ( tpos1 == CurTreeGetPos( cur_tree ) ||</a>
+<a name="ln1406">                         0 == CurTreeIsLastRank( cur_tree, cr[lvl] ) ) {</a>
+<a name="ln1407">                        CurTreeAddRank( cur_tree, cr[lvl] );</a>
+<a name="ln1408">                    }</a>
+<a name="ln1409">                    CurTreeAddAtom( cur_tree, at_to[lvl] );</a>
+<a name="ln1410">                }</a>
+<a name="ln1411">                nSP[lvl+1] = nSP[lvl] + bAddStack;</a>
+<a name="ln1412">                lvl ++; /*  upon increment lvl = number of additionally mapped neighbors</a>
+<a name="ln1413">                         *  (entering next recursion level) */</a>
+<a name="ln1414">                /*  check if the mapping has defined the parity */</a>
+<a name="ln1415">                parity1 = parity_of_mapped_atom2( at_from1, at_to1, at, &amp;pEN[lvl],</a>
+<a name="ln1416">                                             nCanonRankFrom, pRankStack1[nSP[lvl]], pRankStack2[nSP[lvl]] );</a>
+<a name="ln1417">                if ( !parity1 ) {</a>
+<a name="ln1418">                    return CT_STEREOCOUNT_ERR; /*  1/25/2002 */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln1419">                }</a>
+<a name="ln1420">                if ( parity1 &lt; 0 ) {</a>
+<a name="ln1421">                    goto next_lvl; /*  we need at least one more mapping to define the parity */</a>
+<a name="ln1422">                }</a>
+<a name="ln1423">                </a>
+<a name="ln1424">                /**********************************************************</a>
+<a name="ln1425">                 *</a>
+<a name="ln1426">                 *  Check the parity</a>
+<a name="ln1427">                 *</a>
+<a name="ln1428">                 **********************************************************</a>
+<a name="ln1429">                 *  make a decision whether to accept the current mapping */</a>
+<a name="ln1430"> </a>
+<a name="ln1431">                c = CompareLinCtStereoAtomToValues( pCS-&gt;LinearCTStereoCarb+nNumMappedAtoms,</a>
+<a name="ln1432">                                            at_rank_canon1, (U_CHAR)parity1 );</a>
+<a name="ln1433">                if ( sb_parity_calc != parity1 ||</a>
+<a name="ln1434">                     (c &lt; 0 &amp;&amp; !pCS-&gt;bStereoIsBetter) ) {</a>
+<a name="ln1435">                    pCS-&gt;lNumRejectedCT ++;</a>
+<a name="ln1436">                    bLastLvlFailed = 1;</a>
+<a name="ln1437">                }  else</a>
+<a name="ln1438">                /*  the parity has been defined (all neighbors have untied ranks) */</a>
+<a name="ln1439">                /*  if ( bAcceptAllParities || parity1 == BEST_PARITY ) */</a>
+<a name="ln1440">                {</a>
+<a name="ln1441">                    /*********************************************************************</a>
+<a name="ln1442">                     *</a>
+<a name="ln1443">                     * Process the parity here. We are at the top of the recursion stack.</a>
+<a name="ln1444">                     *</a>
+<a name="ln1445">                     *********************************************************************/</a>
+<a name="ln1446">                    /*  try to accept current neighbors mapping */</a>
+<a name="ln1447">                    if ( c &gt; 0  &amp;&amp; !pCS-&gt;bStereoIsBetter ) {</a>
+<a name="ln1448">                        pCS-&gt;bStereoIsBetter = bStereoIsBetterWasSetHere = 1;</a>
+<a name="ln1449">                        prevAtom2 = pCS-&gt;LinearCTStereoCarb[nNumMappedAtoms];</a>
+<a name="ln1450">                    }</a>
+<a name="ln1451">                    pCS-&gt;LinearCTStereoCarb[nNumMappedAtoms].parity = parity1;</a>
+<a name="ln1452">                    pCS-&gt;LinearCTStereoCarb[nNumMappedAtoms].at_num = at_rank_canon1;</a>
+<a name="ln1453">                    pCS-&gt;bRankUsedForStereo[at_from1] = 3;</a>
+<a name="ln1454">                    pCS-&gt;bAtomUsedForStereo[at_to1] -= STEREO_AT_MARK;</a>
+<a name="ln1455"> </a>
+<a name="ln1456">                    ret = map_stereo_atoms4 ( at, num_atoms, num_at_tg, num_max, nCanonRankFrom, nAtomNumberCanonFrom, nCanonRankTo,</a>
+<a name="ln1457">                                       nSymmRank, pRankStack1+nSP[lvl],  pRankStack2+nSP[lvl],</a>
+<a name="ln1458">                                       nTempRank,  nMR[lvl],  nSymmStereo,  NeighList,</a>
+<a name="ln1459">                                       pCS, cur_tree, nNumMappedAtoms+1 ,</a>
+<a name="ln1460">                                       vABParityUnknown );</a>
+<a name="ln1461">                    pCS-&gt;bRankUsedForStereo[at_from1] = 0;</a>
+<a name="ln1462">                    pCS-&gt;bAtomUsedForStereo[at_to1] += STEREO_AT_MARK;</a>
+<a name="ln1463">                    if ( ret == 4 ) {</a>
+<a name="ln1464">                        return ret;</a>
+<a name="ln1465">                    }</a>
+<a name="ln1466">                    if ( RETURNED_ERROR(ret) ) {</a>
+<a name="ln1467">                        if ( ret == CT_TIMEOUT_ERR )</a>
+<a name="ln1468">                            return ret;</a>
+<a name="ln1469">                        else</a>
+<a name="ln1470">                            return ret; /*  program error */</a>
+<a name="ln1471">                    }</a>
+<a name="ln1472">                    if ( ret &gt; 0 ) {</a>
+<a name="ln1473">                        nTotSuccess |= 1;</a>
+<a name="ln1474">                        nNumAtTo1Success ++;</a>
+<a name="ln1475">                        if ( bStereoIsBetterWasSetHere || (ret &amp; 2) ) {</a>
+<a name="ln1476">                            CurTreeKeepLastAtomsOnly( cur_tree, tpos1, 1 );  /*  start over */</a>
+<a name="ln1477">                            nTotSuccess |= 2; /*  Obtained a smaller CT */</a>
+<a name="ln1478">                        }</a>
+<a name="ln1479">                    } else {</a>
+<a name="ln1480">                        if ( bStereoIsBetterWasSetHere ) {</a>
+<a name="ln1481">                            pCS-&gt;bStereoIsBetter = 0;</a>
+<a name="ln1482">                            pCS-&gt;LinearCTStereoCarb[nNumMappedAtoms] = prevAtom2;</a>
+<a name="ln1483">                        }</a>
+<a name="ln1484">                        bLastLvlFailed = 1;</a>
+<a name="ln1485">                    }</a>
+<a name="ln1486">                    bStereoIsBetterWasSetHere = 0;</a>
+<a name="ln1487"> </a>
+<a name="ln1488">                    /*  avoid redundant repetitions: */</a>
+<a name="ln1489">                    /*  check if neighbors mappings have altered another stereo center parity */</a>
+<a name="ln1490">                    if ( !nSymmStereo &amp;&amp; !might_change_other_atom_parity( at, num_atoms, at_to1,</a>
+<a name="ln1491">                                       pRankStack2[nSP[lvl]] /* ranks after neigbors mapping */,</a>
+<a name="ln1492">                                       pRankStack2[nStackPtr[istk]] /* ranks before the mapping neighbors */) ) {</a>
+<a name="ln1493">                        goto done;</a>
+<a name="ln1494">                    }</a>
+<a name="ln1495">                }</a>
+<a name="ln1496">                /*  Continue the cycle. Go to the previous &quot;recursion&quot; level */</a>
+<a name="ln1497">backup:</a>
+<a name="ln1498">                while (lvl -- &gt; 0 ) {</a>
+<a name="ln1499"> </a>
+<a name="ln1500">                    j[lvl] ++; /*  next neighbor at this level */</a>
+<a name="ln1501">                    if ( j[lvl] &lt; pEN[lvl].num_to ) {</a>
+<a name="ln1502">                        if ( bLastLvlFailed ) {</a>
+<a name="ln1503">                            if ( tpos1 &lt; CurTreeGetPos( cur_tree ) &amp;&amp;</a>
+<a name="ln1504">                                 1 == CurTreeIsLastRank( cur_tree, cr[lvl] ) ) {</a>
+<a name="ln1505">                                CurTreeRemoveIfLastAtom( cur_tree, at_to[lvl] );</a>
+<a name="ln1506">                                CurTreeRemoveLastRankIfNoAtoms( cur_tree );</a>
+<a name="ln1507">                            }</a>
+<a name="ln1508">                            bLastLvlFailed = 0;</a>
+<a name="ln1509">                        }</a>
+<a name="ln1510">                        /*  Done with this level. Go back one level */</a>
+<a name="ln1511">                        goto next_j;</a>
+<a name="ln1512">                    }</a>
+<a name="ln1513">                    /*  remove failed atom from the tree */</a>
+<a name="ln1514">                    if ( tpos1 &lt; CurTreeGetPos( cur_tree ) &amp;&amp;</a>
+<a name="ln1515">                         1 == CurTreeIsLastRank( cur_tree, cr[lvl] ) ) {</a>
+<a name="ln1516">                        CurTreeRemoveLastRank( cur_tree );</a>
+<a name="ln1517">                    }</a>
+<a name="ln1518">                }</a>
+<a name="ln1519">                goto done;</a>
+<a name="ln1520">            } else {</a>
+<a name="ln1521">                cr[lvl] = 0;</a>
+<a name="ln1522">            }</a>
+<a name="ln1523"> </a>
+<a name="ln1524">done:;      /*  at this point lvl=0. */</a>
+<a name="ln1525">            if ( !nNumAtTo1Success ) {</a>
+<a name="ln1526">                if ( tpos1 &lt; CurTreeGetPos( cur_tree ) &amp;&amp;</a>
+<a name="ln1527">                     1 == CurTreeIsLastRank( cur_tree, at_rank_canon1 ) ) {</a>
+<a name="ln1528">                    CurTreeRemoveIfLastAtom( cur_tree, at_to1 );</a>
+<a name="ln1529">                    CurTreeRemoveLastRankIfNoAtoms( cur_tree );</a>
+<a name="ln1530">                }</a>
+<a name="ln1531">            }</a>
+<a name="ln1532">        } /*  end of stereo atom mapping cycle */</a>
+<a name="ln1533"> </a>
+<a name="ln1534">        if ( tpos1 &lt; CurTreeGetPos( cur_tree ) &amp;&amp;</a>
+<a name="ln1535">             1 == CurTreeIsLastRank( cur_tree, at_rank_canon1 ) ) {</a>
+<a name="ln1536">            CurTreeRemoveLastRank( cur_tree );</a>
+<a name="ln1537">        } else</a>
+<a name="ln1538">        /*  CurTree consistency check (debug only) */</a>
+<a name="ln1539">        if ( tpos1 != CurTreeGetPos( cur_tree ) ) {</a>
+<a name="ln1540">            return CT_STEREOCOUNT_ERR;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln1541">        }</a>
+<a name="ln1542"> </a>
+<a name="ln1543">        if ( !nTotSuccess || stereo_center_parity == sb_parity_calc ) {</a>
+<a name="ln1544">            goto repeat_all; /*  repeat with next parity if no success or with the same parity, now known */</a>
+<a name="ln1545">        }</a>
+<a name="ln1546"> </a>
+<a name="ln1547">    } else {</a>
+<a name="ln1548"> </a>
+<a name="ln1549">        /****************************************************</a>
+<a name="ln1550">         *</a>
+<a name="ln1551">         *  All stereogenic atoms and bonds have been mapped </a>
+<a name="ln1552">         *</a>
+<a name="ln1553">         ****************************************************/</a>
+<a name="ln1554"> </a>
+<a name="ln1555">        if ( (UserAction &amp;&amp; USER_ACTION_QUIT == (*UserAction)())  ||</a>
+<a name="ln1556">             (ConsoleQuit &amp;&amp; (*ConsoleQuit)()) ) {</a>
+<a name="ln1557">            return CT_USER_QUIT_ERR;</a>
+<a name="ln1558">        }</a>
+<a name="ln1559"> </a>
+<a name="ln1560">        if ( pCS-&gt;bStereoIsBetter || pCS-&gt;bFirstCT ) {</a>
+<a name="ln1561">            /* All stereo atoms have been mapped. Current stereo name is better than all previous.</a>
+<a name="ln1562">             * Create new numbering for the new CT</a>
+<a name="ln1563">             * break all remaining &quot;from&quot; ties</a>
+<a name="ln1564">             */</a>
+<a name="ln1565">            int i1, ret;</a>
+<a name="ln1566">            AT_RANK rc, n1, n2;</a>
+<a name="ln1567">            ret=BreakAllTies( num_at_tg, num_max, pRankStack1, NeighList, nTempRank, pCS);</a>
+<a name="ln1568">            if ( RETURNED_ERROR( ret ) ) {</a>
+<a name="ln1569">                return ret;</a>
+<a name="ln1570">            }</a>
+<a name="ln1571">            /*  break all remaining &quot;from&quot; ties */</a>
+<a name="ln1572">            ret=BreakAllTies( num_at_tg, num_max, pRankStack2, NeighList, nTempRank, pCS);</a>
+<a name="ln1573">            if ( RETURNED_ERROR( ret ) ) {</a>
+<a name="ln1574">                return ret;</a>
+<a name="ln1575">            }</a>
+<a name="ln1576">            /*  move stack pointers to the &quot;nAtomNumber[*]&quot; after all ties are broken */</a>
+<a name="ln1577">            pRankStack1 += 2;</a>
+<a name="ln1578">            pRankStack2 += 2;</a>
+<a name="ln1579">            /* Now final mapping ranks of &quot;to&quot; atom (*pRankStack2)[i] and &quot;from&quot; atom (*pRankStack1)[i]</a>
+<a name="ln1580">             * are equal and all ranks are different, that is, we have a full mapping</a>
+<a name="ln1581">             * Copy so far best canonical numbering from &quot;from&quot; to &quot;to&quot;.</a>
+<a name="ln1582">             */</a>
+<a name="ln1583">            memset( pCS-&gt;nPrevAtomNumber, 0, num_at_tg*sizeof(pCS-&gt;nPrevAtomNumber[0]) );</a>
+<a name="ln1584">            for ( i1 = 0; i1 &lt; num_at_tg; i1 ++ ) {</a>
+<a name="ln1585">                n1 = pRankStack1[1][i1];</a>
+<a name="ln1586">                rc = nCanonRankFrom[n1]; /*  new canon. rank */</a>
+<a name="ln1587">                n2 = pRankStack2[1][i1];                  /*  orig. atom number */</a>
+<a name="ln1588">                nCanonRankTo[n2] = rc;                    /*  assign new canon. number to the atom */</a>
+<a name="ln1589">                /*  use this array to find stereo-equivalent atoms */</a>
+<a name="ln1590">                pCS-&gt;nPrevAtomNumber[rc-1] = n2; /*  ord. number of the atom having canon. rank = rc */</a>
+<a name="ln1591">                nSymmStereo[i1] = i1;            /*  restart search for stereo equivalent atoms */</a>
+<a name="ln1592">                /* check mapping correctness */</a>
+<a name="ln1593">                if ( pRankStack1[0][n1] != pRankStack2[0][n2] ||</a>
+<a name="ln1594">                     nSymmRank[n1]      != nSymmRank[n2] ) {</a>
+<a name="ln1595">                    return CT_STEREO_CANON_ERR; /* stereo mapping error */</a>
+<a name="ln1596">                }</a>
+<a name="ln1597">            }</a>
+<a name="ln1598">            /*  statistics */</a>
+<a name="ln1599">            pCS-&gt;lNumTotCT ++;</a>
+<a name="ln1600">            pCS-&gt;lNumEqualCT = 1;</a>
+<a name="ln1601">            pCS-&gt;lNumDecreasedCT ++;</a>
+<a name="ln1602">            pCS-&gt;bStereoIsBetter = 0; /*  prepare to start over */</a>
+<a name="ln1603">            nTotSuccess = 1;</a>
+<a name="ln1604">            pCS-&gt;bFirstCT = 0;</a>
+<a name="ln1605">#if ( REMOVE_CALC_NONSTEREO == 1 ) /* { */</a>
+<a name="ln1606">            if ( !(pCS-&gt;nMode &amp; CMODE_REDNDNT_STEREO ) ) {</a>
+<a name="ln1607">                i1 = RemoveCalculatedNonStereo( at, num_atoms, num_at_tg,</a>
+<a name="ln1608">                                  pRankStack1, pRankStack2, nTempRank, NeighList,</a>
+<a name="ln1609">                                  nSymmRank, nCanonRankTo, pCS-&gt;nPrevAtomNumber, pCS,</a>
+<a name="ln1610">                                  vABParityUnknown);</a>
+<a name="ln1611">                if ( RETURNED_ERROR( i1 ) ) {</a>
+<a name="ln1612">                    return i1;</a>
+<a name="ln1613">                }</a>
+<a name="ln1614">                if ( i1 &lt; 0 ) {</a>
+<a name="ln1615">#if ( bRELEASE_VERSION == 0 )</a>
+<a name="ln1616">                    pCS-&gt;bExtract |= EXTR_REMOVE_PARITY_WARNING;</a>
+<a name="ln1617">#endif</a>
+<a name="ln1618">                    i1 = -(1+i1);</a>
+<a name="ln1619">                }</a>
+<a name="ln1620">                if ( i1 &gt; 0 ) {</a>
+<a name="ln1621">                    return 4; /*  total restart: due to newly found stereo equivalence */</a>
+<a name="ln1622">                              /*  the length of the stereo CT has changed */</a>
+<a name="ln1623">                }</a>
+<a name="ln1624">            }</a>
+<a name="ln1625">#endif /* } REMOVE_CALC_NONSTEREO */</a>
+<a name="ln1626">            pRankStack1 -= 2;</a>
+<a name="ln1627">            pRankStack2 -= 2;</a>
+<a name="ln1628">        } else {</a>
+<a name="ln1629">            /*  current stereo name is same as previous. We do not need a full mapping. */</a>
+<a name="ln1630">            if ( nSymmStereo ) {</a>
+<a name="ln1631">                int num_changes = 0;</a>
+<a name="ln1632">                AT_RANK r, n1, n2, r_max, cr;</a>
+<a name="ln1633">                r_max = (AT_RANK)num_at_tg;</a>
+<a name="ln1634">                for ( r = 1; r &lt;= r_max; r ++ ) {</a>
+<a name="ln1635">                    if ( bUniqueAtNbrFromMappingRank( pRankStack1, r, &amp;n1 ) ) {</a>
+<a name="ln1636">                        if ( bUniqueAtNbrFromMappingRank( pRankStack2, r, &amp;n2 ) ) {</a>
+<a name="ln1637">                            /*  atoms at[n1], at[n2] have identical untied mapping rank r */</a>
+<a name="ln1638">                            cr = nCanonRankFrom[(int)n1]-1; /*  (new at[n2] canonical rank)-1 */</a>
+<a name="ln1639">                            /*  pCS-&gt;nPrevAtomNumber[(int)cr] = */</a>
+<a name="ln1640">                            /*    previous ordering number of an atom with the canon. rank = cr+1; */</a>
+<a name="ln1641">                            /*    make this atom equivalent to atom at[n2]: */</a>
+<a name="ln1642">                            num_changes += nJoin2Mcrs( nSymmStereo, pCS-&gt;nPrevAtomNumber[(int)cr], n2 );</a>
+<a name="ln1643">                        } else {</a>
+<a name="ln1644">                            return CT_MAPCOUNT_ERR; /*  mapping ranks must be either both tied or untied. */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln1645">                        }</a>
+<a name="ln1646">                    }</a>
+<a name="ln1647">                }</a>
+<a name="ln1648">                if ( num_changes ) { /*  compress trees to stars */</a>
+<a name="ln1649">                    for ( r = r_max-1; r; r -- ) {</a>
+<a name="ln1650">                        nGetMcr( nSymmStereo, r );</a>
+<a name="ln1651">                    }</a>
+<a name="ln1652">                }</a>
+<a name="ln1653">            }</a>
+<a name="ln1654">            /*  statistics */</a>
+<a name="ln1655">            pCS-&gt;lNumEqualCT ++;</a>
+<a name="ln1656">            pCS-&gt;lNumTotCT ++;</a>
+<a name="ln1657">            nTotSuccess = 1;</a>
+<a name="ln1658">        }</a>
+<a name="ln1659">        if ( bInchiTimeIsOver( pCS-&gt;ulTimeOutTime ) ) {</a>
+<a name="ln1660">            return CT_TIMEOUT_ERR;</a>
+<a name="ln1661">        }</a>
+<a name="ln1662">    }</a>
+<a name="ln1663">    if ( !nTotSuccess &amp;&amp; nNumMappedAtoms &lt; pCS-&gt;nLenLinearCTStereoCarb ) {</a>
+<a name="ln1664">        pCS-&gt;LinearCTStereoCarb[nNumMappedAtoms] = prevAtom;</a>
+<a name="ln1665">        CurTreeSetPos( cur_tree, tpos1 );</a>
+<a name="ln1666">    }</a>
+<a name="ln1667">    return nTotSuccess;  /*  return to the previous level of the recursion. */</a>
+<a name="ln1668">}</a>
+
+</code></pre>
+<div class="balloon" rel="580"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v523/" target="_blank">V523</a> The 'then' statement is equivalent to the 'else' statement.</p></div>
+<div class="balloon" rel="674"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'istk2 >= 6' is always false.</p></div>
+<div class="balloon" rel="767"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: 1 <= (parity1).</p></div>
+<div class="balloon" rel="767"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: 1 <= (parity2).</p></div>
+<div class="balloon" rel="772"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: 1 <= (bond_parity).</p></div>
+<div class="balloon" rel="832"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v523/" target="_blank">V523</a> The 'then' statement is equivalent to the 'else' statement.</p></div>
+<div class="balloon" rel="891"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v705/" target="_blank">V705</a> It is possible that 'else' block was forgotten or commented out, thus altering the program's operation logics.</p></div>
+<div class="balloon" rel="902"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression '!nTotSuccess' is always false.</p></div>
+<div class="balloon" rel="925"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression is always false.</p></div>
+<div class="balloon" rel="945"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v523/" target="_blank">V523</a> The 'then' statement is equivalent to the 'else' statement.</p></div>
+<div class="balloon" rel="1252"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v728/" target="_blank">V728</a> An excessive check can be simplified. The '||' operator is surrounded by opposite expressions 'stereo_center_parity != sb_parity_calc' and 'stereo_center_parity == sb_parity_calc'. </p></div>
+<div class="balloon" rel="1305"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v523/" target="_blank">V523</a> The 'then' statement is equivalent to the 'else' statement.</p></div>
+<div class="balloon" rel="1346"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'stereo_center_parity != sb_parity_calc' is always false.</p></div>
+<div class="balloon" rel="1470"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v523/" target="_blank">V523</a> The 'then' statement is equivalent to the 'else' statement.</p></div>
+<div class="balloon" rel="1537"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v705/" target="_blank">V705</a> It is possible that 'else' block was forgotten or commented out, thus altering the program's operation logics.</p></div>
+<div class="balloon" rel="1663"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always false: !nTotSuccess.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

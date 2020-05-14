@@ -1,0 +1,1332 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>obutil.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">obutil.cpp - Various utility methods.</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 1998-2001 by OpenEye Scientific Software, Inc.</a>
+<a name="ln5">Some portions Copyright (C) 2001-2006 by Geoffrey R. Hutchison</a>
+<a name="ln6"> </a>
+<a name="ln7">This file is part of the Open Babel project.</a>
+<a name="ln8">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln11">it under the terms of the GNU General Public License as published by</a>
+<a name="ln12">the Free Software Foundation version 2 of the License.</a>
+<a name="ln13"> </a>
+<a name="ln14">This program is distributed in the hope that it will be useful,</a>
+<a name="ln15">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln16">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln17">GNU General Public License for more details.</a>
+<a name="ln18">***********************************************************************/</a>
+<a name="ln19"> </a>
+<a name="ln20">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/math/matrix3x3.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln24">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln25">#include &lt;openbabel/obutil.h&gt;</a>
+<a name="ln26">#include &lt;openbabel/internalcoord.h&gt;</a>
+<a name="ln27"> </a>
+<a name="ln28">#include &lt;cstring&gt;</a>
+<a name="ln29"> </a>
+<a name="ln30">#ifdef HAVE_CONIO_H</a>
+<a name="ln31">#include &lt;conio.h&gt;</a>
+<a name="ln32">#endif</a>
+<a name="ln33"> </a>
+<a name="ln34">using namespace std;</a>
+<a name="ln35">namespace OpenBabel</a>
+<a name="ln36">{</a>
+<a name="ln37"> </a>
+<a name="ln38">  /*! \class OBStopwatch obutil.h &lt;openbabel/obutil.h&gt;</a>
+<a name="ln39">    \brief Stopwatch class used for timing length of execution</a>
+<a name="ln40"> </a>
+<a name="ln41">    The OBStopwatch class makes timing the execution of blocks of</a>
+<a name="ln42">    code to microsecond accuracy very simple. The class effectively</a>
+<a name="ln43">    has two functions, Start() and Elapsed(). The usage of the</a>
+<a name="ln44">    OBStopwatch class is demonstrated by the following code:</a>
+<a name="ln45">    \code</a>
+<a name="ln46">    OBStopwatch sw;</a>
+<a name="ln47">    sw.Start();</a>
+<a name="ln48">    //insert code here</a>
+<a name="ln49">    cout &lt;&lt; &quot;Elapsed time = &quot; &lt;&lt; sw.Elapsed() &lt;&lt; endl;</a>
+<a name="ln50">    \endcode</a>
+<a name="ln51">  */</a>
+<a name="ln52"> </a>
+<a name="ln53">  //! Deprecated: use the OBMessageHandler class instead</a>
+<a name="ln54">  //! \deprecated Throw an error through the OpenBabel::OBMessageHandler class</a>
+<a name="ln55">  void ThrowError(char *str)</a>
+<a name="ln56">  {</a>
+<a name="ln57">    obErrorLog.ThrowError(&quot;&quot;, str, obInfo);</a>
+<a name="ln58">  }</a>
+<a name="ln59"> </a>
+<a name="ln60">  //! Deprecated: use the OBMessageHandler class instead</a>
+<a name="ln61">  //! \deprecated Throw an error through the OpenBabel::OBMessageHandler class</a>
+<a name="ln62">  void ThrowError(std::string &amp;str)</a>
+<a name="ln63">  {</a>
+<a name="ln64">    obErrorLog.ThrowError(&quot;&quot;, str, obInfo);</a>
+<a name="ln65">  }</a>
+<a name="ln66"> </a>
+<a name="ln67">  // returns True if a &lt; b, False otherwise.</a>
+<a name="ln68">  bool OBCompareInt(const int &amp;a,const int &amp;b)</a>
+<a name="ln69">  {</a>
+<a name="ln70">    return(a&lt;b);</a>
+<a name="ln71">  }</a>
+<a name="ln72"> </a>
+<a name="ln73">  // Comparison function (for sorting unsigned ints) returns a &lt; b</a>
+<a name="ln74">  bool OBCompareUnsigned(const unsigned int &amp;a,const unsigned int &amp;b)</a>
+<a name="ln75">  {</a>
+<a name="ln76">    return(a&lt;b);</a>
+<a name="ln77">  }</a>
+<a name="ln78"> </a>
+<a name="ln79">  //! Comparison for doubles: returns fabs(a - b) &lt; epsilon</a>
+<a name="ln80">  bool IsNear(const double &amp;a, const double &amp;b, const double epsilon)</a>
+<a name="ln81">  {</a>
+<a name="ln82">    return (fabs(a - b) &lt; epsilon);</a>
+<a name="ln83">  }</a>
+<a name="ln84"> </a>
+<a name="ln85">  //! Comparison for doubles: returns fabs(a) &lt; epsilon</a>
+<a name="ln86">  bool IsNearZero(const double &amp;a, const double epsilon)</a>
+<a name="ln87">  {</a>
+<a name="ln88">    return (fabs(a) &lt; epsilon);</a>
+<a name="ln89">  }</a>
+<a name="ln90"> </a>
+<a name="ln91">  //! Comparison for nan (not a number)</a>
+<a name="ln92">  bool IsNan(const double &amp;a)</a>
+<a name="ln93">  {</a>
+<a name="ln94">    return ((a) != (a));</a>
+<a name="ln95">  }</a>
+<a name="ln96"> </a>
+<a name="ln97">  //! Tests whether its argument can be squared without triggering an overflow or</a>
+<a name="ln98">  //! underflow.</a>
+<a name="ln99">  bool CanBeSquared(const double &amp;a)</a>
+<a name="ln100">  {</a>
+<a name="ln101">    if( a == 0 ) return true;</a>
+<a name="ln102">    const double max_squarable_double = 1e150;</a>
+<a name="ln103">    const double min_squarable_double = 1e-150;</a>
+<a name="ln104">    double abs_a = fabs(a);</a>
+<a name="ln105">    return(abs_a &lt; max_squarable_double &amp;&amp; abs_a &gt; min_squarable_double);</a>
+<a name="ln106">  }</a>
+<a name="ln107"> </a>
+<a name="ln108">  //! Utility function: replace the last extension in string &amp;src with new extension char *ext.</a>
+<a name="ln109">  string NewExtension(string &amp;src,char *ext)</a>
+<a name="ln110">  {</a>
+<a name="ln111">    string::size_type pos = (unsigned int)src.find_last_of(&quot;.&quot;);</a>
+<a name="ln112">    string dst;</a>
+<a name="ln113"> </a>
+<a name="ln114">    if (pos != string::npos)</a>
+<a name="ln115">      dst = src.substr(0,pos+1);</a>
+<a name="ln116">    else</a>
+<a name="ln117">      {</a>
+<a name="ln118">        dst = src;</a>
+<a name="ln119">        dst += &quot;.&quot;;</a>
+<a name="ln120">      }</a>
+<a name="ln121"> </a>
+<a name="ln122">    dst += ext;</a>
+<a name="ln123">    return(dst);</a>
+<a name="ln124">  }</a>
+<a name="ln125"> </a>
+<a name="ln126">  //! \return the geometric centroid to an array of coordinates in double* format</a>
+<a name="ln127">  //!  and center the coordinates to the origin. Operates on the first &quot;size&quot;</a>
+<a name="ln128">  //!  coordinates in the array.</a>
+<a name="ln129">  vector3 center_coords(double *c, unsigned int size)</a>
+<a name="ln130">  {</a>
+<a name="ln131">    if (size == 0)</a>
+<a name="ln132">      {</a>
+<a name="ln133">        return(VZero);</a>
+<a name="ln134">      }</a>
+<a name="ln135">		unsigned int i;</a>
+<a name="ln136">    double x=0.0, y=0.0, z=0.0;</a>
+<a name="ln137">    for (i = 0;i &lt; size;++i)</a>
+<a name="ln138">      {</a>
+<a name="ln139">        x += c[i*3];</a>
+<a name="ln140">        y += c[i*3+1];</a>
+<a name="ln141">        z += c[i*3+2];</a>
+<a name="ln142">      }</a>
+<a name="ln143">    x /= (double) size;</a>
+<a name="ln144">    y /= (double) size;</a>
+<a name="ln145">    z /= (double) size;</a>
+<a name="ln146">    for (i = 0;i &lt; size;++i)</a>
+<a name="ln147">      {</a>
+<a name="ln148">        c[i*3]   -= x;</a>
+<a name="ln149">        c[i*3+1] -= y;</a>
+<a name="ln150">        c[i*3+2] -= z;</a>
+<a name="ln151">      }</a>
+<a name="ln152">    vector3 v(x,y,z);</a>
+<a name="ln153">    return(v);</a>
+<a name="ln154">  }</a>
+<a name="ln155"> </a>
+<a name="ln156">  //! Rotates the coordinate set *c by the transformation matrix m[3][3]</a>
+<a name="ln157">  //!  Operates on the first &quot;size&quot; coordinates in the array.</a>
+<a name="ln158">  void rotate_coords(double *c,double m[3][3],unsigned int size)</a>
+<a name="ln159">  {</a>
+<a name="ln160">    double x,y,z;</a>
+<a name="ln161">    for (unsigned int i = 0;i &lt; size;++i)</a>
+<a name="ln162">      {</a>
+<a name="ln163">        x = c[i*3]*m[0][0] + c[i*3+1]*m[0][1] + c[i*3+2]*m[0][2];</a>
+<a name="ln164">        y = c[i*3]*m[1][0] + c[i*3+1]*m[1][1] + c[i*3+2]*m[1][2];</a>
+<a name="ln165">        z = c[i*3]*m[2][0] + c[i*3+1]*m[2][1] + c[i*3+2]*m[2][2];</a>
+<a name="ln166">        c[i*3] = x;</a>
+<a name="ln167">        c[i*3+1] = y;</a>
+<a name="ln168">        c[i*3+2] = z;</a>
+<a name="ln169">      }</a>
+<a name="ln170">  }</a>
+<a name="ln171"> </a>
+<a name="ln172">  //! Calculate the RMS deviation between the first N coordinates of *r and *f</a>
+<a name="ln173">  double calc_rms(double *r,double *f, unsigned int N)</a>
+<a name="ln174">  {</a>
+<a name="ln175">    if (N == 0)</a>
+<a name="ln176">      return 0.0; // no RMS deviation between two empty sets</a>
+<a name="ln177"> </a>
+<a name="ln178">    double d2=0.0;</a>
+<a name="ln179">    for (unsigned int i = 0;i &lt; N;++i)</a>
+<a name="ln180">      {</a>
+<a name="ln181">        d2 += SQUARE(r[i*3] - f[i*3]) +</a>
+<a name="ln182">          SQUARE(r[i*3+1] - f[i*3+1]) +</a>
+<a name="ln183">          SQUARE(r[i*3+2] - f[i*3+2]);</a>
+<a name="ln184">      }</a>
+<a name="ln185"> </a>
+<a name="ln186">    d2 /= (double) N;</a>
+<a name="ln187">    return(sqrt(d2));</a>
+<a name="ln188">  }</a>
+<a name="ln189"> </a>
+<a name="ln190">  //! Rotate the coordinates of 'atoms'</a>
+<a name="ln191">  //! such that tor == ang - atoms in 'tor' should be ordered such</a>
+<a name="ln192">  //! that the 3rd atom is the pivot around which atoms rotate</a>
+<a name="ln193">  void SetRotorToAngle(double *c,vector&lt;int&gt; &amp;tor,double ang,vector&lt;int&gt; &amp;atoms)</a>
+<a name="ln194">  {</a>
+<a name="ln195">    double v1x,v1y,v1z,v2x,v2y,v2z,v3x,v3y,v3z;</a>
+<a name="ln196">    double c1x,c1y,c1z,c2x,c2y,c2z,c3x,c3y,c3z;</a>
+<a name="ln197">    double c1mag,c2mag,radang,costheta,m[9];</a>
+<a name="ln198">    double x,y,z,mag,rotang,sn,cs,t,tx,ty,tz;</a>
+<a name="ln199"> </a>
+<a name="ln200">    //</a>
+<a name="ln201">    //calculate the torsion angle</a>
+<a name="ln202">    //</a>
+<a name="ln203">    v1x = c[tor[0]]   - c[tor[1]];</a>
+<a name="ln204">    v2x = c[tor[1]]   - c[tor[2]];</a>
+<a name="ln205">    v1y = c[tor[0]+1] - c[tor[1]+1];</a>
+<a name="ln206">    v2y = c[tor[1]+1] - c[tor[2]+1];</a>
+<a name="ln207">    v1z = c[tor[0]+2] - c[tor[1]+2];</a>
+<a name="ln208">    v2z = c[tor[1]+2] - c[tor[2]+2];</a>
+<a name="ln209">    v3x = c[tor[2]]   - c[tor[3]];</a>
+<a name="ln210">    v3y = c[tor[2]+1] - c[tor[3]+1];</a>
+<a name="ln211">    v3z = c[tor[2]+2] - c[tor[3]+2];</a>
+<a name="ln212"> </a>
+<a name="ln213">    c1x = v1y*v2z - v1z*v2y;</a>
+<a name="ln214">    c2x = v2y*v3z - v2z*v3y;</a>
+<a name="ln215">    c1y = -v1x*v2z + v1z*v2x;</a>
+<a name="ln216">    c2y = -v2x*v3z + v2z*v3x;</a>
+<a name="ln217">    c1z = v1x*v2y - v1y*v2x;</a>
+<a name="ln218">    c2z = v2x*v3y - v2y*v3x;</a>
+<a name="ln219">    c3x = c1y*c2z - c1z*c2y;</a>
+<a name="ln220">    c3y = -c1x*c2z + c1z*c2x;</a>
+<a name="ln221">    c3z = c1x*c2y - c1y*c2x;</a>
+<a name="ln222"> </a>
+<a name="ln223">    c1mag = SQUARE(c1x)+SQUARE(c1y)+SQUARE(c1z);</a>
+<a name="ln224">    c2mag = SQUARE(c2x)+SQUARE(c2y)+SQUARE(c2z);</a>
+<a name="ln225">    if (c1mag*c2mag &lt; 0.01)</a>
+<a name="ln226">      costheta = 1.0; //avoid div by zero error</a>
+<a name="ln227">    else</a>
+<a name="ln228">      costheta = (c1x*c2x + c1y*c2y + c1z*c2z)/(sqrt(c1mag*c2mag));</a>
+<a name="ln229"> </a>
+<a name="ln230">    if (costheta &lt; -0.999999)</a>
+<a name="ln231">      costheta = -0.999999;</a>
+<a name="ln232">    if (costheta &gt;  0.999999)</a>
+<a name="ln233">      costheta =  0.999999;</a>
+<a name="ln234"> </a>
+<a name="ln235">    if ((v2x*c3x + v2y*c3y + v2z*c3z) &gt; 0.0)</a>
+<a name="ln236">      radang = -acos(costheta);</a>
+<a name="ln237">    else</a>
+<a name="ln238">      radang = acos(costheta);</a>
+<a name="ln239"> </a>
+<a name="ln240">    //</a>
+<a name="ln241">    // now we have the torsion angle (radang) - set up the rot matrix</a>
+<a name="ln242">    //</a>
+<a name="ln243"> </a>
+<a name="ln244">    //find the difference between current and requested</a>
+<a name="ln245">    rotang = ang - radang;</a>
+<a name="ln246"> </a>
+<a name="ln247">    sn = sin(rotang);</a>
+<a name="ln248">    cs = cos(rotang);</a>
+<a name="ln249">    t = 1 - cs;</a>
+<a name="ln250">    //normalize the rotation vector</a>
+<a name="ln251">    mag = sqrt(SQUARE(v2x)+SQUARE(v2y)+SQUARE(v2z));</a>
+<a name="ln252">    x = v2x/mag;</a>
+<a name="ln253">    y = v2y/mag;</a>
+<a name="ln254">    z = v2z/mag;</a>
+<a name="ln255"> </a>
+<a name="ln256">    //set up the rotation matrix</a>
+<a name="ln257">    m[0]= t*x*x + cs;</a>
+<a name="ln258">    m[1] = t*x*y + sn*z;</a>
+<a name="ln259">    m[2] = t*x*z - sn*y;</a>
+<a name="ln260">    m[3] = t*x*y - sn*z;</a>
+<a name="ln261">    m[4] = t*y*y + cs;</a>
+<a name="ln262">    m[5] = t*y*z + sn*x;</a>
+<a name="ln263">    m[6] = t*x*z + sn*y;</a>
+<a name="ln264">    m[7] = t*y*z - sn*x;</a>
+<a name="ln265">    m[8] = t*z*z + cs;</a>
+<a name="ln266"> </a>
+<a name="ln267">    //</a>
+<a name="ln268">    //now the matrix is set - time to rotate the atoms</a>
+<a name="ln269">    //</a>
+<a name="ln270">    tx = c[tor[1]];</a>
+<a name="ln271">    ty = c[tor[1]+1];</a>
+<a name="ln272">    tz = c[tor[1]+2];</a>
+<a name="ln273">    vector&lt;int&gt;::iterator i;</a>
+<a name="ln274">    int j;</a>
+<a name="ln275">    for (i = atoms.begin();i != atoms.end();++i)</a>
+<a name="ln276">      {</a>
+<a name="ln277">        j = *i;</a>
+<a name="ln278">        c[j] -= tx;</a>
+<a name="ln279">        c[j+1] -= ty;</a>
+<a name="ln280">        c[j+2]-= tz;</a>
+<a name="ln281">        x = c[j]*m[0] + c[j+1]*m[1] + c[j+2]*m[2];</a>
+<a name="ln282">        y = c[j]*m[3] + c[j+1]*m[4] + c[j+2]*m[5];</a>
+<a name="ln283">        z = c[j]*m[6] + c[j+1]*m[7] + c[j+2]*m[8];</a>
+<a name="ln284">        c[j] = x;</a>
+<a name="ln285">        c[j+1] = y;</a>
+<a name="ln286">        c[j+2] = z;</a>
+<a name="ln287">        c[j] += tx;</a>
+<a name="ln288">        c[j+1] += ty;</a>
+<a name="ln289">        c[j+2] += tz;</a>
+<a name="ln290">      }</a>
+<a name="ln291">  }</a>
+<a name="ln292"> </a>
+<a name="ln293">  //! Safely open the supplied filename and return an ifstream, throwing an error</a>
+<a name="ln294">  //! to the default OBMessageHandler error log if it fails.</a>
+<a name="ln295">  bool SafeOpen(std::ifstream &amp;fs, const char *filename)</a>
+<a name="ln296">  {</a>
+<a name="ln297">#ifdef WIN32</a>
+<a name="ln298">    string s(filename);</a>
+<a name="ln299">    if (s.find(&quot;.bin&quot;) != string::npos)</a>
+<a name="ln300">      fs.open(filename,ios::binary);</a>
+<a name="ln301">    else</a>
+<a name="ln302">#endif</a>
+<a name="ln303"> </a>
+<a name="ln304">      fs.open(filename);</a>
+<a name="ln305"> </a>
+<a name="ln306">    if (!fs)</a>
+<a name="ln307">      {</a>
+<a name="ln308">        string error = &quot;Unable to open file \'&quot;;</a>
+<a name="ln309">        error += filename;</a>
+<a name="ln310">        error += &quot;\' in read mode&quot;;</a>
+<a name="ln311">        obErrorLog.ThrowError(__FUNCTION__, error, obError);</a>
+<a name="ln312">        return(false);</a>
+<a name="ln313">      }</a>
+<a name="ln314"> </a>
+<a name="ln315">    return(true);</a>
+<a name="ln316">  }</a>
+<a name="ln317"> </a>
+<a name="ln318"> </a>
+<a name="ln319">  //! Safely open the supplied filename and return an ofstream, throwing an error</a>
+<a name="ln320">  //! to the default OBMessageHandler error log if it fails.</a>
+<a name="ln321">  bool SafeOpen(std::ofstream &amp;fs, const char *filename)</a>
+<a name="ln322">  {</a>
+<a name="ln323">#ifdef WIN32</a>
+<a name="ln324">    string s(filename);</a>
+<a name="ln325">    if (s.find(&quot;.bin&quot;) != string::npos)</a>
+<a name="ln326">      fs.open(filename,ios::binary);</a>
+<a name="ln327">    else</a>
+<a name="ln328">#endif</a>
+<a name="ln329"> </a>
+<a name="ln330">      fs.open(filename);</a>
+<a name="ln331"> </a>
+<a name="ln332">    if (!fs)</a>
+<a name="ln333">      {</a>
+<a name="ln334">        string error = &quot;Unable to open file \'&quot;;</a>
+<a name="ln335">        error += filename;</a>
+<a name="ln336">        error += &quot;\' in write mode&quot;;</a>
+<a name="ln337">        obErrorLog.ThrowError(__FUNCTION__, error, obError);</a>
+<a name="ln338">        return(false);</a>
+<a name="ln339">      }</a>
+<a name="ln340"> </a>
+<a name="ln341">    return(true);</a>
+<a name="ln342">  }</a>
+<a name="ln343"> </a>
+<a name="ln344">  //! Safely open the supplied filename and return an ifstream, throwing an error</a>
+<a name="ln345">  //! to the default OBMessageHandler error log if it fails.</a>
+<a name="ln346">  bool SafeOpen(std::ifstream &amp;fs, const string &amp;filename)</a>
+<a name="ln347">  {</a>
+<a name="ln348">    return(SafeOpen(fs, filename.c_str()));</a>
+<a name="ln349">  }</a>
+<a name="ln350"> </a>
+<a name="ln351">  //! Safely open the supplied filename and return an ofstream, throwing an error</a>
+<a name="ln352">  //! to the default OBMessageHandler error log if it fails.</a>
+<a name="ln353">  bool SafeOpen(std::ofstream &amp;fs, const string &amp;filename)</a>
+<a name="ln354">  {</a>
+<a name="ln355">    return(SafeOpen(fs, filename.c_str()));</a>
+<a name="ln356">  }</a>
+<a name="ln357"> </a>
+<a name="ln358">  //! Shift the supplied string to uppercase</a>
+<a name="ln359">  void ToUpper(std::string &amp;s)</a>
+<a name="ln360">  {</a>
+<a name="ln361">    if (s.empty())</a>
+<a name="ln362">      return;</a>
+<a name="ln363">    unsigned int i;</a>
+<a name="ln364">    for (i = 0;i &lt; s.size();++i)</a>
+<a name="ln365">      if (isalpha(s[i]) &amp;&amp; !isdigit(s[i]))</a>
+<a name="ln366">        s[i] = toupper(s[i]);</a>
+<a name="ln367">  }</a>
+<a name="ln368"> </a>
+<a name="ln369">  //! Shift the supplied char* to uppercase</a>
+<a name="ln370">  void ToUpper(char *cptr)</a>
+<a name="ln371">  {</a>
+<a name="ln372">    char *c;</a>
+<a name="ln373">    for (c = cptr;*c != '\0';++c)</a>
+<a name="ln374">      if (isalpha(*c) &amp;&amp; !isdigit(*c))</a>
+<a name="ln375">        *c = toupper(*c);</a>
+<a name="ln376">  }</a>
+<a name="ln377"> </a>
+<a name="ln378">  //! Shift the supplied string to lowercase</a>
+<a name="ln379">  void ToLower(std::string &amp;s)</a>
+<a name="ln380">  {</a>
+<a name="ln381">    if (s.empty())</a>
+<a name="ln382">      return;</a>
+<a name="ln383">    unsigned int i;</a>
+<a name="ln384">    for (i = 0;i &lt; s.size();++i)</a>
+<a name="ln385">      if (isalpha(s[i]) &amp;&amp; !isdigit(s[i]))</a>
+<a name="ln386">        s[i] = tolower(s[i]);</a>
+<a name="ln387">  }</a>
+<a name="ln388"> </a>
+<a name="ln389">  //! Shift the supplied char* to lowercase</a>
+<a name="ln390">  void ToLower(char *cptr)</a>
+<a name="ln391">  {</a>
+<a name="ln392">    char *c;</a>
+<a name="ln393">    for (c = cptr;*c != '\0';++c)</a>
+<a name="ln394">      if (isalpha(*c) &amp;&amp; !isdigit(*c))</a>
+<a name="ln395">        *c = tolower(*c);</a>
+<a name="ln396">  }</a>
+<a name="ln397"> </a>
+<a name="ln398">  //! Shift the supplied string: lowercase to upper, and upper to lower</a>
+<a name="ln399">  //! \param s - The string to switch case</a>
+<a name="ln400">  //! \param start - The position to start inverting case</a>
+<a name="ln401">  void InvertCase(std::string &amp;s, unsigned int start)</a>
+<a name="ln402">  {</a>
+<a name="ln403">    if (start &gt;= s.size())</a>
+<a name="ln404">      return;</a>
+<a name="ln405">    unsigned int i;</a>
+<a name="ln406">    for (i = start; i &lt; s.size();++i)</a>
+<a name="ln407">      if (isalpha(s[i]) &amp;&amp; !isdigit(s[i])) {</a>
+<a name="ln408">        if (isupper(s[i])) s[i] = tolower(s[i]);</a>
+<a name="ln409">        else s[i] = toupper(s[i]);</a>
+<a name="ln410">      }</a>
+<a name="ln411">  }</a>
+<a name="ln412"> </a>
+<a name="ln413">  //! Shift the supplied char*: lowercase to upper, and upper to lower</a>
+<a name="ln414">  void InvertCase(char *cptr)</a>
+<a name="ln415">  {</a>
+<a name="ln416">    char *c;</a>
+<a name="ln417">    for (c = cptr;*c != '\0';++c)</a>
+<a name="ln418">      if (isalpha(*c) &amp;&amp; !isdigit(*c)) {</a>
+<a name="ln419">        if (isupper(*c)) *c = tolower(*c);</a>
+<a name="ln420">        else *c = toupper(*c);</a>
+<a name="ln421">      }</a>
+<a name="ln422">  }</a>
+<a name="ln423"> </a>
+<a name="ln424">  //! &quot;Clean&quot; the supplied atom type, shifting the first character to uppercase,</a>
+<a name="ln425">  //! the second character (if it's a letter) to lowercase, and terminating with a NULL</a>
+<a name="ln426">  //! to strip off any trailing characters</a>
+<a name="ln427">  void CleanAtomType(char *id)</a>
+<a name="ln428">  {</a>
+<a name="ln429">    id[0] = toupper(id[0]);</a>
+<a name="ln430">    if (isalpha(id[1]) == 0)</a>
+<a name="ln431">      id[1] = '\0';</a>
+<a name="ln432">    else</a>
+<a name="ln433">      {</a>
+<a name="ln434">        id[1] = tolower(id[1]);</a>
+<a name="ln435">        id[2] = '\0';</a>
+<a name="ln436">      }</a>
+<a name="ln437">  }</a>
+<a name="ln438"> </a>
+<a name="ln439">  //! Transform the supplied vector&lt;OBInternalCoord*&gt; into cartesian and update</a>
+<a name="ln440">  //! the OBMol accordingly. The size of supplied internal coordinate vector</a>
+<a name="ln441">  //! has to be the same as the number of atoms in molecule (+ NULL in the</a>
+<a name="ln442">  //! beginning).</a>
+<a name="ln443">  //! Implements &lt;a href=&quot;http://qsar.sourceforge.net/dicts/blue-obelisk/index.xhtml#zmatrixCoordinatesIntoCartesianCoordinates&quot;&gt;blue-obelisk:zmatrixCoordinatesIntoCartesianCoordinates&lt;/a&gt;</a>
+<a name="ln444">  void InternalToCartesian(std::vector&lt;OBInternalCoord*&gt; &amp;vic,OBMol &amp;mol)</a>
+<a name="ln445">  {</a>
+<a name="ln446">    vector3 n,nn,v1,v2,v3,avec,bvec,cvec;</a>
+<a name="ln447">    double dst = 0.0, ang = 0.0, tor = 0.0;</a>
+<a name="ln448">    OBAtom *atom;</a>
+<a name="ln449">    vector&lt;OBAtom*&gt;::iterator i;</a>
+<a name="ln450">    unsigned int index;</a>
+<a name="ln451"> </a>
+<a name="ln452">    if (vic.empty())</a>
+<a name="ln453">      return;</a>
+<a name="ln454"> </a>
+<a name="ln455">    if (vic[0] != nullptr) {</a>
+<a name="ln456">      std::vector&lt;OBInternalCoord*&gt;::iterator it = vic.begin();</a>
+<a name="ln457">      vic.insert(it, nullptr);</a>
+<a name="ln458">    }</a>
+<a name="ln459"> </a>
+<a name="ln460">    if (vic.size() != mol.NumAtoms() + 1) {</a>
+<a name="ln461">      string error = &quot;Number of internal coordinates is not the same as&quot;;</a>
+<a name="ln462">      error += &quot; the number of atoms in molecule&quot;;</a>
+<a name="ln463">      obErrorLog.ThrowError(__FUNCTION__, error, obError);</a>
+<a name="ln464">      return;</a>
+<a name="ln465">    }</a>
+<a name="ln466"> </a>
+<a name="ln467">    obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln468">                          &quot;Ran OpenBabel::InternalToCartesian&quot;, obAuditMsg);</a>
+<a name="ln469"> </a>
+<a name="ln470">    for (atom = mol.BeginAtom(i);atom;atom = mol.NextAtom(i))</a>
+<a name="ln471">      {</a>
+<a name="ln472">        index = atom-&gt;GetIdx();</a>
+<a name="ln473"> </a>
+<a name="ln474">        // make sure we always have valid pointers</a>
+<a name="ln475">        if (index &gt;= vic.size() || !vic[index])</a>
+<a name="ln476">          return;</a>
+<a name="ln477"> </a>
+<a name="ln478">        if (vic[index]-&gt;_a) // make sure we have a valid ptr</a>
+<a name="ln479">          {</a>
+<a name="ln480">            avec = vic[index]-&gt;_a-&gt;GetVector();</a>
+<a name="ln481">            dst = vic[index]-&gt;_dst;</a>
+<a name="ln482">          }</a>
+<a name="ln483">        else</a>
+<a name="ln484">          {</a>
+<a name="ln485">            // atom 1</a>
+<a name="ln486">            atom-&gt;SetVector(0.0, 0.0, 0.0);</a>
+<a name="ln487">            continue;</a>
+<a name="ln488">          }</a>
+<a name="ln489"> </a>
+<a name="ln490">        if (vic[index]-&gt;_b)</a>
+<a name="ln491">          {</a>
+<a name="ln492">            bvec = vic[index]-&gt;_b-&gt;GetVector();</a>
+<a name="ln493">            ang = vic[index]-&gt;_ang * DEG_TO_RAD;</a>
+<a name="ln494">          }</a>
+<a name="ln495">        else</a>
+<a name="ln496">          {</a>
+<a name="ln497">            // atom 2</a>
+<a name="ln498">            atom-&gt;SetVector(dst, 0.0, 0.0);</a>
+<a name="ln499">            continue;</a>
+<a name="ln500">          }</a>
+<a name="ln501"> </a>
+<a name="ln502">        if (vic[index]-&gt;_c)</a>
+<a name="ln503">          {</a>
+<a name="ln504">            cvec = vic[index]-&gt;_c-&gt;GetVector();</a>
+<a name="ln505">            tor = vic[index]-&gt;_tor * DEG_TO_RAD;</a>
+<a name="ln506">          }</a>
+<a name="ln507">        else</a>
+<a name="ln508">          {</a>
+<a name="ln509">            // atom 3</a>
+<a name="ln510">            cvec = VY;</a>
+<a name="ln511">            tor = 90. * DEG_TO_RAD;</a>
+<a name="ln512">          }</a>
+<a name="ln513"> </a>
+<a name="ln514">        v1 = avec - bvec;</a>
+<a name="ln515">        v2 = avec - cvec;</a>
+<a name="ln516">        n = cross(v1,v2);</a>
+<a name="ln517">        nn = cross(v1,n);</a>
+<a name="ln518">        n.normalize();</a>
+<a name="ln519">        nn.normalize();</a>
+<a name="ln520"> </a>
+<a name="ln521">        n  *= -sin(tor);</a>
+<a name="ln522">        nn *= cos(tor);</a>
+<a name="ln523">        v3 = n + nn;</a>
+<a name="ln524">        v3.normalize();</a>
+<a name="ln525">        v3 *= dst * sin(ang);</a>
+<a name="ln526">        v1.normalize();</a>
+<a name="ln527">        v1 *= dst * cos(ang);</a>
+<a name="ln528">        v2 = avec + v3 - v1;</a>
+<a name="ln529"> </a>
+<a name="ln530">        atom-&gt;SetVector(v2);</a>
+<a name="ln531">      }</a>
+<a name="ln532"> </a>
+<a name="ln533">    // Delete dummy atoms</a>
+<a name="ln534">    vector&lt;OBAtom*&gt; for_deletion;</a>
+<a name="ln535">    FOR_ATOMS_OF_MOL(a, mol)</a>
+<a name="ln536">      if (a-&gt;GetAtomicNum() == 0)</a>
+<a name="ln537">        for_deletion.push_back(&amp;(*a));</a>
+<a name="ln538">    for(vector&lt;OBAtom*&gt;::iterator a_it=for_deletion.begin(); a_it!=for_deletion.end(); ++a_it)</a>
+<a name="ln539">      mol.DeleteAtom(*a_it);</a>
+<a name="ln540"> </a>
+<a name="ln541">  }</a>
+<a name="ln542"> </a>
+<a name="ln543">  //! Use the supplied OBMol and its Cartesian coordinates to generate</a>
+<a name="ln544">  //! a set of internal (z-matrix) coordinates as supplied in the</a>
+<a name="ln545">  //! vector&lt;OBInternalCoord*&gt; argument.</a>
+<a name="ln546">  //! Implements &lt;a href=&quot;http://qsar.sourceforge.net/dicts/blue-obelisk/index.xhtml#cartesianCoordinatesIntoZmatrixCoordinates&quot;&gt;blue-obelisk:cartesianCoordinatesIntoZmatrixCoordinates&lt;/a&gt;.</a>
+<a name="ln547">  //! \todo Consider lengths, angles, and torsions for periodic systems</a>
+<a name="ln548">  void CartesianToInternal(std::vector&lt;OBInternalCoord*&gt; &amp;vic,OBMol &amp;mol)</a>
+<a name="ln549">  {</a>
+<a name="ln550">    double r,sum;</a>
+<a name="ln551">    OBAtom *atom,*nbr,*ref;</a>
+<a name="ln552">    vector&lt;OBAtom*&gt;::iterator i,j,m;</a>
+<a name="ln553"> </a>
+<a name="ln554">    obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln555">                          &quot;Ran OpenBabel::CartesianToInternal&quot;, obAuditMsg);</a>
+<a name="ln556"> </a>
+<a name="ln557">    //set reference atoms</a>
+<a name="ln558">    for (atom = mol.BeginAtom(i);atom;atom = mol.NextAtom(i))</a>
+<a name="ln559">      {</a>
+<a name="ln560">        if      (atom-&gt;GetIdx() == 1)</a>
+<a name="ln561">          continue;</a>
+<a name="ln562">        else if (atom-&gt;GetIdx() == 2)</a>
+<a name="ln563">          {</a>
+<a name="ln564">            vic[atom-&gt;GetIdx()]-&gt;_a = mol.GetAtom(1);</a>
+<a name="ln565">            continue;</a>
+<a name="ln566">          }</a>
+<a name="ln567">        else if (atom-&gt;GetIdx() == 3)</a>
+<a name="ln568">          {</a>
+<a name="ln569">            if( (atom-&gt;GetVector()-mol.GetAtom(2)-&gt;GetVector()).length_2()</a>
+<a name="ln570">                &lt;(atom-&gt;GetVector()-mol.GetAtom(1)-&gt;GetVector()).length_2())</a>
+<a name="ln571">              {</a>
+<a name="ln572">                vic[atom-&gt;GetIdx()]-&gt;_a = mol.GetAtom(2);</a>
+<a name="ln573">                vic[atom-&gt;GetIdx()]-&gt;_b = mol.GetAtom(1);</a>
+<a name="ln574">              }</a>
+<a name="ln575">            else</a>
+<a name="ln576">              {</a>
+<a name="ln577">                vic[atom-&gt;GetIdx()]-&gt;_a = mol.GetAtom(1);</a>
+<a name="ln578">                vic[atom-&gt;GetIdx()]-&gt;_b = mol.GetAtom(2);</a>
+<a name="ln579">              }</a>
+<a name="ln580">            continue;</a>
+<a name="ln581">          }</a>
+<a name="ln582">        sum=1.0E10;</a>
+<a name="ln583">        ref = mol.GetAtom(1);</a>
+<a name="ln584">        for(nbr = mol.BeginAtom(j);nbr &amp;&amp; (i != j);nbr = mol.NextAtom(j))</a>
+<a name="ln585">          {</a>
+<a name="ln586">            r = (atom-&gt;GetVector()-nbr-&gt;GetVector()).length_2();</a>
+<a name="ln587">            if((r &lt; sum) &amp;&amp; (vic[nbr-&gt;GetIdx()]-&gt;_a != nbr) &amp;&amp;</a>
+<a name="ln588">               (vic[nbr-&gt;GetIdx()]-&gt;_b != nbr))</a>
+<a name="ln589">              {</a>
+<a name="ln590">                sum = r;</a>
+<a name="ln591">                ref = nbr;</a>
+<a name="ln592">              }</a>
+<a name="ln593">          }</a>
+<a name="ln594"> </a>
+<a name="ln595">        vic[atom-&gt;GetIdx()]-&gt;_a = ref;</a>
+<a name="ln596">        if (ref-&gt;GetIdx() &gt;= 3)</a>
+<a name="ln597">          {</a>
+<a name="ln598">            vic[atom-&gt;GetIdx()]-&gt;_b = vic[ref-&gt;GetIdx()]-&gt;_a;</a>
+<a name="ln599">            vic[atom-&gt;GetIdx()]-&gt;_c = vic[ref-&gt;GetIdx()]-&gt;_b;</a>
+<a name="ln600">          }</a>
+<a name="ln601">        else</a>
+<a name="ln602">          {</a>
+<a name="ln603">            if(ref-&gt;GetIdx()== 1)</a>
+<a name="ln604">              {</a>
+<a name="ln605">                vic[atom-&gt;GetIdx()]-&gt;_b = mol.GetAtom(2);</a>
+<a name="ln606">                vic[atom-&gt;GetIdx()]-&gt;_c = mol.GetAtom(3);</a>
+<a name="ln607">              }</a>
+<a name="ln608">            else</a>
+<a name="ln609">              {//ref-&gt;GetIdx()== 2</a>
+<a name="ln610">                vic[atom-&gt;GetIdx()]-&gt;_b = mol.GetAtom(1);</a>
+<a name="ln611">                vic[atom-&gt;GetIdx()]-&gt;_c = mol.GetAtom(3);</a>
+<a name="ln612">              }</a>
+<a name="ln613">          }</a>
+<a name="ln614">      }</a>
+<a name="ln615"> </a>
+<a name="ln616">    //fill in geometries</a>
+<a name="ln617">    unsigned int k;</a>
+<a name="ln618">    vector3 v1,v2;</a>
+<a name="ln619">    OBAtom *a,*b,*c;</a>
+<a name="ln620">    for (k = 2;k &lt;= mol.NumAtoms();++k)</a>
+<a name="ln621">      {</a>
+<a name="ln622">        atom = mol.GetAtom(k);</a>
+<a name="ln623">        a = vic[k]-&gt;_a;</a>
+<a name="ln624">        b = vic[k]-&gt;_b;</a>
+<a name="ln625">        c = vic[k]-&gt;_c;</a>
+<a name="ln626">        v1 = atom-&gt;GetVector() - a-&gt;GetVector();</a>
+<a name="ln627">        vic[k]-&gt;_dst = v1.length();</a>
+<a name="ln628">        if (k == 2)</a>
+<a name="ln629">          continue;</a>
+<a name="ln630"> </a>
+<a name="ln631">        v2 = b-&gt;GetVector()    - a-&gt;GetVector();</a>
+<a name="ln632">        vic[k]-&gt;_ang = vectorAngle(v1,v2);</a>
+<a name="ln633">        if (k == 3)</a>
+<a name="ln634">          continue;</a>
+<a name="ln635"> </a>
+<a name="ln636">        vic[k]-&gt;_tor = CalcTorsionAngle(atom-&gt;GetVector(),</a>
+<a name="ln637">                                        a-&gt;GetVector(),</a>
+<a name="ln638">                                        b-&gt;GetVector(),</a>
+<a name="ln639">                                        c-&gt;GetVector());</a>
+<a name="ln640">      }</a>
+<a name="ln641"> </a>
+<a name="ln642">    //check for linear geometries and try to correct if possible</a>
+<a name="ln643">    bool done;</a>
+<a name="ln644">    double ang;</a>
+<a name="ln645">    for (k = 2;k &lt;= mol.NumAtoms();++k)</a>
+<a name="ln646">      {</a>
+<a name="ln647">        ang = fabs(vic[k]-&gt;_ang);</a>
+<a name="ln648">        if (ang &gt; 5.0 &amp;&amp; ang &lt; 175.0)</a>
+<a name="ln649">          continue;</a>
+<a name="ln650">        atom = mol.GetAtom(k);</a>
+<a name="ln651">        done = false;</a>
+<a name="ln652">        for (a = mol.BeginAtom(i);a &amp;&amp; a-&gt;GetIdx() &lt; k &amp;&amp; !done;a = mol.NextAtom(i))</a>
+<a name="ln653">          for (b=mol.BeginAtom(j);b &amp;&amp; b-&gt;GetIdx()&lt;a-&gt;GetIdx() &amp;&amp; !done;b = mol.NextAtom(j))</a>
+<a name="ln654">            {</a>
+<a name="ln655">              v1 = atom-&gt;GetVector() - a-&gt;GetVector();</a>
+<a name="ln656">              v2 = b-&gt;GetVector() - a-&gt;GetVector();</a>
+<a name="ln657">              ang = fabs(vectorAngle(v1,v2));</a>
+<a name="ln658">              if (ang &lt; 5.0 || ang &gt; 175.0)</a>
+<a name="ln659">                continue;</a>
+<a name="ln660"> </a>
+<a name="ln661">              // Also check length considerations -- don't bother if the length &gt; 10.0 Angstroms</a>
+<a name="ln662">              if (v1.length_2() &gt; 99.999)</a>
+<a name="ln663">                continue;</a>
+<a name="ln664"> </a>
+<a name="ln665">              for (c = mol.BeginAtom(m);c &amp;&amp; c-&gt;GetIdx() &lt; atom-&gt;GetIdx();c = mol.NextAtom(m))</a>
+<a name="ln666">                if (c != atom &amp;&amp; c != a &amp;&amp; c != b)</a>
+<a name="ln667">                  break;</a>
+<a name="ln668">              if (!c)</a>
+<a name="ln669">                continue;</a>
+<a name="ln670"> </a>
+<a name="ln671">              vic[k]-&gt;_a = a;</a>
+<a name="ln672">              vic[k]-&gt;_b = b;</a>
+<a name="ln673">              vic[k]-&gt;_c = c;</a>
+<a name="ln674">              vic[k]-&gt;_dst = v1.length();</a>
+<a name="ln675">              vic[k]-&gt;_ang = vectorAngle(v1,v2);</a>
+<a name="ln676">              vic[k]-&gt;_tor = CalcTorsionAngle(atom-&gt;GetVector(),</a>
+<a name="ln677">                                              a-&gt;GetVector(),</a>
+<a name="ln678">                                              b-&gt;GetVector(),</a>
+<a name="ln679">                                              c-&gt;GetVector());</a>
+<a name="ln680">              if (!isfinite(vic[k]-&gt;_tor))</a>
+<a name="ln681">                vic[k]-&gt;_tor = 180.0;</a>
+<a name="ln682">              done = true;</a>
+<a name="ln683">            }</a>
+<a name="ln684">      }</a>
+<a name="ln685">  }</a>
+<a name="ln686"> </a>
+<a name="ln687">  void qtrfit (double *r,double *f,int size, double u[3][3])</a>
+<a name="ln688">  {</a>
+<a name="ln689">    int i;</a>
+<a name="ln690">    double xxyx, xxyy, xxyz;</a>
+<a name="ln691">    double xyyx, xyyy, xyyz;</a>
+<a name="ln692">    double xzyx, xzyy, xzyz;</a>
+<a name="ln693">    double d[4],q[4];</a>
+<a name="ln694">    double c[16],v[16];</a>
+<a name="ln695">    double rx,ry,rz,fx,fy,fz;</a>
+<a name="ln696"> </a>
+<a name="ln697">    /* generate the upper triangle of the quadratic form matrix */</a>
+<a name="ln698"> </a>
+<a name="ln699">    xxyx = 0.0;</a>
+<a name="ln700">    xxyy = 0.0;</a>
+<a name="ln701">    xxyz = 0.0;</a>
+<a name="ln702">    xyyx = 0.0;</a>
+<a name="ln703">    xyyy = 0.0;</a>
+<a name="ln704">    xyyz = 0.0;</a>
+<a name="ln705">    xzyx = 0.0;</a>
+<a name="ln706">    xzyy = 0.0;</a>
+<a name="ln707">    xzyz = 0.0;</a>
+<a name="ln708"> </a>
+<a name="ln709">    for (i = 0; i &lt; size; ++i)</a>
+<a name="ln710">      {</a>
+<a name="ln711">        rx = r[i*3];</a>
+<a name="ln712">        ry = r[i*3+1];</a>
+<a name="ln713">        rz = r[i*3+2];</a>
+<a name="ln714">        fx = f[i*3];</a>
+<a name="ln715">        fy = f[i*3+1];</a>
+<a name="ln716">        fz = f[i*3+2];</a>
+<a name="ln717"> </a>
+<a name="ln718">        xxyx += fx * rx;</a>
+<a name="ln719">        xxyy += fx * ry;</a>
+<a name="ln720">        xxyz += fx * rz;</a>
+<a name="ln721">        xyyx += fy * rx;</a>
+<a name="ln722">        xyyy += fy * ry;</a>
+<a name="ln723">        xyyz += fy * rz;</a>
+<a name="ln724">        xzyx += fz * rx;</a>
+<a name="ln725">        xzyy += fz * ry;</a>
+<a name="ln726">        xzyz += fz * rz;</a>
+<a name="ln727">      }</a>
+<a name="ln728"> </a>
+<a name="ln729">    c[4*0+0] = xxyx + xyyy + xzyz;</a>
+<a name="ln730"> </a>
+<a name="ln731">    c[4*0+1] = xzyy - xyyz;</a>
+<a name="ln732">    c[4*1+1] = xxyx - xyyy - xzyz;</a>
+<a name="ln733"> </a>
+<a name="ln734">    c[4*0+2] = xxyz - xzyx;</a>
+<a name="ln735">    c[4*1+2] = xxyy + xyyx;</a>
+<a name="ln736">    c[4*2+2] = xyyy - xzyz - xxyx;</a>
+<a name="ln737"> </a>
+<a name="ln738">    c[4*0+3] = xyyx - xxyy;</a>
+<a name="ln739">    c[4*1+3] = xzyx + xxyz;</a>
+<a name="ln740">    c[4*2+3] = xyyz + xzyy;</a>
+<a name="ln741">    c[4*3+3] = xzyz - xxyx - xyyy;</a>
+<a name="ln742"> </a>
+<a name="ln743">    /* diagonalize c */</a>
+<a name="ln744"> </a>
+<a name="ln745">    matrix3x3::jacobi(4, c, d, v);</a>
+<a name="ln746"> </a>
+<a name="ln747">    /* extract the desired quaternion */</a>
+<a name="ln748"> </a>
+<a name="ln749">    q[0] = v[4*0+3];</a>
+<a name="ln750">    q[1] = v[4*1+3];</a>
+<a name="ln751">    q[2] = v[4*2+3];</a>
+<a name="ln752">    q[3] = v[4*3+3];</a>
+<a name="ln753"> </a>
+<a name="ln754">    /* generate the rotation matrix */</a>
+<a name="ln755"> </a>
+<a name="ln756">    u[0][0] = q[0]*q[0] + q[1]*q[1] - q[2]*q[2] - q[3]*q[3];</a>
+<a name="ln757">    u[1][0] = 2.0 * (q[1] * q[2] - q[0] * q[3]);</a>
+<a name="ln758">    u[2][0] = 2.0 * (q[1] * q[3] + q[0] * q[2]);</a>
+<a name="ln759"> </a>
+<a name="ln760">    u[0][1] = 2.0 * (q[2] * q[1] + q[0] * q[3]);</a>
+<a name="ln761">    u[1][1] = q[0]*q[0] - q[1]*q[1] + q[2]*q[2] - q[3]*q[3];</a>
+<a name="ln762">    u[2][1] = 2.0 * (q[2] * q[3] - q[0] * q[1]);</a>
+<a name="ln763"> </a>
+<a name="ln764">    u[0][2] = 2.0 * (q[3] * q[1] - q[0] * q[2]);</a>
+<a name="ln765">    u[1][2] = 2.0 * (q[3] * q[2] + q[0] * q[1]);</a>
+<a name="ln766">    u[2][2] = q[0]*q[0] - q[1]*q[1] - q[2]*q[2] + q[3]*q[3];</a>
+<a name="ln767">  }</a>
+<a name="ln768"> </a>
+<a name="ln769"> </a>
+<a name="ln770"> </a>
+<a name="ln771">  static double Roots[4];</a>
+<a name="ln772"> </a>
+<a name="ln773">#define ApproxZero 1E-7</a>
+<a name="ln774">#define IsZero(x)  ((double)fabs(x)&lt;ApproxZero)</a>
+<a name="ln775">#ifndef PI</a>
+<a name="ln776">#define PI         3.14159265358979323846226433</a>
+<a name="ln777">#endif</a>
+<a name="ln778">#define OneThird      (1.0/3.0)</a>
+<a name="ln779">#define FourThirdsPI  (4.0*PI/3.0)</a>
+<a name="ln780">#define TwoThirdsPI   (2.0*PI/3.0)</a>
+<a name="ln781"> </a>
+<a name="ln782">  /*FUNCTION */</a>
+<a name="ln783">  /* receives: the co-efficients for a general</a>
+<a name="ln784">   *           equation of degree one.</a>
+<a name="ln785">   *           Ax + B = 0 !!</a>
+<a name="ln786">   */</a>
+<a name="ln787">  int SolveLinear(double A,double B)</a>
+<a name="ln788">  {</a>
+<a name="ln789">    if( IsZero(A) )</a>
+<a name="ln790">      return( 0 );</a>
+<a name="ln791">    Roots[0] = -B/A;</a>
+<a name="ln792">    return( 1 );</a>
+<a name="ln793">  }</a>
+<a name="ln794"> </a>
+<a name="ln795">  /*FUNCTION */</a>
+<a name="ln796">  /* receives: the co-efficients for a general</a>
+<a name="ln797">   *           linear equation of degree two.</a>
+<a name="ln798">   *           Ax^2 + Bx + C = 0 !!</a>
+<a name="ln799">   */</a>
+<a name="ln800">  int SolveQuadratic(double A,double B,double C)</a>
+<a name="ln801">  {</a>
+<a name="ln802">    double Descr, Temp, TwoA;</a>
+<a name="ln803"> </a>
+<a name="ln804">    if( IsZero(A) )</a>
+<a name="ln805">      return( SolveLinear(B,C) );</a>
+<a name="ln806"> </a>
+<a name="ln807">    TwoA = A+A;</a>
+<a name="ln808">    Temp = TwoA*C;</a>
+<a name="ln809">    Descr = B*B - (Temp+Temp);</a>
+<a name="ln810">    if( Descr&lt;0.0 )</a>
+<a name="ln811">      return( 0 );</a>
+<a name="ln812"> </a>
+<a name="ln813">    if( Descr&gt;0.0 )</a>
+<a name="ln814">      {</a>
+<a name="ln815">        Descr = sqrt(Descr);</a>
+<a name="ln816">        /* W. Press, B. Flannery, S. Teukolsky and W. Vetterling,</a>
+<a name="ln817">         * &quot;Quadratic and Cubic Equations&quot;, Numerical Recipes in C,</a>
+<a name="ln818">         * Chapter 5, pp. 156-157, 1989.</a>
+<a name="ln819">         */</a>
+<a name="ln820">        Temp = (B&lt;0.0)? -0.5*(B-Descr) : -0.5*(B+Descr);</a>
+<a name="ln821">        Roots[0] = Temp/A;</a>
+<a name="ln822">        Roots[1] = C/Temp;</a>
+<a name="ln823"> </a>
+<a name="ln824">        return( 2 );</a>
+<a name="ln825">      }</a>
+<a name="ln826">    Roots[0] = -B/TwoA;</a>
+<a name="ln827">    return( 1 );</a>
+<a name="ln828">  }</a>
+<a name="ln829"> </a>
+<a name="ln830">  /*FUNCTION */</a>
+<a name="ln831">  /* task: to return the cube root of the</a>
+<a name="ln832">   *       given value taking into account</a>
+<a name="ln833">   *       that it may be negative.</a>
+<a name="ln834">   */</a>
+<a name="ln835">  double CubeRoot(double X)</a>
+<a name="ln836">  {</a>
+<a name="ln837">    if( X&gt;=0.0 )</a>
+<a name="ln838">      {</a>
+<a name="ln839">        return pow( X, OneThird );</a>
+<a name="ln840">      }</a>
+<a name="ln841">    else</a>
+<a name="ln842">      return -pow( -X, OneThird );</a>
+<a name="ln843">  }</a>
+<a name="ln844"> </a>
+<a name="ln845">  int SolveCubic(double A,double B,double C,double D)</a>
+<a name="ln846">  {</a>
+<a name="ln847">    double TwoA, ThreeA, BOver3A;</a>
+<a name="ln848">    double Temp, POver3, QOver2;</a>
+<a name="ln849">    double Desc, Rho, Psi;</a>
+<a name="ln850"> </a>
+<a name="ln851"> </a>
+<a name="ln852">    if( IsZero(A) )</a>
+<a name="ln853">      {</a>
+<a name="ln854">        return( SolveQuadratic(B,C,D) );</a>
+<a name="ln855">      }</a>
+<a name="ln856"> </a>
+<a name="ln857">    TwoA = A+A;</a>
+<a name="ln858">    ThreeA = TwoA+A;</a>
+<a name="ln859">    BOver3A = B/ThreeA;</a>
+<a name="ln860">    QOver2 = ((TwoA*BOver3A*BOver3A-C)*BOver3A+D)/TwoA;</a>
+<a name="ln861">    POver3 = (C-B*BOver3A)/ThreeA;</a>
+<a name="ln862"> </a>
+<a name="ln863"> </a>
+<a name="ln864">    Rho = POver3*POver3*POver3;</a>
+<a name="ln865">    Desc = QOver2*QOver2 + Rho;</a>
+<a name="ln866"> </a>
+<a name="ln867">    if( Desc&lt;=0.0 )</a>
+<a name="ln868">      {</a>
+<a name="ln869">        Rho = sqrt( -Rho );</a>
+<a name="ln870">        Psi = OneThird*acos(-QOver2/Rho);</a>
+<a name="ln871">        Temp = CubeRoot( Rho );</a>
+<a name="ln872">        Temp = Temp+Temp;</a>
+<a name="ln873"> </a>
+<a name="ln874">        Roots[0] = Temp*cos( Psi )-BOver3A;</a>
+<a name="ln875">        Roots[1] = Temp*cos( Psi+TwoThirdsPI )-BOver3A;</a>
+<a name="ln876">        Roots[2] = Temp*cos( Psi+FourThirdsPI )-BOver3A;</a>
+<a name="ln877">        return( 3 );</a>
+<a name="ln878">      }</a>
+<a name="ln879"> </a>
+<a name="ln880">    if( Desc&gt; 0.0 )</a>
+<a name="ln881">      {</a>
+<a name="ln882">        Temp = CubeRoot( -QOver2 );</a>
+<a name="ln883">        Roots[0] = Temp+Temp-BOver3A;</a>
+<a name="ln884">        Roots[1] = -Temp-BOver3A;</a>
+<a name="ln885">        return( 2 );</a>
+<a name="ln886">      }</a>
+<a name="ln887"> </a>
+<a name="ln888">    Desc = sqrt( Desc );</a>
+<a name="ln889">    Roots[0] = CubeRoot(Desc-QOver2)-CubeRoot(Desc+QOver2) - BOver3A;</a>
+<a name="ln890"> </a>
+<a name="ln891">    return( 1 );</a>
+<a name="ln892">  }</a>
+<a name="ln893"> </a>
+<a name="ln894"> </a>
+<a name="ln895">#define MAX_SWEEPS 50</a>
+<a name="ln896"> </a>
+<a name="ln897">  void ob_make_rmat(double a[3][3],double rmat[9])</a>
+<a name="ln898">  {</a>
+<a name="ln899">  	/*</a>
+<a name="ln900">  	onorm, dnorm - hold the sum of diagonals and off diagonals to check Jacobi completion</a>
+<a name="ln901">  	d[3] - holds the diagonals of the input vector, which transofrm to become the Eigenvalues</a>
+<a name="ln902">  	r1, r2 - hold 1st two Eigenvectors</a>
+<a name="ln903">  	v1,v2,v3 - hold orthogonal unit vectors derived from Eigenvectors</a>
+<a name="ln904">  	</a>
+<a name="ln905">  	The junction performs a Jacobi Eigenvalue/vector determination </a>
+<a name="ln906">  	(https://en.wikipedia.org/wiki/Jacobi_eigenvalue_algorithm) on the supplied</a>
+<a name="ln907">  	Inertial Tensor in a, and returns a unit transform matrix rmat as a row matrix.</a>
+<a name="ln908">  	To work, a must be diagonally symmetric (i.e a[i][j] = a[j][i])</a>
+<a name="ln909">  	v starts out holding the unit matrix (i.e. no transform in co-ordinate frame), </a>
+<a name="ln910">  	and undergoes the same rotations as applied to the Inertial Tensor in the Jacobi</a>
+<a name="ln911">  	process to arrive at the new co-ordinate frame.</a>
+<a name="ln912">  	Finally, the eigenvalues are sorted in order that the largest principal moment aligns to the </a>
+<a name="ln913">  	new x-axis</a>
+<a name="ln914">  	*/</a>
+<a name="ln915">    double onorm, dnorm; </a>
+<a name="ln916">    double b, dma, q, t, c, s,d[3];</a>
+<a name="ln917">    double atemp, vtemp, dtemp,v[3][3];</a>
+<a name="ln918">    double r1[3],r2[3],v1[3],v2[3],v3[3];</a>
+<a name="ln919">    int i, j, k, l;</a>
+<a name="ln920"> </a>
+<a name="ln921">    memset((char*)d,'\0',sizeof(double)*3);</a>
+<a name="ln922"> </a>
+<a name="ln923">    for (j = 0; j &lt; 3; ++j)</a>
+<a name="ln924">      {</a>
+<a name="ln925">        for (i = 0; i &lt; 3; ++i)</a>
+<a name="ln926">          v[i][j] = 0.0;</a>
+<a name="ln927"> </a>
+<a name="ln928">        v[j][j] = 1.0;</a>
+<a name="ln929">        d[j] = a[j][j];</a>
+<a name="ln930">      }</a>
+<a name="ln931"> </a>
+<a name="ln932">    for (l = 1; l &lt;= MAX_SWEEPS; ++l)</a>
+<a name="ln933">      {</a>
+<a name="ln934">        dnorm = 0.0;</a>
+<a name="ln935">        onorm = 0.0;</a>
+<a name="ln936">        for (j = 0; j &lt; 3; ++j)</a>
+<a name="ln937">          {</a>
+<a name="ln938">            dnorm = dnorm + (double)fabs(d[j]);</a>
+<a name="ln939">            for (i = 0; i &lt;= j - 1; ++i)</a>
+<a name="ln940">              {</a>
+<a name="ln941">                onorm = onorm + (double)fabs(a[i][j]);</a>
+<a name="ln942">              }</a>
+<a name="ln943">          }</a>
+<a name="ln944"> </a>
+<a name="ln945">        if((onorm/dnorm) &lt;= 1.0e-12)</a>
+<a name="ln946">        /* Completion achieved (i.e. off-diagonals are all 0.0 within error)*/</a>
+<a name="ln947">          goto Exit_now;</a>
+<a name="ln948">        for (j = 1; j &lt; 3; ++j)</a>
+<a name="ln949">          {</a>
+<a name="ln950">            for (i = 0; i &lt;= j - 1; ++i)</a>
+<a name="ln951">              {</a>
+<a name="ln952">                b = a[i][j];</a>
+<a name="ln953">                if(fabs(b) &gt; 0.0)</a>
+<a name="ln954">                  {</a>
+<a name="ln955">                    dma = d[j] - d[i];</a>
+<a name="ln956">                    if((fabs(dma) + fabs(b)) &lt;=  fabs(dma))</a>
+<a name="ln957">                      t = b / dma;</a>
+<a name="ln958">                    else</a>
+<a name="ln959">                      {</a>
+<a name="ln960">                        q = 0.5 * dma / b;</a>
+<a name="ln961">                        t = 1.0/((double)fabs(q) + (double)sqrt(1.0+q*q));</a>
+<a name="ln962">                        if(q &lt; 0.0)</a>
+<a name="ln963">                          t = -t;</a>
+<a name="ln964">                      }</a>
+<a name="ln965">                    c = 1.0/(double)sqrt(t * t + 1.0);</a>
+<a name="ln966">                    s = t * c;</a>
+<a name="ln967">                    a[i][j] = 0.0;</a>
+<a name="ln968">                    /* Perform a Jacobi rotation on the supplied matrix*/</a>
+<a name="ln969">                    for (k = 0; k &lt;= i-1; ++k)</a>
+<a name="ln970">                      {</a>
+<a name="ln971">                        atemp = c * a[k][i] - s * a[k][j];</a>
+<a name="ln972">                        a[k][j] = s * a[k][i] + c * a[k][j];</a>
+<a name="ln973">                        a[k][i] = atemp;</a>
+<a name="ln974">                      }</a>
+<a name="ln975">                    for (k = i+1; k &lt;= j-1; ++k)</a>
+<a name="ln976">                      {</a>
+<a name="ln977">                        atemp = c * a[i][k] - s * a[k][j];</a>
+<a name="ln978">                        a[k][j] = s * a[i][k] + c * a[k][j];</a>
+<a name="ln979">                        a[i][k] = atemp;</a>
+<a name="ln980">                      }</a>
+<a name="ln981">                    for (k = j+1; k &lt; 3; ++k)</a>
+<a name="ln982">                      {</a>
+<a name="ln983">                        atemp = c * a[i][k] - s * a[j][k];</a>
+<a name="ln984">                        a[j][k] = s * a[i][k] + c * a[j][k];</a>
+<a name="ln985">                        a[i][k] = atemp;</a>
+<a name="ln986">                      }</a>
+<a name="ln987">                      /* Rotate the reference frame */</a>
+<a name="ln988">                    for (k = 0; k &lt; 3; ++k)</a>
+<a name="ln989">                      {</a>
+<a name="ln990">                        vtemp = c * v[k][i] - s * v[k][j];</a>
+<a name="ln991">                        v[k][j] = s * v[k][i] + c * v[k][j];</a>
+<a name="ln992">                        v[k][i] = vtemp;</a>
+<a name="ln993">                      }</a>
+<a name="ln994">                    dtemp = c*c*d[i] + s*s*d[j] - 2.0*c*s*b;</a>
+<a name="ln995">                    d[j] = s*s*d[i] + c*c*d[j] +  2.0*c*s*b;</a>
+<a name="ln996">                    d[i] = dtemp;</a>
+<a name="ln997">                  }  /* end if */</a>
+<a name="ln998">              } /* end for i */</a>
+<a name="ln999">          } /* end for j */</a>
+<a name="ln1000">      } /* end for l */</a>
+<a name="ln1001"> </a>
+<a name="ln1002">  Exit_now:</a>
+<a name="ln1003"> </a>
+<a name="ln1004">    /* max_sweeps = l;*/</a>
+<a name="ln1005"> </a>
+<a name="ln1006">/* Now sort the eigenvalues and eigenvectors*/</a>
+<a name="ln1007">    for (j = 0; j &lt; 3-1; ++j)</a>
+<a name="ln1008">      {</a>
+<a name="ln1009">        k = j;</a>
+<a name="ln1010">        dtemp = d[k];</a>
+<a name="ln1011">        for (i = j+1; i &lt; 3; ++i)</a>
+<a name="ln1012">          if(d[i] &lt; dtemp)</a>
+<a name="ln1013">            {</a>
+<a name="ln1014">              k = i;</a>
+<a name="ln1015">              dtemp = d[k];</a>
+<a name="ln1016">            }</a>
+<a name="ln1017"> </a>
+<a name="ln1018">        if(k &gt; j)</a>
+<a name="ln1019">          {</a>
+<a name="ln1020">            d[k] = d[j];</a>
+<a name="ln1021">            d[j] = dtemp;</a>
+<a name="ln1022">            for (i = 0; i &lt; 3 ; ++i)</a>
+<a name="ln1023">              {</a>
+<a name="ln1024">                dtemp = v[i][k];</a>
+<a name="ln1025">                v[i][k] = v[i][j];</a>
+<a name="ln1026">                v[i][j] = dtemp;</a>
+<a name="ln1027">              }</a>
+<a name="ln1028">          }</a>
+<a name="ln1029">      }</a>
+<a name="ln1030"> </a>
+<a name="ln1031">	/* Transfer the 1st two eigenvectors into r1 and r2*/</a>
+<a name="ln1032">    r1[0] = v[0][0];</a>
+<a name="ln1033">    r1[1] = v[1][0];</a>
+<a name="ln1034">    r1[2] = v[2][0];</a>
+<a name="ln1035">    r2[0] = v[0][1];</a>
+<a name="ln1036">    r2[1] = v[1][1];</a>
+<a name="ln1037">    r2[2] = v[2][1];</a>
+<a name="ln1038"> </a>
+<a name="ln1039">	/* Generate the 3rd unit vector for the new co-ordinate frame by cross product of r1 and r2*/</a>
+<a name="ln1040">    v3[0] =  r1[1]*r2[2] - r1[2]*r2[1];</a>
+<a name="ln1041">    v3[1] = -r1[0]*r2[2] + r1[2]*r2[0];</a>
+<a name="ln1042">    v3[2] =  r1[0]*r2[1] - r1[1]*r2[0];</a>
+<a name="ln1043">	/* Ensure it is normalised |v3|=1 */</a>
+<a name="ln1044">    s = (double)sqrt(v3[0]*v3[0] + v3[1]*v3[1] + v3[2]*v3[2]);</a>
+<a name="ln1045">    v3[0] /= s;</a>
+<a name="ln1046">    v3[1] /= s;</a>
+<a name="ln1047">    v3[2] /= s;</a>
+<a name="ln1048"> </a>
+<a name="ln1049">	/* Generate the 2nd unit vector for the new co-ordinate frame by cross product of v3 and r1*/</a>
+<a name="ln1050">    v2[0] =  v3[1]*r1[2] - v3[2]*r1[1];</a>
+<a name="ln1051">    v2[1] = -v3[0]*r1[2] + v3[2]*r1[0];</a>
+<a name="ln1052">    v2[2] =  v3[0]*r1[1] - v3[1]*r1[0];</a>
+<a name="ln1053">    /* Ensure it is normalised |v2|=1 */</a>
+<a name="ln1054">    s = (double)sqrt(v2[0]*v2[0] + v2[1]*v2[1] + v2[2]*v2[2]);</a>
+<a name="ln1055">    v2[0] /= s;</a>
+<a name="ln1056">    v2[1] /= s;</a>
+<a name="ln1057">    v2[2] /= s;</a>
+<a name="ln1058"> </a>
+<a name="ln1059">	/* Generate the 1st unit vector for the new co-ordinate frame by cross product of v2 and v3*/</a>
+<a name="ln1060">    v1[0] =  v2[1]*v3[2] - v2[2]*v3[1];</a>
+<a name="ln1061">    v1[1] = -v2[0]*v3[2] + v2[2]*v3[0];</a>
+<a name="ln1062">    v1[2] =  v2[0]*v3[1] - v2[1]*v3[0];</a>
+<a name="ln1063">     /* Ensure it is normalised |v1|=1 */</a>
+<a name="ln1064">    s = (double)sqrt(v1[0]*v1[0] + v1[1]*v1[1] + v1[2]*v1[2]);</a>
+<a name="ln1065">    v1[0] /= s;</a>
+<a name="ln1066">    v1[1] /= s;</a>
+<a name="ln1067">    v1[2] /= s;</a>
+<a name="ln1068"> </a>
+<a name="ln1069">	/* Transfer to the row matrix form for the result*/</a>
+<a name="ln1070">    rmat[0] = v1[0];</a>
+<a name="ln1071">    rmat[1] = v1[1];</a>
+<a name="ln1072">    rmat[2] = v1[2];</a>
+<a name="ln1073">    rmat[3] = v2[0];</a>
+<a name="ln1074">    rmat[4] = v2[1];</a>
+<a name="ln1075">    rmat[5] = v2[2];</a>
+<a name="ln1076">    rmat[6] = v3[0];</a>
+<a name="ln1077">    rmat[7] = v3[1];</a>
+<a name="ln1078">    rmat[8] = v3[2];</a>
+<a name="ln1079">  }</a>
+<a name="ln1080"> </a>
+<a name="ln1081">  static int get_roots_3_3(double mat[3][3], double roots[3])</a>
+<a name="ln1082">  {</a>
+<a name="ln1083">    double rmat[9];</a>
+<a name="ln1084"> </a>
+<a name="ln1085">    ob_make_rmat(mat,rmat);</a>
+<a name="ln1086"> </a>
+<a name="ln1087">    mat[0][0]=rmat[0];</a>
+<a name="ln1088">    mat[0][1]=rmat[3];</a>
+<a name="ln1089">    mat[0][2]=rmat[6];</a>
+<a name="ln1090">    mat[1][0]=rmat[1];</a>
+<a name="ln1091">    mat[1][1]=rmat[4];</a>
+<a name="ln1092">    mat[1][2]=rmat[7];</a>
+<a name="ln1093">    mat[2][0]=rmat[2];</a>
+<a name="ln1094">    mat[2][1]=rmat[5];</a>
+<a name="ln1095">    mat[2][2]=rmat[8];</a>
+<a name="ln1096"> </a>
+<a name="ln1097">    roots[0]=(double)Roots[0];</a>
+<a name="ln1098">    roots[1]=(double)Roots[1];</a>
+<a name="ln1099">    roots[2]=(double)Roots[2];</a>
+<a name="ln1100"> </a>
+<a name="ln1101">    return 1;</a>
+<a name="ln1102">  }</a>
+<a name="ln1103"> </a>
+<a name="ln1104">  double superimpose(double *r,double *f,int size)</a>
+<a name="ln1105">  {</a>
+<a name="ln1106">    int i,j;</a>
+<a name="ln1107">    double x,y,z,d2;</a>
+<a name="ln1108">    double mat[3][3],rmat[3][3],mat2[3][3],roots[3];</a>
+<a name="ln1109"> </a>
+<a name="ln1110">    /* make inertial cross tensor */</a>
+<a name="ln1111">    for(i=0;i&lt;3;++i)</a>
+<a name="ln1112">      for(j=0;j&lt;3;++j)</a>
+<a name="ln1113">        mat[i][j]=0.0;</a>
+<a name="ln1114"> </a>
+<a name="ln1115">    for(i=0;i &lt; size;++i)</a>
+<a name="ln1116">      {</a>
+<a name="ln1117">        mat[0][0]+=r[3*i]  *f[3*i];</a>
+<a name="ln1118">        mat[1][0]+=r[3*i+1]*f[3*i];</a>
+<a name="ln1119">        mat[2][0]+=r[3*i+2]*f[3*i];</a>
+<a name="ln1120">        mat[0][1]+=r[3*i]  *f[3*i+1];</a>
+<a name="ln1121">        mat[1][1]+=r[3*i+1]*f[3*i+1];</a>
+<a name="ln1122">        mat[2][1]+=r[3*i+2]*f[3*i+1];</a>
+<a name="ln1123">        mat[0][2]+=r[3*i]  *f[3*i+2];</a>
+<a name="ln1124">        mat[1][2]+=r[3*i+1]*f[3*i+2];</a>
+<a name="ln1125">        mat[2][2]+=r[3*i+2]*f[3*i+2];</a>
+<a name="ln1126">      }</a>
+<a name="ln1127"> </a>
+<a name="ln1128">    d2=mat[0][0]*(mat[1][1]*mat[2][2]-mat[1][2]*mat[2][1])</a>
+<a name="ln1129">      -mat[0][1]*(mat[1][0]*mat[2][2]-mat[1][2]*mat[2][0])</a>
+<a name="ln1130">      +mat[0][2]*(mat[1][0]*mat[2][1]-mat[1][1]*mat[2][0]);</a>
+<a name="ln1131"> </a>
+<a name="ln1132"> </a>
+<a name="ln1133">    /* square matrix= ((mat transpose) * mat) */</a>
+<a name="ln1134">    for(i=0;i&lt;3;++i)</a>
+<a name="ln1135">      for(j=0;j&lt;3;++j)</a>
+<a name="ln1136">        {</a>
+<a name="ln1137">          x=mat[0][i]*mat[0][j]+mat[1][i]*mat[1][j]+mat[2][i]*mat[2][j];</a>
+<a name="ln1138">          mat2[i][j]=mat[i][j];</a>
+<a name="ln1139">          rmat[i][j]=x;</a>
+<a name="ln1140">        }</a>
+<a name="ln1141">    get_roots_3_3(rmat,roots);</a>
+<a name="ln1142"> </a>
+<a name="ln1143">    roots[0]=(roots[0]&lt;0.0001) ? 0.0: (roots[0]);</a>
+<a name="ln1144">    roots[1]=(roots[1]&lt;0.0001) ? 0.0: (roots[1]);</a>
+<a name="ln1145">    roots[2]=(roots[2]&lt;0.0001) ? 0.0: (roots[2]);</a>
+<a name="ln1146"> </a>
+<a name="ln1147">    /* make sqrt of rmat, store in mat*/</a>
+<a name="ln1148"> </a>
+<a name="ln1149">    roots[0]=roots[0]&lt;0.0001? 0.0: 1.0/(double)sqrt(roots[0]);</a>
+<a name="ln1150">    roots[1]=roots[1]&lt;0.0001? 0.0: 1.0/(double)sqrt(roots[1]);</a>
+<a name="ln1151">    roots[2]=roots[2]&lt;0.0001? 0.0: 1.0/(double)sqrt(roots[2]);</a>
+<a name="ln1152"> </a>
+<a name="ln1153">    if(d2&lt;0.0)</a>
+<a name="ln1154">      {</a>
+<a name="ln1155">        if( (roots[0]&gt;=roots[1]) &amp;&amp; (roots[0]&gt;=roots[2]) )</a>
+<a name="ln1156">          roots[0]*=-1.0;</a>
+<a name="ln1157">        if( (roots[1]&gt;roots[0]) &amp;&amp; (roots[1]&gt;=roots[2]) )</a>
+<a name="ln1158">          roots[1]*=-1.0;</a>
+<a name="ln1159">        if( (roots[2]&gt;roots[1]) &amp;&amp; (roots[2]&gt;roots[0]) )</a>
+<a name="ln1160">          roots[2]*=-1.0;</a>
+<a name="ln1161">      }</a>
+<a name="ln1162"> </a>
+<a name="ln1163">    for(i=0;i&lt;3;++i)</a>
+<a name="ln1164">      for(j=0;j&lt;3;++j)</a>
+<a name="ln1165">        mat[i][j]=roots[0]*rmat[i][0]*rmat[j][0]+</a>
+<a name="ln1166">          roots[1]*rmat[i][1]*rmat[j][1]+</a>
+<a name="ln1167">          roots[2]*rmat[i][2]*rmat[j][2];</a>
+<a name="ln1168"> </a>
+<a name="ln1169">    /* and multiply into original inertial cross matrix, mat2 */</a>
+<a name="ln1170">    for(i=0;i&lt;3;++i)</a>
+<a name="ln1171">      for(j=0;j&lt;3;++j)</a>
+<a name="ln1172">        rmat[i][j]=mat[0][j]*mat2[i][0]+</a>
+<a name="ln1173">          mat[1][j]*mat2[i][1]+</a>
+<a name="ln1174">          mat[2][j]*mat2[i][2];</a>
+<a name="ln1175"> </a>
+<a name="ln1176">    /* rotate all coordinates */</a>
+<a name="ln1177">    d2 = 0.0;</a>
+<a name="ln1178">    for(i=0;i&lt;size;++i)</a>
+<a name="ln1179">      {</a>
+<a name="ln1180">        x=f[3*i]*rmat[0][0]+f[3*i+1]*rmat[0][1]+f[3*i+2]*rmat[0][2];</a>
+<a name="ln1181">        y=f[3*i]*rmat[1][0]+f[3*i+1]*rmat[1][1]+f[3*i+2]*rmat[1][2];</a>
+<a name="ln1182">        z=f[3*i]*rmat[2][0]+f[3*i+1]*rmat[2][1]+f[3*i+2]*rmat[2][2];</a>
+<a name="ln1183">        f[3*i  ]=x;</a>
+<a name="ln1184">        f[3*i+1]=y;</a>
+<a name="ln1185">        f[3*i+2]=z;</a>
+<a name="ln1186"> </a>
+<a name="ln1187">        x = r[i*3]   - f[i*3];</a>
+<a name="ln1188">        y = r[i*3+1] - f[i*3+1];</a>
+<a name="ln1189">        z = r[i*3+2] - f[i*3+2];</a>
+<a name="ln1190">        d2 += x*x+y*y+z*z;</a>
+<a name="ln1191">      }</a>
+<a name="ln1192"> </a>
+<a name="ln1193">    d2 /= (double) size;</a>
+<a name="ln1194"> </a>
+<a name="ln1195">    return((double)sqrt(d2));</a>
+<a name="ln1196">  }</a>
+<a name="ln1197"> </a>
+<a name="ln1198">  void get_rmat(double *rvec,double *r,double *f,int size)</a>
+<a name="ln1199">  {</a>
+<a name="ln1200">    int i,j;</a>
+<a name="ln1201">    double x,d2;</a>
+<a name="ln1202">    double mat[3][3],rmat[3][3],mat2[3][3],roots[3];</a>
+<a name="ln1203"> </a>
+<a name="ln1204">    /* make inertial cross tensor */</a>
+<a name="ln1205">    for(i=0;i&lt;3;++i)</a>
+<a name="ln1206">      for(j=0;j&lt;3;++j)</a>
+<a name="ln1207">        mat[i][j]=0.0;</a>
+<a name="ln1208"> </a>
+<a name="ln1209">    for(i=0;i &lt; size;++i)</a>
+<a name="ln1210">      {</a>
+<a name="ln1211">        mat[0][0]+=r[3*i]  *f[3*i];</a>
+<a name="ln1212">        mat[1][0]+=r[3*i+1]*f[3*i];</a>
+<a name="ln1213">        mat[2][0]+=r[3*i+2]*f[3*i];</a>
+<a name="ln1214">        mat[0][1]+=r[3*i]  *f[3*i+1];</a>
+<a name="ln1215">        mat[1][1]+=r[3*i+1]*f[3*i+1];</a>
+<a name="ln1216">        mat[2][1]+=r[3*i+2]*f[3*i+1];</a>
+<a name="ln1217">        mat[0][2]+=r[3*i]  *f[3*i+2];</a>
+<a name="ln1218">        mat[1][2]+=r[3*i+1]*f[3*i+2];</a>
+<a name="ln1219">        mat[2][2]+=r[3*i+2]*f[3*i+2];</a>
+<a name="ln1220">      }</a>
+<a name="ln1221"> </a>
+<a name="ln1222">    d2=mat[0][0]*(mat[1][1]*mat[2][2]-mat[1][2]*mat[2][1])</a>
+<a name="ln1223">      -mat[0][1]*(mat[1][0]*mat[2][2]-mat[1][2]*mat[2][0])</a>
+<a name="ln1224">      +mat[0][2]*(mat[1][0]*mat[2][1]-mat[1][1]*mat[2][0]);</a>
+<a name="ln1225"> </a>
+<a name="ln1226">    /* square matrix= ((mat transpose) * mat) */</a>
+<a name="ln1227">    for(i=0;i&lt;3;++i)</a>
+<a name="ln1228">      for(j=0;j&lt;3;++j)</a>
+<a name="ln1229">        {</a>
+<a name="ln1230">          x=mat[0][i]*mat[0][j]+mat[1][i]*mat[1][j]+mat[2][i]*mat[2][j];</a>
+<a name="ln1231">          mat2[i][j]=mat[i][j];</a>
+<a name="ln1232">          rmat[i][j]=x;</a>
+<a name="ln1233">        }</a>
+<a name="ln1234">    get_roots_3_3(rmat,roots);</a>
+<a name="ln1235"> </a>
+<a name="ln1236">    roots[0]=(roots[0]&lt;0.0001) ? 0.0: (roots[0]);</a>
+<a name="ln1237">    roots[1]=(roots[1]&lt;0.0001) ? 0.0: (roots[1]);</a>
+<a name="ln1238">    roots[2]=(roots[2]&lt;0.0001) ? 0.0: (roots[2]);</a>
+<a name="ln1239"> </a>
+<a name="ln1240">    /* make sqrt of rmat, store in mat*/</a>
+<a name="ln1241"> </a>
+<a name="ln1242">    roots[0]=(roots[0]&lt;0.0001) ? 0.0: 1.0/(double)sqrt(roots[0]);</a>
+<a name="ln1243">    roots[1]=(roots[1]&lt;0.0001) ? 0.0: 1.0/(double)sqrt(roots[1]);</a>
+<a name="ln1244">    roots[2]=(roots[2]&lt;0.0001) ? 0.0: 1.0/(double)sqrt(roots[2]);</a>
+<a name="ln1245"> </a>
+<a name="ln1246">    if(d2&lt;0.0)</a>
+<a name="ln1247">      {</a>
+<a name="ln1248">        if( (roots[0]&gt;=roots[1]) &amp;&amp; (roots[0]&gt;=roots[2]) )</a>
+<a name="ln1249">          roots[0]*=-1.0;</a>
+<a name="ln1250">        if( (roots[1]&gt;roots[0]) &amp;&amp; (roots[1]&gt;=roots[2]) )</a>
+<a name="ln1251">          roots[1]*=-1.0;</a>
+<a name="ln1252">        if( (roots[2]&gt;roots[1]) &amp;&amp; (roots[2]&gt;roots[0]) )</a>
+<a name="ln1253">          roots[2]*=-1.0;</a>
+<a name="ln1254">      }</a>
+<a name="ln1255"> </a>
+<a name="ln1256">    for(i=0;i&lt;3;++i)</a>
+<a name="ln1257">      for(j=0;j&lt;3;++j)</a>
+<a name="ln1258">        mat[i][j]=roots[0]*rmat[i][0]*rmat[j][0]+</a>
+<a name="ln1259">          roots[1]*rmat[i][1]*rmat[j][1]+</a>
+<a name="ln1260">          roots[2]*rmat[i][2]*rmat[j][2];</a>
+<a name="ln1261"> </a>
+<a name="ln1262">    /* and multiply into original inertial cross matrix, mat2 */</a>
+<a name="ln1263">    for(i=0;i&lt;3;++i)</a>
+<a name="ln1264">      for(j=0;j&lt;3;++j)</a>
+<a name="ln1265">        rmat[i][j]=mat[0][j]*mat2[i][0]+</a>
+<a name="ln1266">          mat[1][j]*mat2[i][1]+</a>
+<a name="ln1267">          mat[2][j]*mat2[i][2];</a>
+<a name="ln1268"> </a>
+<a name="ln1269">    rvec[0] = rmat[0][0];</a>
+<a name="ln1270">    rvec[1] = rmat[0][1];</a>
+<a name="ln1271">    rvec[2] = rmat[0][2];</a>
+<a name="ln1272">    rvec[3] = rmat[1][0];</a>
+<a name="ln1273">    rvec[4] = rmat[1][1];</a>
+<a name="ln1274">    rvec[5] = rmat[1][2];</a>
+<a name="ln1275">    rvec[6] = rmat[2][0];</a>
+<a name="ln1276">    rvec[7] = rmat[2][1];</a>
+<a name="ln1277">    rvec[8] = rmat[2][2];</a>
+<a name="ln1278">  }</a>
+<a name="ln1279"> </a>
+<a name="ln1280">} // end namespace OpenBabel</a>
+<a name="ln1281"> </a>
+<a name="ln1282">//! \file obutil.cpp</a>
+<a name="ln1283">//! \brief Various utility methods.</a>
+
+</code></pre>
+<div class="balloon" rel="114"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'pos != string::npos' is always true.</p></div>
+<div class="balloon" rel="969"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1008/" target="_blank">V1008</a> Consider inspecting the 'for' operator. No more than one iteration of the loop will be performed.</p></div>
+<div class="balloon" rel="975"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1008/" target="_blank">V1008</a> Consider inspecting the 'for' operator. No more than one iteration of the loop will be performed.</p></div>
+<div class="balloon" rel="981"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1008/" target="_blank">V1008</a> Consider inspecting the 'for' operator. No more than one iteration of the loop will be performed.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,838 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>mol2format.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Copyright (C) 1998-2001 by OpenEye Scientific Software, Inc.</a>
+<a name="ln3">Some portions Copyright (C) 2001-2007 by Geoffrey R. Hutchison</a>
+<a name="ln4">Some portions Copyright (C) 2004 by Chris Morley</a>
+<a name="ln5"> </a>
+<a name="ln6">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln7">it under the terms of the GNU General Public License as published by</a>
+<a name="ln8">the Free Software Foundation version 2 of the License.</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is distributed in the hope that it will be useful,</a>
+<a name="ln11">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln12">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln13">GNU General Public License for more details.</a>
+<a name="ln14">***********************************************************************/</a>
+<a name="ln15">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln16"> </a>
+<a name="ln17">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln18">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln24">#include &lt;openbabel/kekulize.h&gt;</a>
+<a name="ln25">#include &lt;openbabel/obfunctions.h&gt;</a>
+<a name="ln26">#include &lt;openbabel/data.h&gt;</a>
+<a name="ln27">#include &lt;cstdlib&gt;</a>
+<a name="ln28"> </a>
+<a name="ln29">using namespace std;</a>
+<a name="ln30">namespace OpenBabel</a>
+<a name="ln31">{</a>
+<a name="ln32">  //The routine WriteSmiOrderedMol2() in the original mol2.cpp is presumably</a>
+<a name="ln33">  //another output format, but was not made available in version 100.1.2, nor</a>
+<a name="ln34">  //is it here.</a>
+<a name="ln35"> </a>
+<a name="ln36">  class MOL2Format : public OBMoleculeFormat</a>
+<a name="ln37">  {</a>
+<a name="ln38">  public:</a>
+<a name="ln39">    //Register this format type ID</a>
+<a name="ln40">    MOL2Format()</a>
+<a name="ln41">    {</a>
+<a name="ln42">      OBConversion::RegisterFormat(&quot;mol2&quot;,this, &quot;chemical/x-mol2&quot;);</a>
+<a name="ln43">      OBConversion::RegisterFormat(&quot;ml2&quot;,this);</a>
+<a name="ln44">      OBConversion::RegisterFormat(&quot;sy2&quot;,this);</a>
+<a name="ln45">      OBConversion::RegisterOptionParam(&quot;c&quot;, this, 0, OBConversion::INOPTIONS);</a>
+<a name="ln46">      OBConversion::RegisterOptionParam(&quot;c&quot;, this, 0, OBConversion::OUTOPTIONS);</a>
+<a name="ln47">      OBConversion::RegisterOptionParam(&quot;l&quot;, this, 0, OBConversion::OUTOPTIONS);</a>
+<a name="ln48">      OBConversion::RegisterOptionParam(&quot;u&quot;, this, 0, OBConversion::OUTOPTIONS);</a>
+<a name="ln49">    }</a>
+<a name="ln50"> </a>
+<a name="ln51">    virtual const char* Description() //required</a>
+<a name="ln52">    {</a>
+<a name="ln53">      return</a>
+<a name="ln54">        &quot;Sybyl Mol2 format\n&quot;</a>
+<a name="ln55">        &quot;Read Options e.g. -ac\n&quot;</a>
+<a name="ln56">        &quot;  c               Read UCSF Dock scores saved in comments preceding molecules\n\n&quot;</a>
+<a name="ln57">        &quot;Write Options e.g. -xl\n&quot;</a>
+<a name="ln58">        &quot;  l               Output ignores residue information (only ligands)\n&quot;</a>
+<a name="ln59">        &quot;  c               Write UCSF Dock scores saved in comments preceding molecules\n&quot;</a>
+<a name="ln60">        &quot;  u               Do not write formal charge information in UNITY records\n\n&quot;;</a>
+<a name="ln61">    };</a>
+<a name="ln62"> </a>
+<a name="ln63">    virtual const char* SpecificationURL()</a>
+<a name="ln64">    {</a>
+<a name="ln65">      return &quot;http://www.tripos.com/data/support/mol2.pdf&quot;;</a>
+<a name="ln66">    }; //optional</a>
+<a name="ln67"> </a>
+<a name="ln68">    virtual const char* GetMIMEType()</a>
+<a name="ln69">    { return &quot;chemical/x-mol2&quot;; };</a>
+<a name="ln70"> </a>
+<a name="ln71">    virtual int SkipObjects(int n, OBConversion* pConv);</a>
+<a name="ln72"> </a>
+<a name="ln73">    //*** This section identical for most OBMol conversions ***</a>
+<a name="ln74">    ////////////////////////////////////////////////////</a>
+<a name="ln75">    /// The &quot;API&quot; interface functions</a>
+<a name="ln76">    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln77">    virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln78">  };</a>
+<a name="ln79">  //***</a>
+<a name="ln80"> </a>
+<a name="ln81">  //Make an instance of the format class</a>
+<a name="ln82">  MOL2Format theMOL2Format;</a>
+<a name="ln83">  </a>
+<a name="ln84">  // Helper function for ReadMolecule</a>
+<a name="ln85">  // \return Is this atom a sulfur in a (di)thiocarboxyl (-CS2, -COS, CS2H or COSH) group?</a>
+<a name="ln86">  static bool IsThiocarboxylSulfur(OBAtom* queryatom)</a>
+<a name="ln87">  {</a>
+<a name="ln88">    if (queryatom-&gt;GetAtomicNum() != OBElements::Sulfur)</a>
+<a name="ln89">      return(false);</a>
+<a name="ln90">    if (queryatom-&gt;GetHvyDegree() != 1)</a>
+<a name="ln91">      return(false);</a>
+<a name="ln92"> </a>
+<a name="ln93">    OBAtom *atom = nullptr;</a>
+<a name="ln94">    OBBond *bond;</a>
+<a name="ln95">    OBBondIterator i;</a>
+<a name="ln96"> </a>
+<a name="ln97">    for (bond = queryatom-&gt;BeginBond(i); bond; bond = queryatom-&gt;NextBond(i))</a>
+<a name="ln98">      if ((bond-&gt;GetNbrAtom(queryatom))-&gt;GetAtomicNum() == OBElements::Carbon)</a>
+<a name="ln99">      {</a>
+<a name="ln100">        atom = bond-&gt;GetNbrAtom(queryatom);</a>
+<a name="ln101">        break;</a>
+<a name="ln102">      }</a>
+<a name="ln103">    if (!atom)</a>
+<a name="ln104">      return(false);</a>
+<a name="ln105">    if (!(atom-&gt;CountFreeSulfurs() == 2)</a>
+<a name="ln106">      &amp;&amp; !(atom-&gt;CountFreeOxygens() == 1 &amp;&amp; atom-&gt;CountFreeSulfurs() == 1))</a>
+<a name="ln107">      return(false);</a>
+<a name="ln108"> </a>
+<a name="ln109">    //atom is connected to a carbon that has a total</a>
+<a name="ln110">    //of 2 attached free sulfurs or 1 free oxygen and 1 free sulfur</a>
+<a name="ln111">    return(true);</a>
+<a name="ln112">  }</a>
+<a name="ln113"> </a>
+<a name="ln114">  static bool IsOxygenOrSulfur(OBAtom *atom)</a>
+<a name="ln115">  {</a>
+<a name="ln116">    switch (atom-&gt;GetAtomicNum()) {</a>
+<a name="ln117">    case 8: case 16: return true;</a>
+<a name="ln118">    default: return false;</a>
+<a name="ln119">    }</a>
+<a name="ln120">  }</a>
+<a name="ln121"> </a>
+<a name="ln122">  static unsigned int GetAtomicNumAndIsotope(const char* symbol, int *isotope)</a>
+<a name="ln123">  {</a>
+<a name="ln124">    const char* p = symbol;</a>
+<a name="ln125">    switch (p[0]) {</a>
+<a name="ln126">    case 'D':</a>
+<a name="ln127">      if (p[1] == '\0') {</a>
+<a name="ln128">        *isotope = 2;</a>
+<a name="ln129">        return 1;</a>
+<a name="ln130">      }</a>
+<a name="ln131">      break;</a>
+<a name="ln132">    case 'T':</a>
+<a name="ln133">      if (p[1] == '\0') {</a>
+<a name="ln134">        *isotope = 3;</a>
+<a name="ln135">        return 1;</a>
+<a name="ln136">      }</a>
+<a name="ln137">      break;</a>
+<a name="ln138">    }</a>
+<a name="ln139">    return OBElements::GetAtomicNum(symbol);</a>
+<a name="ln140">  }</a>
+<a name="ln141"> </a>
+<a name="ln142">  //read from ifs until next rti is found and return it</a>
+<a name="ln143">  static string read_until_rti(istream &amp; ifs) </a>
+<a name="ln144">  {</a>
+<a name="ln145">      char buffer[BUFF_SIZE];</a>
+<a name="ln146">      for (;;)</a>
+<a name="ln147">      {</a>
+<a name="ln148">        if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln149">          return &quot;&quot;;</a>
+<a name="ln150">        if (!strncmp(buffer,&quot;@&lt;TRIPOS&gt;&quot;,9))</a>
+<a name="ln151">          return string(buffer);</a>
+<a name="ln152">      }      </a>
+<a name="ln153">  }</a>
+<a name="ln154">  /////////////////////////////////////////////////////////////////</a>
+<a name="ln155">  bool MOL2Format::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln156">  {</a>
+<a name="ln157"> </a>
+<a name="ln158">    OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln159">    if (pmol == nullptr)</a>
+<a name="ln160">      return false;</a>
+<a name="ln161"> </a>
+<a name="ln162">    //Define some references so we can use the old parameter names</a>
+<a name="ln163">    istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln164">    OBMol &amp;mol = *pmol;</a>
+<a name="ln165"> </a>
+<a name="ln166">    //Old code follows...</a>
+<a name="ln167">    bool foundAtomLine = false;</a>
+<a name="ln168">    char buffer[BUFF_SIZE];</a>
+<a name="ln169">    char *comment = nullptr;</a>
+<a name="ln170">    string str,str1;</a>
+<a name="ln171">    vector&lt;string&gt; vstr;</a>
+<a name="ln172">    int len;</a>
+<a name="ln173"> </a>
+<a name="ln174">    // Prevent reperception</a>
+<a name="ln175">    mol.SetChainsPerceived();</a>
+<a name="ln176"> </a>
+<a name="ln177">    mol.BeginModify();</a>
+<a name="ln178"> </a>
+<a name="ln179">    for (;;)</a>
+<a name="ln180">      {</a>
+<a name="ln181">        if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln182">          return(false);</a>
+<a name="ln183">        if (pConv-&gt;IsOption(&quot;c&quot;, OBConversion::INOPTIONS) != nullptr &amp;&amp; EQn(buffer, &quot;###########&quot;, 10))</a>
+<a name="ln184">          {</a>
+<a name="ln185">            char attr[32], val[32];</a>
+<a name="ln186">            sscanf(buffer, &quot;########## %[^:]:%s&quot;, attr, val);</a>
+<a name="ln187">            OBPairData *dd = new OBPairData;</a>
+<a name="ln188">            dd-&gt;SetAttribute(attr);</a>
+<a name="ln189">            dd-&gt;SetValue(val);</a>
+<a name="ln190">            dd-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln191">            mol.SetData(dd);</a>
+<a name="ln192">          }</a>
+<a name="ln193">        if (EQn(buffer,&quot;@&lt;TRIPOS&gt;MOLECULE&quot;,17))</a>
+<a name="ln194">          break;</a>
+<a name="ln195">      }</a>
+<a name="ln196"> </a>
+<a name="ln197">    // OK, just read MOLECULE line</a>
+<a name="ln198">    int lcount;</a>
+<a name="ln199">    int natoms,nbonds;</a>
+<a name="ln200">    bool hasPartialCharges = true;</a>
+<a name="ln201">    for (lcount=0;;lcount++)</a>
+<a name="ln202">      {</a>
+<a name="ln203">        if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln204">          return(false);</a>
+<a name="ln205">        if (EQn(buffer,&quot;@&lt;TRIPOS&gt;ATOM&quot;,13))</a>
+<a name="ln206">          {</a>
+<a name="ln207">            foundAtomLine = true;</a>
+<a name="ln208">            break;</a>
+<a name="ln209">          }</a>
+<a name="ln210"> </a>
+<a name="ln211">        if (lcount == 0)</a>
+<a name="ln212">          {</a>
+<a name="ln213">            tokenize(vstr,buffer);</a>
+<a name="ln214">            if (!vstr.empty())</a>
+<a name="ln215">              mol.SetTitle(buffer);</a>
+<a name="ln216">          }</a>
+<a name="ln217">        else if (lcount == 1)</a>
+<a name="ln218">          sscanf(buffer,&quot;%d%d&quot;,&amp;natoms,&amp;nbonds);</a>
+<a name="ln219">        else if (lcount == 3) // charge descriptions</a>
+<a name="ln220">          {</a>
+<a name="ln221">            // Annotate origin of partial charges</a>
+<a name="ln222">            OBPairData *dp = new OBPairData;</a>
+<a name="ln223">            dp-&gt;SetAttribute(&quot;PartialCharges&quot;);</a>
+<a name="ln224">            dp-&gt;SetValue(buffer);</a>
+<a name="ln225">            dp-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln226">            mol.SetData(dp);</a>
+<a name="ln227"> </a>
+<a name="ln228">            if (strncasecmp(buffer, &quot;NO_CHARGES&quot;, 10) == 0)</a>
+<a name="ln229">              hasPartialCharges = false;</a>
+<a name="ln230">          }</a>
+<a name="ln231">        else if (lcount == 4) //energy (?)</a>
+<a name="ln232">          {</a>
+<a name="ln233">            tokenize(vstr,buffer);</a>
+<a name="ln234">            if (!vstr.empty() &amp;&amp; vstr.size() == 3)</a>
+<a name="ln235">              if (vstr[0] == &quot;Energy&quot;)</a>
+<a name="ln236">                mol.SetEnergy(atof(vstr[2].c_str()));</a>
+<a name="ln237">          }</a>
+<a name="ln238">        else if (lcount == 5) //comment</a>
+<a name="ln239">          {</a>
+<a name="ln240">            if ( buffer[0] )</a>
+<a name="ln241">              {</a>
+<a name="ln242">                len = (int) strlen(buffer)+1;</a>
+<a name="ln243">                //! @todo allow better multi-line comments</a>
+<a name="ln244">                // which don't allow ill-formed data to consume memory</a>
+<a name="ln245">                // Thanks to Andrew Dalke for the pointer</a>
+<a name="ln246">                if (comment != nullptr)</a>
+<a name="ln247">                  delete [] comment;</a>
+<a name="ln248">                comment = new char [len];</a>
+<a name="ln249">                memcpy(comment,buffer,len);</a>
+<a name="ln250">              }</a>
+<a name="ln251">          }</a>
+<a name="ln252">      }</a>
+<a name="ln253"> </a>
+<a name="ln254">    if (!foundAtomLine)</a>
+<a name="ln255">      {</a>
+<a name="ln256">        mol.EndModify();</a>
+<a name="ln257">        mol.Clear();</a>
+<a name="ln258">        obErrorLog.ThrowError(__FUNCTION__, &quot;Unable to read Mol2 format file. No atoms found.&quot;, obWarning);</a>
+<a name="ln259">        return(false);</a>
+<a name="ln260">      }</a>
+<a name="ln261"> </a>
+<a name="ln262">    mol.ReserveAtoms(natoms);</a>
+<a name="ln263"> </a>
+<a name="ln264">    int i;</a>
+<a name="ln265">    vector3 v;</a>
+<a name="ln266">    OBAtom atom;</a>
+<a name="ln267">    double x,y,z,pcharge;</a>
+<a name="ln268">    char temp_type[BUFF_SIZE], resname[BUFF_SIZE], atmid[BUFF_SIZE];</a>
+<a name="ln269">    int elemno, resnum = -1;</a>
+<a name="ln270">    int isotope = 0;</a>
+<a name="ln271">    bool has_explicit_hydrogen = false;</a>
+<a name="ln272">    bool has_residue_information = false;</a>
+<a name="ln273"> </a>
+<a name="ln274">    ttab.SetFromType(&quot;SYB&quot;);</a>
+<a name="ln275">    for (i = 0;i &lt; natoms;i++)</a>
+<a name="ln276">      {</a>
+<a name="ln277">        if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln278">          return(false);</a>
+<a name="ln279">        sscanf(buffer,&quot; %*s %1024s %lf %lf %lf %1024s %d %1024s %lf&quot;,</a>
+<a name="ln280">               atmid, &amp;x,&amp;y,&amp;z, temp_type, &amp;resnum, resname, &amp;pcharge);</a>
+<a name="ln281"> </a>
+<a name="ln282">        atom.SetVector(x, y, z);</a>
+<a name="ln283">        atom.SetFormalCharge(0);</a>
+<a name="ln284"> </a>
+<a name="ln285">        // Handle &quot;CL&quot; and &quot;BR&quot; and other mis-typed atoms</a>
+<a name="ln286">        str = temp_type;</a>
+<a name="ln287">        if (strncmp(temp_type, &quot;CL&quot;, 2) == 0) {</a>
+<a name="ln288">          str = &quot;Cl&quot;;</a>
+<a name="ln289">        } else  if (strncmp(temp_type,&quot;BR&quot;,2) == 0) {</a>
+<a name="ln290">          str = &quot;Br&quot;;</a>
+<a name="ln291">        } else if (strncmp(temp_type,&quot;S.o2&quot;, 4) == 0) {</a>
+<a name="ln292">          str = &quot;S.O2&quot;;</a>
+<a name="ln293">        } else if (strncmp(temp_type,&quot;S.o&quot;, 3) == 0) {</a>
+<a name="ln294">          str = &quot;S.O&quot;;</a>
+<a name="ln295">        } else if (strncmp(temp_type,&quot;SI&quot;, 2) == 0) {</a>
+<a name="ln296">          str = &quot;Si&quot;;</a>
+<a name="ln297">        // The following cases are entries which are not in openbabel/data/types.txt</a>
+<a name="ln298">        // and should probably be added there</a>
+<a name="ln299">        } else if (strncmp(temp_type,&quot;S.1&quot;, 3) == 0) {</a>
+<a name="ln300">          str = &quot;S.2&quot;; // no idea what the best type might be here</a>
+<a name="ln301">        } else if (strncmp(temp_type,&quot;P.&quot;, 2) == 0) {</a>
+<a name="ln302">          str = &quot;P.3&quot;;</a>
+<a name="ln303">        } else if (strncasecmp(temp_type,&quot;Ti.&quot;, 3) == 0) { // e.g. Ti.th</a>
+<a name="ln304">          str = &quot;Ti&quot;;</a>
+<a name="ln305">        } else if (strncasecmp(temp_type,&quot;Ru.&quot;, 3) == 0) { // e.g. Ru.oh</a>
+<a name="ln306">          str = &quot;Ru&quot;;</a>
+<a name="ln307">        // Fixes PR#3557898</a>
+<a name="ln308">        } else if (strncmp(temp_type, &quot;N.4&quot;, 3) == 0) {</a>
+<a name="ln309">          atom.SetFormalCharge(1);</a>
+<a name="ln310">        }</a>
+<a name="ln311"> </a>
+<a name="ln312">        ttab.SetToType(&quot;ATN&quot;);</a>
+<a name="ln313">        ttab.Translate(str1,str);</a>
+<a name="ln314">        elemno = atoi(str1.c_str());</a>
+<a name="ln315">        ttab.SetToType(&quot;IDX&quot;);</a>
+<a name="ln316"> </a>
+<a name="ln317">        // We might have missed some SI or FE type things above, so here's</a>
+<a name="ln318">        // another check</a>
+<a name="ln319">        if( !elemno &amp;&amp; isupper(temp_type[1]) )</a>
+<a name="ln320">          {</a>
+<a name="ln321">            temp_type[1] = (char)tolower(temp_type[1]);</a>
+<a name="ln322">            str = temp_type;</a>
+<a name="ln323">            ttab.SetToType(&quot;ATN&quot;);</a>
+<a name="ln324">            ttab.Translate(str1,str);</a>
+<a name="ln325">            elemno = atoi(str1.c_str());</a>
+<a name="ln326">            ttab.SetToType(&quot;IDX&quot;);</a>
+<a name="ln327">          }</a>
+<a name="ln328">        // One last check if there isn't a period in the type,</a>
+<a name="ln329">        // it's a malformed atom type, but it may be the element symbol</a>
+<a name="ln330">        // GaussView does this (PR#1739905)</a>
+<a name="ln331">        if ( !elemno ) {</a>
+<a name="ln332">          // check if it's &quot;Du&quot; or &quot;Xx&quot; and the element is in the atom name</a>
+<a name="ln333">          if (str == &quot;Du&quot; || str == &quot;Xx&quot;) {</a>
+<a name="ln334">            str = atmid;</a>
+<a name="ln335">            for (unsigned int i = 0; i &lt; str.length(); ++i)</a>
+<a name="ln336">              if (!isalpha(str[i])) {</a>
+<a name="ln337">                str.erase(i);</a>
+<a name="ln338">                break; // we've erased the end of the string</a>
+<a name="ln339">              }</a>
+<a name="ln340">          }</a>
+<a name="ln341"> </a>
+<a name="ln342"> </a>
+<a name="ln343">          std::stringstream errorMsg;</a>
+<a name="ln344">          errorMsg &lt;&lt; &quot;This Mol2 file is non-standard. Problem with molecule: &quot;</a>
+<a name="ln345">                   &lt;&lt; mol.GetTitle()</a>
+<a name="ln346">                   &lt;&lt; &quot; Cannot interpret atom types correctly, instead attempting to interpret atom type: &quot;</a>
+<a name="ln347">                   &lt;&lt; str &lt;&lt; &quot; as elements instead.&quot;;</a>
+<a name="ln348">          obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obWarning);</a>
+<a name="ln349"> </a>
+<a name="ln350">          string::size_type dotPos = str.find('.');</a>
+<a name="ln351">          if (dotPos == string::npos) {</a>
+<a name="ln352">            elemno = GetAtomicNumAndIsotope(str.c_str(), &amp;isotope);</a>
+<a name="ln353">          }</a>
+<a name="ln354">        }</a>
+<a name="ln355"> </a>
+<a name="ln356">        atom.SetAtomicNum(elemno);</a>
+<a name="ln357">        if (isotope)</a>
+<a name="ln358">          atom.SetIsotope(isotope);</a>
+<a name="ln359">        else if (elemno == 1)</a>
+<a name="ln360">          has_explicit_hydrogen = true;</a>
+<a name="ln361">        ttab.SetToType(&quot;INT&quot;);</a>
+<a name="ln362">        ttab.Translate(str1,str);</a>
+<a name="ln363">        atom.SetType(str1);</a>
+<a name="ln364">        atom.SetPartialCharge(pcharge);</a>
+<a name="ln365">        // MMFF94 has different atom types for Cu(I) and Cu(II)</a>
+<a name="ln366">        // as well as for Fe(II) and Fe(III), so the correct formal</a>
+<a name="ln367">        // charge is needed for correct atom type assignment</a>
+<a name="ln368">        if (str1 == &quot;Cu&quot; || str1 == &quot;Fe&quot;)</a>
+<a name="ln369">          atom.SetFormalCharge((int)pcharge);</a>
+<a name="ln370">        if (!mol.AddAtom(atom))</a>
+<a name="ln371">          return(false);</a>
+<a name="ln372">        if (!IsNearZero(pcharge))</a>
+<a name="ln373">          hasPartialCharges = true;</a>
+<a name="ln374"> </a>
+<a name="ln375">        // Add residue information if it exists</a>
+<a name="ln376">        if (resnum != -1 &amp;&amp; resnum != 0 &amp;&amp;</a>
+<a name="ln377">            strlen(resname) != 0 &amp;&amp; strncmp(resname,&quot;&lt;1&gt;&quot;, 3) != 0)</a>
+<a name="ln378">          {</a>
+<a name="ln379">            has_residue_information = true;</a>
+<a name="ln380">            OBResidue *res  = (mol.NumResidues() &gt; 0) ?</a>
+<a name="ln381">              mol.GetResidue(mol.NumResidues()-1) : nullptr;</a>
+<a name="ln382">            if (res == nullptr || res-&gt;GetName() != resname ||</a>
+<a name="ln383">                res-&gt;GetNum() != resnum)</a>
+<a name="ln384">              {</a>
+<a name="ln385">                vector&lt;OBResidue*&gt;::iterator ri;</a>
+<a name="ln386">                for (res = mol.BeginResidue(ri) ; res ; res = mol.NextResidue(ri))</a>
+<a name="ln387">                  if (res-&gt;GetName() == resname &amp;&amp;</a>
+<a name="ln388">                      res-&gt;GetNum() == resnum)</a>
+<a name="ln389">                    break;</a>
+<a name="ln390"> </a>
+<a name="ln391">                if (res == nullptr)</a>
+<a name="ln392">                  {</a>
+<a name="ln393">                    res = mol.NewResidue();</a>
+<a name="ln394">                    res-&gt;SetName(resname);</a>
+<a name="ln395">                    res-&gt;SetNum(resnum);</a>
+<a name="ln396">                  }</a>
+<a name="ln397">              }</a>
+<a name="ln398">            OBAtom *atomPtr = mol.GetAtom(mol.NumAtoms());</a>
+<a name="ln399">            res-&gt;AddAtom(atomPtr);</a>
+<a name="ln400">            res-&gt;SetAtomID(atomPtr, atmid);</a>
+<a name="ln401">          } // end adding residue info</a>
+<a name="ln402">      }</a>
+<a name="ln403"> </a>
+<a name="ln404">    string nextrti;</a>
+<a name="ln405">    do { nextrti = read_until_rti(ifs); } </a>
+<a name="ln406">    while(nextrti != &quot;@&lt;TRIPOS&gt;UNITY_ATOM_ATTR&quot; &amp;&amp; nextrti != &quot;@&lt;TRIPOS&gt;BOND&quot; &amp;&amp; nextrti.length() &gt; 0);</a>
+<a name="ln407"> </a>
+<a name="ln408">    if(nextrti == &quot;@&lt;TRIPOS&gt;UNITY_ATOM_ATTR&quot;)</a>
+<a name="ln409">    { //read in formal charge information, must be done before Kekulization</a>
+<a name="ln410">        int aid = 0, num = 0;</a>
+<a name="ln411">        while (ifs.peek() != '@' &amp;&amp; ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln412">        {</a>
+<a name="ln413">          sscanf(buffer,&quot;%d %d&quot;,&amp;aid, &amp;num);</a>
+<a name="ln414">          for(int i = 0; i &lt; num; i++) </a>
+<a name="ln415">          {</a>
+<a name="ln416">            if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln417">              return(false);</a>
+<a name="ln418">            if(strncmp(buffer, &quot;charge&quot;, 6) == 0)</a>
+<a name="ln419">            {</a>
+<a name="ln420">              int charge = 0;</a>
+<a name="ln421">              sscanf(buffer,&quot;%*s %d&quot;,&amp;charge);</a>
+<a name="ln422">              if(aid &lt;= mol.NumAtoms()) </a>
+<a name="ln423">              {</a>
+<a name="ln424">                OBAtom *atom = mol.GetAtom(aid);</a>
+<a name="ln425">                atom-&gt;SetFormalCharge(charge);</a>
+<a name="ln426">              }</a>
+<a name="ln427">            }</a>
+<a name="ln428">          }</a>
+<a name="ln429">        }</a>
+<a name="ln430">    }</a>
+<a name="ln431"> </a>
+<a name="ln432">    while(nextrti != &quot;@&lt;TRIPOS&gt;BOND&quot; &amp;&amp; nextrti.length() &gt; 0)</a>
+<a name="ln433">      nextrti = read_until_rti(ifs);</a>
+<a name="ln434"> </a>
+<a name="ln435">    if(nextrti != &quot;@&lt;TRIPOS&gt;BOND&quot;)</a>
+<a name="ln436">      return false;</a>
+<a name="ln437"> </a>
+<a name="ln438">    int start, end;</a>
+<a name="ln439">    bool needs_kekulization = false;</a>
+<a name="ln440">    for (i = 0; i &lt; nbonds; i++)</a>
+<a name="ln441">      {</a>
+<a name="ln442">        if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln443">          return(false);</a>
+<a name="ln444"> </a>
+<a name="ln445">        sscanf(buffer,&quot;%*d %d %d %1024s&quot;,&amp;start,&amp;end,temp_type);</a>
+<a name="ln446">        str = temp_type;</a>
+<a name="ln447">        unsigned int flags = 0;</a>
+<a name="ln448">        int order;</a>
+<a name="ln449">        if (str == &quot;ar&quot; || str == &quot;AR&quot; || str == &quot;Ar&quot;) {</a>
+<a name="ln450">          order = 1;</a>
+<a name="ln451">          flags = OB_AROMATIC_BOND;</a>
+<a name="ln452">          needs_kekulization = true;</a>
+<a name="ln453">        }</a>
+<a name="ln454">        else if (str == &quot;AM&quot; || str == &quot;am&quot; || str == &quot;Am&quot;)</a>
+<a name="ln455">          order = 1;</a>
+<a name="ln456">        else</a>
+<a name="ln457">          order = atoi(str.c_str());</a>
+<a name="ln458"> </a>
+<a name="ln459">        mol.AddBond(start, end, order, flags);</a>
+<a name="ln460">      }</a>
+<a name="ln461"> </a>
+<a name="ln462">    // TODO: Add a test case for the statement below of Paolo Tosco</a>
+<a name="ln463">    //       - I am currently assuming that is not a problem for the</a>
+<a name="ln464">    //         the current kekulization code, but it needs to be</a>
+<a name="ln465">    //         checked</a>
+<a name="ln466">    //   &quot;Make a pass to ensure that there are no double bonds</a>
+<a name="ln467">    //    between atoms which are also involved in aromatic bonds</a>
+<a name="ln468">    //    as that may ill-condition kekulization (fixes potential</a>
+<a name="ln469">    //    issues with molecules like CEWYIM30 (MMFF94 validation suite)&quot;</a>
+<a name="ln470"> </a>
+<a name="ln471">    mol.SetAromaticPerceived(); // don't trigger reperception</a>
+<a name="ln472"> </a>
+<a name="ln473">    if (has_explicit_hydrogen) {</a>
+<a name="ln474">      FOR_ATOMS_OF_MOL(atom, mol) {</a>
+<a name="ln475">        unsigned int total_valence = atom-&gt;GetTotalDegree();</a>
+<a name="ln476">        switch (atom-&gt;GetAtomicNum()) {</a>
+<a name="ln477">        case 8:</a>
+<a name="ln478">          if (total_valence != 1) continue;</a>
+<a name="ln479">          if (strcmp(atom-&gt;GetType(), &quot;O2&quot;) != 0) continue; // TODO: the O.co2 type is lost by this point</a>
+<a name="ln480">          {</a>
+<a name="ln481">            OBAtomBondIter bit(&amp;*atom);</a>
+<a name="ln482">            if (!bit-&gt;IsAromatic() &amp;&amp; bit-&gt;GetBondOrder() == 1)</a>
+<a name="ln483">              atom-&gt;SetFormalCharge(-1); // set -1 charge on dangling O.co2</a>
+<a name="ln484">          }</a>
+<a name="ln485">          break;</a>
+<a name="ln486">        case 17: // Cl</a>
+<a name="ln487">          if (total_valence == 0)</a>
+<a name="ln488">            atom-&gt;SetFormalCharge(-1);</a>
+<a name="ln489">          break;</a>
+<a name="ln490">        }</a>
+<a name="ln491">      }</a>
+<a name="ln492">    }</a>
+<a name="ln493"> </a>
+<a name="ln494">    // Kekulization is necessary if an aromatic bond is present</a>
+<a name="ln495">    if (needs_kekulization) {</a>
+<a name="ln496">      // &quot;de-aromatize&quot; carboxylates and (di)thiocarboxylates</a>
+<a name="ln497">      // The typical case (in our test suite anyway) is a carboxylate binding to</a>
+<a name="ln498">      // a metal ion. The two O's have charges of -0.5 and the bond orders are aromatic</a>
+<a name="ln499">      FOR_ATOMS_OF_MOL(atom, mol) {</a>
+<a name="ln500">        OBAtom* oxygenOrSulfur = &amp;*atom;</a>
+<a name="ln501">        // Look first for a terminal O/S</a>
+<a name="ln502">        if (!IsOxygenOrSulfur(oxygenOrSulfur) || oxygenOrSulfur-&gt;GetTotalDegree() != 1) continue;</a>
+<a name="ln503">        OBAtomBondIter bitA(oxygenOrSulfur);</a>
+<a name="ln504">        OBBond *bondA = &amp;*bitA;</a>
+<a name="ln505">        if (!bondA-&gt;IsAromatic()) continue;</a>
+<a name="ln506">        // Look for the carbon</a>
+<a name="ln507">        OBAtom *carbon = bondA-&gt;GetNbrAtom(oxygenOrSulfur);</a>
+<a name="ln508">        if (carbon-&gt;GetAtomicNum() != 6) continue;</a>
+<a name="ln509">        // Look for the other oxygen or sulfur</a>
+<a name="ln510">        OBAtom* otherOxygenOrSulfur = nullptr;</a>
+<a name="ln511">        OBBond* bondB = nullptr;</a>
+<a name="ln512">        FOR_BONDS_OF_ATOM(bitB, carbon) {</a>
+<a name="ln513">          if (&amp;*bitB == bondA || !bitB-&gt;IsAromatic()) continue;</a>
+<a name="ln514">          OBAtom* nbr = bitB-&gt;GetNbrAtom(carbon);</a>
+<a name="ln515">          if (IsOxygenOrSulfur(nbr) &amp;&amp; nbr-&gt;GetTotalDegree() == 1) {</a>
+<a name="ln516">            otherOxygenOrSulfur = nbr;</a>
+<a name="ln517">            bondB = &amp;*bitB;</a>
+<a name="ln518">          }</a>
+<a name="ln519">        }</a>
+<a name="ln520">        if (!otherOxygenOrSulfur) continue;</a>
+<a name="ln521">        if(otherOxygenOrSulfur-&gt;GetFormalCharge() != 0) continue; //formal charge already set on one</a>
+<a name="ln522"> </a>
+<a name="ln523">        // Now set as C(=O)O</a>
+<a name="ln524">        bondA-&gt;SetAromatic(false);</a>
+<a name="ln525">        oxygenOrSulfur-&gt;SetFormalCharge(-1);</a>
+<a name="ln526"> </a>
+<a name="ln527">        bondB-&gt;SetAromatic(false);</a>
+<a name="ln528">        bondB-&gt;SetBondOrder(2);</a>
+<a name="ln529">      }</a>
+<a name="ln530"> </a>
+<a name="ln531">      // First of all, set the atoms at the ends of the aromatic bonds to also</a>
+<a name="ln532">      // be aromatic. This information is required for OBKekulize.</a>
+<a name="ln533">      FOR_BONDS_OF_MOL(bond, mol) {</a>
+<a name="ln534">        if (bond-&gt;IsAromatic()) {</a>
+<a name="ln535">          bond-&gt;GetBeginAtom()-&gt;SetAromatic();</a>
+<a name="ln536">          bond-&gt;GetEndAtom()-&gt;SetAromatic();</a>
+<a name="ln537">        }</a>
+<a name="ln538">      }</a>
+<a name="ln539">      bool ok = OBKekulize(&amp;mol);</a>
+<a name="ln540">      if (!ok) {</a>
+<a name="ln541">        stringstream errorMsg;</a>
+<a name="ln542">        errorMsg &lt;&lt; &quot;Failed to kekulize aromatic bonds in MOL2 file&quot;;</a>
+<a name="ln543">        std::string title = mol.GetTitle();</a>
+<a name="ln544">        if (!title.empty())</a>
+<a name="ln545">          errorMsg &lt;&lt; &quot; (title is &quot; &lt;&lt; title &lt;&lt; &quot;)&quot;;</a>
+<a name="ln546">        errorMsg &lt;&lt; endl;</a>
+<a name="ln547">        obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obWarning);</a>
+<a name="ln548">        // return false; Should we return false for a kekulization failure?</a>
+<a name="ln549">      }</a>
+<a name="ln550">    }</a>
+<a name="ln551"> </a>
+<a name="ln552">    mol.EndModify();</a>
+<a name="ln553"> </a>
+<a name="ln554">    // Suggestion by Liu Zhiguo 2008-01-26</a>
+<a name="ln555">    // Mol2 files define atom types -- there is no need to re-perceive</a>
+<a name="ln556">    mol.SetAtomTypesPerceived();</a>
+<a name="ln557"> </a>
+<a name="ln558">    if (has_residue_information)</a>
+<a name="ln559">      mol.SetChainsPerceived();</a>
+<a name="ln560"> </a>
+<a name="ln561">    if (!has_explicit_hydrogen) {</a>
+<a name="ln562">      // Guess how many hydrogens are present on each atom based on typical valencies</a>
+<a name="ln563">      // TODO: implement the MOL2 valence model (if it exists)</a>
+<a name="ln564">      FOR_ATOMS_OF_MOL(matom, mol) {</a>
+<a name="ln565">        if (matom-&gt;GetImplicitHCount() == 0)</a>
+<a name="ln566">          OBAtomAssignTypicalImplicitHydrogens(&amp;*matom);</a>
+<a name="ln567">      }</a>
+<a name="ln568">    }</a>
+<a name="ln569"> </a>
+<a name="ln570">    //must add generic data after end modify - otherwise it will be blown away</a>
+<a name="ln571">    if (comment)</a>
+<a name="ln572">      {</a>
+<a name="ln573">        OBCommentData *cd = new OBCommentData;</a>
+<a name="ln574">        cd-&gt;SetData(comment);</a>
+<a name="ln575">        cd-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln576">        mol.SetData(cd);</a>
+<a name="ln577">        delete [] comment;</a>
+<a name="ln578">        comment = nullptr;</a>
+<a name="ln579">      }</a>
+<a name="ln580">    if (hasPartialCharges)</a>
+<a name="ln581">      mol.SetPartialChargesPerceived();</a>
+<a name="ln582"> </a>
+<a name="ln583">    /* Disabled due to PR#3048758 -- seekg is very slow with gzipped mol2</a>
+<a name="ln584">    // continue untill EOF or untill next molecule record</a>
+<a name="ln585">    streampos pos;</a>
+<a name="ln586">    for(;;)</a>
+<a name="ln587">      {</a>
+<a name="ln588">        pos = ifs.tellg();</a>
+<a name="ln589">        if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln590">          break;</a>
+<a name="ln591">        if (EQn(buffer,&quot;@&lt;TRIPOS&gt;MOLECULE&quot;,17))</a>
+<a name="ln592">          break;</a>
+<a name="ln593">      }</a>
+<a name="ln594"> </a>
+<a name="ln595">    ifs.seekg(pos); // go back to the end of the molecule</a>
+<a name="ln596">    */</a>
+<a name="ln597"> </a>
+<a name="ln598">    return(true);</a>
+<a name="ln599">  }</a>
+<a name="ln600"> </a>
+<a name="ln601">  ////////////////////////////////////////////////////////////////</a>
+<a name="ln602"> </a>
+<a name="ln603">  bool MOL2Format::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln604">  {</a>
+<a name="ln605">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln606">    if (pmol == nullptr)</a>
+<a name="ln607">      return false;</a>
+<a name="ln608"> </a>
+<a name="ln609">    //Define some references so we can use the old parameter names</a>
+<a name="ln610">    ostream &amp;ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln611">    OBMol &amp;mol = *pmol;</a>
+<a name="ln612">    bool ligandsOnly = pConv-&gt;IsOption(&quot;l&quot;, OBConversion::OUTOPTIONS) != nullptr;</a>
+<a name="ln613">    bool skipFormalCharge = pConv-&gt;IsOption(&quot;u&quot;, OBConversion::OUTOPTIONS) != nullptr;</a>
+<a name="ln614"> </a>
+<a name="ln615">    //The old code follows....</a>
+<a name="ln616">    string str,str1;</a>
+<a name="ln617">    char buffer[BUFF_SIZE],label[BUFF_SIZE];</a>
+<a name="ln618">    char rnum[BUFF_SIZE],rlabel[BUFF_SIZE];</a>
+<a name="ln619"> </a>
+<a name="ln620">    //Check if UCSF Dock style coments are on</a>
+<a name="ln621">    if (pConv-&gt;IsOption(&quot;c&quot;, OBConversion::OUTOPTIONS) != nullptr) {</a>
+<a name="ln622">        vector&lt;OBGenericData*&gt;::iterator k;</a>
+<a name="ln623">        vector&lt;OBGenericData*&gt; vdata = mol.GetData();</a>
+<a name="ln624">        ofs &lt;&lt; endl;</a>
+<a name="ln625">        for (k = vdata.begin();k != vdata.end();++k) {</a>
+<a name="ln626">            if ((*k)-&gt;GetDataType() == OBGenericDataType::PairData</a>
+<a name="ln627">            &amp;&amp; (*k)-&gt;GetOrigin()!=local //internal OBPairData is not written</a>
+<a name="ln628">            &amp;&amp; (*k)-&gt;GetAttribute()!=&quot;PartialCharges&quot;)</a>
+<a name="ln629">            {</a>
+<a name="ln630">                ofs &lt;&lt; &quot;##########\t&quot; &lt;&lt; (*k)-&gt;GetAttribute() &lt;&lt; &quot;:\t&quot; &lt;&lt; ((OBPairData*)(*k))-&gt;GetValue() &lt;&lt; endl;</a>
+<a name="ln631">            }</a>
+<a name="ln632">        }</a>
+<a name="ln633">        ofs &lt;&lt; endl;</a>
+<a name="ln634">    }</a>
+<a name="ln635"> </a>
+<a name="ln636">    ofs &lt;&lt; &quot;@&lt;TRIPOS&gt;MOLECULE&quot; &lt;&lt; endl;</a>
+<a name="ln637">    str = mol.GetTitle();</a>
+<a name="ln638">    if (str.empty())</a>
+<a name="ln639">      ofs &lt;&lt; &quot;*****&quot; &lt;&lt; endl;</a>
+<a name="ln640">    else</a>
+<a name="ln641">      ofs &lt;&lt; str &lt;&lt; endl;</a>
+<a name="ln642"> </a>
+<a name="ln643">    snprintf(buffer, BUFF_SIZE,&quot; %d %d 0 0 0&quot;, mol.NumAtoms(),mol.NumBonds());</a>
+<a name="ln644">    ofs &lt;&lt; buffer &lt;&lt; endl;</a>
+<a name="ln645">    ofs &lt;&lt; &quot;SMALL&quot; &lt;&lt; endl; // TODO: detect if we have protein, biopolymer, etc.</a>
+<a name="ln646"> </a>
+<a name="ln647">    OBPairData *dp = (OBPairData*)mol.GetData(&quot;PartialCharges&quot;);</a>
+<a name="ln648">    if (dp != nullptr) {</a>
+<a name="ln649">        // Tripos spec says:</a>
+<a name="ln650">        // NO_CHARGES, DEL_RE, GASTEIGER, GAST_HUCK, HUCKEL, PULLMAN,</a>
+<a name="ln651">        // GAUSS80_CHARGES, AMPAC_CHARGES, MULLIKEN_CHARGES, DICT_ CHARGES,</a>
+<a name="ln652">        // MMFF94_CHARGES, USER_CHARGES</a>
+<a name="ln653">      if (strcasecmp(dp-&gt;GetValue().c_str(),&quot;Mulliken&quot;) == 0)</a>
+<a name="ln654">        ofs &lt;&lt; &quot;MULLIKEN_CHARGES&quot; &lt;&lt; endl;</a>
+<a name="ln655">      else if (strcasecmp(dp-&gt;GetValue().c_str(),&quot;MMFF94&quot;) == 0)</a>
+<a name="ln656">        ofs &lt;&lt; &quot;MMFF94_CHARGES&quot; &lt;&lt; endl;</a>
+<a name="ln657">      else if (strcasecmp(dp-&gt;GetValue().c_str(),&quot;ESP&quot;) == 0)</a>
+<a name="ln658">        ofs &lt;&lt; &quot;USER_CHARGES&quot; &lt;&lt; endl;</a>
+<a name="ln659">      else if (strcasecmp(dp-&gt;GetValue().c_str(),&quot;Gasteiger&quot;) == 0)</a>
+<a name="ln660">        ofs &lt;&lt; &quot;GASTEIGER&quot; &lt;&lt; endl;</a>
+<a name="ln661">      else // ideally, code should pick from the Tripos types</a>
+<a name="ln662">        ofs &lt;&lt; &quot;USER_CHARGES&quot; &lt;&lt; endl;</a>
+<a name="ln663">    }</a>
+<a name="ln664">    else { // No idea what these charges are... all our code sets &quot;PartialCharges&quot;</a>
+<a name="ln665">        ofs &lt;&lt; &quot;GASTEIGER&quot; &lt;&lt; endl;</a>
+<a name="ln666">    }</a>
+<a name="ln667"> </a>
+<a name="ln668">    //    ofs &lt;&lt; &quot;Energy = &quot; &lt;&lt; mol.GetEnergy() &lt;&lt; endl;</a>
+<a name="ln669"> </a>
+<a name="ln670">    if (mol.HasData(OBGenericDataType::CommentData))</a>
+<a name="ln671">      {</a>
+<a name="ln672">        ofs &lt;&lt; &quot;****\n&quot;; // comment line printed, so we need to add &quot;no status bits set&quot;</a>
+<a name="ln673">        OBCommentData *cd = (OBCommentData*)mol.GetData(OBGenericDataType::CommentData);</a>
+<a name="ln674">        ofs &lt;&lt; cd-&gt;GetData();</a>
+<a name="ln675">      }</a>
+<a name="ln676"> </a>
+<a name="ln677">    ofs &lt;&lt; endl;</a>
+<a name="ln678">    ofs &lt;&lt; &quot;@&lt;TRIPOS&gt;ATOM&quot; &lt;&lt; endl;</a>
+<a name="ln679"> </a>
+<a name="ln680">    OBAtom *atom;</a>
+<a name="ln681">    OBResidue *res;</a>
+<a name="ln682"> </a>
+<a name="ln683">    vector&lt;OBAtom*&gt;::iterator i;</a>
+<a name="ln684">    std::map&lt;int, int&gt; labelcount;</a>
+<a name="ln685"> </a>
+<a name="ln686">    ttab.SetFromType(&quot;INT&quot;);</a>
+<a name="ln687">    ttab.SetToType(&quot;SYB&quot;);</a>
+<a name="ln688"> </a>
+<a name="ln689">    bool hasFormalCharges = false;</a>
+<a name="ln690">    for (atom = mol.BeginAtom(i);atom;atom = mol.NextAtom(i))</a>
+<a name="ln691">      {</a>
+<a name="ln692"> </a>
+<a name="ln693">        //</a>
+<a name="ln694">        //  Use sequentially numbered atom names if no residues</a>
+<a name="ln695">        //</a>
+<a name="ln696"> </a>
+<a name="ln697">        snprintf(label,BUFF_SIZE, &quot;%s%d&quot;,</a>
+<a name="ln698">                 OBElements::GetSymbol(atom-&gt;GetAtomicNum()),</a>
+<a name="ln699">                 ++labelcount[atom-&gt;GetAtomicNum()]);</a>
+<a name="ln700">        strcpy(rlabel,&quot;&lt;1&gt;&quot;);</a>
+<a name="ln701">        strcpy(rnum,&quot;1&quot;);</a>
+<a name="ln702"> </a>
+<a name="ln703">        str = atom-&gt;GetType();</a>
+<a name="ln704">        ttab.Translate(str1,str);</a>
+<a name="ln705"> </a>
+<a name="ln706">        if (atom-&gt;GetFormalCharge() != 0) hasFormalCharges = true;</a>
+<a name="ln707">        //</a>
+<a name="ln708">        //  Use original atom names if there are residues</a>
+<a name="ln709">        //</a>
+<a name="ln710"> </a>
+<a name="ln711">        if (!ligandsOnly &amp;&amp; (res = atom-&gt;GetResidue()) )</a>
+<a name="ln712">          {</a>
+<a name="ln713">            // use original atom names defined by residue</a>
+<a name="ln714">            snprintf(label,BUFF_SIZE,&quot;%s&quot;,(char*)res-&gt;GetAtomID(atom).c_str());</a>
+<a name="ln715">            // make sure that residue name includes its number</a>
+<a name="ln716">            snprintf(rlabel,BUFF_SIZE,&quot;%s%d&quot;,res-&gt;GetName().c_str(), res-&gt;GetNum());</a>
+<a name="ln717">            snprintf(rnum,BUFF_SIZE,&quot;%d&quot;,res-&gt;GetNum());</a>
+<a name="ln718">          }</a>
+<a name="ln719"> </a>
+<a name="ln720">        snprintf(buffer,BUFF_SIZE,&quot;%7d %-6s   %9.4f %9.4f %9.4f %-5s %3s  %-8s %9.4f&quot;,</a>
+<a name="ln721">                 atom-&gt;GetIdx(),label,</a>
+<a name="ln722">                 atom-&gt;GetX(),atom-&gt;GetY(),atom-&gt;GetZ(),</a>
+<a name="ln723">                 str1.c_str(),</a>
+<a name="ln724">                 rnum,rlabel,</a>
+<a name="ln725">                 atom-&gt;GetPartialCharge());</a>
+<a name="ln726">        ofs &lt;&lt; buffer &lt;&lt; endl;</a>
+<a name="ln727">      }</a>
+<a name="ln728"> </a>
+<a name="ln729">    //store formal charge info; put before bonds so we don't have</a>
+<a name="ln730">    //to read past the end of the molecule to realize it is there</a>
+<a name="ln731">    if(hasFormalCharges &amp;&amp; !skipFormalCharge) {</a>
+<a name="ln732">      //dkoes - to enable roundtriping of charges</a>
+<a name="ln733">      ofs &lt;&lt; &quot;@&lt;TRIPOS&gt;UNITY_ATOM_ATTR\n&quot;;</a>
+<a name="ln734">      for (atom = mol.BeginAtom(i);atom;atom = mol.NextAtom(i))</a>
+<a name="ln735">      {</a>
+<a name="ln736">        int charge = atom-&gt;GetFormalCharge();</a>
+<a name="ln737">        if (charge != 0) </a>
+<a name="ln738">        {</a>
+<a name="ln739">          ofs &lt;&lt; atom-&gt;GetIdx() &lt;&lt; &quot; 1\n&quot;; //one attribute</a>
+<a name="ln740">          ofs &lt;&lt; &quot;charge &quot; &lt;&lt; charge &lt;&lt; &quot;\n&quot;; //namely charge</a>
+<a name="ln741">        }</a>
+<a name="ln742">      }</a>
+<a name="ln743">    }</a>
+<a name="ln744"> </a>
+<a name="ln745">    ofs &lt;&lt; &quot;@&lt;TRIPOS&gt;BOND&quot; &lt;&lt; endl;</a>
+<a name="ln746">    OBBond *bond;</a>
+<a name="ln747">    vector&lt;OBBond*&gt;::iterator j;</a>
+<a name="ln748">    string s1, s2;</a>
+<a name="ln749">    for (bond = mol.BeginBond(j);bond;bond = mol.NextBond(j))</a>
+<a name="ln750">      {</a>
+<a name="ln751">        s1 = bond-&gt;GetBeginAtom()-&gt;GetType();</a>
+<a name="ln752">        s2 = bond-&gt;GetEndAtom()-&gt;GetType();</a>
+<a name="ln753">        if (bond-&gt;IsAromatic() || s1 == &quot;O.co2&quot; || s2 == &quot;O.co2&quot;)</a>
+<a name="ln754">          strcpy(label,&quot;ar&quot;);</a>
+<a name="ln755">        else if (bond-&gt;IsAmide())</a>
+<a name="ln756">          strcpy(label,&quot;am&quot;);</a>
+<a name="ln757">        else</a>
+<a name="ln758">          snprintf(label,BUFF_SIZE,&quot;%d&quot;,bond-&gt;GetBondOrder());</a>
+<a name="ln759"> </a>
+<a name="ln760">        snprintf(buffer, BUFF_SIZE,&quot;%6d %5d %5d   %2s&quot;,</a>
+<a name="ln761">                 bond-&gt;GetIdx()+1,bond-&gt;GetBeginAtomIdx(),bond-&gt;GetEndAtomIdx(),</a>
+<a name="ln762">                 label);</a>
+<a name="ln763">        ofs &lt;&lt; buffer &lt;&lt; endl;</a>
+<a name="ln764">      }</a>
+<a name="ln765">    // NO trailing blank line (PR#1868929).</a>
+<a name="ln766">    //    ofs &lt;&lt; endl;</a>
+<a name="ln767"> </a>
+<a name="ln768">    return(true);</a>
+<a name="ln769">  }</a>
+<a name="ln770"> </a>
+<a name="ln771">  int MOL2Format::SkipObjects(int n, OBConversion* pConv)</a>
+<a name="ln772">  {</a>
+<a name="ln773">    const char txt[] = &quot;@&lt;TRIPOS&gt;MOLECULE&quot;;</a>
+<a name="ln774">    istream&amp; ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln775">    if(!ifs)</a>
+<a name="ln776">      return -1;</a>
+<a name="ln777">    if(n&gt;0 &amp;&amp; ifs.peek()==txt[0])</a>
+<a name="ln778">      ifs.ignore(); // move past '@' so that next mol will be found</a>
+<a name="ln779">    do {</a>
+<a name="ln780">      ignore(ifs, txt);</a>
+<a name="ln781">    } while(ifs &amp;&amp; (--n)&gt;0);</a>
+<a name="ln782"> </a>
+<a name="ln783">    if(!ifs.eof())</a>
+<a name="ln784">      ifs.seekg(1-sizeof(txt), ios::cur);//1 for '/0'</a>
+<a name="ln785">    char ch = ifs.peek();</a>
+<a name="ln786">   return 1;</a>
+<a name="ln787">  }</a>
+<a name="ln788"> </a>
+<a name="ln789">} //namespace OpenBabel</a>
+
+</code></pre>
+<div class="balloon" rel="186"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v576/" target="_blank">V576</a> Incorrect format. Consider checking the third actual argument of the 'sscanf' function. It's dangerous to use string specifier without width specification. Buffer overflow is possible.</p></div>
+<div class="balloon" rel="186"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v576/" target="_blank">V576</a> Incorrect format. Consider checking the fourth actual argument of the 'sscanf' function. It's dangerous to use string specifier without width specification. Buffer overflow is possible.</p></div>
+<div class="balloon" rel="254"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression '!foundAtomLine' is always false.</p></div>
+<div class="balloon" rel="183"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v666/" target="_blank">V666</a> Consider inspecting second argument of the function 'IsOption'. It is possible that the value does not correspond with the length of a string which was passed with the first argument.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

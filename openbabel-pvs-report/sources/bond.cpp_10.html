@@ -1,0 +1,795 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>bond.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">bond.cpp - Handle OBBond class</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 1998-2001 by OpenEye Scientific Software, Inc.</a>
+<a name="ln5">Some portions Copyright (C) 2001-2006 by Geoffrey R. Hutchison</a>
+<a name="ln6"> </a>
+<a name="ln7">This file is part of the Open Babel project.</a>
+<a name="ln8">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln11">it under the terms of the GNU General Public License as published by</a>
+<a name="ln12">the Free Software Foundation version 2 of the License.</a>
+<a name="ln13"> </a>
+<a name="ln14">This program is distributed in the hope that it will be useful,</a>
+<a name="ln15">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln16">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln17">GNU General Public License for more details.</a>
+<a name="ln18">***********************************************************************/</a>
+<a name="ln19">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln20"> </a>
+<a name="ln21">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/oberror.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/obutil.h&gt;</a>
+<a name="ln24">#include &lt;openbabel/ring.h&gt;</a>
+<a name="ln25">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln26">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln27">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln28">#include &lt;climits&gt;</a>
+<a name="ln29"> </a>
+<a name="ln30">using namespace std;</a>
+<a name="ln31"> </a>
+<a name="ln32">namespace OpenBabel</a>
+<a name="ln33">{</a>
+<a name="ln34"> </a>
+<a name="ln35">  class OBBondPrivate</a>
+<a name="ln36">  {</a>
+<a name="ln37">    public:</a>
+<a name="ln38">      OBBondPrivate() {}</a>
+<a name="ln39">  };</a>
+<a name="ln40"> </a>
+<a name="ln41">  extern THREAD_LOCAL OBAromaticTyper  aromtyper;</a>
+<a name="ln42">  extern OBMessageHandler obErrorLog;</a>
+<a name="ln43"> </a>
+<a name="ln44">  /** \class OBBond bond.h &lt;openbabel/bond.h&gt;</a>
+<a name="ln45">      \brief Bond class</a>
+<a name="ln46"> </a>
+<a name="ln47">      The OBBond class is straightforward in its data access and</a>
+<a name="ln48">      modification methods. OBBonds store pointers to the atoms on each end</a>
+<a name="ln49">      of the bond. In storing pointers to atoms instead of integer indices,</a>
+<a name="ln50">      the necessity of having to reorder bonds when atoms are shuffled,</a>
+<a name="ln51">      added, or delete is obviated.</a>
+<a name="ln52"> </a>
+<a name="ln53">      While methods indicate &quot;begin&quot; and &quot;end&quot; atoms in the bond, all methods</a>
+<a name="ln54">      are designed to be independent of atom ordering, with the exception of</a>
+<a name="ln55">      stereochemically aware properties such as IsUp(), IsDown(), IsWedge, or</a>
+<a name="ln56">      IsHash().</a>
+<a name="ln57">  */</a>
+<a name="ln58"> </a>
+<a name="ln59">  // *******************************</a>
+<a name="ln60">  // *** OBBond member functions ***</a>
+<a name="ln61">  // *******************************</a>
+<a name="ln62"> </a>
+<a name="ln63">  OBBond::OBBond() /*: d(new OBBondPrivate)*/</a>
+<a name="ln64">  {</a>
+<a name="ln65">    _idx=0;</a>
+<a name="ln66">    _order=0;</a>
+<a name="ln67">    _flags=0;</a>
+<a name="ln68">    _bgn=nullptr;</a>
+<a name="ln69">    _end=nullptr;</a>
+<a name="ln70">    _vdata.clear();</a>
+<a name="ln71">    _parent=nullptr;</a>
+<a name="ln72">  }</a>
+<a name="ln73"> </a>
+<a name="ln74">  OBBond::~OBBond()</a>
+<a name="ln75">  {</a>
+<a name="ln76">    // OBGenericData handled in OBBase parent class.</a>
+<a name="ln77">  }</a>
+<a name="ln78"> </a>
+<a name="ln79">  /** Mark the main information for a bond</a>
+<a name="ln80">      \param idx The unique bond index for this bond (inside an OBMol)</a>
+<a name="ln81">      \param begin The 'beginning' atom for the bond</a>
+<a name="ln82">      \param end The 'end' atom for the bond</a>
+<a name="ln83">      \param order The bond order (i.e., 1 = single, 2 = double... 5 = aromatic)</a>
+<a name="ln84">      \param flags Any initial property flags</a>
+<a name="ln85">   **/</a>
+<a name="ln86">  void OBBond::Set(int idx,OBAtom *begin,OBAtom *end,int order,int flags)</a>
+<a name="ln87">  {</a>
+<a name="ln88">    SetIdx(idx);</a>
+<a name="ln89">    SetBegin(begin);</a>
+<a name="ln90">    SetEnd(end);</a>
+<a name="ln91">    SetBondOrder(order);</a>
+<a name="ln92">    SetFlag(flags);</a>
+<a name="ln93">  }</a>
+<a name="ln94"> </a>
+<a name="ln95">  void OBBond::SetBondOrder(int order)</a>
+<a name="ln96">  {</a>
+<a name="ln97">    _order = (char)order;</a>
+<a name="ln98">  }</a>
+<a name="ln99"> </a>
+<a name="ln100">  // TODO: Figure out how to consider periodicity, etc.</a>
+<a name="ln101">  void OBBond::SetLength(OBAtom *fixed, double length)</a>
+<a name="ln102">  {</a>
+<a name="ln103">    unsigned int i;</a>
+<a name="ln104">    OBMol *mol = (OBMol*)fixed-&gt;GetParent();</a>
+<a name="ln105">    vector3 v1,v2,v3,v4,v5;</a>
+<a name="ln106">    vector&lt;int&gt; children;</a>
+<a name="ln107"> </a>
+<a name="ln108">    obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln109">                          &quot;Ran OpenBabel::SetBondLength&quot;, obAuditMsg);</a>
+<a name="ln110"> </a>
+<a name="ln111">    int a = fixed-&gt;GetIdx();</a>
+<a name="ln112">    int b = GetNbrAtom(fixed)-&gt;GetIdx();</a>
+<a name="ln113"> </a>
+<a name="ln114">    if (a == b)</a>
+<a name="ln115">      return; // this would be a problem...</a>
+<a name="ln116"> </a>
+<a name="ln117">    mol-&gt;FindChildren(children,a,b);</a>
+<a name="ln118">    children.push_back(b);</a>
+<a name="ln119"> </a>
+<a name="ln120">    v1 = GetNbrAtom(fixed)-&gt;GetVector();</a>
+<a name="ln121">    v2 = fixed-&gt;GetVector();</a>
+<a name="ln122">    v3 = v1 - v2;</a>
+<a name="ln123"> </a>
+<a name="ln124">    if (IsNearZero(v3.length_2())) { // too small to normalize, move the atoms apart</a>
+<a name="ln125">      obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln126">                            &quot;Atoms are both at the same location, moving out of the way.&quot;, obWarning);</a>
+<a name="ln127">      v3.randomUnitVector();</a>
+<a name="ln128">    } else {</a>
+<a name="ln129">      v3.normalize();</a>
+<a name="ln130">    }</a>
+<a name="ln131"> </a>
+<a name="ln132">    v3 *= length;</a>
+<a name="ln133">    v3 += v2;</a>
+<a name="ln134">    v4 = v3 - v1;</a>
+<a name="ln135"> </a>
+<a name="ln136">    for ( i = 0 ; i &lt; children.size() ; i++ )</a>
+<a name="ln137">      {</a>
+<a name="ln138">        v1 = mol-&gt;GetAtom(children[i])-&gt;GetVector();</a>
+<a name="ln139">        v1 += v4;</a>
+<a name="ln140">        mol-&gt;GetAtom(children[i])-&gt;SetVector(v1);</a>
+<a name="ln141">      }</a>
+<a name="ln142">  }</a>
+<a name="ln143"> </a>
+<a name="ln144">  void OBBond::SetLength(double length)</a>
+<a name="ln145">  {</a>
+<a name="ln146">    OBAtom *atom1 = GetBeginAtom();</a>
+<a name="ln147">    OBAtom *atom2 = GetEndAtom();</a>
+<a name="ln148"> </a>
+<a name="ln149">    //split the length difference in half, and modify the bond twice</a>
+<a name="ln150">    double firstLength = length + ((GetLength() - length) / 2);</a>
+<a name="ln151"> </a>
+<a name="ln152">    SetLength(atom1, firstLength);</a>
+<a name="ln153">    SetLength(atom2, length);</a>
+<a name="ln154">  }</a>
+<a name="ln155"> </a>
+<a name="ln156">  bool OBBond::IsRotor(bool includeRingBonds)</a>
+<a name="ln157">  {</a>
+<a name="ln158">    // This could be one hellish conditional, but let's break it down</a>
+<a name="ln159">    // .. the bond is a single bond</a>
+<a name="ln160">    if (_order != 1)</a>
+<a name="ln161">      return false;</a>
+<a name="ln162"> </a>
+<a name="ln163">    // not in a ring, or in a large ring</a>
+<a name="ln164">    // and if it's a ring, not sp2</a>
+<a name="ln165">    OBRing *ring = FindSmallestRing();</a>
+<a name="ln166">    if (ring != nullptr) {</a>
+<a name="ln167">      if(!includeRingBonds)</a>
+<a name="ln168">        return false;</a>
+<a name="ln169">      if (ring-&gt;Size() &lt;= 3)</a>
+<a name="ln170">        return false;</a>
+<a name="ln171">      if (_bgn-&gt;GetHyb() == 2 || _end-&gt;GetHyb() == 2)</a>
+<a name="ln172">        return false;</a>
+<a name="ln173">    }</a>
+<a name="ln174"> </a>
+<a name="ln175">    // atoms are not sp hybrids</a>
+<a name="ln176">    if (_bgn-&gt;GetHyb() == 1 || _end-&gt;GetHyb() == 1)</a>
+<a name="ln177">      return false;</a>
+<a name="ln178"> </a>
+<a name="ln179">    // not just an -OH or -NH2, etc.</a>
+<a name="ln180">    // maybe we want to add this as an option</a>
+<a name="ln181">    //    rotatable = rotatable &amp;&amp; ((_bgn-&gt;IsHeteroatom() || _bgn-&gt;GetHvyDegree() &gt; 1)</a>
+<a name="ln182">    //                               &amp;&amp; (_end-&gt;IsHeteroatom() || _end-&gt;GetHvyDegree() &gt; 1) );</a>
+<a name="ln183">    return (_bgn-&gt;GetHvyDegree() &gt; 1 &amp;&amp; _end-&gt;GetHvyDegree() &gt; 1);</a>
+<a name="ln184">  }</a>
+<a name="ln185">  </a>
+<a name="ln186">  bool OBBond::IsPeriodic() const</a>
+<a name="ln187">  {</a>
+<a name="ln188">    OBMol *mol = (OBMol*)((OBBond*)this)-&gt;GetParent();</a>
+<a name="ln189">    return mol-&gt;IsPeriodic();</a>
+<a name="ln190">  }</a>
+<a name="ln191"> </a>
+<a name="ln192">   bool OBBond::IsAmide()</a>
+<a name="ln193">   {</a>
+<a name="ln194">      OBAtom *c,*n;</a>
+<a name="ln195">      c = n = nullptr;</a>
+<a name="ln196"> </a>
+<a name="ln197">      // Look for C-N bond</a>
+<a name="ln198">      if (_bgn-&gt;GetAtomicNum() == 6 &amp;&amp; _end-&gt;GetAtomicNum() == 7)</a>
+<a name="ln199">      {</a>
+<a name="ln200">         c = (OBAtom*)_bgn;</a>
+<a name="ln201">         n = (OBAtom*)_end;</a>
+<a name="ln202">      }</a>
+<a name="ln203">      if (_bgn-&gt;GetAtomicNum() == 7 &amp;&amp; _end-&gt;GetAtomicNum() == 6)</a>
+<a name="ln204">      {</a>
+<a name="ln205">         c = (OBAtom*)_end;</a>
+<a name="ln206">         n = (OBAtom*)_bgn;</a>
+<a name="ln207">      }</a>
+<a name="ln208">      if (!c || !n) return(false);</a>
+<a name="ln209">      if (GetBondOrder() != 1) return(false);</a>
+<a name="ln210">      if (n-&gt;GetTotalDegree() != 3) return false; // must be a degree 3 nitrogen</a>
+<a name="ln211"> </a>
+<a name="ln212">      // Make sure C is attached to =O</a>
+<a name="ln213">      OBBond *bond;</a>
+<a name="ln214">      vector&lt;OBBond*&gt;::iterator i;</a>
+<a name="ln215">      for (bond = c-&gt;BeginBond(i); bond; bond = c-&gt;NextBond(i))</a>
+<a name="ln216">      {</a>
+<a name="ln217">         if (bond-&gt;IsCarbonyl()) return(true);</a>
+<a name="ln218">      }</a>
+<a name="ln219"> </a>
+<a name="ln220">      // Return</a>
+<a name="ln221">      return(false);</a>
+<a name="ln222">   }</a>
+<a name="ln223"> </a>
+<a name="ln224">   bool OBBond::IsPrimaryAmide()</a>
+<a name="ln225">   {</a>
+<a name="ln226">      OBAtom *c,*n;</a>
+<a name="ln227">      c = n = nullptr;</a>
+<a name="ln228"> </a>
+<a name="ln229">      // Look for C-N bond</a>
+<a name="ln230">      if (_bgn-&gt;GetAtomicNum() == 6 &amp;&amp; _end-&gt;GetAtomicNum() == 7)</a>
+<a name="ln231">      {</a>
+<a name="ln232">         c = (OBAtom*)_bgn;</a>
+<a name="ln233">         n = (OBAtom*)_end;</a>
+<a name="ln234">      }</a>
+<a name="ln235">      if (_bgn-&gt;GetAtomicNum() == 7 &amp;&amp; _end-&gt;GetAtomicNum() == 6)</a>
+<a name="ln236">      {</a>
+<a name="ln237">         c = (OBAtom*)_end;</a>
+<a name="ln238">         n = (OBAtom*)_bgn;</a>
+<a name="ln239">      }</a>
+<a name="ln240">      if (!c || !n) return(false);</a>
+<a name="ln241">      if (GetBondOrder() != 1) return(false);</a>
+<a name="ln242">      if (n-&gt;GetTotalDegree() != 3) return false; // must be a degree 3 nitrogen</a>
+<a name="ln243"> </a>
+<a name="ln244">      // Make sure that N is connected to one non-H</a>
+<a name="ln245">      if (n-&gt;GetHvyDegree() != 1) return(false);</a>
+<a name="ln246"> </a>
+<a name="ln247">      // Make sure C is attached to =O</a>
+<a name="ln248">      OBBond *bond;</a>
+<a name="ln249">      vector&lt;OBBond*&gt;::iterator i;</a>
+<a name="ln250">      for (bond = c-&gt;BeginBond(i); bond; bond = c-&gt;NextBond(i))</a>
+<a name="ln251">      {</a>
+<a name="ln252">         if (bond-&gt;IsCarbonyl()) return(true);</a>
+<a name="ln253">      }</a>
+<a name="ln254"> </a>
+<a name="ln255">      return(false);</a>
+<a name="ln256">   }</a>
+<a name="ln257"> </a>
+<a name="ln258">   bool OBBond::IsSecondaryAmide()</a>
+<a name="ln259">   {</a>
+<a name="ln260">      OBAtom *c,*n;</a>
+<a name="ln261">      c = n = nullptr;</a>
+<a name="ln262"> </a>
+<a name="ln263">      // Look for C-N bond</a>
+<a name="ln264">      if (_bgn-&gt;GetAtomicNum() == 6 &amp;&amp; _end-&gt;GetAtomicNum() == 7)</a>
+<a name="ln265">      {</a>
+<a name="ln266">         c = (OBAtom*)_bgn;</a>
+<a name="ln267">         n = (OBAtom*)_end;</a>
+<a name="ln268">      }</a>
+<a name="ln269">      if (_bgn-&gt;GetAtomicNum() == 7 &amp;&amp; _end-&gt;GetAtomicNum() == 6)</a>
+<a name="ln270">      {</a>
+<a name="ln271">         c = (OBAtom*)_end;</a>
+<a name="ln272">         n = (OBAtom*)_bgn;</a>
+<a name="ln273">      }</a>
+<a name="ln274">      if (!c || !n) return(false);</a>
+<a name="ln275">      if (GetBondOrder() != 1) return(false);</a>
+<a name="ln276">      if (n-&gt;GetTotalDegree() != 3) return false; // must be a degree 3 nitrogen</a>
+<a name="ln277"> </a>
+<a name="ln278">      // Make sure that N is connected to two non-H atoms</a>
+<a name="ln279">      if (n-&gt;GetHvyDegree() != 2) return(false);</a>
+<a name="ln280"> </a>
+<a name="ln281">      // Make sure C is attached to =O</a>
+<a name="ln282">      OBBond *bond;</a>
+<a name="ln283">      vector&lt;OBBond*&gt;::iterator i;</a>
+<a name="ln284">      for (bond = c-&gt;BeginBond(i); bond; bond = c-&gt;NextBond(i))</a>
+<a name="ln285">      {</a>
+<a name="ln286">         if (bond-&gt;IsCarbonyl()) return(true);</a>
+<a name="ln287">      }</a>
+<a name="ln288"> </a>
+<a name="ln289">      return(false);</a>
+<a name="ln290">   }</a>
+<a name="ln291"> </a>
+<a name="ln292">   bool OBBond::IsTertiaryAmide()</a>
+<a name="ln293">   {</a>
+<a name="ln294">      OBAtom *c,*n;</a>
+<a name="ln295">      c = n = nullptr;</a>
+<a name="ln296"> </a>
+<a name="ln297">      // Look for C-N bond</a>
+<a name="ln298">      if (_bgn-&gt;GetAtomicNum() == 6 &amp;&amp; _end-&gt;GetAtomicNum() == 7)</a>
+<a name="ln299">      {</a>
+<a name="ln300">         c = (OBAtom*)_bgn;</a>
+<a name="ln301">         n = (OBAtom*)_end;</a>
+<a name="ln302">      }</a>
+<a name="ln303">      if (_bgn-&gt;GetAtomicNum() == 7 &amp;&amp; _end-&gt;GetAtomicNum() == 6)</a>
+<a name="ln304">      {</a>
+<a name="ln305">         c = (OBAtom*)_end;</a>
+<a name="ln306">         n = (OBAtom*)_bgn;</a>
+<a name="ln307">      }</a>
+<a name="ln308">      if (!c || !n) return(false);</a>
+<a name="ln309">      if (GetBondOrder() != 1) return(false);</a>
+<a name="ln310">      if (n-&gt;GetTotalDegree() != 3) return false; // must be a degree 3 nitrogen</a>
+<a name="ln311"> </a>
+<a name="ln312">      // Make sure that N is connected to three non-H atoms</a>
+<a name="ln313">      if (n-&gt;GetHvyDegree() != 3) return(false);</a>
+<a name="ln314"> </a>
+<a name="ln315">      // Make sure C is attached to =O</a>
+<a name="ln316">      OBBond *bond;</a>
+<a name="ln317">      vector&lt;OBBond*&gt;::iterator i;</a>
+<a name="ln318">      for (bond = c-&gt;BeginBond(i); bond; bond = c-&gt;NextBond(i))</a>
+<a name="ln319">      {</a>
+<a name="ln320">         if (bond-&gt;IsCarbonyl()) return(true);</a>
+<a name="ln321">      }</a>
+<a name="ln322"> </a>
+<a name="ln323">      return(false);</a>
+<a name="ln324">   }</a>
+<a name="ln325"> </a>
+<a name="ln326">/*</a>
+<a name="ln327">  bool OBBond::IsAmide()</a>
+<a name="ln328">  {</a>
+<a name="ln329">    OBAtom *a1,*a2;</a>
+<a name="ln330">    a1 = a2 = NULL;</a>
+<a name="ln331"> </a>
+<a name="ln332">    if (_bgn-&gt;GetAtomicNum() == 6 &amp;&amp; _end-&gt;GetAtomicNum() == 7)</a>
+<a name="ln333">      {</a>
+<a name="ln334">        a1 = (OBAtom*)_bgn;</a>
+<a name="ln335">        a2 = (OBAtom*)_end;</a>
+<a name="ln336">      }</a>
+<a name="ln337"> </a>
+<a name="ln338">    if (_bgn-&gt;GetAtomicNum() == 7 &amp;&amp; _end-&gt;GetAtomicNum() == 6)</a>
+<a name="ln339">      {</a>
+<a name="ln340">        a1 = (OBAtom*)_end;</a>
+<a name="ln341">        a2 = (OBAtom*)_bgn;</a>
+<a name="ln342">      }</a>
+<a name="ln343"> </a>
+<a name="ln344">    if (!a1 || !a2)</a>
+<a name="ln345">      return(false);</a>
+<a name="ln346">    if (GetBondOrder() != 1)</a>
+<a name="ln347">      return(false);</a>
+<a name="ln348"> </a>
+<a name="ln349">    OBBond *bond;</a>
+<a name="ln350">    vector&lt;OBBond*&gt;::iterator i;</a>
+<a name="ln351">    for (bond = a1-&gt;BeginBond(i);bond;bond = a1-&gt;NextBond(i))</a>
+<a name="ln352">      if (bond-&gt;IsCarbonyl())</a>
+<a name="ln353">        return(true);</a>
+<a name="ln354"> </a>
+<a name="ln355">    return(false);</a>
+<a name="ln356">  }</a>
+<a name="ln357"> </a>
+<a name="ln358">  bool OBBond::IsPrimaryAmide()</a>
+<a name="ln359">  {</a>
+<a name="ln360">    OBAtom *a1,*a2;</a>
+<a name="ln361">    a1 = a2 = NULL;</a>
+<a name="ln362"> </a>
+<a name="ln363">    if (_bgn-&gt;GetAtomicNum() == 6 &amp;&amp; _end-&gt;GetAtomicNum() == 7)</a>
+<a name="ln364">      {</a>
+<a name="ln365">        a1 = (OBAtom*)_bgn;</a>
+<a name="ln366">        a2 = (OBAtom*)_end;</a>
+<a name="ln367">      }</a>
+<a name="ln368"> </a>
+<a name="ln369">    if (_bgn-&gt;GetAtomicNum() == 7 &amp;&amp; _end-&gt;GetAtomicNum() == 6)</a>
+<a name="ln370">      {</a>
+<a name="ln371">        a1 = (OBAtom*)_end;</a>
+<a name="ln372">        a2 = (OBAtom*)_bgn;</a>
+<a name="ln373">      }</a>
+<a name="ln374"> </a>
+<a name="ln375">    if (!a1 || !a2)</a>
+<a name="ln376">      return(false);</a>
+<a name="ln377">    if (GetBondOrder() != 1)</a>
+<a name="ln378">      return(false);</a>
+<a name="ln379"> </a>
+<a name="ln380">    OBBond *bond;</a>
+<a name="ln381">    vector&lt;OBBond*&gt;::iterator i;</a>
+<a name="ln382">    for (bond = a1-&gt;BeginBond(i);bond;bond = a1-&gt;NextBond(i))</a>
+<a name="ln383">      if (bond-&gt;IsCarbonyl())</a>
+<a name="ln384">        if (a2-&gt;GetHvyDegree() == 2)</a>
+<a name="ln385">          return(true);</a>
+<a name="ln386"> </a>
+<a name="ln387">    return(false);</a>
+<a name="ln388">  }</a>
+<a name="ln389"> </a>
+<a name="ln390">  bool OBBond::IsSecondaryAmide()</a>
+<a name="ln391">  {</a>
+<a name="ln392">    OBAtom *a1,*a2;</a>
+<a name="ln393">    a1 = a2 = NULL;</a>
+<a name="ln394"> </a>
+<a name="ln395">    if (_bgn-&gt;GetAtomicNum() == 6 &amp;&amp; _end-&gt;GetAtomicNum() == 7)</a>
+<a name="ln396">      {</a>
+<a name="ln397">        a1 = (OBAtom*)_bgn;</a>
+<a name="ln398">        a2 = (OBAtom*)_end;</a>
+<a name="ln399">      }</a>
+<a name="ln400"> </a>
+<a name="ln401">    if (_bgn-&gt;GetAtomicNum() == 7 &amp;&amp; _end-&gt;GetAtomicNum() == 6)</a>
+<a name="ln402">      {</a>
+<a name="ln403">        a1 = (OBAtom*)_end;</a>
+<a name="ln404">        a2 = (OBAtom*)_bgn;</a>
+<a name="ln405">      }</a>
+<a name="ln406"> </a>
+<a name="ln407">    if (!a1 || !a2)</a>
+<a name="ln408">      return(false);</a>
+<a name="ln409">    if (GetBondOrder() != 1)</a>
+<a name="ln410">      return(false);</a>
+<a name="ln411"> </a>
+<a name="ln412">    OBBond *bond;</a>
+<a name="ln413">    vector&lt;OBBond*&gt;::iterator i;</a>
+<a name="ln414">    for (bond = a1-&gt;BeginBond(i);bond;bond = a1-&gt;NextBond(i))</a>
+<a name="ln415">      if (bond-&gt;IsCarbonyl())</a>
+<a name="ln416">        if (a2-&gt;GetHvyDegree() == 3)</a>
+<a name="ln417">          return(true);</a>
+<a name="ln418"> </a>
+<a name="ln419">    return(false);</a>
+<a name="ln420">  }</a>
+<a name="ln421">*/</a>
+<a name="ln422"> </a>
+<a name="ln423">  bool OBBond::IsEster()</a>
+<a name="ln424">  {</a>
+<a name="ln425">    OBAtom *a1,*a2;</a>
+<a name="ln426">    a1 = a2 = nullptr;</a>
+<a name="ln427"> </a>
+<a name="ln428">    if (_bgn-&gt;GetAtomicNum() == 6 &amp;&amp; _end-&gt;GetAtomicNum() == 8)</a>
+<a name="ln429">      {</a>
+<a name="ln430">        a1 = (OBAtom*)_bgn;</a>
+<a name="ln431">        a2 = (OBAtom*)_end;</a>
+<a name="ln432">      }</a>
+<a name="ln433"> </a>
+<a name="ln434">    if (_bgn-&gt;GetAtomicNum() == 8 &amp;&amp; _end-&gt;GetAtomicNum() == 6)</a>
+<a name="ln435">      {</a>
+<a name="ln436">        a1 = (OBAtom*)_end;</a>
+<a name="ln437">        a2 = (OBAtom*)_bgn;</a>
+<a name="ln438">      }</a>
+<a name="ln439"> </a>
+<a name="ln440">    if (!a1 || !a2)</a>
+<a name="ln441">      return(false);</a>
+<a name="ln442">    if (GetBondOrder() != 1)</a>
+<a name="ln443">      return(false);</a>
+<a name="ln444"> </a>
+<a name="ln445">    OBBond *bond;</a>
+<a name="ln446">    vector&lt;OBBond*&gt;::iterator i;</a>
+<a name="ln447">    for (bond = a1-&gt;BeginBond(i);bond;bond = a1-&gt;NextBond(i))</a>
+<a name="ln448">      if (bond-&gt;IsCarbonyl())</a>
+<a name="ln449">        return(true);</a>
+<a name="ln450"> </a>
+<a name="ln451">    return(false);</a>
+<a name="ln452">  }</a>
+<a name="ln453"> </a>
+<a name="ln454">  bool OBBond::IsCarbonyl()</a>
+<a name="ln455">  {</a>
+<a name="ln456">    if (GetBondOrder() != 2)</a>
+<a name="ln457">      return(false);</a>
+<a name="ln458"> </a>
+<a name="ln459">    if ((_bgn-&gt;GetAtomicNum() == 6 &amp;&amp; _end-&gt;GetAtomicNum() == 8) ||</a>
+<a name="ln460">        (_bgn-&gt;GetAtomicNum() == 8 &amp;&amp; _end-&gt;GetAtomicNum() == 6))</a>
+<a name="ln461">      return(true);</a>
+<a name="ln462"> </a>
+<a name="ln463">    return(false);</a>
+<a name="ln464">  }</a>
+<a name="ln465"> </a>
+<a name="ln466">  bool OBBond::IsAromatic() const</a>
+<a name="ln467">  {</a>
+<a name="ln468">    OBMol *mol = ((OBBond*)this)-&gt;GetParent();</a>
+<a name="ln469">    if (!mol-&gt;HasAromaticPerceived())</a>
+<a name="ln470">        aromtyper.AssignAromaticFlags(*mol);</a>
+<a name="ln471"> </a>
+<a name="ln472">    if (this-&gt;HasFlag(OB_AROMATIC_BOND))</a>
+<a name="ln473">      return true;</a>
+<a name="ln474"> </a>
+<a name="ln475">    return false;</a>
+<a name="ln476">  }</a>
+<a name="ln477"> </a>
+<a name="ln478">  /*! This method checks if the geometry around this bond looks unsaturated</a>
+<a name="ln479">    by measuring the torsion angles formed by all connected atoms X-start=end-Y</a>
+<a name="ln480">    and checking that they are close to 0 or 180 degrees */</a>
+<a name="ln481">  bool OBBond::IsDoubleBondGeometry()</a>
+<a name="ln482">  {</a>
+<a name="ln483">    double torsion;</a>
+<a name="ln484">    OBAtom *nbrStart,*nbrEnd;</a>
+<a name="ln485">    vector&lt;OBBond*&gt;::iterator i,j;</a>
+<a name="ln486">    // We concentrate on sp2 atoms with valence up to 3 and ignore the rest (like sp1 or S,P)</a>
+<a name="ln487">    // As this is called from PerceiveBondOrders, GetHyb() may still be undefined.</a>
+<a name="ln488">    if (_bgn-&gt;GetHyb()==1 || _bgn-&gt;GetExplicitDegree()&gt;3||</a>
+<a name="ln489">        _end-&gt;GetHyb()==1 || _end-&gt;GetExplicitDegree()&gt;3)</a>
+<a name="ln490">      return(true);</a>
+<a name="ln491"> </a>
+<a name="ln492">    for (nbrStart = static_cast&lt;OBAtom*&gt;(_bgn)-&gt;BeginNbrAtom(i); nbrStart;</a>
+<a name="ln493">         nbrStart = static_cast&lt;OBAtom*&gt;(_bgn)-&gt;NextNbrAtom(i))</a>
+<a name="ln494">      {</a>
+<a name="ln495">        if (nbrStart != _end)</a>
+<a name="ln496">          {</a>
+<a name="ln497">            for (nbrEnd = static_cast&lt;OBAtom*&gt;(_end)-&gt;BeginNbrAtom(j);</a>
+<a name="ln498">                 nbrEnd; nbrEnd = static_cast&lt;OBAtom*&gt;(_end)-&gt;NextNbrAtom(j))</a>
+<a name="ln499">              {</a>
+<a name="ln500">                if (nbrEnd != _bgn)</a>
+<a name="ln501">                  {</a>
+<a name="ln502">                    torsion=fabs(_parent-&gt;GetTorsion(nbrStart, _bgn, _end, nbrEnd));</a>
+<a name="ln503"> </a>
+<a name="ln504">                    // &gt;12&amp;&amp;&lt;168 not enough</a>
+<a name="ln505">                    if (torsion &gt; 15.0  &amp;&amp; torsion &lt; 160.0)</a>
+<a name="ln506">                      {</a>
+<a name="ln507">                        // Geometry does not match a double bond</a>
+<a name="ln508">                        return(false);</a>
+<a name="ln509">                      }</a>
+<a name="ln510"> </a>
+<a name="ln511">                  }</a>
+<a name="ln512">              }  // end loop for neighbors of end</a>
+<a name="ln513">          }</a>
+<a name="ln514">      } // end loop for neighbors of start</a>
+<a name="ln515">    return(true);</a>
+<a name="ln516">  }</a>
+<a name="ln517"> </a>
+<a name="ln518">  bool OBBond::IsInRing() const</a>
+<a name="ln519">  {</a>
+<a name="ln520">    OBMol *mol = ((OBBond*)this)-&gt;GetParent();</a>
+<a name="ln521">    if (!mol-&gt;HasRingAtomsAndBondsPerceived())</a>
+<a name="ln522">      mol-&gt;FindRingAtomsAndBonds();</a>
+<a name="ln523"> </a>
+<a name="ln524">    if (((OBBond*)this)-&gt;HasFlag(OB_RING_BOND))</a>
+<a name="ln525">      return true;</a>
+<a name="ln526"> </a>
+<a name="ln527">    return false;</a>
+<a name="ln528">  }</a>
+<a name="ln529"> </a>
+<a name="ln530">  // Adapted from OBAtom::IsInRingSize()</a>
+<a name="ln531">  OBRing* OBBond::FindSmallestRing() const</a>
+<a name="ln532">  {</a>
+<a name="ln533">    vector&lt;OBRing*&gt; rlist;</a>
+<a name="ln534">    vector&lt;OBRing*&gt;::iterator i;</a>
+<a name="ln535"> </a>
+<a name="ln536">    OBMol *mol = (OBMol*)((OBBond*)this)-&gt;GetParent();</a>
+<a name="ln537"> </a>
+<a name="ln538">    rlist = mol-&gt;GetSSSR();</a>
+<a name="ln539">    OBRing* result = nullptr;</a>
+<a name="ln540">    size_t min_size = UINT_MAX;</a>
+<a name="ln541">    for (i = rlist.begin();i != rlist.end();++i) {</a>
+<a name="ln542">      if ((*i)-&gt;IsMember((OBBond*)this) &amp;&amp; (*i)-&gt;Size() &lt; min_size) {</a>
+<a name="ln543">        min_size = (*i)-&gt;Size();</a>
+<a name="ln544">        result = *i;</a>
+<a name="ln545">      }</a>
+<a name="ln546">    }</a>
+<a name="ln547">    return result;</a>
+<a name="ln548">  }</a>
+<a name="ln549"> </a>
+<a name="ln550">  bool OBBond::IsClosure()</a>
+<a name="ln551">  {</a>
+<a name="ln552">    OBMol *mol = (OBMol*)GetParent();</a>
+<a name="ln553">    if (!mol)</a>
+<a name="ln554">      return false;</a>
+<a name="ln555">    if (!mol-&gt;HasClosureBondsPerceived())</a>
+<a name="ln556">      mol-&gt;FindRingAtomsAndBonds();</a>
+<a name="ln557">    return HasFlag(OB_CLOSURE_BOND);</a>
+<a name="ln558">  }</a>
+<a name="ln559"> </a>
+<a name="ln560">  //! \return a &quot;corrected&quot; bonding radius based on the hybridization.</a>
+<a name="ln561">  //! Scales the covalent radius by 0.95 for sp2 and 0.90 for sp hybrids</a>
+<a name="ln562">  static double CorrectedBondRad(unsigned int elem, unsigned int hyb)</a>
+<a name="ln563">  {</a>
+<a name="ln564">    double rad = OBElements::GetCovalentRad(elem);</a>
+<a name="ln565">    switch (hyb) {</a>
+<a name="ln566">    case 2:</a>
+<a name="ln567">      return rad * 0.95;</a>
+<a name="ln568">    case 1:</a>
+<a name="ln569">      return rad * 0.90;</a>
+<a name="ln570">    default:</a>
+<a name="ln571">      return rad;</a>
+<a name="ln572">    }</a>
+<a name="ln573">  }</a>
+<a name="ln574"> </a>
+<a name="ln575">  double OBBond::GetEquibLength() const</a>
+<a name="ln576">  {</a>
+<a name="ln577">    const OBAtom *begin, *end;</a>
+<a name="ln578"> </a>
+<a name="ln579">    begin = GetBeginAtom();</a>
+<a name="ln580">    end = GetEndAtom();</a>
+<a name="ln581">    double length = CorrectedBondRad(begin-&gt;GetAtomicNum(), begin-&gt;GetHyb())</a>
+<a name="ln582">                  + CorrectedBondRad(end-&gt;GetAtomicNum(), end-&gt;GetHyb());</a>
+<a name="ln583"> </a>
+<a name="ln584">    if (IsAromatic())</a>
+<a name="ln585">      return length * 0.93;</a>
+<a name="ln586">    </a>
+<a name="ln587">    switch (_order) {</a>
+<a name="ln588">    case 3:</a>
+<a name="ln589">      return length * 0.87;</a>
+<a name="ln590">    case 2:</a>
+<a name="ln591">      return length * 0.91;</a>
+<a name="ln592">    }</a>
+<a name="ln593">    return length;</a>
+<a name="ln594">  }</a>
+<a name="ln595"> </a>
+<a name="ln596">  double OBBond::GetLength() const</a>
+<a name="ln597">  {</a>
+<a name="ln598">    double	d2;</a>
+<a name="ln599">    const OBAtom *begin, *end;</a>
+<a name="ln600">    begin = GetBeginAtom();</a>
+<a name="ln601">    end = GetEndAtom();</a>
+<a name="ln602"> </a>
+<a name="ln603">    if (!IsPeriodic())</a>
+<a name="ln604">      {</a>
+<a name="ln605">        d2 = SQUARE(begin-&gt;GetX() - end-&gt;GetX());</a>
+<a name="ln606">        d2 += SQUARE(begin-&gt;GetY() - end-&gt;GetY());</a>
+<a name="ln607">        d2 += SQUARE(begin-&gt;GetZ() - end-&gt;GetZ());</a>
+<a name="ln608">        return(sqrt(d2));</a>
+<a name="ln609">      }</a>
+<a name="ln610">    else</a>
+<a name="ln611">      {</a>
+<a name="ln612">        OBMol *mol = (OBMol*)((OBBond*)this)-&gt;GetParent();</a>
+<a name="ln613">        OBUnitCell *box = (OBUnitCell*)mol-&gt;GetData(OBGenericDataType::UnitCell);</a>
+<a name="ln614">        return (box-&gt;MinimumImageCartesian(begin-&gt;GetVector() - end-&gt;GetVector())).length();</a>
+<a name="ln615">      }</a>
+<a name="ln616">  }</a>
+<a name="ln617"> </a>
+<a name="ln618">  /*Now in OBBase</a>
+<a name="ln619">  // OBGenericData methods</a>
+<a name="ln620">  bool OBBond::HasData(string &amp;s)</a>
+<a name="ln621">  //returns true if the generic attribute/value pair exists</a>
+<a name="ln622">  {</a>
+<a name="ln623">  if (_vdata.empty())</a>
+<a name="ln624">  return(false);</a>
+<a name="ln625"> </a>
+<a name="ln626">  vector&lt;OBGenericData*&gt;::iterator i;</a>
+<a name="ln627"> </a>
+<a name="ln628">  for (i = _vdata.begin();i != _vdata.end();++i)</a>
+<a name="ln629">  if ((*i)-&gt;GetAttribute() == s)</a>
+<a name="ln630">  return(true);</a>
+<a name="ln631"> </a>
+<a name="ln632">  return(false);</a>
+<a name="ln633">  }</a>
+<a name="ln634"> </a>
+<a name="ln635">  bool OBBond::HasData(const char *s)</a>
+<a name="ln636">  //returns true if the generic attribute/value pair exists</a>
+<a name="ln637">  {</a>
+<a name="ln638">  if (_vdata.empty())</a>
+<a name="ln639">  return(false);</a>
+<a name="ln640"> </a>
+<a name="ln641">  vector&lt;OBGenericData*&gt;::iterator i;</a>
+<a name="ln642"> </a>
+<a name="ln643">  for (i = _vdata.begin();i != _vdata.end();++i)</a>
+<a name="ln644">  if ((*i)-&gt;GetAttribute() == s)</a>
+<a name="ln645">  return(true);</a>
+<a name="ln646"> </a>
+<a name="ln647">  return(false);</a>
+<a name="ln648">  }</a>
+<a name="ln649"> </a>
+<a name="ln650">  bool OBBond::HasData(unsigned int dt)</a>
+<a name="ln651">  //returns true if the generic attribute/value pair exists</a>
+<a name="ln652">  {</a>
+<a name="ln653">  if (_vdata.empty())</a>
+<a name="ln654">  return(false);</a>
+<a name="ln655"> </a>
+<a name="ln656">  vector&lt;OBGenericData*&gt;::iterator i;</a>
+<a name="ln657"> </a>
+<a name="ln658">  for (i = _vdata.begin();i != _vdata.end();++i)</a>
+<a name="ln659">  if ((*i)-&gt;GetDataType() == dt)</a>
+<a name="ln660">  return(true);</a>
+<a name="ln661"> </a>
+<a name="ln662">  return(false);</a>
+<a name="ln663">  }</a>
+<a name="ln664"> </a>
+<a name="ln665">  OBGenericData *OBBond::GetData(string &amp;s)</a>
+<a name="ln666">  //returns the value given an attribute</a>
+<a name="ln667">  {</a>
+<a name="ln668">  vector&lt;OBGenericData*&gt;::iterator i;</a>
+<a name="ln669"> </a>
+<a name="ln670">  for (i = _vdata.begin();i != _vdata.end();++i)</a>
+<a name="ln671">  if ((*i)-&gt;GetAttribute() == s)</a>
+<a name="ln672">  return(*i);</a>
+<a name="ln673"> </a>
+<a name="ln674">  return(NULL);</a>
+<a name="ln675">  }</a>
+<a name="ln676"> </a>
+<a name="ln677">  OBGenericData *OBBond::GetData(const char *s)</a>
+<a name="ln678">  //returns the value given an attribute</a>
+<a name="ln679">  {</a>
+<a name="ln680">  vector&lt;OBGenericData*&gt;::iterator i;</a>
+<a name="ln681"> </a>
+<a name="ln682">  for (i = _vdata.begin();i != _vdata.end();++i)</a>
+<a name="ln683">  if ((*i)-&gt;GetAttribute() == s)</a>
+<a name="ln684">  return(*i);</a>
+<a name="ln685"> </a>
+<a name="ln686">  return(NULL);</a>
+<a name="ln687">  }</a>
+<a name="ln688"> </a>
+<a name="ln689">  OBGenericData *OBBond::GetData(unsigned int dt)</a>
+<a name="ln690">  {</a>
+<a name="ln691">  vector&lt;OBGenericData*&gt;::iterator i;</a>
+<a name="ln692">  for (i = _vdata.begin();i != _vdata.end();++i)</a>
+<a name="ln693">  if ((*i)-&gt;GetDataType() == dt)</a>
+<a name="ln694">  return(*i);</a>
+<a name="ln695">  return(NULL);</a>
+<a name="ln696">  }</a>
+<a name="ln697"> </a>
+<a name="ln698">  void OBBond::DeleteData(unsigned int dt)</a>
+<a name="ln699">  {</a>
+<a name="ln700">  vector&lt;OBGenericData*&gt; vdata;</a>
+<a name="ln701">  vector&lt;OBGenericData*&gt;::iterator i;</a>
+<a name="ln702">  for (i = _vdata.begin();i != _vdata.end();++i)</a>
+<a name="ln703">  if ((*i)-&gt;GetDataType() == dt)</a>
+<a name="ln704">  delete *i;</a>
+<a name="ln705">  else</a>
+<a name="ln706">  vdata.push_back(*i);</a>
+<a name="ln707">  _vdata = vdata;</a>
+<a name="ln708">  }</a>
+<a name="ln709"> </a>
+<a name="ln710">  void OBBond::DeleteData(vector&lt;OBGenericData*&gt; &amp;vg)</a>
+<a name="ln711">  {</a>
+<a name="ln712">  vector&lt;OBGenericData*&gt; vdata;</a>
+<a name="ln713">  vector&lt;OBGenericData*&gt;::iterator i,j;</a>
+<a name="ln714"> </a>
+<a name="ln715">  bool del;</a>
+<a name="ln716">  for (i = _vdata.begin();i != _vdata.end();++i)</a>
+<a name="ln717">  {</a>
+<a name="ln718">  del = false;</a>
+<a name="ln719">  for (j = vg.begin();j != vg.end();++j)</a>
+<a name="ln720">  if (*i == *j)</a>
+<a name="ln721">  {</a>
+<a name="ln722">  del = true;</a>
+<a name="ln723">  break;</a>
+<a name="ln724">  }</a>
+<a name="ln725">  if (del)</a>
+<a name="ln726">  delete *i;</a>
+<a name="ln727">  else</a>
+<a name="ln728">  vdata.push_back(*i);</a>
+<a name="ln729">  }</a>
+<a name="ln730">  _vdata = vdata;</a>
+<a name="ln731">  }</a>
+<a name="ln732"> </a>
+<a name="ln733">  void OBBond::DeleteData(OBGenericData *gd)</a>
+<a name="ln734">  {</a>
+<a name="ln735">  vector&lt;OBGenericData*&gt;::iterator i;</a>
+<a name="ln736">  for (i = _vdata.begin();i != _vdata.end();++i)</a>
+<a name="ln737">  if (*i == gd)</a>
+<a name="ln738">  {</a>
+<a name="ln739">  delete *i;</a>
+<a name="ln740">  _vdata.erase(i);</a>
+<a name="ln741">  }</a>
+<a name="ln742"> </a>
+<a name="ln743">  }</a>
+<a name="ln744">  */</a>
+<a name="ln745"> </a>
+<a name="ln746">} // end namespace OpenBabel</a>
+<a name="ln747"> </a>
+<a name="ln748">//! \file bond.cpp</a>
+<a name="ln749">//! \brief Handle OBBond class</a>
+
+</code></pre>
+<div class="balloon" rel="63"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v730/" target="_blank">V730</a> Not all members of a class are initialized inside the constructor. Consider inspecting: _id, Visit.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

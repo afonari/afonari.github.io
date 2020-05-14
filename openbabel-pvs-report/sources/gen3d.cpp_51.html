@@ -1,0 +1,248 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>gen3d.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">gen3d.cpp - A OBOp for generation of 3D coordinates (wrapper for OBBuilder)</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 2006-2007 by Tim Vandermeersch</a>
+<a name="ln5">          (C) 2007 by Chris Morley</a>
+<a name="ln6"> </a>
+<a name="ln7">This file is part of the Open Babel project.</a>
+<a name="ln8">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln11">it under the terms of the GNU General Public License as published by</a>
+<a name="ln12">the Free Software Foundation version 2 of the License.</a>
+<a name="ln13"> </a>
+<a name="ln14">This program is distributed in the hope that it will be useful,</a>
+<a name="ln15">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln16">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln17">GNU General Public License for more details.</a>
+<a name="ln18">***********************************************************************/</a>
+<a name="ln19">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/op.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/builder.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/distgeom.h&gt;</a>
+<a name="ln24">#include &lt;openbabel/forcefield.h&gt;</a>
+<a name="ln25">#include &lt;openbabel/oberror.h&gt;</a>
+<a name="ln26">#include &quot;../stereo/gen3dstereohelper.h&quot;</a>
+<a name="ln27"> </a>
+<a name="ln28">#include &lt;cstdlib&gt; // needed for strtol and gcc 4.8</a>
+<a name="ln29"> </a>
+<a name="ln30">namespace OpenBabel</a>
+<a name="ln31">{</a>
+<a name="ln32"> </a>
+<a name="ln33">class OpGen3D : public OBOp</a>
+<a name="ln34">{</a>
+<a name="ln35">public:</a>
+<a name="ln36">  OpGen3D(const char* ID) : OBOp(ID, false){};</a>
+<a name="ln37">  const char* Description(){ return &quot;Generate 3D coordinates&quot;; }</a>
+<a name="ln38"> </a>
+<a name="ln39">  virtual bool WorksWith(OBBase* pOb) const { return dynamic_cast&lt;OBMol*&gt;(pOb) != nullptr; }</a>
+<a name="ln40">  virtual bool Do(OBBase* pOb, const char* OptionText=nullptr, OpMap* pOptions=nullptr, OBConversion* pConv=nullptr);</a>
+<a name="ln41">};</a>
+<a name="ln42"> </a>
+<a name="ln43">/////////////////////////////////////////////////////////////////</a>
+<a name="ln44">OpGen3D theOpGen3D(&quot;gen3D&quot;); //Global instance</a>
+<a name="ln45"> </a>
+<a name="ln46">/////////////////////////////////////////////////////////////////</a>
+<a name="ln47">bool OpGen3D::Do(OBBase* pOb, const char* OptionText, OpMap* pOptions, OBConversion* pConv)</a>
+<a name="ln48">{</a>
+<a name="ln49">  OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln50">  if(!pmol)</a>
+<a name="ln51">    return false;</a>
+<a name="ln52"> </a>
+<a name="ln53">  // As with gen2D, we need to perceive the stereo if coming from 0D.</a>
+<a name="ln54">  // Otherwise, unspecified cis/trans stereobonds become specified.</a>
+<a name="ln55">  if (pmol-&gt;GetDimension() == 0) {</a>
+<a name="ln56">    pmol-&gt;UnsetFlag(OB_CHIRALITY_MOL);</a>
+<a name="ln57">    StereoFrom0D(pmol);</a>
+<a name="ln58">  }</a>
+<a name="ln59"> </a>
+<a name="ln60">  OBGen3DStereoHelper stereoHelper;</a>
+<a name="ln61">  stereoHelper.Setup(pmol);</a>
+<a name="ln62"> </a>
+<a name="ln63">  // 1 is best quality, slowest</a>
+<a name="ln64">  // 2 is good quality, slow</a>
+<a name="ln65">  // 3 is balance   (FF cleanup + FastRotorSearch)</a>
+<a name="ln66">  // 4 is fast      (OBBuilder + FF cleanup)</a>
+<a name="ln67">  // 5 is fastest   (only OBBuilder)</a>
+<a name="ln68">  // 6 is DistanceGeometry</a>
+<a name="ln69">  int speed;</a>
+<a name="ln70">  bool useDistGeom = false;</a>
+<a name="ln71"> </a>
+<a name="ln72">  // first try converting OptionText to an integer</a>
+<a name="ln73">  char *endptr;</a>
+<a name="ln74">  speed = strtol(OptionText, &amp;endptr, 10);</a>
+<a name="ln75">  if (endptr == OptionText) { // not a number</a>
+<a name="ln76">    speed = 3; // we'll default to balanced</a>
+<a name="ln77">    // but let's also check if it's words like &quot;fast&quot; or &quot;best&quot;</a>
+<a name="ln78">    if (strncasecmp(OptionText, &quot;fastest&quot;, 7) == 0)</a>
+<a name="ln79">      speed = 5;</a>
+<a name="ln80">    else if (strncasecmp(OptionText, &quot;fast&quot;, 4) == 0) // already matched fastest</a>
+<a name="ln81">      speed = 4;</a>
+<a name="ln82">    else if (strncasecmp(OptionText, &quot;med&quot;, 3) == 0) // or medium</a>
+<a name="ln83">      speed = 3;</a>
+<a name="ln84">    else if ( (strncasecmp(OptionText, &quot;slowest&quot;, 7) == 0)</a>
+<a name="ln85">             || (strncasecmp(OptionText, &quot;best&quot;, 4) == 0) )</a>
+<a name="ln86">      speed = 1;</a>
+<a name="ln87">    else if ( (strncasecmp(OptionText, &quot;slow&quot;, 4) == 0)</a>
+<a name="ln88">              || (strncasecmp(OptionText, &quot;better&quot;, 6) == 0) )</a>
+<a name="ln89">      speed = 2;</a>
+<a name="ln90">    else if ( (strncasecmp(OptionText, &quot;dist&quot;, 4) == 0)</a>
+<a name="ln91">               || (strncasecmp(OptionText, &quot;dg&quot;, 2) == 0) ) {</a>
+<a name="ln92">      useDistGeom = true;</a>
+<a name="ln93">      speed = 5;</a>
+<a name="ln94">    }</a>
+<a name="ln95">  }</a>
+<a name="ln96"> </a>
+<a name="ln97">  // Give some limits so we can use switch statements</a>
+<a name="ln98">  if (speed &lt; 1)</a>
+<a name="ln99">    speed = 1;</a>
+<a name="ln100">  else if (speed &gt; 5)</a>
+<a name="ln101">    speed = 5;</a>
+<a name="ln102"> </a>
+<a name="ln103">  bool success = false;</a>
+<a name="ln104">  unsigned int maxIter = 25;</a>
+<a name="ln105">  for (unsigned int trial = 0; trial &lt; maxIter; trial++) {</a>
+<a name="ln106">    OBMol molCopy = *pmol;</a>
+<a name="ln107"> </a>
+<a name="ln108">    // This is done for all speed levels (i.e., create the structure)</a>
+<a name="ln109">    OBBuilder builder;</a>
+<a name="ln110">    bool attemptBuild = !useDistGeom;</a>
+<a name="ln111">    if (attemptBuild &amp;&amp; !builder.Build(molCopy) ) {</a>
+<a name="ln112">      std::cerr &lt;&lt; &quot;Warning: Stereochemistry is wrong, using the distance geometry method instead&quot; &lt;&lt; std::endl;</a>
+<a name="ln113">      useDistGeom = true;</a>
+<a name="ln114">    }</a>
+<a name="ln115"> </a>
+<a name="ln116">#ifdef HAVE_EIGEN</a>
+<a name="ln117">    OBDistanceGeometry dg;</a>
+<a name="ln118">    if (useDistGeom) {</a>
+<a name="ln119">      // use the bond lengths and angles if we ran the builder</a>
+<a name="ln120">      if (!dg.GetGeometry(molCopy, attemptBuild)) // ensured to have correct stereo</a>
+<a name="ln121">        continue;</a>
+<a name="ln122">      speed = 3;</a>
+<a name="ln123">    }</a>
+<a name="ln124">#endif</a>
+<a name="ln125"> </a>
+<a name="ln126">    // rule-based builder worked</a>
+<a name="ln127">    molCopy.SetDimension(3);</a>
+<a name="ln128">    molCopy.AddHydrogens(false, false); // Add some hydrogens before running MMFF</a>
+<a name="ln129"> </a>
+<a name="ln130">    if (speed == 5)</a>
+<a name="ln131">      return true; // done</a>
+<a name="ln132"> </a>
+<a name="ln133">    // All other speed levels do some FF cleanup</a>
+<a name="ln134">    // Try MMFF94 first and UFF if that doesn't work</a>
+<a name="ln135">    OBForceField* pFF = OBForceField::FindForceField(&quot;MMFF94&quot;);</a>
+<a name="ln136">    if (!pFF)</a>
+<a name="ln137">      return true;</a>
+<a name="ln138">    if (!pFF-&gt;Setup(molCopy)) {</a>
+<a name="ln139">      pFF = OBForceField::FindForceField(&quot;UFF&quot;);</a>
+<a name="ln140">      if (!pFF || !pFF-&gt;Setup(molCopy)) return true; // can't use either MMFF94 or UFF</a>
+<a name="ln141">    }</a>
+<a name="ln142"> </a>
+<a name="ln143">    // Since we only want a rough geometry, use distance cutoffs for VDW, Electrostatics</a>
+<a name="ln144">    pFF-&gt;EnableCutOff(true);</a>
+<a name="ln145">    pFF-&gt;SetVDWCutOff(10.0);</a>
+<a name="ln146">    pFF-&gt;SetElectrostaticCutOff(20.0);</a>
+<a name="ln147">    pFF-&gt;SetUpdateFrequency(10); // update non-bonded distances infrequently</a>
+<a name="ln148"> </a>
+<a name="ln149">    // How many cleanup cycles?</a>
+<a name="ln150">    int iterations = 250;</a>
+<a name="ln151">    switch (speed) {</a>
+<a name="ln152">    case 1:</a>
+<a name="ln153">      iterations = 500;</a>
+<a name="ln154">      break;</a>
+<a name="ln155">    case 2:</a>
+<a name="ln156">      iterations = 250;</a>
+<a name="ln157">      break;</a>
+<a name="ln158">    case 3:</a>
+<a name="ln159">    case 4:</a>
+<a name="ln160">    default:</a>
+<a name="ln161">      iterations = 100;</a>
+<a name="ln162">    }</a>
+<a name="ln163"> </a>
+<a name="ln164">    // Initial cleanup for every level</a>
+<a name="ln165">    pFF-&gt;ConjugateGradients(iterations, 1.0e-4);</a>
+<a name="ln166"> </a>
+<a name="ln167">    if (speed == 4) {</a>
+<a name="ln168">      pFF-&gt;UpdateCoordinates(molCopy);</a>
+<a name="ln169">      return true; // no conformer searching</a>
+<a name="ln170">    }</a>
+<a name="ln171"> </a>
+<a name="ln172">    switch(speed) {</a>
+<a name="ln173">    case 1:</a>
+<a name="ln174">      pFF-&gt;WeightedRotorSearch(250, 10); // maybe based on # of rotatable bonds?</a>
+<a name="ln175">      break;</a>
+<a name="ln176">    case 2:</a>
+<a name="ln177">      pFF-&gt;FastRotorSearch(true); // permute central rotors</a>
+<a name="ln178">      break;</a>
+<a name="ln179">    case 3:</a>
+<a name="ln180">    default:</a>
+<a name="ln181">      pFF-&gt;FastRotorSearch(false); // only one permutation</a>
+<a name="ln182">    }</a>
+<a name="ln183"> </a>
+<a name="ln184">    // Final cleanup and copy the new coordinates back</a>
+<a name="ln185">    pFF-&gt;ConjugateGradients(iterations, 1.0e-6);</a>
+<a name="ln186">    pFF-&gt;UpdateCoordinates(molCopy);</a>
+<a name="ln187"> </a>
+<a name="ln188">    // Check stereochemistry</a>
+<a name="ln189">    success = stereoHelper.Check(&amp;molCopy);</a>
+<a name="ln190">    if (success) {</a>
+<a name="ln191">      *pmol = molCopy;</a>
+<a name="ln192">      break;</a>
+<a name="ln193">    }</a>
+<a name="ln194">  }</a>
+<a name="ln195"> </a>
+<a name="ln196">  if (!success) {</a>
+<a name="ln197">    obErrorLog.ThrowError(__FUNCTION__, &quot;3D coordinate generation failed&quot;, obError);</a>
+<a name="ln198">  }</a>
+<a name="ln199"> </a>
+<a name="ln200">  return true;</a>
+<a name="ln201">}</a>
+<a name="ln202">}//namespace</a>
+
+</code></pre>
+<div class="balloon" rel="83"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'speed' variable was assigned the same value.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,218 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>xout.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">xout.cpp - OpExtraOut to write a OBBase object additionally to a file</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 2009 by Chris Morley</a>
+<a name="ln5"> </a>
+<a name="ln6">This file is part of the Open Babel project.</a>
+<a name="ln7">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln10">it under the terms of the GNU General Public License as published by</a>
+<a name="ln11">the Free Software Foundation version 2 of the License.</a>
+<a name="ln12"> </a>
+<a name="ln13">This program is distributed in the hope that it will be useful,</a>
+<a name="ln14">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln15">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln16">GNU General Public License for more details.</a>
+<a name="ln17">***********************************************************************/</a>
+<a name="ln18">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/op.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/descriptor.h&gt;</a>
+<a name="ln23">#include &lt;iostream&gt;</a>
+<a name="ln24"> </a>
+<a name="ln25">namespace OpenBabel</a>
+<a name="ln26">{</a>
+<a name="ln27"> </a>
+<a name="ln28">//This format is not registered and is called from OpExtraOut::Do()</a>
+<a name="ln29">class ExtraFormat : public OBFormat</a>
+<a name="ln30">{</a>
+<a name="ln31">public:</a>
+<a name="ln32">  ExtraFormat(OBConversion* pOrigConv, OBConversion* pExtraConv)</a>
+<a name="ln33">    : _pOrigConv(pOrigConv), _pExtraConv(pExtraConv){ }</a>
+<a name="ln34"> </a>
+<a name="ln35">  virtual const char* Description() { return &quot;Outputs to two formats&quot;; }</a>
+<a name="ln36"> </a>
+<a name="ln37">  virtual bool WriteChemObject(OBConversion* pConv)</a>
+<a name="ln38">  {</a>
+<a name="ln39">    OBBase* pOb = pConv-&gt;GetChemObject();</a>
+<a name="ln40"> </a>
+<a name="ln41">    OBMol* pMolCopy = nullptr;</a>
+<a name="ln42">    if(_pOrigConv)</a>
+<a name="ln43">    {</a>
+<a name="ln44">      //Need to copy pOb. But currently OBBase does not have a virtual Clone() function.</a>
+<a name="ln45">      //So do it just for OBMol.</a>
+<a name="ln46">      OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln47">      if(pmol)</a>
+<a name="ln48">      {</a>
+<a name="ln49">        pMolCopy = new OBMol(*pmol);</a>
+<a name="ln50"> </a>
+<a name="ln51">        //need to set output index manually</a>
+<a name="ln52">        //Output to the original output.</a>
+<a name="ln53">        _pOrigConv-&gt;SetOutputIndex(pConv-&gt;GetOutputIndex()-2);</a>
+<a name="ln54">        if(!_pOrigConv-&gt;AddChemObject(pMolCopy))</a>
+<a name="ln55">          pConv-&gt;SetLast(true); //error on main output stops conversion</a>
+<a name="ln56">        _pOrigConv-&gt;SetLast(pConv-&gt;IsLast());</a>
+<a name="ln57">      }</a>
+<a name="ln58">    }</a>
+<a name="ln59"> </a>
+<a name="ln60">    //Output to extra output</a>
+<a name="ln61">    if(_pExtraConv)</a>
+<a name="ln62">    {</a>
+<a name="ln63">      _pExtraConv-&gt;SetOutputIndex(pConv-&gt;GetOutputIndex()-2);</a>
+<a name="ln64">      if(!_pExtraConv-&gt;AddChemObject(pOb))</a>
+<a name="ln65">        _pExtraConv = nullptr; //error on extra output stops only it</a>
+<a name="ln66">      else // need &quot;else&quot; or we'll dereference a NULL</a>
+<a name="ln67">        _pExtraConv-&gt;SetLast(pConv-&gt;IsLast());</a>
+<a name="ln68">    }</a>
+<a name="ln69"> </a>
+<a name="ln70">    if(pConv-&gt;IsLast())</a>
+<a name="ln71">    {</a>
+<a name="ln72">      if (_pOrigConv &amp;&amp; pMolCopy != nullptr) {</a>
+<a name="ln73">        _pOrigConv-&gt;AddChemObject(pMolCopy); //dummy add to empty queue</a>
+<a name="ln74">        pConv-&gt;SetOutFormat(_pOrigConv-&gt;GetOutFormat()); //ReportNumberConverted() uses this at end</a>
+<a name="ln75">      }</a>
+<a name="ln76"> </a>
+<a name="ln77">      if(_pExtraConv)</a>
+<a name="ln78">      {</a>
+<a name="ln79">        _pExtraConv-&gt;AddChemObject(pOb);  //dummy add to empty queue</a>
+<a name="ln80">        delete _pExtraConv-&gt;GetOutStream(); //filestream</a>
+<a name="ln81">      }</a>
+<a name="ln82"> </a>
+<a name="ln83">      delete _pOrigConv;</a>
+<a name="ln84">      delete _pExtraConv;</a>
+<a name="ln85">      _pOrigConv=nullptr;</a>
+<a name="ln86">      _pExtraConv=nullptr;</a>
+<a name="ln87">      delete this;//self destruction; was made in new in an OBOp</a>
+<a name="ln88">    }</a>
+<a name="ln89">    return true;</a>
+<a name="ln90">  }</a>
+<a name="ln91"> </a>
+<a name="ln92">private:</a>
+<a name="ln93">  OBConversion *_pOrigConv, *_pExtraConv;</a>
+<a name="ln94">};</a>
+<a name="ln95"> </a>
+<a name="ln96">//*****************************************************************</a>
+<a name="ln97">/**</a>
+<a name="ln98">  * This op is mainly intended to be used to generate svg files for display</a>
+<a name="ln99">  * from the GUI. But it also can be used to generate two output files with</a>
+<a name="ln100">  * different formats:</a>
+<a name="ln101">  *   babel infile.xxx outfile.yyy --xout extra.zzz</a>
+<a name="ln102"> **/</a>
+<a name="ln103"> /*</a>
+<a name="ln104">  This and other ops doing simple things are rather more complicated and</a>
+<a name="ln105">  difficult to code correctly than is desirable. The reasons are:</a>
+<a name="ln106">   - code segregation. The ops and formats are plugins and so can not use</a>
+<a name="ln107">     be called or controlled by any specific code in the main program. Also</a>
+<a name="ln108">     the commandline, the GUI and OBConversion know nothing of the chemistry</a>
+<a name="ln109">     (OBMol, etc.).</a>
+<a name="ln110">   - the conversion process is designed not to be store the OBBase objects,</a>
+<a name="ln111">     making it potentially applicable to any size of dataset. However, some</a>
+<a name="ln112">     operations, such as sorting and uniqueness checking obviosly require this,</a>
+<a name="ln113">     requiring special handling.</a>
+<a name="ln114">   - The conversion process uses a queue of two so that the output formats can</a>
+<a name="ln115">     do special things with the last object, such as adding &lt;/cml&gt; to close a</a>
+<a name="ln116">     top level element in XML. This requires special handling if the normal</a>
+<a name="ln117">     conversion process is subverted.</a>
+<a name="ln118"> */</a>
+<a name="ln119">class OpExtraOut : public OBOp</a>
+<a name="ln120">{</a>
+<a name="ln121">public:</a>
+<a name="ln122">  OpExtraOut(const char* ID) : OBOp(ID, false){};</a>
+<a name="ln123">  const char* Description(){ return &quot;&lt;file.xxx&gt; Additional file output\n&quot;</a>
+<a name="ln124">       &quot;Mainly intended to be used to generate svg files for display from the GUI,\n&quot;</a>
+<a name="ln125">       &quot;but can also be used to output to two different formats:\n&quot;</a>
+<a name="ln126">       &quot;      obabel infile.sdf  -osmi  --0xout secondout.svg&quot;; }</a>
+<a name="ln127"> </a>
+<a name="ln128">  virtual bool WorksWith(OBBase* pOb) const { return dynamic_cast&lt;OBMol*&gt;(pOb) != nullptr; }</a>
+<a name="ln129">  virtual bool Do(OBBase* pOb, const char* OptionText, OpMap* pmap, OBConversion* pConv);</a>
+<a name="ln130">};</a>
+<a name="ln131"> </a>
+<a name="ln132">/////////////////////////////////////////////////////////////////</a>
+<a name="ln133">OpExtraOut theOpExtraOut(&quot;0xout&quot;); //Global instance</a>
+<a name="ln134"> </a>
+<a name="ln135">/////////////////////////////////////////////////////////////////</a>
+<a name="ln136">bool OpExtraOut::Do(OBBase* pOb, const char* OptionText, OpMap* pmap, OBConversion* pConv)</a>
+<a name="ln137">{</a>
+<a name="ln138">  /*</a>
+<a name="ln139">    OptionText contains an output filename with a format extension.</a>
+<a name="ln140">    Make an OBConversion object with this as output destination.</a>
+<a name="ln141">    Make a copy the current OBConversion and replace the output format by</a>
+<a name="ln142">    an instance of ExtraFormat. This then does all the subsequent work.</a>
+<a name="ln143">  */</a>
+<a name="ln144">  if(!pConv || !OptionText || *OptionText=='\0')</a>
+<a name="ln145">    return true; //silent no-op. false would prevent the main output</a>
+<a name="ln146"> </a>
+<a name="ln147">  if(pConv-&gt;IsFirstInput())</a>
+<a name="ln148">  {</a>
+<a name="ln149">    std::string sOptionText(OptionText);</a>
+<a name="ln150">    Trim(sOptionText);</a>
+<a name="ln151">    OBConversion* pExtraConv = new OBConversion(*pConv); //copy ensures OBConversion::Index&gt;-1</a>
+<a name="ln152">    std::ofstream* ofs;</a>
+<a name="ln153">    if( (ofs = new std::ofstream(OptionText)) ) // extra parens to indicate truth value</a>
+<a name="ln154">      pExtraConv-&gt;SetOutStream(ofs);</a>
+<a name="ln155">    if(!ofs || !pExtraConv-&gt;SetOutFormat(OBConversion::FormatFromExt(sOptionText)))</a>
+<a name="ln156">    {</a>
+<a name="ln157">      obErrorLog.ThrowError(__FUNCTION__, &quot;Error setting up extra output file&quot;, obError);</a>
+<a name="ln158">      return true;</a>
+<a name="ln159">    }</a>
+<a name="ln160">    OBConversion* pOrigConv = new OBConversion(*pConv);</a>
+<a name="ln161">    pOrigConv-&gt;SetInStream(nullptr); //not used; avoids complications in AddChemObject()</a>
+<a name="ln162">    pExtraConv-&gt;SetInStream(nullptr);</a>
+<a name="ln163"> </a>
+<a name="ln164">    //Make an instance of ExtraFormat and divert the output to it. It will delete itself.</a>
+<a name="ln165">    pConv-&gt;SetOutFormat(new ExtraFormat(pOrigConv, pExtraConv));</a>
+<a name="ln166">  }</a>
+<a name="ln167">  return true;</a>
+<a name="ln168">}</a>
+<a name="ln169"> </a>
+<a name="ln170">}//namespace</a>
+
+</code></pre>
+<div class="balloon" rel="153"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v668/" target="_blank">V668</a> There is no sense in testing the 'ofs' pointer against null, as the memory was allocated using the 'new' operator. The exception will be generated in the case of memory allocation error.</p></div>
+<div class="balloon" rel="155"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v668/" target="_blank">V668</a> There is no sense in testing the 'ofs' pointer against null, as the memory was allocated using the 'new' operator. The exception will be generated in the case of memory allocation error.</p></div>
+<div class="balloon" rel="158"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v773/" target="_blank">V773</a> The function was exited without releasing the 'pExtraConv' pointer. A memory leak is possible.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

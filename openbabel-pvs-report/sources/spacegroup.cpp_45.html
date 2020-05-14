@@ -1,0 +1,667 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <title>spacegroup.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">spacegroup.cpp - Handle Space Groups.</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 2007-2011 by Jean Bréfort</a>
+<a name="ln5"> </a>
+<a name="ln6">This file is part of the Open Babel project.</a>
+<a name="ln7">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is free software; you can redistribute it and/or</a>
+<a name="ln10">modify it under the terms of the GNU General Public License as</a>
+<a name="ln11">published by the Free Software Foundation; either version 2 of the</a>
+<a name="ln12">License, or (at your option) any later version.</a>
+<a name="ln13"> </a>
+<a name="ln14">This program is distributed in the hope that it will be useful,</a>
+<a name="ln15">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln16">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln17">GNU General Public License for more details.</a>
+<a name="ln18">***********************************************************************/</a>
+<a name="ln19">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln20"> </a>
+<a name="ln21">#include &lt;openbabel/math/spacegroup.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/data.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/obutil.h&gt;</a>
+<a name="ln24">#include &lt;iostream&gt;</a>
+<a name="ln25">#include &lt;map&gt;</a>
+<a name="ln26">#include &lt;set&gt;</a>
+<a name="ln27">#include &lt;vector&gt;</a>
+<a name="ln28">#include &lt;locale&gt;</a>
+<a name="ln29"> </a>
+<a name="ln30">#include &lt;cstdarg&gt;</a>
+<a name="ln31">#include &lt;cstdlib&gt;</a>
+<a name="ln32"> </a>
+<a name="ln33">using namespace std;</a>
+<a name="ln34"> </a>
+<a name="ln35">namespace OpenBabel</a>
+<a name="ln36">{</a>
+<a name="ln37">  /** Function to remove whitespaces from a string, returning</a>
+<a name="ln38">   * a new string</a>
+<a name="ln39">   */</a>
+<a name="ln40">  std::string RemoveWhiteSpaceUnderscore(const string &amp;in){</a>
+<a name="ln41">    std::string out=in;</a>
+<a name="ln42">    for(std::string::iterator pos=out.begin();pos!=out.end();){</a>
+<a name="ln43">      if( ((char)(*pos)==' ') ||((char)(*pos)=='_'))  pos=out.erase(pos);</a>
+<a name="ln44">      else ++pos;</a>
+<a name="ln45">    }</a>
+<a name="ln46">    return out;</a>
+<a name="ln47">  }</a>
+<a name="ln48"> </a>
+<a name="ln49">  class SpaceGroups: public OBGlobalDataBase</a>
+<a name="ln50">  {</a>
+<a name="ln51">  public:</a>
+<a name="ln52">    SpaceGroups();</a>
+<a name="ln53">    virtual ~SpaceGroups();</a>
+<a name="ln54"> </a>
+<a name="ln55">		void ParseLine(const char*);</a>
+<a name="ln56">    size_t GetSize() { return sgs.size();}</a>
+<a name="ln57">    bool Inited() { return _init;}</a>
+<a name="ln58"> </a>
+<a name="ln59">    map&lt;string, const SpaceGroup*&gt; sgbn;</a>
+<a name="ln60">    vector&lt; list&lt;const SpaceGroup*&gt; &gt; sgbi;</a>
+<a name="ln61">    set&lt;SpaceGroup*&gt; sgs;</a>
+<a name="ln62">  };</a>
+<a name="ln63"> </a>
+<a name="ln64">  static SpaceGroups _SpaceGroups;</a>
+<a name="ln65"> </a>
+<a name="ln66">  SpaceGroups::SpaceGroups()</a>
+<a name="ln67">  {</a>
+<a name="ln68">    sgbi.assign(230, list&lt;const SpaceGroup*&gt;());</a>
+<a name="ln69">    _dir = BABEL_DATADIR;</a>
+<a name="ln70">    _envvar = &quot;BABEL_DATADIR&quot;;</a>
+<a name="ln71">    _filename = &quot;space-groups.txt&quot;;</a>
+<a name="ln72">    _subdir = &quot;data&quot;;</a>
+<a name="ln73">  }</a>
+<a name="ln74"> </a>
+<a name="ln75">  SpaceGroups::~SpaceGroups()</a>
+<a name="ln76">  {</a>
+<a name="ln77">    set&lt;SpaceGroup*&gt;::iterator i, end = sgs.end();</a>
+<a name="ln78">    for (i = sgs.begin(); i != end; ++i)</a>
+<a name="ln79">      delete (*i);</a>
+<a name="ln80">  }</a>
+<a name="ln81"> </a>
+<a name="ln82">  enum</a>
+<a name="ln83">    {</a>
+<a name="ln84">      SPACE_GROUP_ID,</a>
+<a name="ln85">      SPACE_GROUP_HALL,</a>
+<a name="ln86">      SPACE_GROUP_HM,</a>
+<a name="ln87">      SPACE_GROUP_TRANSFORM</a>
+<a name="ln88">    };</a>
+<a name="ln89"> </a>
+<a name="ln90">  void SpaceGroups::ParseLine(const char* line)</a>
+<a name="ln91">  {</a>
+<a name="ln92">    static SpaceGroup *group = nullptr;</a>
+<a name="ln93">    static int step = SPACE_GROUP_ID;</a>
+<a name="ln94">    static string HMs;</a>
+<a name="ln95">    switch (step)</a>
+<a name="ln96">      {</a>
+<a name="ln97">      case SPACE_GROUP_ID:</a>
+<a name="ln98">        group = new SpaceGroup();</a>
+<a name="ln99">        group-&gt;SetId(atoi (line));</a>
+<a name="ln100">        step++;</a>
+<a name="ln101">        break;</a>
+<a name="ln102">      case SPACE_GROUP_HALL:</a>
+<a name="ln103">        group-&gt;SetHallName(line);</a>
+<a name="ln104">        step++;</a>
+<a name="ln105">        break;</a>
+<a name="ln106">      case SPACE_GROUP_HM:</a>
+<a name="ln107">        {</a>
+<a name="ln108">          string linestr = std::string(line);</a>
+<a name="ln109">          std::string::size_type idx = linestr.find(',');</a>
+<a name="ln110">          if (idx != std::string::npos)</a>
+<a name="ln111">            {</a>
+<a name="ln112">              std::string alt = linestr.substr(0, idx);</a>
+<a name="ln113">              if (alt.length() &gt; 0 &amp;&amp; _SpaceGroups.sgbn[alt] == nullptr)</a>
+<a name="ln114">                _SpaceGroups.sgbn[alt] = group;</a>
+<a name="ln115">              std::string stripped_HM=RemoveWhiteSpaceUnderscore(alt);</a>
+<a name="ln116">              if (stripped_HM.length() &gt; 0 &amp;&amp; _SpaceGroups.sgbn[stripped_HM] == nullptr)</a>
+<a name="ln117">                _SpaceGroups.sgbn[stripped_HM] = group;</a>
+<a name="ln118">              group-&gt;SetHMName(linestr.substr(idx+1, std::string::npos).c_str());</a>
+<a name="ln119">            }</a>
+<a name="ln120">          else</a>
+<a name="ln121">            group-&gt;SetHMName(line);</a>
+<a name="ln122">          step++;</a>
+<a name="ln123">          break;</a>
+<a name="ln124">        }</a>
+<a name="ln125">      case SPACE_GROUP_TRANSFORM:</a>
+<a name="ln126">        if (strlen(line) == 0)</a>
+<a name="ln127">          {</a>
+<a name="ln128">            step = SPACE_GROUP_ID;</a>
+<a name="ln129">            if (HMs.length() &gt; 0)</a>
+<a name="ln130">              group-&gt;RegisterSpaceGroup(1, HMs.c_str());</a>
+<a name="ln131">            else</a>
+<a name="ln132">              group-&gt;RegisterSpaceGroup();</a>
+<a name="ln133">            group = nullptr;</a>
+<a name="ln134">            HMs.clear();</a>
+<a name="ln135">		      }</a>
+<a name="ln136">        else</a>
+<a name="ln137">          group-&gt;AddTransform(line);</a>
+<a name="ln138">        break;</a>
+<a name="ln139">      }</a>
+<a name="ln140">  }</a>
+<a name="ln141"> </a>
+<a name="ln142">  SpaceGroup::SpaceGroup():</a>
+<a name="ln143">    HEXAGONAL_ORIGIN(10), m_HM(&quot;&quot;),m_Hall(&quot;&quot;),m_id(0),m_OriginAlternative(0)</a>
+<a name="ln144">  {</a>
+<a name="ln145">  }</a>
+<a name="ln146"> </a>
+<a name="ln147">  SpaceGroup::~SpaceGroup()</a>
+<a name="ln148">  {</a>
+<a name="ln149">    list&lt;transform3d*&gt;::iterator i, end = m_transforms.end();</a>
+<a name="ln150">    for (i = m_transforms.begin(); i != end; ++i)</a>
+<a name="ln151">      delete *i;</a>
+<a name="ln152">  }</a>
+<a name="ln153"> </a>
+<a name="ln154">  void SpaceGroup::SetHMName(const char *name_in)</a>
+<a name="ln155">  {</a>
+<a name="ln156">    string name = std::string(name_in);</a>
+<a name="ln157">    std::string::size_type idx = name.find(':');</a>
+<a name="ln158">    if (idx != std::string::npos)</a>
+<a name="ln159">      {</a>
+<a name="ln160">        std::string origin = name.substr(idx + 1, std::string::npos);</a>
+<a name="ln161">        if (origin == &quot;H&quot;)</a>
+<a name="ln162">          {</a>
+<a name="ln163">            m_OriginAlternative = HEXAGONAL_ORIGIN;</a>
+<a name="ln164">          } else {</a>
+<a name="ln165">            m_OriginAlternative = atoi (origin.c_str());</a>
+<a name="ln166">          }</a>
+<a name="ln167">      }</a>
+<a name="ln168">    m_HM = name;</a>
+<a name="ln169">  }</a>
+<a name="ln170"> </a>
+<a name="ln171">  /*!</a>
+<a name="ln172">   */</a>
+<a name="ln173">  void SpaceGroup::AddTransform(const string &amp;s)</a>
+<a name="ln174">  {</a>
+<a name="ln175">    matrix3x3 m;</a>
+<a name="ln176">    vector3 v;</a>
+<a name="ln177">    locale cLocale(&quot;C&quot;);</a>
+<a name="ln178"> </a>
+<a name="ln179">    if (s.find(',') != string::npos)</a>
+<a name="ln180">      {</a>
+<a name="ln181">        string s1 = RemoveWhiteSpaceUnderscore(s);</a>
+<a name="ln182">        istringstream iss(s1);</a>
+<a name="ln183">        iss.imbue(cLocale);</a>
+<a name="ln184"> </a>
+<a name="ln185">        string row;</a>
+<a name="ln186">        int i;</a>
+<a name="ln187">        size_t j;</a>
+<a name="ln188">        bool neg;</a>
+<a name="ln189">        double *t;</a>
+<a name="ln190">        for (i = 0; i &lt; 3; i++)</a>
+<a name="ln191">          {</a>
+<a name="ln192">            getline(iss, row, ',');</a>
+<a name="ln193">            j = 0;</a>
+<a name="ln194">            neg = false;</a>
+<a name="ln195">            while (j &lt; row.length())</a>
+<a name="ln196">              {</a>
+<a name="ln197">                switch (row[j])</a>
+<a name="ln198">                  {</a>
+<a name="ln199">                  case '0':</a>
+<a name="ln200">                  case '.': // anticipating something like 0.5 or .3333</a>
+<a name="ln201">                    {</a>
+<a name="ln202">                      char *end;</a>
+<a name="ln203">                      switch (i)</a>
+<a name="ln204">                        {</a>
+<a name="ln205">                        case 0:</a>
+<a name="ln206">                          t = &amp;v.x();</a>
+<a name="ln207">                          break;</a>
+<a name="ln208">                        case 1:</a>
+<a name="ln209">                          t = &amp;v.y();</a>
+<a name="ln210">                          break;</a>
+<a name="ln211">                        case 2:</a>
+<a name="ln212">                          t = &amp;v.z();</a>
+<a name="ln213">                          break;</a>
+<a name="ln214">                        }</a>
+<a name="ln215">                      *t = strtod(row.c_str() + j, &amp;end);</a>
+<a name="ln216">                      j = end - row.c_str() - 1;</a>
+<a name="ln217">                      if (neg)</a>
+<a name="ln218">                        *t = - *t;</a>
+<a name="ln219">                      break;</a>
+<a name="ln220">                    }</a>
+<a name="ln221">                  case '1':</a>
+<a name="ln222">                  case '2':</a>
+<a name="ln223">                  case '3':</a>
+<a name="ln224">                  case '4':</a>
+<a name="ln225">                  case '5':</a>
+<a name="ln226">                  case '6':</a>
+<a name="ln227">                  case '7':</a>
+<a name="ln228">                  case '8':</a>
+<a name="ln229">                  case '9':</a>
+<a name="ln230">                    if (j+2 &lt; row.length() &amp;&amp; row[j+1] == '/')</a>
+<a name="ln231">                      {</a>
+<a name="ln232">                        double *t = nullptr;</a>
+<a name="ln233">                        switch (i)</a>
+<a name="ln234">                          {</a>
+<a name="ln235">                          case 0:</a>
+<a name="ln236">                            t = &amp;v.x();</a>
+<a name="ln237">                            break;</a>
+<a name="ln238">                          case 1:</a>
+<a name="ln239">                            t = &amp;v.y();</a>
+<a name="ln240">                            break;</a>
+<a name="ln241">                          case 2:</a>
+<a name="ln242">                            t = &amp;v.z();</a>
+<a name="ln243">                            break;</a>
+<a name="ln244">                          }</a>
+<a name="ln245">                        *t = ((double) (row[j] - '0')) / (row[j+2] - '0');</a>
+<a name="ln246">                        if (neg)</a>
+<a name="ln247">                          *t = - *t;</a>
+<a name="ln248"> </a>
+<a name="ln249">                        j +=2;</a>
+<a name="ln250">                      }</a>
+<a name="ln251">                    break;</a>
+<a name="ln252">                  case '-':</a>
+<a name="ln253">                    neg = true;</a>
+<a name="ln254">                    break;</a>
+<a name="ln255">                  case '+':</a>
+<a name="ln256">                    neg = false;</a>
+<a name="ln257">                    break;</a>
+<a name="ln258">                  case 'X':</a>
+<a name="ln259">                  case 'x':</a>
+<a name="ln260">                    m(i, 0) = (neg)? -1.: 1.;</a>
+<a name="ln261">                  break;</a>
+<a name="ln262">                  case 'Y':</a>
+<a name="ln263">                  case 'y':</a>
+<a name="ln264">                    m(i, 1) = (neg)? -1.: 1.;</a>
+<a name="ln265">                  break;</a>
+<a name="ln266">                  case 'Z':</a>
+<a name="ln267">                  case 'z':</a>
+<a name="ln268">                    m(i, 2) = (neg)? -1.: 1.;</a>
+<a name="ln269">                  break;</a>
+<a name="ln270">                  }</a>
+<a name="ln271">                j++;</a>
+<a name="ln272">              }</a>
+<a name="ln273">          }</a>
+<a name="ln274">      }</a>
+<a name="ln275">    else if (s.find(' ') != string::npos)</a>
+<a name="ln276">      {</a>
+<a name="ln277">        istringstream iss(s);</a>
+<a name="ln278">        iss.imbue(cLocale);</a>
+<a name="ln279">        /* supposing the string is a list of at least 12 float values. If there are</a>
+<a name="ln280">           16, the last four are 0., 0., 0. and 1. and are not needed */</a>
+<a name="ln281">        iss &gt;&gt; m(0,0) &gt;&gt; m(0,1) &gt;&gt; m(0,2) &gt;&gt; v.x();</a>
+<a name="ln282">        iss &gt;&gt; m(1,0) &gt;&gt; m(1,1) &gt;&gt; m(1,2) &gt;&gt; v.y();</a>
+<a name="ln283">        iss &gt;&gt; m(2,0) &gt;&gt; m(2,1) &gt;&gt; m(2,2) &gt;&gt; v.z();</a>
+<a name="ln284">      }</a>
+<a name="ln285">		if (v.x() &lt; 0)</a>
+<a name="ln286">			v.x() += 1.;</a>
+<a name="ln287">		else if (v.x() &gt;= 1.)</a>
+<a name="ln288">			v.x() -= 1.;</a>
+<a name="ln289">		if (v.y() &lt; 0)</a>
+<a name="ln290">			v.y() += 1.;</a>
+<a name="ln291">		else if (v.y() &gt;= 1.)</a>
+<a name="ln292">			v.y() -= 1.;</a>
+<a name="ln293">		if (v.z() &lt; 0)</a>
+<a name="ln294">			v.z() += 1.;</a>
+<a name="ln295">		else if (v.z() &gt;= 1.)</a>
+<a name="ln296">			v.z() -= 1.;</a>
+<a name="ln297"> </a>
+<a name="ln298">    // only push_back unique transformations</a>
+<a name="ln299">    transform3dIterator i, iend = m_transforms.end();</a>
+<a name="ln300">    transform3d* candidate = new transform3d (m, v);</a>
+<a name="ln301">    bool transform_exists = false;</a>
+<a name="ln302"> </a>
+<a name="ln303">    for (i = m_transforms.begin(); i!= iend; i++)</a>
+<a name="ln304">    {</a>
+<a name="ln305">      if (candidate-&gt;DescribeAsString() == (*i)-&gt;DescribeAsString())</a>
+<a name="ln306">      {</a>
+<a name="ln307">        transform_exists = true;</a>
+<a name="ln308">        break;</a>
+<a name="ln309">      }</a>
+<a name="ln310">    }</a>
+<a name="ln311"> </a>
+<a name="ln312">    if (!transform_exists)</a>
+<a name="ln313">      m_transforms.push_back (candidate);</a>
+<a name="ln314">  }</a>
+<a name="ln315"> </a>
+<a name="ln316">  /*!</a>
+<a name="ln317">   */</a>
+<a name="ln318">  list&lt;vector3&gt; SpaceGroup::Transform(const vector3 &amp;v) const</a>
+<a name="ln319">  {</a>
+<a name="ln320">    static double prec = 2e-5;</a>
+<a name="ln321">    list&lt;vector3&gt; res;</a>
+<a name="ln322">    transform3dIterator i, iend = m_transforms.end();</a>
+<a name="ln323">    for (i = m_transforms.begin(); i!= iend; i++)</a>
+<a name="ln324">      {</a>
+<a name="ln325">        vector3 t;</a>
+<a name="ln326">        t = *(*i) * v;</a>
+<a name="ln327">        if (t.x() &lt; 0.)</a>
+<a name="ln328">          t.x() += 1.;</a>
+<a name="ln329">        if (t.x() &gt;= 1.)</a>
+<a name="ln330">          t.x() -= 1.;</a>
+<a name="ln331">        if (t.y() &lt; 0.)</a>
+<a name="ln332">          t.y() += 1.;</a>
+<a name="ln333">        if (t.y() &gt;= 1.)</a>
+<a name="ln334">          t.y() -= 1.;</a>
+<a name="ln335">        if (t.z() &lt; 0.)</a>
+<a name="ln336">          t.z() += 1.;</a>
+<a name="ln337">        if (t.z() &gt;= 1.)</a>
+<a name="ln338">          t.z() -= 1.;</a>
+<a name="ln339">        list&lt;vector3&gt;::iterator j, jend = res.end();</a>
+<a name="ln340">        bool duplicate = false;</a>
+<a name="ln341">        for (j = res.begin(); j != jend; ++j)</a>
+<a name="ln342">          if (fabs(t.x() - (*j).x()) &lt; prec &amp;&amp;</a>
+<a name="ln343">              fabs(t.y() - (*j).y()) &lt; prec &amp;&amp;</a>
+<a name="ln344">              fabs(t.z() - (*j).z()) &lt; prec)</a>
+<a name="ln345">            {</a>
+<a name="ln346">              duplicate = true;</a>
+<a name="ln347">              break;</a>
+<a name="ln348">            }</a>
+<a name="ln349">        if (!duplicate)</a>
+<a name="ln350">          res.push_back (t);</a>
+<a name="ln351">      }</a>
+<a name="ln352">    return res;</a>
+<a name="ln353">  }</a>
+<a name="ln354"> </a>
+<a name="ln355">  /*!</a>
+<a name="ln356">   */</a>
+<a name="ln357">  transform3d const * SpaceGroup::BeginTransform(transform3dIterator &amp;i) const</a>
+<a name="ln358">  {</a>
+<a name="ln359">    i = m_transforms.begin ();</a>
+<a name="ln360">    return (i == m_transforms.end())? static_cast&lt;transform3d*&gt;(nullptr): *i++;</a>
+<a name="ln361">  }</a>
+<a name="ln362"> </a>
+<a name="ln363">  /*!</a>
+<a name="ln364">   */</a>
+<a name="ln365">  transform3d const * SpaceGroup::NextTransform(transform3dIterator &amp;i) const</a>
+<a name="ln366">  {</a>
+<a name="ln367">    return (i == m_transforms.end())? static_cast&lt;transform3d*&gt;(nullptr): *i++;</a>
+<a name="ln368">  }</a>
+<a name="ln369"> </a>
+<a name="ln370">  /*!</a>
+<a name="ln371">   */</a>
+<a name="ln372">  const SpaceGroup * SpaceGroup::GetSpaceGroup (char const *name)</a>
+<a name="ln373">  {</a>
+<a name="ln374">    return GetSpaceGroup(std::string(name)); // let's only use one method</a>
+<a name="ln375">  }</a>
+<a name="ln376"> </a>
+<a name="ln377">  /*!</a>
+<a name="ln378">   */</a>
+<a name="ln379">  const SpaceGroup * SpaceGroup::GetSpaceGroup (const string &amp;name_in)</a>
+<a name="ln380">  {</a>
+<a name="ln381">    if (!_SpaceGroups.Inited())</a>
+<a name="ln382">      _SpaceGroups.Init();</a>
+<a name="ln383"> </a>
+<a name="ln384">    // This needs to be more forgiving</a>
+<a name="ln385">    // First, try it without removing the white space</a>
+<a name="ln386">    const SpaceGroup *match = _SpaceGroups.sgbn.find(name_in) != _SpaceGroups.sgbn.end() ? _SpaceGroups.sgbn[name_in] : nullptr;</a>
+<a name="ln387">    if (match) return match;</a>
+<a name="ln388"> </a>
+<a name="ln389">    // If a match wasn't found, remove the white space and try again</a>
+<a name="ln390">    string name = RemoveWhiteSpaceUnderscore(name_in);</a>
+<a name="ln391">    match = _SpaceGroups.sgbn.find(name) != _SpaceGroups.sgbn.end() ? _SpaceGroups.sgbn[name] : nullptr;</a>
+<a name="ln392"> </a>
+<a name="ln393">    if (!match) {</a>
+<a name="ln394">      // Try another search, e.g. Fm-3m instead of Fm3m</a>
+<a name="ln395">      string search = name;</a>
+<a name="ln396">      bool hasMirror = (name.find('m') != string::npos || name.find('d') != string::npos || name.find('n') != string::npos || name.find('c') != string::npos);</a>
+<a name="ln397">      if (name.find('4') != string::npos &amp;&amp; hasMirror &amp;&amp; name.find('-') == string::npos) {</a>
+<a name="ln398">        search.insert(name.find('4'), &quot;-&quot;);</a>
+<a name="ln399">      } else if (name.find('3') != string::npos &amp;&amp; hasMirror &amp;&amp; name.find('-') == string::npos) {</a>
+<a name="ln400">        search.insert(name.find('3'), &quot;-&quot;);</a>
+<a name="ln401">      } else if (name.find('6') != string::npos &amp;&amp; hasMirror &amp;&amp; name.find('-') == string::npos) {</a>
+<a name="ln402">        search.insert(name.find('6'), &quot;-&quot;);</a>
+<a name="ln403">      }</a>
+<a name="ln404"> </a>
+<a name="ln405">      match = _SpaceGroups.sgbn.find(search) != _SpaceGroups.sgbn.end() ? _SpaceGroups.sgbn[search] : nullptr;</a>
+<a name="ln406">    }</a>
+<a name="ln407"> </a>
+<a name="ln408">    return (match);</a>
+<a name="ln409">  }</a>
+<a name="ln410"> </a>
+<a name="ln411">  /*!</a>
+<a name="ln412">   */</a>
+<a name="ln413">  const SpaceGroup * SpaceGroup::GetSpaceGroup (unsigned id)</a>
+<a name="ln414">  {</a>
+<a name="ln415">    if (!_SpaceGroups.Inited())</a>
+<a name="ln416">      _SpaceGroups.Init();</a>
+<a name="ln417">    return (id &gt; 0 &amp;&amp; id &lt;= 230)? _SpaceGroups.sgbi[id - 1].front() : nullptr;</a>
+<a name="ln418">  }</a>
+<a name="ln419"> </a>
+<a name="ln420">  /*!</a>
+<a name="ln421">   */</a>
+<a name="ln422">  void SpaceGroup::RegisterSpaceGroup (int nb, ...)</a>
+<a name="ln423">  {</a>
+<a name="ln424">    _SpaceGroups.sgs.insert(this);</a>
+<a name="ln425">    if (m_id &gt; 0 &amp;&amp; m_id &lt;= 230)</a>
+<a name="ln426">      _SpaceGroups.sgbi[m_id - 1].push_back(this);</a>
+<a name="ln427">    if (m_HM.length() &gt; 0)</a>
+<a name="ln428">	  {</a>
+<a name="ln429">        if (m_OriginAlternative != 0)</a>
+<a name="ln430">		  {</a>
+<a name="ln431">            char a = '0' + m_OriginAlternative;</a>
+<a name="ln432">            std::string nm = m_HM + ':' + a;</a>
+<a name="ln433">            if (_SpaceGroups.sgbn[nm] == nullptr)</a>
+<a name="ln434">              _SpaceGroups.sgbn[nm] = this;</a>
+<a name="ln435">            // Also use the symbol stripped from whitespaces as key</a>
+<a name="ln436">            std::string stripped_HM=RemoveWhiteSpaceUnderscore(nm);</a>
+<a name="ln437">            if (stripped_HM.length() &gt; 0 &amp;&amp; _SpaceGroups.sgbn[nm] == nullptr)</a>
+<a name="ln438">              _SpaceGroups.sgbn[nm] = this;</a>
+<a name="ln439">		  }</a>
+<a name="ln440">        if ((m_OriginAlternative &amp; 1) == 0 &amp;&amp; _SpaceGroups.sgbn[m_HM] == nullptr)</a>
+<a name="ln441">          _SpaceGroups.sgbn[m_HM] = this;</a>
+<a name="ln442">	  }</a>
+<a name="ln443">    // Also use the HM symbol stripped from whitespaces as key</a>
+<a name="ln444">	  std::string stripped_HM=RemoveWhiteSpaceUnderscore(m_HM);</a>
+<a name="ln445">    if (stripped_HM.length() &gt; 0 &amp;&amp; _SpaceGroups.sgbn[stripped_HM] == nullptr)</a>
+<a name="ln446">      _SpaceGroups.sgbn[stripped_HM] = this;</a>
+<a name="ln447">    if (m_Hall.length() &gt; 0 &amp;&amp; _SpaceGroups.sgbn[m_Hall] == nullptr)</a>
+<a name="ln448">      _SpaceGroups.sgbn[m_Hall] = this;</a>
+<a name="ln449">    if (nb == 0)</a>
+<a name="ln450">      return;</a>
+<a name="ln451">    va_list args;</a>
+<a name="ln452">    va_start(args, nb);</a>
+<a name="ln453">    string name;</a>
+<a name="ln454">    for (int i = 0; i &lt; nb; i++)</a>
+<a name="ln455">      {</a>
+<a name="ln456">        name=va_arg(args, const char *);</a>
+<a name="ln457">        if (name.length() &gt; 0 &amp;&amp; _SpaceGroups.sgbn[name] == nullptr)</a>
+<a name="ln458">          _SpaceGroups.sgbn[name] = this;</a>
+<a name="ln459">      }</a>
+<a name="ln460">    va_end(args);</a>
+<a name="ln461">  }</a>
+<a name="ln462"> </a>
+<a name="ln463">  /*!</a>
+<a name="ln464">   */</a>
+<a name="ln465">  bool SpaceGroup::operator ==(const SpaceGroup &amp;sg) const</a>
+<a name="ln466">  {</a>
+<a name="ln467">    if (m_transforms.size() != sg.m_transforms.size())</a>
+<a name="ln468">      return false;</a>
+<a name="ln469">    set&lt;string&gt; s0, s1;</a>
+<a name="ln470">    list&lt;transform3d*&gt;::const_iterator i, iend;</a>
+<a name="ln471">    iend = m_transforms.end();</a>
+<a name="ln472">    for (i = m_transforms.begin(); i != iend; ++i)</a>
+<a name="ln473">      s0.insert((*i)-&gt;DescribeAsString());</a>
+<a name="ln474">    iend = sg.m_transforms.end();</a>
+<a name="ln475">    for (i = sg.m_transforms.begin(); i != iend; ++i)</a>
+<a name="ln476">      s1.insert((*i)-&gt;DescribeAsString());</a>
+<a name="ln477">    if (s0.size() != s1.size())</a>
+<a name="ln478">      return false;</a>
+<a name="ln479">    set&lt;string&gt;::iterator j, jend = s0.end();</a>
+<a name="ln480">    for (j = s0.begin(); j != jend; ++j)</a>
+<a name="ln481">      if (s1.find(*j) == s1.end())</a>
+<a name="ln482">        return false;</a>
+<a name="ln483">    return true;</a>
+<a name="ln484">  }</a>
+<a name="ln485"> </a>
+<a name="ln486">  /*!</a>
+<a name="ln487">   */</a>
+<a name="ln488">  bool SpaceGroup::IsValid() const</a>
+<a name="ln489">  {</a>
+<a name="ln490">    if (!m_transforms.size())</a>
+<a name="ln491">      return false;</a>
+<a name="ln492">    list&lt;transform3d*&gt;::const_iterator i, iend = m_transforms.end();</a>
+<a name="ln493">    map &lt;string, transform3d*&gt;T;</a>
+<a name="ln494">    for (i = m_transforms.begin(); i != iend; ++i)</a>
+<a name="ln495">      {</a>
+<a name="ln496">        if (T.find((*i)-&gt;DescribeAsString()) != T.end())</a>
+<a name="ln497">          {</a>
+<a name="ln498">            cerr &lt;&lt; &quot;Duplicated transform: &quot; &lt;&lt; (*i)-&gt;DescribeAsString() &lt;&lt; endl;</a>
+<a name="ln499">            return false;</a>
+<a name="ln500">          }</a>
+<a name="ln501">        T[(*i)-&gt;DescribeAsString()] = *i;</a>
+<a name="ln502">      }</a>
+<a name="ln503">		// calculate all products and check if they are in the group</a>
+<a name="ln504">		map &lt;string, transform3d*&gt;::iterator j, k, end = T.end();</a>
+<a name="ln505">    string s;</a>
+<a name="ln506">    bool has_inverse;</a>
+<a name="ln507">		for (j = T.begin(); j != end; ++j)</a>
+<a name="ln508">		  {</a>
+<a name="ln509">        has_inverse = false;</a>
+<a name="ln510">        for (k = T.begin(); k != end; ++k)</a>
+<a name="ln511">          {</a>
+<a name="ln512">            s = (*(*j).second * *(*k).second).DescribeAsString();</a>
+<a name="ln513">            if (T.find(s) == end)</a>
+<a name="ln514">              {</a>
+<a name="ln515">                cerr &lt;&lt; &quot;Invalid transform: &quot; &lt;&lt; (*j).first &lt;&lt; &quot; * &quot; &lt;&lt; (*k).first &lt;&lt; &quot; = &quot; &lt;&lt; s &lt;&lt; endl;</a>
+<a name="ln516">                return false;</a>
+<a name="ln517">              }</a>
+<a name="ln518">            if (!has_inverse &amp;&amp; s == &quot;x,y,z&quot;)</a>
+<a name="ln519">              has_inverse = true;</a>
+<a name="ln520">          }</a>
+<a name="ln521">        if (!has_inverse)</a>
+<a name="ln522">          {</a>
+<a name="ln523">            cerr &lt;&lt; &quot;Transform with no inverse: &quot; &lt;&lt; (*j).first &lt;&lt; endl;</a>
+<a name="ln524">            return false;</a>
+<a name="ln525">          }</a>
+<a name="ln526">      }</a>
+<a name="ln527">    return true;</a>
+<a name="ln528">  }</a>
+<a name="ln529"> </a>
+<a name="ln530">  /*!</a>
+<a name="ln531">   */</a>
+<a name="ln532">  const SpaceGroup * SpaceGroup::Find (SpaceGroup* group)</a>
+<a name="ln533">  {</a>
+<a name="ln534">    const SpaceGroup *found = nullptr;</a>
+<a name="ln535">    if (group-&gt;m_Hall.length() &gt; 0 &amp;&amp; _SpaceGroups.sgbn.find(group-&gt;m_Hall)!=_SpaceGroups.sgbn.end())</a>
+<a name="ln536">      {</a>
+<a name="ln537">        found = _SpaceGroups.sgbn[group-&gt;m_Hall];</a>
+<a name="ln538">        if (!found)</a>
+<a name="ln539">          obErrorLog.ThrowError(__FUNCTION__, &quot;Unknown space group (Hall symbol:&quot;+group-&gt;m_Hall+&quot;) error, please file a bug report.&quot;, obError);</a>
+<a name="ln540">        if (group-&gt;m_transforms.size() &amp;&amp; *found  != *group)</a>
+<a name="ln541">          {</a>
+<a name="ln542">            unsigned id = group-&gt;GetId();</a>
+<a name="ln543">            if (id != 3 &amp;&amp; id != 68) // these groups have duplicates</a>
+<a name="ln544">              {</a>
+<a name="ln545">                obErrorLog.ThrowError(__FUNCTION__, &quot;Space group error (Hall symbol and list of transforms do not match), please file a bug report.&quot;, obWarning);</a>
+<a name="ln546">                return found;</a>
+<a name="ln547">              }</a>
+<a name="ln548">          }</a>
+<a name="ln549">        else</a>
+<a name="ln550">        /* even if there is an error (this should not occur) return the found group, since</a>
+<a name="ln551">           Hall names are secure */</a>
+<a name="ln552">          return found;</a>
+<a name="ln553">      }</a>
+<a name="ln554">    // Identify from the HM symbol, after removing all whitespaces or underscore (which are valid separators in</a>
+<a name="ln555">    // old CIF files)</a>
+<a name="ln556">    std::string stripped_hm=RemoveWhiteSpaceUnderscore(group-&gt;m_HM);</a>
+<a name="ln557">    if (stripped_hm.length() &gt; 0 &amp;&amp;</a>
+<a name="ln558">        _SpaceGroups.sgbn.find(stripped_hm)!=_SpaceGroups.sgbn.end() &amp;&amp;</a>
+<a name="ln559">        (found = _SpaceGroups.sgbn[stripped_hm]))</a>
+<a name="ln560">      {</a>
+<a name="ln561">        if (*found == *group){</a>
+<a name="ln562">          found = _SpaceGroups.sgbn[found-&gt;GetHallName()];</a>
+<a name="ln563">          return found;</a>
+<a name="ln564">        }</a>
+<a name="ln565">        if (group-&gt;m_transforms.size())</a>
+<a name="ln566">          {// If transforms (symmetry operations) are listed, make sure they match the tabulated ones</a>
+<a name="ln567">            list&lt;const SpaceGroup*&gt;::const_iterator i, end = _SpaceGroups.sgbi[found-&gt;m_id - 1].end();</a>
+<a name="ln568">            for (i = _SpaceGroups.sgbi[found-&gt;m_id - 1].begin(); i!= end; ++i)</a>
+<a name="ln569">              if ((**i) == *group)</a>
+<a name="ln570">                return *i;</a>
+<a name="ln571">            obErrorLog.ThrowError(__FUNCTION__, &quot;Unknown space group error (H-M symbol:&quot;+group-&gt;m_HM+&quot;), cannot match the list of transforms, please file a bug report.&quot;, obError);</a>
+<a name="ln572">            return nullptr;</a>
+<a name="ln573">          }</a>
+<a name="ln574">        else if (group-&gt;m_transforms.size() == 0)</a>
+<a name="ln575">          {// No transforms (symmetry operations) are listed, warn if HM symbol can match several spacegroups</a>
+<a name="ln576">            int n = 0;</a>
+<a name="ln577">            list&lt;const SpaceGroup*&gt;::const_iterator i, end = _SpaceGroups.sgbi[group-&gt;m_id].end();</a>
+<a name="ln578">            for (i = _SpaceGroups.sgbi[group-&gt;m_id].begin(); i!= end; ++i)</a>
+<a name="ln579">              if (RemoveWhiteSpaceUnderscore((*i)-&gt;m_HM) == stripped_hm)</a>
+<a name="ln580">                n++;</a>
+<a name="ln581">            if (n &gt; 1)</a>
+<a name="ln582">              obErrorLog.ThrowError(__FUNCTION__, &quot;Ambiguous space group: HM symbol corresponds to several space groups.&quot;, obWarning);</a>
+<a name="ln583">            return found;</a>
+<a name="ln584">          }</a>
+<a name="ln585">        /* even if there is an error (this should not occur) return the found group, since</a>
+<a name="ln586">           Hall names are secure */</a>
+<a name="ln587">      }</a>
+<a name="ln588">    else if (group-&gt;m_id &gt; 0 &amp;&amp; group-&gt;m_id &lt;= 230)</a>
+<a name="ln589">      {</a>
+<a name="ln590">        if (group-&gt;m_transforms.size())</a>
+<a name="ln591">          {</a>
+<a name="ln592">            list&lt;const SpaceGroup*&gt;::const_iterator i, end = _SpaceGroups.sgbi[group-&gt;m_id - 1].end();</a>
+<a name="ln593">            for (i = _SpaceGroups.sgbi[group-&gt;m_id - 1].begin(); i!= end; ++i)</a>
+<a name="ln594">              if ((**i) == *group)</a>
+<a name="ln595">                return *i;</a>
+<a name="ln596">          }</a>
+<a name="ln597">        else if (group-&gt;m_transforms.size() == 0)</a>
+<a name="ln598">          {</a>
+<a name="ln599">            if (_SpaceGroups.sgbi[group-&gt;m_id - 1].size() &gt; 1)</a>
+<a name="ln600">              obErrorLog.ThrowError(__FUNCTION__, &quot;Ambiguous space group: sg number corresponds to several space groups.&quot;, obWarning);</a>
+<a name="ln601">            return _SpaceGroups.sgbi[group-&gt;m_id - 1].front();</a>
+<a name="ln602">          }</a>
+<a name="ln603">      }</a>
+<a name="ln604">    // If we are there, we need to make a hard search through the whole collection</a>
+<a name="ln605">    if (!group-&gt;IsValid())</a>
+<a name="ln606">      {</a>
+<a name="ln607">        obErrorLog.ThrowError(__FUNCTION__, &quot;Unknown space group (HM:&quot;+group-&gt;m_HM+&quot;,Hall:&quot;+group-&gt;m_Hall</a>
+<a name="ln608">                                           +&quot;) with incomplete or wrong definition.&quot;, obWarning);</a>
+<a name="ln609">        return nullptr;</a>
+<a name="ln610">      }</a>
+<a name="ln611">    set&lt;SpaceGroup*&gt;::iterator i, end = _SpaceGroups.sgs.end();</a>
+<a name="ln612">    for (i = _SpaceGroups.sgs.begin(); i != end; ++i)</a>
+<a name="ln613">      if (**i == *group)</a>
+<a name="ln614">        return *i;</a>
+<a name="ln615">    obErrorLog.ThrowError(__FUNCTION__, &quot;Unknown space group error, please file a bug report.&quot;, obWarning);</a>
+<a name="ln616">    return nullptr;</a>
+<a name="ln617">	}</a>
+<a name="ln618">}</a>
+<a name="ln619"> </a>
+<a name="ln620">//! \file spacegroup.cpp</a>
+<a name="ln621">//! \brief Handle Crystallographic Space Groups</a>
+
+</code></pre>
+<div class="balloon" rel="540"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1004/" target="_blank">V1004</a> The 'found' pointer was used unsafely after it was verified against nullptr. Check lines: 538, 540.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

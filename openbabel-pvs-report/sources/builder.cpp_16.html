@@ -1,0 +1,1866 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>builder.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">builder.cpp - Class to create structures.</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 2007-2008 by Tim Vandermeersch</a>
+<a name="ln5">                           &lt;tim.vandermeersch@gmail.com&gt;</a>
+<a name="ln6"> </a>
+<a name="ln7">This file is part of the Open Babel project.</a>
+<a name="ln8">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln11">it under the terms of the GNU General Public License as published by</a>
+<a name="ln12">the Free Software Foundation version 2 of the License.</a>
+<a name="ln13"> </a>
+<a name="ln14">This program is distributed in the hope that it will be useful,</a>
+<a name="ln15">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln16">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln17">GNU General Public License for more details.</a>
+<a name="ln18">***********************************************************************/</a>
+<a name="ln19">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln20"> </a>
+<a name="ln21"> </a>
+<a name="ln22">#include &lt;openbabel/builder.h&gt;</a>
+<a name="ln23"> </a>
+<a name="ln24">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln25">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln26">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln27">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln28">#include &lt;openbabel/math/matrix3x3.h&gt;</a>
+<a name="ln29">#include &lt;openbabel/rotamer.h&gt;</a>
+<a name="ln30">#include &lt;openbabel/rotor.h&gt;</a>
+<a name="ln31">#include &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln32">#include &lt;openbabel/locale.h&gt;</a>
+<a name="ln33">#include &lt;openbabel/distgeom.h&gt;</a>
+<a name="ln34">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln35"> </a>
+<a name="ln36">#include &lt;openbabel/stereo/stereo.h&gt;</a>
+<a name="ln37">#include &lt;openbabel/stereo/cistrans.h&gt;</a>
+<a name="ln38">#include &lt;openbabel/stereo/tetrahedral.h&gt;</a>
+<a name="ln39">#include &lt;openbabel/stereo/squareplanar.h&gt;</a>
+<a name="ln40">/* OBBuilder::GetNewBondVector():</a>
+<a name="ln41"> * - is based on OBAtom::GetNewBondVector()</a>
+<a name="ln42"> * - but: when extending a long chain all the bonds are trans</a>
+<a name="ln43"> *</a>
+<a name="ln44"> * fragments.txt:</a>
+<a name="ln45"> * - fragments should be ordered from complex to simple</a>
+<a name="ln46"> * - practically speaking, this means they are ordered by the number of atoms</a>
+<a name="ln47"> * */</a>
+<a name="ln48"> </a>
+<a name="ln49">using namespace std;</a>
+<a name="ln50"> </a>
+<a name="ln51">namespace OpenBabel</a>
+<a name="ln52">{</a>
+<a name="ln53">  /** \class OBBuilder builder.h &lt;openbabel/builder.h&gt;</a>
+<a name="ln54">      \brief Class for 3D structure generation</a>
+<a name="ln55">      \since version 2.2</a>
+<a name="ln56"> </a>
+<a name="ln57">      The OBBuilder class is used for generating 3D structures.</a>
+<a name="ln58"> </a>
+<a name="ln59">      Below is and example which explain the basics.</a>
+<a name="ln60"> </a>
+<a name="ln61">      \code</a>
+<a name="ln62">      //</a>
+<a name="ln63">      // code to read molecule from smiles goes here...</a>
+<a name="ln64">      //</a>
+<a name="ln65">      OBBuilder builder;</a>
+<a name="ln66">      builder.Build(mol);</a>
+<a name="ln67">      //</a>
+<a name="ln68">      // code to write molecule to 3D file format goes here...</a>
+<a name="ln69">      //</a>
+<a name="ln70">      \endcode</a>
+<a name="ln71">  **/</a>
+<a name="ln72">  //std::map&lt;std::string, double&gt; OBBuilder::_torsion;</a>
+<a name="ln73">  std::vector&lt;std::string&gt; OBBuilder::_rigid_fragments;</a>
+<a name="ln74">  std::map&lt;std::string, int&gt; OBBuilder::_rigid_fragments_index;</a>
+<a name="ln75">  std::map&lt;std::string, std::vector&lt;vector3&gt; &gt; OBBuilder::_rigid_fragments_cache;</a>
+<a name="ln76">  std::vector&lt;std::pair&lt;OBSmartsPattern*, std::vector&lt;vector3&gt; &gt; &gt; OBBuilder::_ring_fragments;</a>
+<a name="ln77"> </a>
+<a name="ln78">  void OBBuilder::AddRingFragment(OBSmartsPattern *sp, const std::vector&lt;vector3&gt; &amp;coords)</a>
+<a name="ln79">  {</a>
+<a name="ln80">    bool hasAllZeroCoords = true;</a>
+<a name="ln81">    for (std::size_t i = 0; i &lt; coords.size(); ++i) {</a>
+<a name="ln82">      if (fabs(coords[i].x()) &gt; 10e-8 ||</a>
+<a name="ln83">          fabs(coords[i].y()) &gt; 10e-8 ||</a>
+<a name="ln84">          fabs(coords[i].z()) &gt; 10e-8) {</a>
+<a name="ln85">        hasAllZeroCoords = false;</a>
+<a name="ln86">        break;</a>
+<a name="ln87">      }</a>
+<a name="ln88">    }</a>
+<a name="ln89"> </a>
+<a name="ln90">    if (hasAllZeroCoords) {</a>
+<a name="ln91">      std::stringstream ss;</a>
+<a name="ln92">      ss &lt;&lt; &quot;Ring fragment &quot; &lt;&lt; sp-&gt;GetSMARTS() &lt;&lt; &quot; in ring-fragments.txt has all zero coordinates. Ignoring fragment.&quot;;</a>
+<a name="ln93">      obErrorLog.ThrowError(__FUNCTION__, ss.str(), obError);</a>
+<a name="ln94">    } else</a>
+<a name="ln95">      _ring_fragments.push_back(pair&lt;OBSmartsPattern*, vector&lt;vector3&gt; &gt; (sp, coords));</a>
+<a name="ln96">  }</a>
+<a name="ln97"> </a>
+<a name="ln98">  void OBBuilder::LoadFragments()  {</a>
+<a name="ln99">    // open data/fragments.txt</a>
+<a name="ln100">    ifstream ifs;</a>
+<a name="ln101">    if (OpenDatafile(ifs, &quot;rigid-fragments-index.txt&quot;).length() == 0) {</a>
+<a name="ln102">      obErrorLog.ThrowError(__FUNCTION__, &quot;Cannot open ring-fragments-index.txt&quot;, obError);</a>
+<a name="ln103">      return;</a>
+<a name="ln104">    }</a>
+<a name="ln105"> </a>
+<a name="ln106">    // Set the locale for number parsing to avoid locale issues: PR#1785463</a>
+<a name="ln107">    // TODO: Use OpenDatafile()</a>
+<a name="ln108">    obLocale.SetLocale();</a>
+<a name="ln109"> </a>
+<a name="ln110">    std::string smiles;</a>
+<a name="ln111">    int index;</a>
+<a name="ln112">    while(ifs &gt;&gt; smiles &gt;&gt; index) {</a>
+<a name="ln113">      _rigid_fragments.push_back(smiles);</a>
+<a name="ln114">      _rigid_fragments_index[smiles] = index;</a>
+<a name="ln115">    }</a>
+<a name="ln116"> </a>
+<a name="ln117">    if (OpenDatafile(ifs, &quot;ring-fragments.txt&quot;).length() == 0) {</a>
+<a name="ln118">      obErrorLog.ThrowError(__FUNCTION__, &quot;Cannot open ring-fragments.txt&quot;, obError);</a>
+<a name="ln119">      return;</a>
+<a name="ln120">    }</a>
+<a name="ln121"> </a>
+<a name="ln122">    char buffer[BUFF_SIZE];</a>
+<a name="ln123">    vector&lt;string&gt; vs;</a>
+<a name="ln124">    OBSmartsPattern *sp = nullptr;</a>
+<a name="ln125">    vector&lt;vector3&gt; coords;</a>
+<a name="ln126">    while (ifs.getline(buffer, BUFF_SIZE)) {</a>
+<a name="ln127">      if (buffer[0] == '#') // skip comment line (at the top)</a>
+<a name="ln128">        continue;</a>
+<a name="ln129"> </a>
+<a name="ln130">      tokenize(vs, buffer);</a>
+<a name="ln131"> </a>
+<a name="ln132">      if (vs.size() == 1) { // SMARTS pattern</a>
+<a name="ln133">        if (sp != nullptr)</a>
+<a name="ln134">          AddRingFragment(sp, coords);</a>
+<a name="ln135"> </a>
+<a name="ln136">        coords.clear();</a>
+<a name="ln137">        sp = new OBSmartsPattern;</a>
+<a name="ln138">        if (!sp-&gt;Init(vs[0])) {</a>
+<a name="ln139">          delete sp;</a>
+<a name="ln140">          sp = nullptr;</a>
+<a name="ln141">          obErrorLog.ThrowError(__FUNCTION__, &quot; Could not parse SMARTS from contribution data file&quot;, obInfo);</a>
+<a name="ln142">        }</a>
+<a name="ln143">      } else if (vs.size() == 3) { // XYZ coordinates</a>
+<a name="ln144">        vector3 coord(atof(vs[0].c_str()), atof(vs[1].c_str()), atof(vs[2].c_str()));</a>
+<a name="ln145">        coords.push_back(coord);</a>
+<a name="ln146">      }</a>
+<a name="ln147">    }</a>
+<a name="ln148">    AddRingFragment(sp, coords);</a>
+<a name="ln149"> </a>
+<a name="ln150">    // return the locale to the original one</a>
+<a name="ln151">    obLocale.RestoreLocale();</a>
+<a name="ln152"> </a>
+<a name="ln153">    /*if (OpenDatafile(ifs, &quot;torsion.txt&quot;).length() == 0) {</a>
+<a name="ln154">      obErrorLog.ThrowError(__FUNCTION__, &quot;Cannot open torsion.txt&quot;, obError);</a>
+<a name="ln155">      return;</a>
+<a name="ln156">    }</a>
+<a name="ln157">    double angle;</a>
+<a name="ln158">    while(ifs &gt;&gt; smiles &gt;&gt; angle) {</a>
+<a name="ln159">      _torsion[smiles] = angle;</a>
+<a name="ln160">    }</a>
+<a name="ln161">    */</a>
+<a name="ln162">  }</a>
+<a name="ln163"> </a>
+<a name="ln164">  std::vector&lt;vector3&gt; OBBuilder::GetFragmentCoord(std::string smiles) {</a>
+<a name="ln165">    if (_rigid_fragments_cache.count(smiles) &gt; 0) {</a>
+<a name="ln166">      return _rigid_fragments_cache[smiles];</a>
+<a name="ln167">    }</a>
+<a name="ln168"> </a>
+<a name="ln169">    std::vector&lt;vector3&gt; coords;</a>
+<a name="ln170">    if (_rigid_fragments_index.count(smiles) == 0) {</a>
+<a name="ln171">      return coords;</a>
+<a name="ln172">    }</a>
+<a name="ln173"> </a>
+<a name="ln174">    ifstream ifs;</a>
+<a name="ln175">    if (OpenDatafile(ifs, &quot;rigid-fragments.txt&quot;).length() == 0) {</a>
+<a name="ln176">      obErrorLog.ThrowError(__FUNCTION__, &quot;Cannot open rigid-fragments.txt&quot;, obError);</a>
+<a name="ln177">      return coords;</a>
+<a name="ln178">    }</a>
+<a name="ln179"> </a>
+<a name="ln180">    ifs.clear();</a>
+<a name="ln181">    ifs.seekg(_rigid_fragments_index[smiles]);</a>
+<a name="ln182">    char buffer[BUFF_SIZE];</a>
+<a name="ln183">    vector&lt;string&gt; vs;</a>
+<a name="ln184">    bool hasAllZeroCoords = true;</a>
+<a name="ln185">    while (ifs.getline(buffer, BUFF_SIZE)) {</a>
+<a name="ln186">      tokenize(vs, buffer);</a>
+<a name="ln187">      if (vs.size() == 4) { // XYZ coordinates</a>
+<a name="ln188">        vector3 coord(atof(vs[1].c_str()), atof(vs[2].c_str()), atof(vs[3].c_str()));</a>
+<a name="ln189">        if (fabs(coord.x()) &gt; 10e-8 ||</a>
+<a name="ln190">            fabs(coord.y()) &gt; 10e-8 ||</a>
+<a name="ln191">            fabs(coord.z()) &gt; 10e-8)</a>
+<a name="ln192">          hasAllZeroCoords = false;</a>
+<a name="ln193">        coords.push_back(coord);</a>
+<a name="ln194">      } else if (vs.size() == 1) { // SMARTS pattern</a>
+<a name="ln195">        break;</a>
+<a name="ln196">      }</a>
+<a name="ln197">    }</a>
+<a name="ln198"> </a>
+<a name="ln199">    if (hasAllZeroCoords) {</a>
+<a name="ln200">      std::stringstream ss;</a>
+<a name="ln201">      ss &lt;&lt; &quot;Rigid fragment &quot; &lt;&lt; smiles &lt;&lt; &quot; in rigid-fragments.txt has all zero coordinates.&quot;;</a>
+<a name="ln202">      obErrorLog.ThrowError(__FUNCTION__, ss.str(), obError);</a>
+<a name="ln203">    }</a>
+<a name="ln204"> </a>
+<a name="ln205">    return coords;</a>
+<a name="ln206">  }</a>
+<a name="ln207"> </a>
+<a name="ln208">  vector3 GetCorrectedBondVector(OBAtom *atom1, OBAtom *atom2, int bondOrder = 1)</a>
+<a name="ln209">  {</a>
+<a name="ln210">    double bondLength = 0.0;</a>
+<a name="ln211"> </a>
+<a name="ln212">    // We create an estimate of the bond length based on the two atoms</a>
+<a name="ln213">    // Scaling is performed by the bond order corrections below</a>
+<a name="ln214">    //  .. so we will use the straight covalent radii</a>
+<a name="ln215">    bondLength += OBElements::GetCovalentRad(atom1-&gt;GetAtomicNum());</a>
+<a name="ln216">    bondLength += OBElements::GetCovalentRad(atom2-&gt;GetAtomicNum());</a>
+<a name="ln217"> </a>
+<a name="ln218">    if (bondLength &lt; 1.0)</a>
+<a name="ln219">      bondLength = 1.0;</a>
+<a name="ln220"> </a>
+<a name="ln221">    // These are based on OBBond::GetEquibLength</a>
+<a name="ln222">    // Numbers come from averaged values of Pyykko and Atsumi</a>
+<a name="ln223">    if (bondOrder == -1) // aromatic</a>
+<a name="ln224">      bondLength *= 0.9475;   // 0.9475 = average of 1.0 and 0.8950</a>
+<a name="ln225">    else if (bondOrder == 2)</a>
+<a name="ln226">      bondLength *= 0.8950;   // 0.8950</a>
+<a name="ln227">    else if (bondOrder == 3)</a>
+<a name="ln228">      bondLength *= 0.8578;   // 0.8578</a>
+<a name="ln229"> </a>
+<a name="ln230">    return OBBuilder::GetNewBondVector(atom1, bondLength);</a>
+<a name="ln231">  }</a>
+<a name="ln232"> </a>
+<a name="ln233">  vector3 OBBuilder::GetNewBondVector(OBAtom *atom)</a>
+<a name="ln234">  {</a>
+<a name="ln235">    return GetNewBondVector(atom, 1.5);</a>
+<a name="ln236">  }</a>
+<a name="ln237"> </a>
+<a name="ln238">  vector3 OBBuilder::GetNewBondVector(OBAtom *atom, double length)</a>
+<a name="ln239">  {</a>
+<a name="ln240">    vector3 bond1, bond2, bond3, bond4, bond5, v1, v2, v3, newbond;</a>
+<a name="ln241"> </a>
+<a name="ln242">    bond1 = VZero;</a>
+<a name="ln243">    bond2 = VZero;</a>
+<a name="ln244">    bond3 = VZero;</a>
+<a name="ln245">    bond4 = VZero;</a>
+<a name="ln246">    bond5 = VZero;</a>
+<a name="ln247"> </a>
+<a name="ln248">    if (atom == nullptr)</a>
+<a name="ln249">      return VZero;</a>
+<a name="ln250"> </a>
+<a name="ln251">    int dimension = ((OBMol*)atom-&gt;GetParent())-&gt;GetDimension();</a>
+<a name="ln252"> </a>
+<a name="ln253">    if (dimension != 2) {</a>
+<a name="ln254">      /////////////////</a>
+<a name="ln255">      //   3D or 0D  //</a>
+<a name="ln256">      /////////////////</a>
+<a name="ln257"> </a>
+<a name="ln258">      //</a>
+<a name="ln259">      //  a   ---&gt;   a--*</a>
+<a name="ln260">      //</a>
+<a name="ln261">      if (atom-&gt;GetExplicitDegree() == 0) {</a>
+<a name="ln262">        newbond = atom-&gt;GetVector() + VX * length;</a>
+<a name="ln263">        return newbond;</a>
+<a name="ln264">      }</a>
+<a name="ln265"> </a>
+<a name="ln266">      // hyb * = 1</a>
+<a name="ln267">      // ^^^^^^^^^</a>
+<a name="ln268">      //</a>
+<a name="ln269">      //   (a-1)--a   ---&gt;   (a-1)--a--*        angle(a-1, a, *) = 180</a>
+<a name="ln270">      //</a>
+<a name="ln271">      // hyb * = 2</a>
+<a name="ln272">      // ^^^^^^^^^</a>
+<a name="ln273">      // make sure we place the new atom trans to a-2 (if there is an a-2 atom)</a>
+<a name="ln274">      //</a>
+<a name="ln275">      //   (a-2)             (a-2)</a>
+<a name="ln276">      //     \                 \                                             //</a>
+<a name="ln277">      //    (a-1)==a   ---&gt;   (a-1)==a          angle(a-1, a, *) = 120</a>
+<a name="ln278">      //                              \                                      //</a>
+<a name="ln279">      //                               *</a>
+<a name="ln280">      // hyb * = 3</a>
+<a name="ln281">      // ^^^^^^^^^</a>
+<a name="ln282">      // make sure we place the new atom trans to a-2 (if there is an a-2 atom)</a>
+<a name="ln283">      //</a>
+<a name="ln284">      //   (a-2)             (a-2)</a>
+<a name="ln285">      //     \                 \                                             //</a>
+<a name="ln286">      //    (a-1)--a   ---&gt;   (a-1)--a          angle(a-1, a, *) = 109</a>
+<a name="ln287">      //                              \                                      //</a>
+<a name="ln288">      //                               *</a>
+<a name="ln289">      if (atom-&gt;GetExplicitDegree() == 1) {</a>
+<a name="ln290">        bool isCarboxylateO = atom-&gt;IsCarboxylOxygen();</a>
+<a name="ln291"> </a>
+<a name="ln292">        FOR_NBORS_OF_ATOM (nbr, atom) {</a>
+<a name="ln293">          bond1 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln294"> </a>
+<a name="ln295">          if (nbr-&gt;GetHyb() == 1) // Fix #2119034 &amp; #2013814</a>
+<a name="ln296">            continue;</a>
+<a name="ln297"> </a>
+<a name="ln298">          FOR_NBORS_OF_ATOM (nbr2, &amp;*nbr) {</a>
+<a name="ln299">            if (&amp;*nbr2 != atom) {</a>
+<a name="ln300">              bond2 = nbr-&gt;GetVector() - nbr2-&gt;GetVector();</a>
+<a name="ln301"> </a>
+<a name="ln302">              if (isCarboxylateO &amp;&amp; nbr2-&gt;GetAtomicNum() == OBElements::Oxygen)</a>
+<a name="ln303">                break; // make sure that the hydrogen is trans to the C=O</a>
+<a name="ln304">            }</a>
+<a name="ln305">          }</a>
+<a name="ln306">        }</a>
+<a name="ln307"> </a>
+<a name="ln308">        bond1 = bond1.normalize();</a>
+<a name="ln309">        v1 = cross(bond1, bond2);</a>
+<a name="ln310">        if (bond2 == VZero || v1 == VZero) {</a>
+<a name="ln311">          vector3 vrand;</a>
+<a name="ln312">          vrand.randomUnitVector();</a>
+<a name="ln313">          double angle = fabs(acos(dot(bond1, vrand)) * RAD_TO_DEG);</a>
+<a name="ln314">          while (angle &lt; 45.0 || angle &gt; 135.0) {</a>
+<a name="ln315">            vrand.randomUnitVector();</a>
+<a name="ln316">            angle = fabs(acos(dot(bond1, vrand)) * RAD_TO_DEG);</a>
+<a name="ln317">          }</a>
+<a name="ln318">          // there is no a-2 atom</a>
+<a name="ln319">          v1 = cross(bond1, vrand); // so find a perpendicular, given the random vector (this doesn't matter here)</a>
+<a name="ln320">        }</a>
+<a name="ln321">        v2 = cross(bond1, v1);</a>
+<a name="ln322">        v2 = v2.normalize();</a>
+<a name="ln323"> </a>
+<a name="ln324">        // check to see if atom is a square planar in disguise</a>
+<a name="ln325">        if (atom-&gt;GetHyb() == 3) {</a>
+<a name="ln326">          OBStereoFacade stereoFacade((OBMol*)atom-&gt;GetParent(), false); // Don't reperceive</a>
+<a name="ln327">          if (stereoFacade.HasSquarePlanarStereo(atom-&gt;GetId()))</a>
+<a name="ln328">            atom-&gt;SetHyb(4); // force sq. planar geometry for sq. planar stereo</a>
+<a name="ln329">        }</a>
+<a name="ln330"> </a>
+<a name="ln331">        if (atom-&gt;GetHyb() == 1)</a>
+<a name="ln332">          newbond = bond1; // i.e., in the exact opposite direction</a>
+<a name="ln333">        else if (atom-&gt;GetHyb() == 2)</a>
+<a name="ln334">          newbond = bond1 - v2 * tan(DEG_TO_RAD*60.0);</a>
+<a name="ln335">        else if (atom-&gt;GetHyb() == 3)</a>
+<a name="ln336">          newbond = bond1 - v2 * tan(DEG_TO_RAD*(180.0 - 109.471));</a>
+<a name="ln337">        else if (atom-&gt;GetHyb() == 4)</a>
+<a name="ln338">          newbond = bond1; // like 5-coordinate below, we want a 180-degree bond (trans)</a>
+<a name="ln339">        else if (atom-&gt;GetHyb() == 5) {</a>
+<a name="ln340">          /* the first two atoms are the axial ones;  the third, fourth, and fifth atom are equatorial */</a>
+<a name="ln341">          newbond = bond1;</a>
+<a name="ln342">        } else if (atom-&gt;GetHyb() == 6) {</a>
+<a name="ln343">          newbond = bond1 - v2 * tan(DEG_TO_RAD*90.0);</a>
+<a name="ln344">        }</a>
+<a name="ln345"> </a>
+<a name="ln346">        newbond = newbond.normalize();</a>
+<a name="ln347">        newbond *= length;</a>
+<a name="ln348">        newbond += atom-&gt;GetVector();</a>
+<a name="ln349">        return newbond;</a>
+<a name="ln350">      }</a>
+<a name="ln351"> </a>
+<a name="ln352">      //</a>
+<a name="ln353">      //    \	      \                                                     //</a>
+<a name="ln354">      //     X  ---&gt;   X--*</a>
+<a name="ln355">      //    /         /</a>
+<a name="ln356">      //</a>
+<a name="ln357">      if (atom-&gt;GetExplicitDegree() == 2) {</a>
+<a name="ln358">        FOR_NBORS_OF_ATOM (nbr, atom) {</a>
+<a name="ln359">          if (bond1 == VZero)</a>
+<a name="ln360">            bond1 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln361">          else if (bond2 == VZero)</a>
+<a name="ln362">            bond2 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln363">        }</a>
+<a name="ln364"> </a>
+<a name="ln365">        bond1 = bond1.normalize();</a>
+<a name="ln366">        bond2 = bond2.normalize();</a>
+<a name="ln367">        v1 = bond1 + bond2;</a>
+<a name="ln368">        v1 = v1.normalize();</a>
+<a name="ln369"> </a>
+<a name="ln370">        if (atom-&gt;GetHyb() == 2)</a>
+<a name="ln371">          newbond = v1;</a>
+<a name="ln372">        else if (atom-&gt;GetHyb() == 3) {</a>
+<a name="ln373">          v2 = cross(bond1, bond2); // find the perpendicular</a>
+<a name="ln374">          v2.normalize();</a>
+<a name="ln375">          newbond = bond1 - v2 * tan(DEG_TO_RAD*(180.0 - 109.471));</a>
+<a name="ln376">          newbond = v2 + v1 * (sqrt(2.0) / 2.0); // used to be tan(70.53 degrees/2) which is sqrt(2.0) / 2.0</a>
+<a name="ln377">        }</a>
+<a name="ln378">        else if (atom-&gt;GetHyb() == 5 || atom-&gt;GetHyb() == 4) {</a>
+<a name="ln379">          /* add the first equatorial atom, orthogonally to bond1 (and bond2 = -bond1) */</a>
+<a name="ln380">          /* is atom order correct?  I don't think it matters, but I might have to ask a chemist</a>
+<a name="ln381">           * whether PClF4 would be more likely to have an equatorial or axial Cl-P bond */</a>
+<a name="ln382">          vector3 vrand;</a>
+<a name="ln383">          vrand.randomUnitVector();</a>
+<a name="ln384">          double angle = fabs(acos(dot(bond1, vrand)) * RAD_TO_DEG);</a>
+<a name="ln385">          while (angle &lt; 45.0 || angle &gt; 135.0) {</a>
+<a name="ln386">            vrand.randomUnitVector();</a>
+<a name="ln387">            angle = fabs(acos(dot(bond1, vrand)) * RAD_TO_DEG);</a>
+<a name="ln388">          }</a>
+<a name="ln389">          v1 = cross(bond1, vrand);</a>
+<a name="ln390">          v1 = v1.normalize();</a>
+<a name="ln391">          newbond = v1;</a>
+<a name="ln392">        }</a>
+<a name="ln393">        else if (atom-&gt;GetHyb() == 6) {</a>
+<a name="ln394">          v2 = cross(bond1, bond2);</a>
+<a name="ln395">          newbond = v2;</a>
+<a name="ln396">        }</a>
+<a name="ln397"> </a>
+<a name="ln398">        newbond = newbond.normalize(); //if newbond was not set, it will become non-finite here</a>
+<a name="ln399">        newbond *= length;</a>
+<a name="ln400">        newbond += atom-&gt;GetVector();</a>
+<a name="ln401">        return newbond;</a>
+<a name="ln402">      }</a>
+<a name="ln403"> </a>
+<a name="ln404"> </a>
+<a name="ln405">      /* UFF:</a>
+<a name="ln406">       *    b lg dg  o  y</a>
+<a name="ln407">       *  b - 45 30 45 30</a>
+<a name="ln408">       * lg    - 45  0 45</a>
+<a name="ln409">       * dg       - 45 30</a>
+<a name="ln410">       *  o          - 45</a>
+<a name="ln411">       *  y             -</a>
+<a name="ln412"> </a>
+<a name="ln413">       * 94s:</a>
+<a name="ln414">       *    b lg dg  o  y</a>
+<a name="ln415">       *  b - 34 34 34 34</a>
+<a name="ln416">       * lg    - 48 21 48</a>
+<a name="ln417">       * dg       - 48 21</a>
+<a name="ln418">       *  o          - 48</a>
+<a name="ln419">       *  y             -</a>
+<a name="ln420"> </a>
+<a name="ln421">       //</a>
+<a name="ln422">       //    \	       \</a>
+<a name="ln423">       //   --X  ---&gt;  --X--*</a>
+<a name="ln424">       //    /          /</a>
+<a name="ln425">       //</a>
+<a name="ln426">       */</a>
+<a name="ln427">      if (atom-&gt;GetExplicitDegree() == 3) {</a>
+<a name="ln428">        if (atom-&gt;GetHyb() == 3) {</a>
+<a name="ln429">          FOR_NBORS_OF_ATOM (nbr, atom) {</a>
+<a name="ln430">            if (bond1 == VZero)</a>
+<a name="ln431">              bond1 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln432">            else if (bond2 == VZero)</a>
+<a name="ln433">              bond2 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln434">            else if (bond3 == VZero)</a>
+<a name="ln435">              bond3 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln436">          }</a>
+<a name="ln437"> </a>
+<a name="ln438">          bond1 = bond1.normalize();</a>
+<a name="ln439">          bond2 = bond2.normalize();</a>
+<a name="ln440">          bond3 = bond3.normalize();</a>
+<a name="ln441">          newbond = bond1 + bond2 + bond3;</a>
+<a name="ln442">          newbond = newbond.normalize();</a>
+<a name="ln443">          newbond *= length;</a>
+<a name="ln444">          newbond += atom-&gt;GetVector();</a>
+<a name="ln445">          return newbond;</a>
+<a name="ln446">        }</a>
+<a name="ln447"> </a>
+<a name="ln448">        if (atom-&gt;GetHyb() == 4) { // OK, we want this at -bond3, since bond1 &amp; bond2 are opposite</a>
+<a name="ln449">          FOR_NBORS_OF_ATOM (nbr, atom) {</a>
+<a name="ln450">            if (bond1 == VZero)</a>
+<a name="ln451">              bond1 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln452">            else if (bond2 == VZero)</a>
+<a name="ln453">              bond2 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln454">            else if (bond3 == VZero)</a>
+<a name="ln455">              bond3 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln456">          }</a>
+<a name="ln457"> </a>
+<a name="ln458">          bond3 = bond3.normalize();</a>
+<a name="ln459"> </a>
+<a name="ln460">          newbond = bond3;</a>
+<a name="ln461">          newbond = newbond.normalize();</a>
+<a name="ln462">          newbond *= length;</a>
+<a name="ln463">          newbond += atom-&gt;GetVector();</a>
+<a name="ln464">          return newbond;</a>
+<a name="ln465">        }</a>
+<a name="ln466"> </a>
+<a name="ln467">        if (atom-&gt;GetHyb() == 5) {</a>
+<a name="ln468">          FOR_NBORS_OF_ATOM (nbr, atom) {</a>
+<a name="ln469">            if (bond1 == VZero)</a>
+<a name="ln470">              bond1 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln471">            else if (bond2 == VZero)</a>
+<a name="ln472">              bond2 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln473">            else if (bond3 == VZero)</a>
+<a name="ln474">              bond3 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln475">          }</a>
+<a name="ln476"> </a>
+<a name="ln477">          bond1 = bond1.normalize();</a>
+<a name="ln478">          bond2 = bond2.normalize();</a>
+<a name="ln479">          bond3 = bond3.normalize();</a>
+<a name="ln480"> </a>
+<a name="ln481">          v1 = cross(bond1, bond3);</a>
+<a name="ln482">          v1 = v1.normalize();</a>
+<a name="ln483"> </a>
+<a name="ln484">          newbond = v1 + tan(DEG_TO_RAD*30.0) * bond3;</a>
+<a name="ln485">          newbond = newbond.normalize();</a>
+<a name="ln486">          newbond *= length;</a>
+<a name="ln487">          newbond += atom-&gt;GetVector();</a>
+<a name="ln488">          return newbond;</a>
+<a name="ln489"> </a>
+<a name="ln490">        }</a>
+<a name="ln491"> </a>
+<a name="ln492">        if (atom-&gt;GetHyb() == 6) {</a>
+<a name="ln493">          FOR_NBORS_OF_ATOM (nbr, atom) {</a>
+<a name="ln494">            if (bond1 == VZero)</a>
+<a name="ln495">              bond1 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln496">            else if (bond2 == VZero)</a>
+<a name="ln497">              bond2 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln498">            else if (bond3 == VZero)</a>
+<a name="ln499">              bond3 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln500">          }</a>
+<a name="ln501"> </a>
+<a name="ln502">          /* the way things work, newbond is equal to bond1, but will show up at -bond1 next time around */</a>
+<a name="ln503">          newbond = bond1;</a>
+<a name="ln504">          newbond = newbond.normalize();</a>
+<a name="ln505">          newbond *= length;</a>
+<a name="ln506">          newbond += atom-&gt;GetVector();</a>
+<a name="ln507">          return newbond;</a>
+<a name="ln508">        }</a>
+<a name="ln509">      }</a>
+<a name="ln510"> </a>
+<a name="ln511">      if (atom-&gt;GetExplicitDegree() == 4) {</a>
+<a name="ln512">        if (atom-&gt;GetHyb() == 6) {</a>
+<a name="ln513">          FOR_NBORS_OF_ATOM (nbr, atom) {</a>
+<a name="ln514">            if (bond1 == VZero)</a>
+<a name="ln515">              bond1 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln516">            else if (bond2 == VZero)</a>
+<a name="ln517">              bond2 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln518">            else if (bond3 == VZero)</a>
+<a name="ln519">              bond3 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln520">            else if (bond4 == VZero)</a>
+<a name="ln521">              bond4 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln522">          }</a>
+<a name="ln523"> </a>
+<a name="ln524">          newbond = bond2;</a>
+<a name="ln525">          newbond = newbond.normalize();</a>
+<a name="ln526">          newbond *= length;</a>
+<a name="ln527">          newbond += atom-&gt;GetVector();</a>
+<a name="ln528">          return newbond;</a>
+<a name="ln529">        }</a>
+<a name="ln530"> </a>
+<a name="ln531">        if (atom-&gt;GetHyb() == 5) {</a>
+<a name="ln532">          FOR_NBORS_OF_ATOM (nbr, atom) {</a>
+<a name="ln533">            if (bond1 == VZero)</a>
+<a name="ln534">              bond1 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln535">            else if (bond2 == VZero)</a>
+<a name="ln536">              bond2 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln537">            else if (bond3 == VZero)</a>
+<a name="ln538">              bond3 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln539">            else if (bond4 == VZero)</a>
+<a name="ln540">              bond4 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln541">          }</a>
+<a name="ln542"> </a>
+<a name="ln543">          bond1 = bond1.normalize();</a>
+<a name="ln544">          bond2 = bond2.normalize();</a>
+<a name="ln545">          bond3 = bond3.normalize();</a>
+<a name="ln546">          bond4 = bond4.normalize();</a>
+<a name="ln547"> </a>
+<a name="ln548">          v1 = cross(bond1, bond3);</a>
+<a name="ln549">          v1 = v1.normalize();</a>
+<a name="ln550"> </a>
+<a name="ln551">          newbond = -v1 + tan(DEG_TO_RAD*30.0) * bond3;</a>
+<a name="ln552">          newbond = newbond.normalize();</a>
+<a name="ln553">          newbond *= length;</a>
+<a name="ln554">          newbond += atom-&gt;GetVector();</a>
+<a name="ln555">          return newbond;</a>
+<a name="ln556"> </a>
+<a name="ln557">        }</a>
+<a name="ln558"> </a>
+<a name="ln559">      }</a>
+<a name="ln560"> </a>
+<a name="ln561">      if (atom-&gt;GetExplicitDegree() == 5) {</a>
+<a name="ln562">        if (atom-&gt;GetHyb() == 6) {</a>
+<a name="ln563">          FOR_NBORS_OF_ATOM (nbr, atom) {</a>
+<a name="ln564">            if (bond1 == VZero)</a>
+<a name="ln565">              bond1 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln566">            else if (bond2 == VZero)</a>
+<a name="ln567">              bond2 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln568">            else if (bond3 == VZero)</a>
+<a name="ln569">              bond3 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln570">            else if (bond4 == VZero)</a>
+<a name="ln571">              bond4 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln572">            else if (bond5 == VZero)</a>
+<a name="ln573">              bond5 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln574">          }</a>
+<a name="ln575"> </a>
+<a name="ln576">          newbond = bond3;</a>
+<a name="ln577">          newbond = newbond.normalize();</a>
+<a name="ln578">          newbond *= length;</a>
+<a name="ln579">          newbond += atom-&gt;GetVector();</a>
+<a name="ln580">          return newbond;</a>
+<a name="ln581">        }</a>
+<a name="ln582">      }</a>
+<a name="ln583"> </a>
+<a name="ln584">      // Undefined case -- return a random vector of length specified</a>
+<a name="ln585">      newbond.randomUnitVector();</a>
+<a name="ln586">      newbond *= length;</a>
+<a name="ln587">      newbond += atom-&gt;GetVector();</a>
+<a name="ln588">      return newbond;</a>
+<a name="ln589">    } else {</a>
+<a name="ln590">      ////////////</a>
+<a name="ln591">      //   2D   //</a>
+<a name="ln592">      ////////////</a>
+<a name="ln593">      OBBondIterator i;</a>
+<a name="ln594"> </a>
+<a name="ln595">      //</a>
+<a name="ln596">      //  a   ---&gt;   a---*</a>
+<a name="ln597">      //</a>
+<a name="ln598">      if (atom-&gt;GetExplicitDegree() == 0) {</a>
+<a name="ln599">        newbond = atom-&gt;GetVector() + VX * length;</a>
+<a name="ln600">        // Check that the vector is still finite before returning</a>
+<a name="ln601">        if (!isfinite(newbond.x()) || !isfinite(newbond.y()))</a>
+<a name="ln602">          newbond.Set(0.0, 0.0, 0.0);</a>
+<a name="ln603">        return newbond;</a>
+<a name="ln604">      }</a>
+<a name="ln605"> </a>
+<a name="ln606">      // hyb * = 1                                                                //</a>
+<a name="ln607">      // ^^^^^^^^^                                                                //</a>
+<a name="ln608">      //                                                                          //</a>
+<a name="ln609">      //   (a-1)--a   ---&gt;   (a-1)--a--*        angle(a-1, a, *) = 180            //</a>
+<a name="ln610">      //                                                                          //</a>
+<a name="ln611">      // hyb * = 2                                                                //</a>
+<a name="ln612">      // ^^^^^^^^^                                                                //</a>
+<a name="ln613">      // make sure we place the new atom trans to a-2 (if there is an a-2 atom)   //</a>
+<a name="ln614">      //                                                                          //</a>
+<a name="ln615">      //   (a-2)             (a-2)                                                //</a>
+<a name="ln616">      //     \                 \                                                  //</a>
+<a name="ln617">      //    (a-1)==a   ---&gt;   (a-1)==a          angle(a-1, a, *) = 120            //</a>
+<a name="ln618">      //                              \                                           //</a>
+<a name="ln619">      //                               *                                          //</a>
+<a name="ln620">      // hyb * = 3                                                                //</a>
+<a name="ln621">      // ^^^^^^^^^                                                                //</a>
+<a name="ln622">      // make sure we place the new atom trans to a-2 (if there is an a-2 atom)   //</a>
+<a name="ln623">      //                                                                          //</a>
+<a name="ln624">      //   (a-2)             (a-2)                                                //</a>
+<a name="ln625">      //     \                 \                                                  //</a>
+<a name="ln626">      //    (a-1)--a   ---&gt;   (a-1)--a          angle(a-1, a, *) = 109            //</a>
+<a name="ln627">      //                              \                                           //</a>
+<a name="ln628">      //                               *                                          //</a>
+<a name="ln629">      if (atom-&gt;GetExplicitDegree() == 1) {</a>
+<a name="ln630">        OBAtom *nbr = atom-&gt;BeginNbrAtom(i);</a>
+<a name="ln631">        if (!nbr)</a>
+<a name="ln632">          return VZero;</a>
+<a name="ln633">        bond1 = atom-&gt;GetVector() - nbr-&gt;GetVector(); // bond (a-1)--a</a>
+<a name="ln634"> </a>
+<a name="ln635">        for (OBAtom *nbr2 = nbr-&gt;BeginNbrAtom(i); nbr2; nbr2 = nbr-&gt;NextNbrAtom(i))</a>
+<a name="ln636">          if (nbr2 != atom)</a>
+<a name="ln637">            bond2 = nbr-&gt;GetVector() - nbr2-&gt;GetVector(); // bond (a-2)--(a-1)</a>
+<a name="ln638"> </a>
+<a name="ln639">        int hyb = atom-&gt;GetHyb();</a>
+<a name="ln640">        if (hyb == 1)</a>
+<a name="ln641">          newbond = bond1;</a>
+<a name="ln642">        else if (hyb == 2 || hyb == 3 || hyb == 0) {</a>
+<a name="ln643">          matrix3x3 m;</a>
+<a name="ln644">          m.RotAboutAxisByAngle(VZ, 60.0);</a>
+<a name="ln645">          newbond = m*bond1;</a>
+<a name="ln646">        }</a>
+<a name="ln647">        newbond.normalize();</a>
+<a name="ln648">        newbond *= length;</a>
+<a name="ln649">        newbond += atom-&gt;GetVector();</a>
+<a name="ln650">        return newbond;</a>
+<a name="ln651">      } // GetExplicitDegree() == 1</a>
+<a name="ln652"> </a>
+<a name="ln653">      //                          //</a>
+<a name="ln654">      //    \         \           //</a>
+<a name="ln655">      //     X  ---&gt;   X--*       //</a>
+<a name="ln656">      //    /         /           //</a>
+<a name="ln657">      //                          //</a>
+<a name="ln658">      if (atom-&gt;GetExplicitDegree() == 2) {</a>
+<a name="ln659">        for (OBAtom *nbr = atom-&gt;BeginNbrAtom(i); nbr; nbr = atom-&gt;NextNbrAtom(i)) {</a>
+<a name="ln660">          if (bond1 == VZero)</a>
+<a name="ln661">            bond1 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln662">          else</a>
+<a name="ln663">            bond2 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln664">        }</a>
+<a name="ln665">        bond1.normalize();</a>
+<a name="ln666">        bond2.normalize();</a>
+<a name="ln667">        newbond = bond1 + bond2;</a>
+<a name="ln668">        newbond.normalize();</a>
+<a name="ln669">        newbond *= length;</a>
+<a name="ln670">        newbond += atom-&gt;GetVector();</a>
+<a name="ln671">        return newbond;</a>
+<a name="ln672">      }</a>
+<a name="ln673"> </a>
+<a name="ln674">      //                          //</a>
+<a name="ln675">      //    \          \          //</a>
+<a name="ln676">      //   --X  ---&gt;  --X--*      //</a>
+<a name="ln677">      //    /          /          //</a>
+<a name="ln678">      //                          //</a>
+<a name="ln679">      if (atom-&gt;GetExplicitDegree() == 3) {</a>
+<a name="ln680">        OBStereoFacade stereoFacade((OBMol*)atom-&gt;GetParent());</a>
+<a name="ln681">        if (stereoFacade.HasTetrahedralStereo(atom-&gt;GetId())) {</a>
+<a name="ln682">          OBBond *hash = nullptr;</a>
+<a name="ln683">          OBBond *wedge = nullptr;</a>
+<a name="ln684">          vector&lt;OBBond*&gt; plane;</a>
+<a name="ln685">          for (OBAtom *nbr = atom-&gt;BeginNbrAtom(i); nbr; nbr = atom-&gt;NextNbrAtom(i)) {</a>
+<a name="ln686">            OBBond *bond = atom-&gt;GetBond(nbr);</a>
+<a name="ln687"> </a>
+<a name="ln688">            if (bond-&gt;IsWedge()) {</a>
+<a name="ln689">              if (atom == bond-&gt;GetBeginAtom())</a>
+<a name="ln690">                wedge = bond;</a>
+<a name="ln691">              else</a>
+<a name="ln692">                hash = bond;</a>
+<a name="ln693">            } else</a>
+<a name="ln694">              if (bond-&gt;IsHash()) {</a>
+<a name="ln695">                if (atom == bond-&gt;GetBeginAtom())</a>
+<a name="ln696">                  hash = bond;</a>
+<a name="ln697">                else</a>
+<a name="ln698">                  wedge = bond;</a>
+<a name="ln699">              } else</a>
+<a name="ln700">                plane.push_back(bond);</a>
+<a name="ln701">          }</a>
+<a name="ln702"> </a>
+<a name="ln703">          if (wedge &amp;&amp; !plane.empty()) {</a>
+<a name="ln704">            bond2 = atom-&gt;GetVector() - wedge-&gt;GetNbrAtom(atom)-&gt;GetVector();</a>
+<a name="ln705">            bond3 = atom-&gt;GetVector() - plane[0]-&gt;GetNbrAtom(atom)-&gt;GetVector();</a>
+<a name="ln706">          } else if (hash &amp;&amp; !plane.empty()) {</a>
+<a name="ln707">            bond2 = atom-&gt;GetVector() - hash-&gt;GetNbrAtom(atom)-&gt;GetVector();</a>
+<a name="ln708">            bond3 = atom-&gt;GetVector() - plane[0]-&gt;GetNbrAtom(atom)-&gt;GetVector();</a>
+<a name="ln709">          } else if (plane.size() &gt;= 2) {</a>
+<a name="ln710">            bond2 = atom-&gt;GetVector() - plane[0]-&gt;GetNbrAtom(atom)-&gt;GetVector();</a>
+<a name="ln711">            bond3 = atom-&gt;GetVector() - plane[1]-&gt;GetNbrAtom(atom)-&gt;GetVector();</a>
+<a name="ln712">          } else if (hash &amp;&amp; wedge) {</a>
+<a name="ln713">            bond2 = atom-&gt;GetVector() - wedge-&gt;GetNbrAtom(atom)-&gt;GetVector();</a>
+<a name="ln714">            bond3 = atom-&gt;GetVector() - hash-&gt;GetNbrAtom(atom)-&gt;GetVector();</a>
+<a name="ln715">          }</a>
+<a name="ln716">        } else {</a>
+<a name="ln717">          for (OBAtom *nbr = atom-&gt;BeginNbrAtom(i); nbr; nbr = atom-&gt;NextNbrAtom(i)) {</a>
+<a name="ln718">            if (bond1 == VZero)</a>
+<a name="ln719">              bond1 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln720">            else if (bond2 == VZero)</a>
+<a name="ln721">              bond2 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln722">            else</a>
+<a name="ln723">              bond3 = atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln724">          }</a>
+<a name="ln725">        }</a>
+<a name="ln726"> </a>
+<a name="ln727">        bond2.normalize();</a>
+<a name="ln728">        bond3.normalize();</a>
+<a name="ln729">        newbond = -(bond2 + bond3);</a>
+<a name="ln730">        newbond.normalize();</a>
+<a name="ln731">        newbond *= length;</a>
+<a name="ln732">        newbond += atom-&gt;GetVector();</a>
+<a name="ln733">        return newbond;</a>
+<a name="ln734">      }</a>
+<a name="ln735"> </a>
+<a name="ln736">      // Undefined case -- return a random vector of length specified</a>
+<a name="ln737">      newbond.randomUnitVector();</a>
+<a name="ln738">      newbond.z() = 0.0;</a>
+<a name="ln739">      newbond.normalize();</a>
+<a name="ln740">      newbond *= length;</a>
+<a name="ln741">      newbond += atom-&gt;GetVector();</a>
+<a name="ln742">      return newbond;</a>
+<a name="ln743">    }</a>
+<a name="ln744"> </a>
+<a name="ln745">    return VZero; //previously undefined</a>
+<a name="ln746">  }</a>
+<a name="ln747"> </a>
+<a name="ln748"> </a>
+<a name="ln749">  // The OBMol mol contains both the molecule to which we want to connect the</a>
+<a name="ln750">  // fragment and the fragment itself. The fragment containing b will be</a>
+<a name="ln751">  // rotated and translated. Atom a is the atom from</a>
+<a name="ln752">  // the main molecule to which we want to connect atom b.</a>
+<a name="ln753">  // NOTE: newpos now uses CorrectedBondVector, so we don't do that below</a>
+<a name="ln754">  bool OBBuilder::Connect(OBMol &amp;mol, int idxA, int idxB,</a>
+<a name="ln755">                          vector3 &amp;newpos, int bondOrder)</a>
+<a name="ln756">  {</a>
+<a name="ln757">    OBAtom *a = mol.GetAtom(idxA);</a>
+<a name="ln758">    OBAtom *b = mol.GetAtom(idxB);</a>
+<a name="ln759"> </a>
+<a name="ln760">    if (a == nullptr)</a>
+<a name="ln761">      return false;</a>
+<a name="ln762">    if (b == nullptr)</a>
+<a name="ln763">      return false;</a>
+<a name="ln764"> </a>
+<a name="ln765">    OBBitVec fragment = GetFragment(b);</a>
+<a name="ln766">    if (fragment == GetFragment(a))</a>
+<a name="ln767">      return false; // a and b are in the same fragment</a>
+<a name="ln768"> </a>
+<a name="ln769">    bool connectedFrag = true; // normal case</a>
+<a name="ln770">    // If we don't have any neighbors, assume that the fragment</a>
+<a name="ln771">    // is inserted at the end of the molecule and set anything after the atom.</a>
+<a name="ln772">    // This lets us place fragments like Cp rings with dummy atoms</a>
+<a name="ln773">    if (b-&gt;GetAtomicNum() == 0) {</a>
+<a name="ln774">      connectedFrag = false;</a>
+<a name="ln775">      fragment.SetRangeOn(b-&gt;GetIdx(), mol.NumAtoms());</a>
+<a name="ln776">    }</a>
+<a name="ln777"> </a>
+<a name="ln778">    vector3 posa = a-&gt;GetVector();</a>
+<a name="ln779">    vector3 posb = b-&gt;GetVector();</a>
+<a name="ln780">    //</a>
+<a name="ln781">    // translate fragment so that atom b is at the origin</a>
+<a name="ln782">    //</a>
+<a name="ln783">    for (unsigned int i = 1; i &lt;= mol.NumAtoms(); ++i) {</a>
+<a name="ln784">      if (fragment.BitIsSet(i)) {</a>
+<a name="ln785">        // the atom is part of the fragment, translate it</a>
+<a name="ln786">        vector3 tmpvec = mol.GetAtom(i)-&gt;GetVector();</a>
+<a name="ln787">        tmpvec -= posb;</a>
+<a name="ln788">        mol.GetAtom(i)-&gt;SetVector(tmpvec);</a>
+<a name="ln789">      }</a>
+<a name="ln790">    }</a>
+<a name="ln791">    //</a>
+<a name="ln792">    // rotate the fragment to align the bond directions Mol-a-b and a-b-fragment</a>
+<a name="ln793">    //</a>
+<a name="ln794">    matrix3x3 xymat, xzmat, yzmat;</a>
+<a name="ln795">    vector3 moldir = newpos - posa;</a>
+<a name="ln796">    double xyang, yzang, xzang;</a>
+<a name="ln797"> </a>
+<a name="ln798">    vector3 fragdir = GetNewBondVector(b); // b is at origin</a>
+<a name="ln799">    vector3 crossdir;</a>
+<a name="ln800">    if (!connectedFrag) { // nothing bonded to b, like a Cp ring</a>
+<a name="ln801">      vector3 firstDir, secondDir;</a>
+<a name="ln802">      // Try finding the next atom</a>
+<a name="ln803">      OBAtom *nextAtom = mol.GetAtom(b-&gt;GetIdx() + 1);</a>
+<a name="ln804">      if (nextAtom) {</a>
+<a name="ln805">        firstDir = nextAtom-&gt;GetVector() - b-&gt;GetVector();</a>
+<a name="ln806">        // we'll try finding another atom</a>
+<a name="ln807">        OBAtom *secondAtom = mol.GetAtom(b-&gt;GetIdx() + 2);</a>
+<a name="ln808">        if (secondAtom)</a>
+<a name="ln809">          secondDir = secondAtom-&gt;GetVector() - b-&gt;GetVector();</a>
+<a name="ln810">        else</a>
+<a name="ln811">          secondDir.randomUnitVector(); // pick something at random</a>
+<a name="ln812">        // but not too shallow, or the cross product won't work well</a>
+<a name="ln813">        double angle = fabs(acos(dot(firstDir, secondDir)) * RAD_TO_DEG);</a>
+<a name="ln814">        while (angle &lt; 45.0 || angle &gt; 135.0) {</a>
+<a name="ln815">          secondDir.randomUnitVector();</a>
+<a name="ln816">          angle = fabs(acos(dot(firstDir, secondDir)) * RAD_TO_DEG);</a>
+<a name="ln817">        }</a>
+<a name="ln818">        // Now we find a perpendicular vector to the fragment</a>
+<a name="ln819">        crossdir = cross(firstDir, secondDir);</a>
+<a name="ln820">        fragdir = crossdir;</a>
+<a name="ln821">      }</a>
+<a name="ln822">    }</a>
+<a name="ln823">    xyang = vectorAngle(vector3(moldir.x(), moldir.y(), 0.0), vector3(fragdir.x(), fragdir.y(), 0.0));</a>
+<a name="ln824">    if (cross(vector3(moldir.x(), moldir.y(), 0.0), vector3(fragdir.x(), fragdir.y(), 0.0)).z() &gt; 0) {</a>
+<a name="ln825">      xyang = 180 + xyang;</a>
+<a name="ln826">    } else if (cross(vector3(moldir.x(), moldir.y(), 0.0), vector3(fragdir.x(), fragdir.y(), 0.0)).z() &lt; 0) {</a>
+<a name="ln827">      xyang = 180 - xyang;</a>
+<a name="ln828">    } else {</a>
+<a name="ln829">      xyang = 0.0;</a>
+<a name="ln830">    }</a>
+<a name="ln831">    xymat.SetupRotMat(0.0, 0.0, xyang);</a>
+<a name="ln832">    for (unsigned int i = 1; i &lt;= mol.NumAtoms(); ++i) {</a>
+<a name="ln833">      if (fragment.BitIsSet(i)) {</a>
+<a name="ln834">        vector3 tmpvec = mol.GetAtom(i)-&gt;GetVector();</a>
+<a name="ln835">        tmpvec *= xymat; //apply the rotation</a>
+<a name="ln836">        mol.GetAtom(i)-&gt;SetVector(tmpvec);</a>
+<a name="ln837">      }</a>
+<a name="ln838">    }</a>
+<a name="ln839"> </a>
+<a name="ln840">    fragdir = GetNewBondVector(b);</a>
+<a name="ln841">    if (!connectedFrag)</a>
+<a name="ln842">      fragdir = crossdir;</a>
+<a name="ln843">    xzang = vectorAngle(vector3(moldir.x(), moldir.z(), 0.0), vector3(fragdir.x(), fragdir.z(), 0.0));</a>
+<a name="ln844">    if (cross(vector3(moldir.x(), moldir.z(), 0.0), vector3(fragdir.x(), fragdir.z(), 0.0)).z() &gt; 0) {</a>
+<a name="ln845">      xzang = 180 - xzang;</a>
+<a name="ln846">    } else if (cross(vector3(moldir.x(), moldir.z(), 0.0), vector3(fragdir.x(), fragdir.z(), 0.0)).z() &lt; 0) {</a>
+<a name="ln847">      xzang = 180 + xzang;</a>
+<a name="ln848">    } else {</a>
+<a name="ln849">      xzang = 0.0;</a>
+<a name="ln850">    }</a>
+<a name="ln851">    xzmat.SetupRotMat(0.0, xzang, 0.0);</a>
+<a name="ln852">    for (unsigned int i = 1; i &lt;= mol.NumAtoms(); ++i) {</a>
+<a name="ln853">      if (fragment.BitIsSet(i)) {</a>
+<a name="ln854">        vector3 tmpvec = mol.GetAtom(i)-&gt;GetVector();</a>
+<a name="ln855">        tmpvec *= xzmat; //apply the rotation</a>
+<a name="ln856">        mol.GetAtom(i)-&gt;SetVector(tmpvec);</a>
+<a name="ln857">      }</a>
+<a name="ln858">    }</a>
+<a name="ln859"> </a>
+<a name="ln860">    fragdir = GetNewBondVector(b);</a>
+<a name="ln861">    if (!connectedFrag)</a>
+<a name="ln862">      fragdir = crossdir;</a>
+<a name="ln863">    yzang = vectorAngle(vector3(moldir.y(), moldir.z(), 0.0), vector3(fragdir.y(), fragdir.z(), 0.0));</a>
+<a name="ln864">    if (cross(vector3(moldir.y(), moldir.z(), 0.0), vector3(fragdir.y(), fragdir.z(), 0.0)).z() &gt; 0) {</a>
+<a name="ln865">      yzang = 180 + yzang;</a>
+<a name="ln866">    } else if (cross(vector3(moldir.y(), moldir.z(), 0.0), vector3(fragdir.y(), fragdir.z(), 0.0)).z() &lt; 0) {</a>
+<a name="ln867">      yzang = 180 - yzang;</a>
+<a name="ln868">    } else {</a>
+<a name="ln869">      yzang = 0.0;</a>
+<a name="ln870">    }</a>
+<a name="ln871">    yzmat.SetupRotMat(yzang, 0.0, 0.0);</a>
+<a name="ln872">    for (unsigned int i = 1; i &lt;= mol.NumAtoms(); ++i) {</a>
+<a name="ln873">      if (fragment.BitIsSet(i)) {</a>
+<a name="ln874">        vector3 tmpvec = mol.GetAtom(i)-&gt;GetVector();</a>
+<a name="ln875">        tmpvec *= yzmat; //apply the rotation</a>
+<a name="ln876">        mol.GetAtom(i)-&gt;SetVector(tmpvec);</a>
+<a name="ln877">      }</a>
+<a name="ln878">    }</a>
+<a name="ln879">    //</a>
+<a name="ln880">    // translate fragment</a>
+<a name="ln881">    //for(vector&lt;OBMol&gt;::iterator f=fragments.begin(); f!=fragments.end(); f++) {</a>
+<a name="ln882">    //</a>
+<a name="ln883">    //</a>
+<a name="ln884">    for (unsigned int i = 1; i &lt;= mol.NumAtoms(); ++i) {</a>
+<a name="ln885">      if (fragment.BitIsSet(i)) {</a>
+<a name="ln886">        // translate the fragment</a>
+<a name="ln887">        vector3 tmpvec = mol.GetAtom(i)-&gt;GetVector();</a>
+<a name="ln888">        tmpvec += newpos;</a>
+<a name="ln889">        mol.GetAtom(i)-&gt;SetVector(tmpvec);</a>
+<a name="ln890">      }</a>
+<a name="ln891">    }</a>
+<a name="ln892">    //</a>
+<a name="ln893">    // Get a neighbor of a and of b for setting the dihedral later</a>
+<a name="ln894">    //</a>
+<a name="ln895">    OBAtom* nbr_a = nullptr;</a>
+<a name="ln896">    FOR_NBORS_OF_ATOM(nbr, a) {</a>
+<a name="ln897">      nbr_a = &amp;*nbr;</a>
+<a name="ln898">      break;</a>
+<a name="ln899">    }</a>
+<a name="ln900">    OBAtom* nbr_b = nullptr;</a>
+<a name="ln901">    FOR_NBORS_OF_ATOM(nbr, b) {</a>
+<a name="ln902">      if (fragment.BitIsSet(nbr-&gt;GetIdx())) {</a>
+<a name="ln903">        nbr_b = &amp;*nbr;</a>
+<a name="ln904">        break;</a>
+<a name="ln905">      }</a>
+<a name="ln906">    }</a>
+<a name="ln907">    //</a>
+<a name="ln908">    // Create the bond between the two fragments</a>
+<a name="ln909">    //</a>
+<a name="ln910">    OBBond *bond = mol.NewBond();</a>
+<a name="ln911">    bond-&gt;SetBegin(a);</a>
+<a name="ln912">    bond-&gt;SetEnd(b);</a>
+<a name="ln913">    bond-&gt;SetBondOrder(bondOrder);</a>
+<a name="ln914">    a-&gt;AddBond(bond);</a>
+<a name="ln915">    b-&gt;AddBond(bond);</a>
+<a name="ln916">    //</a>
+<a name="ln917">    // Set the dihedral between the two fragments</a>
+<a name="ln918">    //</a>
+<a name="ln919">    // For example, if a double bond is coming off a ring, then the dihedral</a>
+<a name="ln920">    // should be 180, e.g. for I/C=C\1/NC1 (don't worry about whether cis or trans</a>
+<a name="ln921">    // at this point - this will be corrected later)</a>
+<a name="ln922">    //</a>
+<a name="ln923">    if (bondOrder == 2 &amp;&amp; a-&gt;GetHyb() == 2 &amp;&amp; b-&gt;GetHyb() == 2 &amp;&amp; nbr_a &amp;&amp;</a>
+<a name="ln924">        nbr_b)</a>
+<a name="ln925">      mol.SetTorsion(nbr_a, a, b, nbr_b, 180 * DEG_TO_RAD);</a>
+<a name="ln926"> </a>
+<a name="ln927">    // another special case is a single bond between two sp2 carbons - twist</a>
+<a name="ln928">    // e.g. biphenyl</a>
+<a name="ln929">    if (bondOrder == 1 &amp;&amp; a-&gt;GetHyb() == 2 &amp;&amp; b-&gt;GetHyb() == 2 &amp;&amp; nbr_a &amp;&amp;</a>
+<a name="ln930">        nbr_b)</a>
+<a name="ln931">      mol.SetTorsion(nbr_a, a, b, nbr_b, 45.0 * DEG_TO_RAD);</a>
+<a name="ln932"> </a>
+<a name="ln933">    // another special case is building dihedrals between two rings</a>
+<a name="ln934">    //  twist it a little bit (e.g., Platinum 00J_2XIR_A)</a>
+<a name="ln935">    if (bondOrder == 1 &amp;&amp; ((nbr_a &amp;&amp; nbr_a-&gt;IsInRing() &amp;&amp; b-&gt;IsInRing()) ||</a>
+<a name="ln936">                           (nbr_b &amp;&amp; nbr_b-&gt;IsInRing() &amp;&amp; a-&gt;IsInRing())))</a>
+<a name="ln937">      mol.SetTorsion(nbr_a, a, b, nbr_b, 60.0 * DEG_TO_RAD);</a>
+<a name="ln938">    // TODO - other inter-fragment dihedrals here</a>
+<a name="ln939"> </a>
+<a name="ln940">    return true;</a>
+<a name="ln941">  }</a>
+<a name="ln942"> </a>
+<a name="ln943">  bool OBBuilder::Connect(OBMol &amp;mol, int idxA, int idxB, int bondOrder)</a>
+<a name="ln944">  {</a>
+<a name="ln945">    vector3 newpos = GetCorrectedBondVector(mol.GetAtom(idxA), mol.GetAtom(idxB), bondOrder);</a>
+<a name="ln946">    return Connect(mol, idxA, idxB, newpos, bondOrder);</a>
+<a name="ln947">  }</a>
+<a name="ln948"> </a>
+<a name="ln949">  // Variation of OBBuilder::Swap that allows swapping with a vector3 rather than</a>
+<a name="ln950">  // an explicit bond. This is useful for correcting stereochemistry at Tet Centers</a>
+<a name="ln951">  // where it is sometimes necessary to swap an existing bond with the location</a>
+<a name="ln952">  // of an implicit hydrogen (or lone pair), in order to correct the stereo.</a>
+<a name="ln953">  bool OBBuilder::SwapWithVector(OBMol &amp;mol, int idxA, int idxB, int idxC, const vector3 &amp;newlocation)</a>
+<a name="ln954">  {</a>
+<a name="ln955">    OBAtom *a = mol.GetAtom(idxA);</a>
+<a name="ln956">    OBAtom *b = mol.GetAtom(idxB);</a>
+<a name="ln957">    OBAtom *c = mol.GetAtom(idxC);</a>
+<a name="ln958"> </a>
+<a name="ln959">    // make sure the atoms exist</a>
+<a name="ln960">    if (a == nullptr || b == nullptr || c == nullptr)</a>
+<a name="ln961">      return false;</a>
+<a name="ln962"> </a>
+<a name="ln963">    OBBond *bond1 = mol.GetBond(idxA, idxB);</a>
+<a name="ln964"> </a>
+<a name="ln965">    // make sure a-b is connected</a>
+<a name="ln966">    if (bond1 == nullptr)</a>
+<a name="ln967">      return false;</a>
+<a name="ln968"> </a>
+<a name="ln969">    // make sure the bond are not in a ring</a>
+<a name="ln970">    if (bond1-&gt;IsInRing())</a>
+<a name="ln971">      return false;</a>
+<a name="ln972"> </a>
+<a name="ln973">    // save the original bond order</a>
+<a name="ln974">    int bondOrder1 = bond1-&gt;GetBondOrder();</a>
+<a name="ln975"> </a>
+<a name="ln976">    // delete the bond</a>
+<a name="ln977">    mol.DeleteBond(bond1);</a>
+<a name="ln978"> </a>
+<a name="ln979">    // Get the old bond vector</a>
+<a name="ln980">    vector3 bondB = b-&gt;GetVector() - a-&gt;GetVector();</a>
+<a name="ln981">    vector3 bondD =  newlocation   - c-&gt;GetVector();</a>
+<a name="ln982"> </a>
+<a name="ln983">    // Get the new positions for B and D</a>
+<a name="ln984">    vector3 newB = c-&gt;GetVector() + bondB.length() * (bondD/bondD.length());</a>
+<a name="ln985">    vector3 newD = a-&gt;GetVector() + bondD.length() * (bondB/bondB.length());</a>
+<a name="ln986"> </a>
+<a name="ln987">    // connect the fragments</a>
+<a name="ln988">    if (!Connect(mol, idxC, idxB, newB, bondOrder1))</a>
+<a name="ln989">      return false;</a>
+<a name="ln990"> </a>
+<a name="ln991">    return true;</a>
+<a name="ln992">  }</a>
+<a name="ln993"> </a>
+<a name="ln994">  bool OBBuilder::Swap(OBMol &amp;mol, int idxA, int idxB, int idxC, int idxD)</a>
+<a name="ln995">  {</a>
+<a name="ln996">    OBAtom *a = mol.GetAtom(idxA);</a>
+<a name="ln997">    OBAtom *b = mol.GetAtom(idxB);</a>
+<a name="ln998">    OBAtom *c = mol.GetAtom(idxC);</a>
+<a name="ln999">    OBAtom *d = mol.GetAtom(idxD);</a>
+<a name="ln1000"> </a>
+<a name="ln1001">    // make sure the atoms exist</a>
+<a name="ln1002">    if (a == nullptr || b == nullptr || c == nullptr || d == nullptr)</a>
+<a name="ln1003">      return false;</a>
+<a name="ln1004"> </a>
+<a name="ln1005">    OBBond *bond1 = mol.GetBond(idxA, idxB);</a>
+<a name="ln1006">    OBBond *bond2 = mol.GetBond(idxC, idxD);</a>
+<a name="ln1007"> </a>
+<a name="ln1008">    // make sure a-b and c-d are connected</a>
+<a name="ln1009">    if (bond1 == nullptr || bond2 == nullptr)</a>
+<a name="ln1010">      return false;</a>
+<a name="ln1011"> </a>
+<a name="ln1012">    // make sure the bonds are not in a ring</a>
+<a name="ln1013">    if (bond1-&gt;IsInRing() || bond2-&gt;IsInRing())</a>
+<a name="ln1014">      return false;</a>
+<a name="ln1015"> </a>
+<a name="ln1016">    // save the original bond orders</a>
+<a name="ln1017">    int bondOrder1 = bond1-&gt;GetBondOrder();</a>
+<a name="ln1018">    int bondOrder2 = bond2-&gt;GetBondOrder();</a>
+<a name="ln1019"> </a>
+<a name="ln1020">    // delete the bonds</a>
+<a name="ln1021">    mol.DeleteBond(bond1);</a>
+<a name="ln1022">    mol.DeleteBond(bond2);</a>
+<a name="ln1023"> </a>
+<a name="ln1024">    // Get the bond vectors</a>
+<a name="ln1025">    vector3 bondB = b-&gt;GetVector() - a-&gt;GetVector();</a>
+<a name="ln1026">    vector3 bondD = d-&gt;GetVector() - c-&gt;GetVector();</a>
+<a name="ln1027"> </a>
+<a name="ln1028">    // Get the new positions for B and D</a>
+<a name="ln1029">    vector3 newB = c-&gt;GetVector() + bondB.length() * (bondD/bondD.length());</a>
+<a name="ln1030">    vector3 newD = a-&gt;GetVector() + bondD.length() * (bondB/bondB.length());</a>
+<a name="ln1031"> </a>
+<a name="ln1032">    // connect the fragments</a>
+<a name="ln1033">    if (!Connect(mol, idxA, idxD, newD, bondOrder2))</a>
+<a name="ln1034">      return false;</a>
+<a name="ln1035">    if (!Connect(mol, idxC, idxB, newB, bondOrder1))</a>
+<a name="ln1036">      return false;</a>
+<a name="ln1037"> </a>
+<a name="ln1038">    return true;</a>
+<a name="ln1039">  }</a>
+<a name="ln1040"> </a>
+<a name="ln1041"> </a>
+<a name="ln1042">  void OBBuilder::AddNbrs(OBBitVec &amp;fragment, OBAtom *atom)</a>
+<a name="ln1043">  {</a>
+<a name="ln1044">    FOR_NBORS_OF_ATOM (nbr, atom) {</a>
+<a name="ln1045">      if (!fragment.BitIsSet(nbr-&gt;GetIdx())) {</a>
+<a name="ln1046">        fragment.SetBitOn(nbr-&gt;GetIdx());</a>
+<a name="ln1047">        AddNbrs(fragment, &amp;*nbr);</a>
+<a name="ln1048">      }</a>
+<a name="ln1049">    }</a>
+<a name="ln1050">  }</a>
+<a name="ln1051"> </a>
+<a name="ln1052">  OBBitVec OBBuilder::GetFragment(OBAtom *atom)</a>
+<a name="ln1053">  {</a>
+<a name="ln1054">    OBBitVec fragment;</a>
+<a name="ln1055"> </a>
+<a name="ln1056">    fragment.SetBitOn(atom-&gt;GetIdx());</a>
+<a name="ln1057">    AddNbrs(fragment, atom);</a>
+<a name="ln1058"> </a>
+<a name="ln1059">    return fragment;</a>
+<a name="ln1060">  }</a>
+<a name="ln1061"> </a>
+<a name="ln1062">  // First we find the most complex fragments in our molecule. Once we have a match,</a>
+<a name="ln1063">  // vfrag is set for all the atoms in the fragment. A second match (smaller, more</a>
+<a name="ln1064">  // simple part of the 1st match) is ignored.</a>
+<a name="ln1065">  //</a>
+<a name="ln1066">  // Next we iterate over the atoms. There are 3 possibilities:</a>
+<a name="ln1067">  //</a>
+<a name="ln1068">  // 1) The atom is already added (vdone is set) --&gt; continue</a>
+<a name="ln1069">  // 2) The atom belongs to a fragment --&gt; a) This is the first atom to add: leave fragment as it is</a>
+<a name="ln1070">  //                                       b) Not the first atom: rotate, translate and connect the fragment</a>
+<a name="ln1071">  // 3) The atom doesn't belong to a fragment: a) First atom: place at origin</a>
+<a name="ln1072">  //                                           b) Not first atom: Find position and place atom</a>
+<a name="ln1073">  bool OBBuilder::Build(OBMol &amp;mol, bool stereoWarnings)</a>
+<a name="ln1074">  {</a>
+<a name="ln1075">    OBBitVec vdone; // Atoms that are done, need no further manipulation.</a>
+<a name="ln1076">    OBBitVec vfrag; // Atoms that are part of a fragment found in the database.</a>
+<a name="ln1077">                    // These atoms have coordinates, but the fragment still has</a>
+<a name="ln1078">                    // to be rotated and translated.</a>
+<a name="ln1079">    vector3 molvec, moldir;</a>
+<a name="ln1080">    vector&lt;vector&lt;int&gt; &gt;::iterator j;</a>
+<a name="ln1081">    vector&lt;int&gt;::iterator k, k2;</a>
+<a name="ln1082">    vector&lt;vector3&gt;::iterator l;</a>
+<a name="ln1083">    vector&lt;vector&lt;int&gt; &gt; mlist; // match list for fragments</a>
+<a name="ln1084"> </a>
+<a name="ln1085">    OBConversion conv;</a>
+<a name="ln1086">    conv.SetOutFormat(&quot;can&quot;); // Canonical SMILES</a>
+<a name="ln1087"> </a>
+<a name="ln1088">    // Trigger hybridisation perception now so it will be copied to workMol</a>
+<a name="ln1089">    mol.GetFirstAtom()-&gt;GetHyb();</a>
+<a name="ln1090"> </a>
+<a name="ln1091">    // copy the molecule to private data</a>
+<a name="ln1092">    OBMol workMol = mol;</a>
+<a name="ln1093"> </a>
+<a name="ln1094">    // Treat a 2D structure like a 0D one</a>
+<a name="ln1095">    if (workMol.GetDimension() == 2)</a>
+<a name="ln1096">      workMol.SetDimension(0);</a>
+<a name="ln1097"> </a>
+<a name="ln1098"> </a>
+<a name="ln1099">    // Delete all bonds in the working molecule</a>
+<a name="ln1100">    // (we will add them back at the end)</a>
+<a name="ln1101">    while (workMol.NumBonds())</a>
+<a name="ln1102">      workMol.DeleteBond(workMol.GetBond(0));</a>
+<a name="ln1103"> </a>
+<a name="ln1104">    // Deleting the bonds unsets HybridizationPerceived. To prevent our</a>
+<a name="ln1105">    // perceived values being reperceived (incorrectly), we must set</a>
+<a name="ln1106">    // this flag again.</a>
+<a name="ln1107">    workMol.SetHybridizationPerceived();</a>
+<a name="ln1108"> </a>
+<a name="ln1109"> </a>
+<a name="ln1110">    // I think just deleting rotable bond and separate is enough,</a>
+<a name="ln1111">    // but it did not work.</a>
+<a name="ln1112"> </a>
+<a name="ln1113">    // Get fragments using CopySubstructure</a>
+<a name="ln1114">    // Copy all atoms</a>
+<a name="ln1115">    OBBitVec atomsToCopy;</a>
+<a name="ln1116">    FOR_ATOMS_OF_MOL(atom, mol) {</a>
+<a name="ln1117">      atomsToCopy.SetBitOn(atom-&gt;GetIdx());</a>
+<a name="ln1118">    }</a>
+<a name="ln1119"> </a>
+<a name="ln1120">    // Exclude rotatable bonds</a>
+<a name="ln1121">    OBBitVec bondsToExclude;</a>
+<a name="ln1122">    FOR_BONDS_OF_MOL(bond, mol) {</a>
+<a name="ln1123">      if (bond-&gt;IsRotor()) {</a>
+<a name="ln1124">        bondsToExclude.SetBitOn(bond-&gt;GetIdx());</a>
+<a name="ln1125">      }</a>
+<a name="ln1126">    }</a>
+<a name="ln1127"> </a>
+<a name="ln1128">    // Generate fragments by copy</a>
+<a name="ln1129">    OBMol mol_copy;</a>
+<a name="ln1130">    mol.CopySubstructure(mol_copy, &amp;atomsToCopy, &amp;bondsToExclude);</a>
+<a name="ln1131"> </a>
+<a name="ln1132">    // Separate each disconnected fragments as different molecules</a>
+<a name="ln1133">    vector&lt;OBMol&gt; fragments = mol_copy.Separate();</a>
+<a name="ln1134"> </a>
+<a name="ln1135">    // datafile is read only on first use of Build()</a>
+<a name="ln1136">    if(_rigid_fragments.empty())</a>
+<a name="ln1137">      LoadFragments();</a>
+<a name="ln1138"> </a>
+<a name="ln1139"> </a>
+<a name="ln1140">    for(vector&lt;OBMol&gt;::iterator f = fragments.begin(); f != fragments.end(); ++f) {</a>
+<a name="ln1141">      std::string fragment_smiles = conv.WriteString(&amp;*f, true);</a>
+<a name="ln1142">      bool isMatchRigid = false;</a>
+<a name="ln1143">      // if rigid fragment is in database</a>
+<a name="ln1144">      if (_rigid_fragments_index.count(fragment_smiles) &gt; 0) {</a>
+<a name="ln1145">        OBSmartsPattern sp;</a>
+<a name="ln1146">        if (!sp.Init(fragment_smiles)) {</a>
+<a name="ln1147">          obErrorLog.ThrowError(__FUNCTION__, &quot; Could not parse SMARTS from fragment&quot;, obInfo);</a>
+<a name="ln1148">        } else if (sp.Match(mol)) { // for all matches</a>
+<a name="ln1149">          isMatchRigid = true;</a>
+<a name="ln1150">          mlist = sp.GetUMapList();</a>
+<a name="ln1151">          for (j = mlist.begin(); j != mlist.end(); ++j) {</a>
+<a name="ln1152">            // Have any atoms of this match already been added?</a>
+<a name="ln1153">            bool alreadydone = false;</a>
+<a name="ln1154">            for (k = j-&gt;begin(); k != j-&gt;end(); ++k)</a>
+<a name="ln1155">              if (vfrag.BitIsSet(*k)) {</a>
+<a name="ln1156">                alreadydone = true;</a>
+<a name="ln1157">                break;</a>
+<a name="ln1158">              }</a>
+<a name="ln1159">            if (alreadydone) continue;</a>
+<a name="ln1160"> </a>
+<a name="ln1161">            for (k = j-&gt;begin(); k != j-&gt;end(); ++k)</a>
+<a name="ln1162">              vfrag.SetBitOn(*k); // Set vfrag for all atoms of fragment</a>
+<a name="ln1163"> </a>
+<a name="ln1164">            int counter;</a>
+<a name="ln1165">            std::vector&lt;vector3&gt; coords = GetFragmentCoord(fragment_smiles);</a>
+<a name="ln1166">            for (k = j-&gt;begin(), counter=0; k != j-&gt;end(); ++k, ++counter) { // for all atoms of the fragment</a>
+<a name="ln1167">              // set coordinates for atoms</a>
+<a name="ln1168">              OBAtom *atom = workMol.GetAtom(*k);</a>
+<a name="ln1169">              atom-&gt;SetVector(coords[counter]);</a>
+<a name="ln1170">            }</a>
+<a name="ln1171"> </a>
+<a name="ln1172">            // add the bonds for the fragment</a>
+<a name="ln1173">            for (k = j-&gt;begin(); k != j-&gt;end(); ++k) {</a>
+<a name="ln1174">              OBAtom *atom1 = mol.GetAtom(*k);</a>
+<a name="ln1175">              for (k2 = j-&gt;begin(); k2 != j-&gt;end(); ++k2) {</a>
+<a name="ln1176">                OBAtom *atom2 = mol.GetAtom(*k2);</a>
+<a name="ln1177">                OBBond *bond = atom1-&gt;GetBond(atom2);</a>
+<a name="ln1178">                if (bond != nullptr) {</a>
+<a name="ln1179">                  workMol.AddBond(*bond);</a>
+<a name="ln1180">                }</a>
+<a name="ln1181">              }</a>
+<a name="ln1182">            }</a>
+<a name="ln1183">          }</a>
+<a name="ln1184">        }</a>
+<a name="ln1185">      }</a>
+<a name="ln1186">      if(!isMatchRigid) {    // if rigid fragment is not in database</a>
+<a name="ln1187">        // Count the number of ring atoms.</a>
+<a name="ln1188">        unsigned int ratoms = 0;</a>
+<a name="ln1189">        FOR_ATOMS_OF_MOL(a, mol) {</a>
+<a name="ln1190">          if (a-&gt;IsInRing()) {</a>
+<a name="ln1191">            ratoms++;</a>
+<a name="ln1192">          }</a>
+<a name="ln1193">        }</a>
+<a name="ln1194">        if (ratoms &lt; 3) continue; // Smallest ring fragment has 3 atoms</a>
+<a name="ln1195"> </a>
+<a name="ln1196">        vector&lt;pair&lt;OBSmartsPattern*, vector&lt;vector3 &gt; &gt; &gt;::iterator i;</a>
+<a name="ln1197">        // Skip all fragments that are too big to match</a>
+<a name="ln1198">        // Note: It would be faster to compare to the size of the largest</a>
+<a name="ln1199">        //       isolated ring system instead of comparing to ratoms</a>
+<a name="ln1200">        for (i = _ring_fragments.begin(); i != _ring_fragments.end() &amp;&amp; i-&gt;first-&gt;NumAtoms() &gt; ratoms; ++i);</a>
+<a name="ln1201"> </a>
+<a name="ln1202">        // Loop through the remaining fragments and assign the coordinates from</a>
+<a name="ln1203">        // the first (most complex) fragment.</a>
+<a name="ln1204">        // Stop if there are no unassigned ring atoms (ratoms).</a>
+<a name="ln1205">        for (; i != _ring_fragments.end() &amp;&amp; ratoms; ++i) {</a>
+<a name="ln1206">          if (i-&gt;first != nullptr &amp;&amp; i-&gt;first-&gt;Match(*f)) { // if match to fragment</a>
+<a name="ln1207">            i-&gt;first-&gt;Match(mol);                        // match over mol</a>
+<a name="ln1208">            mlist = i-&gt;first-&gt;GetUMapList();</a>
+<a name="ln1209">            for (j = mlist.begin();j != mlist.end();++j) { // for all matches</a>
+<a name="ln1210">              // Have any atoms of this match already been added?</a>
+<a name="ln1211">              bool alreadydone = false;</a>
+<a name="ln1212">              for (k = j-&gt;begin(); k != j-&gt;end(); ++k) { // for all atoms of the fragment</a>
+<a name="ln1213">                if (vfrag.BitIsSet(*k)) {</a>
+<a name="ln1214">                  alreadydone = true;</a>
+<a name="ln1215">                  break;</a>
+<a name="ln1216">                }</a>
+<a name="ln1217">              }</a>
+<a name="ln1218">              if (alreadydone) continue;</a>
+<a name="ln1219">              for (k = j-&gt;begin(); k != j-&gt;end(); ++k)</a>
+<a name="ln1220">                vfrag.SetBitOn(*k); // Set vfrag for all atoms of fragment</a>
+<a name="ln1221"> </a>
+<a name="ln1222">              int counter;</a>
+<a name="ln1223">              for (k = j-&gt;begin(), counter=0; k != j-&gt;end(); ++k, ++counter) { // for all atoms of the fragment</a>
+<a name="ln1224">                // set coordinates for atoms</a>
+<a name="ln1225">                OBAtom *atom = workMol.GetAtom(*k);</a>
+<a name="ln1226">                atom-&gt;SetVector(i-&gt;second[counter]);</a>
+<a name="ln1227">              }</a>
+<a name="ln1228">              // add the bonds for the fragment</a>
+<a name="ln1229">              for (k = j-&gt;begin(); k != j-&gt;end(); ++k) {</a>
+<a name="ln1230">                OBAtom *atom1 = mol.GetAtom(*k);</a>
+<a name="ln1231">                for (k2 = j-&gt;begin(); k2 != j-&gt;end(); ++k2) {</a>
+<a name="ln1232">                  OBAtom *atom2 = mol.GetAtom(*k2);</a>
+<a name="ln1233">                  OBBond *bond = atom1-&gt;GetBond(atom2);</a>
+<a name="ln1234">                  if (bond != nullptr)</a>
+<a name="ln1235">                    workMol.AddBond(*bond);</a>
+<a name="ln1236">                }</a>
+<a name="ln1237">              }</a>
+<a name="ln1238">            }</a>
+<a name="ln1239">          }</a>
+<a name="ln1240">        }</a>
+<a name="ln1241">      }</a>
+<a name="ln1242">    } // for all fragments</a>
+<a name="ln1243"> </a>
+<a name="ln1244">    // iterate over all atoms to place them in 3D space</a>
+<a name="ln1245">    FOR_DFS_OF_MOL (a, mol) {</a>
+<a name="ln1246">      if (vdone.BitIsSet(a-&gt;GetIdx())) // continue if the atom is already added</a>
+<a name="ln1247">        continue;</a>
+<a name="ln1248"> </a>
+<a name="ln1249">      // find an atom connected to the current atom that is already added</a>
+<a name="ln1250">      OBAtom *prev = nullptr;</a>
+<a name="ln1251">      FOR_NBORS_OF_ATOM (nbr, &amp;*a) {</a>
+<a name="ln1252">        if (vdone.BitIsSet(nbr-&gt;GetIdx()))</a>
+<a name="ln1253">          prev = &amp;*nbr;</a>
+<a name="ln1254">      }</a>
+<a name="ln1255"> </a>
+<a name="ln1256">      if (vfrag.BitIsSet(a-&gt;GetIdx())) { // Is this atom part of a fragment?</a>
+<a name="ln1257">        if (prev != nullptr) { // if we have a previous atom, translate/rotate the fragment and connect it</a>
+<a name="ln1258">          Connect(workMol, prev-&gt;GetIdx(), a-&gt;GetIdx(), mol.GetBond(prev, &amp;*a)-&gt;GetBondOrder());</a>
+<a name="ln1259">          // set the correct bond order</a>
+<a name="ln1260">          int bondOrder = mol.GetBond(prev-&gt;GetIdx(), a-&gt;GetIdx())-&gt;GetBondOrder();</a>
+<a name="ln1261">          workMol.GetBond(prev-&gt;GetIdx(), a-&gt;GetIdx())-&gt;SetBondOrder(bondOrder);</a>
+<a name="ln1262">        }</a>
+<a name="ln1263"> </a>
+<a name="ln1264">        OBBitVec fragment = GetFragment(workMol.GetAtom(a-&gt;GetIdx()));</a>
+<a name="ln1265">        vdone |= fragment; // mark this fragment as done</a>
+<a name="ln1266"> </a>
+<a name="ln1267">        continue;</a>
+<a name="ln1268">      }</a>
+<a name="ln1269"> </a>
+<a name="ln1270">      //</a>
+<a name="ln1271">      // below is the code to add non-fragment atoms</a>
+<a name="ln1272">      //</a>
+<a name="ln1273"> </a>
+<a name="ln1274">      // get the position for the new atom, this is done with GetNewBondVector</a>
+<a name="ln1275">      if (prev != nullptr) {</a>
+<a name="ln1276">        int bondType = a-&gt;GetBond(prev)-&gt;GetBondOrder();</a>
+<a name="ln1277">        if (a-&gt;GetBond(prev)-&gt;IsAromatic())</a>
+<a name="ln1278">          bondType = -1;</a>
+<a name="ln1279"> </a>
+<a name="ln1280">        molvec = GetCorrectedBondVector(workMol.GetAtom(prev-&gt;GetIdx()),</a>
+<a name="ln1281">                                        workMol.GetAtom(a-&gt;GetIdx()),</a>
+<a name="ln1282">                                        bondType);</a>
+<a name="ln1283">        moldir = molvec - workMol.GetAtom(prev-&gt;GetIdx())-&gt;GetVector();</a>
+<a name="ln1284">      } else {</a>
+<a name="ln1285">        // We don't want to plant all base atoms at exactly the same spot.</a>
+<a name="ln1286">        // (or in exactly the same direction)</a>
+<a name="ln1287">        // So we'll add a slight tweak -- fixes problem reported by Kasper Thofte</a>
+<a name="ln1288">        vector3 randomOffset;</a>
+<a name="ln1289">        randomOffset.randomUnitVector();</a>
+<a name="ln1290">        molvec = VX + 0.1 * randomOffset;</a>
+<a name="ln1291">        moldir = VX + 0.01 * randomOffset;</a>
+<a name="ln1292">      }</a>
+<a name="ln1293"> </a>
+<a name="ln1294">      vdone.SetBitOn(a-&gt;GetIdx());</a>
+<a name="ln1295"> </a>
+<a name="ln1296">      // place the atom</a>
+<a name="ln1297">      OBAtom *atom = workMol.GetAtom(a-&gt;GetIdx());</a>
+<a name="ln1298">      atom-&gt;SetVector(molvec);</a>
+<a name="ln1299"> </a>
+<a name="ln1300">      // add bond between previous part and added atom</a>
+<a name="ln1301">      if (prev != nullptr) {</a>
+<a name="ln1302">        OBBond *bond = a-&gt;GetBond(prev); // from mol</a>
+<a name="ln1303">        workMol.AddBond(*bond);</a>
+<a name="ln1304">      }</a>
+<a name="ln1305"> </a>
+<a name="ln1306">    }</a>
+<a name="ln1307"> </a>
+<a name="ln1308">    // Make sure we keep the bond indexes the same</a>
+<a name="ln1309">    // so we'll delete the bonds again and copy them</a>
+<a name="ln1310">    // Fixes PR#3448379 (and likely other topology issues)</a>
+<a name="ln1311">    while (workMol.NumBonds())</a>
+<a name="ln1312">      workMol.DeleteBond(workMol.GetBond(0));</a>
+<a name="ln1313"> </a>
+<a name="ln1314">    int beginIdx, endIdx;</a>
+<a name="ln1315">    FOR_BONDS_OF_MOL(b, mol) {</a>
+<a name="ln1316">      beginIdx = b-&gt;GetBeginAtomIdx();</a>
+<a name="ln1317">      endIdx = b-&gt;GetEndAtomIdx();</a>
+<a name="ln1318">      workMol.AddBond(beginIdx, endIdx, b-&gt;GetBondOrder(), b-&gt;GetFlags());</a>
+<a name="ln1319">    }</a>
+<a name="ln1320"> </a>
+<a name="ln1321">    /*</a>
+<a name="ln1322">    FOR_BONDS_OF_MOL(bond, mol) {</a>
+<a name="ln1323">      if(bond-&gt;IsRotor()) {</a>
+<a name="ln1324">        OBBitVec atomsToCopy;</a>
+<a name="ln1325">        OBAtom *atom = bond-&gt;GetBeginAtom();</a>
+<a name="ln1326">        FOR_NBORS_OF_ATOM(a, &amp;*atom) {</a>
+<a name="ln1327">          atomsToCopy.SetBitOn(a-&gt;GetIdx());</a>
+<a name="ln1328">        }</a>
+<a name="ln1329">        atom = bond-&gt;GetEndAtom();</a>
+<a name="ln1330">        FOR_NBORS_OF_ATOM(a, &amp;*atom) {</a>
+<a name="ln1331">          atomsToCopy.SetBitOn(a-&gt;GetIdx());</a>
+<a name="ln1332">        }</a>
+<a name="ln1333">        OBMol mol_copy;</a>
+<a name="ln1334">        mol.CopySubstructure(mol_copy, &amp;atomsToCopy);</a>
+<a name="ln1335">        string smiles = conv.WriteString(&amp;mol_copy, true);</a>
+<a name="ln1336"> </a>
+<a name="ln1337">        if(_torsion.count(smiles) &gt; 0) {</a>
+<a name="ln1338">          OBAtom* b = bond-&gt;GetBeginAtom();</a>
+<a name="ln1339">          OBAtom* c = bond-&gt;GetEndAtom();</a>
+<a name="ln1340">          OBAtom* a = nullptr;</a>
+<a name="ln1341">          FOR_NBORS_OF_ATOM(t, &amp;*b) {</a>
+<a name="ln1342">            a = &amp;*t;</a>
+<a name="ln1343">            if(a != c)</a>
+<a name="ln1344">              break;</a>
+<a name="ln1345">          }</a>
+<a name="ln1346">          OBAtom* d = nullptr;</a>
+<a name="ln1347">          FOR_NBORS_OF_ATOM(t, &amp;*c) {</a>
+<a name="ln1348">            d = &amp;*t;</a>
+<a name="ln1349">            if(d != b)</a>
+<a name="ln1350">              break;</a>
+<a name="ln1351">          }</a>
+<a name="ln1352">          double angle = _torsion[smiles] * DEG_TO_RAD;</a>
+<a name="ln1353">          mol.SetTorsion(a, b, c, d, angle);</a>
+<a name="ln1354">        } else {</a>
+<a name="ln1355">          ; // Do something</a>
+<a name="ln1356">        }</a>
+<a name="ln1357">      }</a>
+<a name="ln1358">    }</a>
+<a name="ln1359">    */</a>
+<a name="ln1360"> </a>
+<a name="ln1361">    // We may have to change these success check</a>
+<a name="ln1362">    // correct the chirality</a>
+<a name="ln1363">    bool success = CorrectStereoBonds(workMol);</a>
+<a name="ln1364">    // we only succeed if we corrected all stereochemistry</a>
+<a name="ln1365">    success = success &amp;&amp; CorrectStereoAtoms(workMol, stereoWarnings);</a>
+<a name="ln1366"> </a>
+<a name="ln1367">    /*</a>
+<a name="ln1368">    // if the stereo failed, we should use distance geometry instead</a>
+<a name="ln1369">    OBDistanceGeometry dg;</a>
+<a name="ln1370">    dg.Setup(workMol);</a>
+<a name="ln1371">    dg.GetGeometry(workMol); // ensured to have correct stereo</a>
+<a name="ln1372">    */</a>
+<a name="ln1373"> </a>
+<a name="ln1374">    mol = workMol;</a>
+<a name="ln1375">    mol.SetChiralityPerceived();</a>
+<a name="ln1376">    mol.SetDimension(3);</a>
+<a name="ln1377"> </a>
+<a name="ln1378">    bool isNanExist = false;</a>
+<a name="ln1379">    FOR_ATOMS_OF_MOL(a, mol) {</a>
+<a name="ln1380">      vector3 v = a-&gt;GetVector();</a>
+<a name="ln1381">      if(IsNan(v.x()) || IsNan(v.y()) || IsNan(v.z())) {</a>
+<a name="ln1382">          isNanExist = true;</a>
+<a name="ln1383">          break;</a>
+<a name="ln1384">       }</a>
+<a name="ln1385">    }</a>
+<a name="ln1386">    if(isNanExist)</a>
+<a name="ln1387">      obErrorLog.ThrowError(__FUNCTION__, &quot;There exists NaN in calculated coordinates.&quot;, obWarning);</a>
+<a name="ln1388"> </a>
+<a name="ln1389">    return success;</a>
+<a name="ln1390">  }</a>
+<a name="ln1391"> </a>
+<a name="ln1392">  void OBBuilder::ConnectFrags(OBMol &amp;mol, OBMol &amp;workMol, vector&lt;int&gt; match, vector&lt;vector3&gt; coords,</a>
+<a name="ln1393">                               vector&lt;int&gt; pivot)</a>
+<a name="ln1394">  {</a>
+<a name="ln1395">    if (pivot.size() != 1) // Only handle spiro at the moment</a>
+<a name="ln1396">      return;</a>
+<a name="ln1397"> </a>
+<a name="ln1398">    OBAtom* p = workMol.GetAtom(pivot[0]);</a>
+<a name="ln1399">    OBBitVec frag = GetFragment(p); // The existing fragment</a>
+<a name="ln1400">    vector3 posp = p-&gt;GetVector();</a>
+<a name="ln1401"> </a>
+<a name="ln1402">    // Set coords of new fragment to place the pivot at the origin</a>
+<a name="ln1403">    vector3 posp_new;</a>
+<a name="ln1404">    vector&lt;int&gt;::iterator match_it;</a>
+<a name="ln1405">    int counter;</a>
+<a name="ln1406">    for (match_it=match.begin(), counter=0; match_it!=match.end(); ++match_it, ++counter)</a>
+<a name="ln1407">      if (*match_it == pivot[0]) {</a>
+<a name="ln1408">        posp_new = coords[counter];</a>
+<a name="ln1409">        break;</a>
+<a name="ln1410">      }</a>
+<a name="ln1411">    counter = 0;</a>
+<a name="ln1412">    for (match_it=match.begin(), counter=0; match_it!=match.end(); ++match_it, ++counter)</a>
+<a name="ln1413">      workMol.GetAtom(*match_it)-&gt;SetVector( coords[counter] - posp_new );</a>
+<a name="ln1414"> </a>
+<a name="ln1415">    // Find vector that bisects existing angles at the pivot in each fragment</a>
+<a name="ln1416">    // and align them</a>
+<a name="ln1417">    //                                        \   /</a>
+<a name="ln1418">    //  \        \   /    bisect  \             P    align   \                /</a>
+<a name="ln1419">    //   P  and    P       ---&gt;    P--v1  and   |    ---&gt;     P--v1  and v2--P</a>
+<a name="ln1420">    //  /                         /             v2           /                \  //</a>
+<a name="ln1421"> </a>
+<a name="ln1422">    // Get v1 (from the existing fragment)</a>
+<a name="ln1423">    vector3 bond1, bond2, bond3, bond4, v1;</a>
+<a name="ln1424">    bond1 = VZero;</a>
+<a name="ln1425">    OBAtom atom1, atom2;</a>
+<a name="ln1426">    FOR_NBORS_OF_ATOM(nbr, p) {</a>
+<a name="ln1427">      if (bond1 == VZero) {</a>
+<a name="ln1428">        atom1 = *nbr;</a>
+<a name="ln1429">        bond1 = posp - atom1.GetVector();</a>
+<a name="ln1430">      }</a>
+<a name="ln1431">      else {</a>
+<a name="ln1432">        atom2 = *nbr;</a>
+<a name="ln1433">        bond2 = posp - atom2.GetVector();</a>
+<a name="ln1434">      }</a>
+<a name="ln1435">    }</a>
+<a name="ln1436">    bond1 = bond1.normalize();</a>
+<a name="ln1437">    bond2 = bond2.normalize();</a>
+<a name="ln1438">    v1 = bond1 + bond2;</a>
+<a name="ln1439">    v1 = v1.normalize();</a>
+<a name="ln1440"> </a>
+<a name="ln1441">    // Get v2 (from the new fragment)</a>
+<a name="ln1442">    vector3 v2;</a>
+<a name="ln1443">    vector&lt;int&gt; nbrs;</a>
+<a name="ln1444">    vector&lt;vector3&gt; nbr_pos;</a>
+<a name="ln1445">    FOR_NBORS_OF_ATOM(nbr, mol.GetAtom(pivot[0]))</a>
+<a name="ln1446">      if (nbr-&gt;GetIdx() != atom1.GetIdx() &amp;&amp; nbr-&gt;GetIdx() != atom2.GetIdx()) {</a>
+<a name="ln1447">        nbrs.push_back(nbr-&gt;GetIdx());</a>
+<a name="ln1448">        nbr_pos.push_back(workMol.GetAtom(nbr-&gt;GetIdx())-&gt;GetVector());</a>
+<a name="ln1449">      }</a>
+<a name="ln1450">    //assert(nbrs.size()==2);</a>
+<a name="ln1451">    bond3 = nbr_pos[0] - VZero; // The pivot is at the origin, hence VZero</a>
+<a name="ln1452">    bond4 = nbr_pos[1] - VZero;</a>
+<a name="ln1453">    bond3 = bond3.normalize();</a>
+<a name="ln1454">    bond4 = bond4.normalize();</a>
+<a name="ln1455">    v2 = bond3 + bond4;</a>
+<a name="ln1456">    v2 = v2.normalize();</a>
+<a name="ln1457"> </a>
+<a name="ln1458">    // Set up matrix to rotate around v1 x v2 by the angle between them</a>
+<a name="ln1459">    double ang = vectorAngle(v1, v2);</a>
+<a name="ln1460">    vector3 cp = cross(v1, v2);</a>
+<a name="ln1461">    matrix3x3 mat;</a>
+<a name="ln1462">    mat.RotAboutAxisByAngle(cp, ang);</a>
+<a name="ln1463"> </a>
+<a name="ln1464">    // Apply rotation</a>
+<a name="ln1465">    vector3 tmpvec;</a>
+<a name="ln1466">    for (match_it=match.begin(); match_it!=match.end(); ++match_it) {</a>
+<a name="ln1467">      tmpvec = workMol.GetAtom(*match_it)-&gt;GetVector();</a>
+<a name="ln1468">      tmpvec *= mat;</a>
+<a name="ln1469">      workMol.GetAtom(*match_it)-&gt;SetVector( tmpvec );</a>
+<a name="ln1470">    }</a>
+<a name="ln1471"> </a>
+<a name="ln1472">    // Rotate the new fragment 90 degrees to make a tetrahedron</a>
+<a name="ln1473">    tmpvec = cross(bond1, bond2); // The normal to the ring</a>
+<a name="ln1474">    v1 = cross(tmpvec, v1); // In the plane of the ring, orthogonal to tmpvec and the original v1</a>
+<a name="ln1475">    v2 = cross(bond3, bond4); // The normal to ring2 - we want to align v2 to v1</a>
+<a name="ln1476">    ang = vectorAngle(v1, v2); // Should be 90</a>
+<a name="ln1477">    cp = cross(v1, v2);</a>
+<a name="ln1478">    mat.RotAboutAxisByAngle(cp, ang);</a>
+<a name="ln1479">    for (match_it=match.begin(); match_it!=match.end(); ++match_it) {</a>
+<a name="ln1480">      tmpvec = workMol.GetAtom(*match_it)-&gt;GetVector();</a>
+<a name="ln1481">      tmpvec *= mat;</a>
+<a name="ln1482">      workMol.GetAtom(*match_it)-&gt;SetVector( tmpvec );</a>
+<a name="ln1483">    }</a>
+<a name="ln1484"> </a>
+<a name="ln1485">    // Translate to existing pivot location</a>
+<a name="ln1486">    for (match_it=match.begin(); match_it!=match.end(); ++match_it)</a>
+<a name="ln1487">      workMol.GetAtom(*match_it)-&gt;SetVector( workMol.GetAtom(*match_it)-&gt;GetVector() + posp );</a>
+<a name="ln1488"> </a>
+<a name="ln1489">    // Create the bonds between the two fragments</a>
+<a name="ln1490">    for (vector&lt;int&gt;::iterator nbr_id=nbrs.begin(); nbr_id!=nbrs.end(); ++nbr_id)</a>
+<a name="ln1491">      workMol.AddBond(p-&gt;GetIdx(), *nbr_id, 1, mol.GetBond(p-&gt;GetIdx(), *nbr_id)-&gt;GetFlags());</a>
+<a name="ln1492"> </a>
+<a name="ln1493">    return;</a>
+<a name="ln1494">  }</a>
+<a name="ln1495"> </a>
+<a name="ln1496">  bool OBBuilder::CorrectStereoBonds(OBMol &amp;mol)</a>
+<a name="ln1497">  {</a>
+<a name="ln1498">    // Get CisTransStereos and make a vector of corresponding OBStereoUnits</a>
+<a name="ln1499">    std::vector&lt;OBCisTransStereo*&gt; cistrans, newcistrans;</a>
+<a name="ln1500">    OBStereoUnitSet sgunits;</a>
+<a name="ln1501">    std::vector&lt;OBGenericData*&gt; vdata = mol.GetAllData(OBGenericDataType::StereoData);</a>
+<a name="ln1502">    OBStereo::Ref bond_id;</a>
+<a name="ln1503">    for (std::vector&lt;OBGenericData*&gt;::iterator data = vdata.begin(); data != vdata.end(); ++data)</a>
+<a name="ln1504">      if (((OBStereoBase*)*data)-&gt;GetType() == OBStereo::CisTrans) {</a>
+<a name="ln1505">        OBCisTransStereo *ct = dynamic_cast&lt;OBCisTransStereo*&gt;(*data);</a>
+<a name="ln1506">        if (ct-&gt;GetConfig().specified) {</a>
+<a name="ln1507">          cistrans.push_back(ct);</a>
+<a name="ln1508">          bond_id = mol.GetBond(mol.GetAtomById(ct-&gt;GetConfig().begin),</a>
+<a name="ln1509">                                mol.GetAtomById(ct-&gt;GetConfig().end))-&gt;GetId();</a>
+<a name="ln1510">          sgunits.push_back(OBStereoUnit(OBStereo::CisTrans, bond_id));</a>
+<a name="ln1511">        }</a>
+<a name="ln1512">      }</a>
+<a name="ln1513"> </a>
+<a name="ln1514">    // Perceive CisTransStereos</a>
+<a name="ln1515">    newcistrans = CisTransFrom3D(&amp;mol, sgunits, false);</a>
+<a name="ln1516"> </a>
+<a name="ln1517">    // Compare and correct if necessary</a>
+<a name="ln1518">    double newangle, angle;</a>
+<a name="ln1519">    OBAtom *a, *b, *c, *d;</a>
+<a name="ln1520">    std::vector&lt;OBCisTransStereo*&gt;::iterator origct, newct;</a>
+<a name="ln1521">    for (origct=cistrans.begin(), newct=newcistrans.begin(); origct!=cistrans.end(); ++origct, ++newct) {</a>
+<a name="ln1522">      OBCisTransStereo::Config config = (*newct)-&gt;GetConfig(OBStereo::ShapeU);</a>
+<a name="ln1523"> </a>
+<a name="ln1524">      if ((*origct)-&gt;GetConfig(OBStereo::ShapeU) != config) { // Wrong cis/trans stereochemistry</a>
+<a name="ln1525"> </a>
+<a name="ln1526">        // refs[0]            refs[3]</a>
+<a name="ln1527">        //        \          /</a>
+<a name="ln1528">        //         begin==end</a>
+<a name="ln1529">        //        /          \                                                /</a>
+<a name="ln1530">        // refs[1]            refs[2]</a>
+<a name="ln1531"> </a>
+<a name="ln1532">        a = mol.GetAtomById(config.refs[0]);</a>
+<a name="ln1533">        b = mol.GetAtomById(config.begin);</a>
+<a name="ln1534">        c = mol.GetAtomById(config.end);</a>
+<a name="ln1535">        if (config.refs[3] != OBStereo::ImplicitRef)</a>
+<a name="ln1536">          d = mol.GetAtomById(config.refs[3]);</a>
+<a name="ln1537">        else</a>
+<a name="ln1538">          d = mol.GetAtomById(config.refs[2]);</a>
+<a name="ln1539">        angle = mol.GetTorsion(a, b, c, d); // In degrees</a>
+<a name="ln1540">        newangle = angle * DEG_TO_RAD + M_PI; // flip the bond by 180 deg (PI radians)</a>
+<a name="ln1541">        // if it's a ring, break a ring bond before rotating</a>
+<a name="ln1542">        mol.SetTorsion(a, b, c, d, newangle); // In radians</a>
+<a name="ln1543">      }</a>
+<a name="ln1544">    }</a>
+<a name="ln1545"> </a>
+<a name="ln1546">    return true; // was all the ring bond stereochemistry corrected?</a>
+<a name="ln1547">  }</a>
+<a name="ln1548"> </a>
+<a name="ln1549">  bool OBBuilder::IsSpiroAtom(unsigned long atomId, OBMol &amp;mol)</a>
+<a name="ln1550">  {</a>
+<a name="ln1551">    OBMol workmol = mol; // Make a copy (this invalidates Ids, but not Idxs)</a>
+<a name="ln1552">    OBAtom* watom = workmol.GetAtom(mol.GetAtomById(atomId)-&gt;GetIdx());</a>
+<a name="ln1553">    if (watom-&gt;GetHvyDegree() != 4) // QUESTION: Do I need to restrict it further?</a>
+<a name="ln1554">      return false;</a>
+<a name="ln1555"> </a>
+<a name="ln1556">    int atomsInSameRing = 0;</a>
+<a name="ln1557">    int atomsInDiffRings = 0;</a>
+<a name="ln1558">    FOR_NBORS_OF_ATOM(n, watom) {</a>
+<a name="ln1559">      if (!n-&gt;IsInRing())</a>
+<a name="ln1560">        return false;</a>
+<a name="ln1561">      if (mol.AreInSameRing(&amp;*n, watom))</a>
+<a name="ln1562">        atomsInSameRing++;</a>
+<a name="ln1563">      else</a>
+<a name="ln1564">        atomsInDiffRings++;</a>
+<a name="ln1565">    }</a>
+<a name="ln1566"> </a>
+<a name="ln1567">    if (atomsInSameRing == 2 &amp;&amp; atomsInDiffRings == 2)</a>
+<a name="ln1568">      return true;</a>
+<a name="ln1569"> </a>
+<a name="ln1570">    return false;</a>
+<a name="ln1571">  }</a>
+<a name="ln1572"> </a>
+<a name="ln1573">  void OBBuilder::FlipSpiro(OBMol &amp;mol, int idx)</a>
+<a name="ln1574">  {</a>
+<a name="ln1575">    OBAtom *p = mol.GetAtom(idx); // The pivot atom</a>
+<a name="ln1576"> </a>
+<a name="ln1577">    // Find two of the four bonds that are in the same ring</a>
+<a name="ln1578">    vector&lt;int&gt; nbrs;</a>
+<a name="ln1579">    FOR_NBORS_OF_ATOM(nbr, p)</a>
+<a name="ln1580">      nbrs.push_back(nbr-&gt;GetIdx());</a>
+<a name="ln1581">    //assert(nbrs.size() == 4);</a>
+<a name="ln1582"> </a>
+<a name="ln1583">    // Which neighbour is in the same ring as nbrs[0]? The answer is 'ringnbr'.</a>
+<a name="ln1584">    vector&lt;int&gt; children;</a>
+<a name="ln1585">    mol.FindChildren(children, idx, nbrs[0]);</a>
+<a name="ln1586">    int ringnbr = -1;</a>
+<a name="ln1587">    for (vector&lt;int&gt;::iterator nbr=nbrs.begin() + 1; nbr!=nbrs.end(); ++nbr)</a>
+<a name="ln1588">      if (find(children.begin(), children.end(), *nbr) != children.end()) {</a>
+<a name="ln1589">        ringnbr = *nbr;</a>
+<a name="ln1590">        break;</a>
+<a name="ln1591">      }</a>
+<a name="ln1592">    //assert (ringnbr != -1);</a>
+<a name="ln1593"> </a>
+<a name="ln1594">    // Split into a fragment to be flipped</a>
+<a name="ln1595">    OBMol workMol = mol;</a>
+<a name="ln1596">    workMol.DeleteBond(workMol.GetBond(idx, nbrs[0]));</a>
+<a name="ln1597">    workMol.DeleteBond(workMol.GetBond(idx, ringnbr));</a>
+<a name="ln1598">    OBBitVec fragment = GetFragment(workMol.GetAtom(nbrs[0]));</a>
+<a name="ln1599"> </a>
+<a name="ln1600">    // Translate fragment to origin</a>
+<a name="ln1601">    vector3 posP = p-&gt;GetVector();</a>
+<a name="ln1602">    for (unsigned int i = 1; i &lt;= workMol.NumAtoms(); ++i)</a>
+<a name="ln1603">      if (fragment.BitIsSet(i))</a>
+<a name="ln1604">        workMol.GetAtom(i)-&gt;SetVector(workMol.GetAtom(i)-&gt;GetVector() - posP);</a>
+<a name="ln1605"> </a>
+<a name="ln1606">    // Rotate 180 deg around the bisector of nbrs[0]--p--ringnbr</a>
+<a name="ln1607">    vector3 bond1 = posP - mol.GetAtom(nbrs[0])-&gt;GetVector();</a>
+<a name="ln1608">    vector3 bond2 = posP - mol.GetAtom(ringnbr)-&gt;GetVector();</a>
+<a name="ln1609">    bond1.normalize();</a>
+<a name="ln1610">    bond2.normalize();</a>
+<a name="ln1611">    vector3 axis = bond1 + bond2; // The bisector of bond1 and bond2</a>
+<a name="ln1612"> </a>
+<a name="ln1613">    matrix3x3 mat;</a>
+<a name="ln1614">    mat.RotAboutAxisByAngle(axis, 180);</a>
+<a name="ln1615">    vector3 tmpvec;</a>
+<a name="ln1616">    for (unsigned int i = 1; i &lt;= workMol.NumAtoms(); ++i)</a>
+<a name="ln1617">      if (fragment.BitIsSet(i)) {</a>
+<a name="ln1618">        tmpvec = workMol.GetAtom(i)-&gt;GetVector();</a>
+<a name="ln1619">        tmpvec *= mat;</a>
+<a name="ln1620">        workMol.GetAtom(i)-&gt;SetVector( tmpvec );</a>
+<a name="ln1621">      }</a>
+<a name="ln1622"> </a>
+<a name="ln1623">    // Set the coordinates of the original molecule using those of workmol</a>
+<a name="ln1624">    for (unsigned int i = 1; i &lt;= workMol.NumAtoms(); ++i)</a>
+<a name="ln1625">      if (fragment.BitIsSet(i))</a>
+<a name="ln1626">        mol.GetAtom(i)-&gt;SetVector(workMol.GetAtom(i)-&gt;GetVector() + posP);</a>
+<a name="ln1627">  }</a>
+<a name="ln1628"> </a>
+<a name="ln1629">  bool OBBuilder::CorrectStereoAtoms(OBMol &amp;mol, bool warn)</a>
+<a name="ln1630">  {</a>
+<a name="ln1631">    bool success = true; // for now</a>
+<a name="ln1632"> </a>
+<a name="ln1633">    // Get TetrahedralStereos and make a vector of corresponding OBStereoUnits</a>
+<a name="ln1634">    std::vector&lt;OBTetrahedralStereo*&gt; tetra, newtetra;</a>
+<a name="ln1635">    OBStereoUnitSet sgunits;</a>
+<a name="ln1636">    std::vector&lt;OBGenericData*&gt; vdata = mol.GetAllData(OBGenericDataType::StereoData);</a>
+<a name="ln1637">    OBStereo::Ref atom_id;</a>
+<a name="ln1638">    for (std::vector&lt;OBGenericData*&gt;::iterator data = vdata.begin(); data != vdata.end(); ++data)</a>
+<a name="ln1639">      if (((OBStereoBase*)*data)-&gt;GetType() == OBStereo::Tetrahedral) {</a>
+<a name="ln1640">        OBTetrahedralStereo *th = dynamic_cast&lt;OBTetrahedralStereo*&gt;(*data);</a>
+<a name="ln1641">        if (th-&gt;GetConfig().specified) {</a>
+<a name="ln1642">          tetra.push_back(th);</a>
+<a name="ln1643">          atom_id = th-&gt;GetConfig().center;</a>
+<a name="ln1644">          sgunits.push_back(OBStereoUnit(OBStereo::Tetrahedral, atom_id));</a>
+<a name="ln1645">        }</a>
+<a name="ln1646">      }</a>
+<a name="ln1647"> </a>
+<a name="ln1648">    // Perceive TetrahedralStereos</a>
+<a name="ln1649">    newtetra = TetrahedralFrom3D(&amp;mol, sgunits, false);</a>
+<a name="ln1650"> </a>
+<a name="ln1651">    // Identify any ring stereochemistry and whether it is right or wrong</a>
+<a name="ln1652">    // - ring stereo involves 3 ring bonds, or 4 ring bonds but the</a>
+<a name="ln1653">    //   atom must not be spiro</a>
+<a name="ln1654">    OBAtom* center;</a>
+<a name="ln1655">    bool existswrongstereo = false; // Is there at least one wrong ring stereo?</a>
+<a name="ln1656">    typedef std::pair&lt;OBStereo::Ref, bool&gt; IsThisStereoRight;</a>
+<a name="ln1657">    std::vector&lt;IsThisStereoRight&gt; ringstereo;</a>
+<a name="ln1658">    std::vector&lt;OBTetrahedralStereo*&gt; nonringtetra, nonringnewtetra;</a>
+<a name="ln1659">    std::vector&lt;OBTetrahedralStereo*&gt;::iterator origth, newth;</a>
+<a name="ln1660">    for (origth=tetra.begin(), newth=newtetra.begin(); origth!=tetra.end(); ++origth, ++newth) {</a>
+<a name="ln1661">      OBTetrahedralStereo::Config config = (*newth)-&gt;GetConfig(OBStereo::Clockwise, OBStereo::ViewFrom);</a>
+<a name="ln1662"> </a>
+<a name="ln1663">      center = mol.GetAtomById(config.center);</a>
+<a name="ln1664">      int ringbonds = 0;</a>
+<a name="ln1665">      FOR_BONDS_OF_ATOM(b, center)</a>
+<a name="ln1666">        if (b-&gt;IsInRing())</a>
+<a name="ln1667">          ringbonds++;</a>
+<a name="ln1668"> </a>
+<a name="ln1669">      if (ringbonds == 3 || (ringbonds==4 &amp;&amp; !OBBuilder::IsSpiroAtom(config.center, mol))) {</a>
+<a name="ln1670">        bool rightstereo = (*origth)-&gt;GetConfig(OBStereo::Clockwise, OBStereo::ViewFrom) == config;</a>
+<a name="ln1671">        ringstereo.push_back(IsThisStereoRight(config.center, rightstereo));</a>
+<a name="ln1672">        if (!rightstereo)</a>
+<a name="ln1673">          existswrongstereo = true;</a>
+<a name="ln1674">      }</a>
+<a name="ln1675">      else { // A non-ring stereocenter</a>
+<a name="ln1676">        nonringtetra.push_back(*origth);</a>
+<a name="ln1677">        nonringnewtetra.push_back(*newth);</a>
+<a name="ln1678">      }</a>
+<a name="ln1679">    }</a>
+<a name="ln1680"> </a>
+<a name="ln1681">    if (existswrongstereo) {</a>
+<a name="ln1682">      // Fix ring stereo</a>
+<a name="ln1683">      OBStereo::Refs unfixed;</a>
+<a name="ln1684">      bool inversion = FixRingStereo(ringstereo, mol, unfixed);</a>
+<a name="ln1685"> </a>
+<a name="ln1686">      // Output warning message if necessary</a>
+<a name="ln1687">      if (unfixed.size() &gt; 0 &amp;&amp; warn) {</a>
+<a name="ln1688">        stringstream errorMsg;</a>
+<a name="ln1689">        errorMsg &lt;&lt; &quot;Could not correct &quot; &lt;&lt; unfixed.size() &lt;&lt; &quot; stereocenter(s) in this molecule (&quot; &lt;&lt; mol.GetTitle() &lt;&lt; &quot;)&quot;;</a>
+<a name="ln1690">        errorMsg &lt;&lt; std::endl &lt;&lt; &quot;  with Atom Ids as follows:&quot;;</a>
+<a name="ln1691">        for (OBStereo::RefIter ref=unfixed.begin(); ref!=unfixed.end(); ++ref)</a>
+<a name="ln1692">          errorMsg &lt;&lt; &quot; &quot; &lt;&lt; *ref;</a>
+<a name="ln1693">        obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obWarning);</a>
+<a name="ln1694"> </a>
+<a name="ln1695">        success = false; // uncorrected bond</a>
+<a name="ln1696">      }</a>
+<a name="ln1697"> </a>
+<a name="ln1698">      // Reperceive non-ring TetrahedralStereos if an inversion occurred</a>
+<a name="ln1699">      if (inversion) {</a>
+<a name="ln1700">        sgunits.clear();</a>
+<a name="ln1701">        for (origth = nonringtetra.begin(); origth != nonringtetra.end(); ++origth)</a>
+<a name="ln1702">          sgunits.push_back(OBStereoUnit(OBStereo::Tetrahedral, (*origth)-&gt;GetConfig().center));</a>
+<a name="ln1703">        nonringnewtetra = TetrahedralFrom3D(&amp;mol, sgunits, false);</a>
+<a name="ln1704">      }</a>
+<a name="ln1705">    }</a>
+<a name="ln1706"> </a>
+<a name="ln1707">    // Correct the non-ring stereo</a>
+<a name="ln1708">    for (origth=nonringtetra.begin(), newth=nonringnewtetra.begin(); origth!=nonringtetra.end(); ++origth, ++newth) {</a>
+<a name="ln1709">      OBTetrahedralStereo::Config config = (*newth)-&gt;GetConfig(OBStereo::Clockwise, OBStereo::ViewFrom);</a>
+<a name="ln1710">      if ((*origth)-&gt;GetConfig(OBStereo::Clockwise, OBStereo::ViewFrom) != config) {</a>
+<a name="ln1711">        // Wrong tetrahedral stereochemistry</a>
+<a name="ln1712"> </a>
+<a name="ln1713">        // Try to find two non-ring bonds</a>
+<a name="ln1714">        center = mol.GetAtomById(config.center);</a>
+<a name="ln1715">        vector&lt;unsigned int&gt; idxs;</a>
+<a name="ln1716">        FOR_BONDS_OF_ATOM(b, center)</a>
+<a name="ln1717">          if (!b-&gt;IsInRing())</a>
+<a name="ln1718">            idxs.push_back(b-&gt;GetNbrAtom(center)-&gt;GetIdx());</a>
+<a name="ln1719"> </a>
+<a name="ln1720">        if (idxs.size() == 0 &amp;&amp; OBBuilder::IsSpiroAtom(config.center, mol))</a>
+<a name="ln1721">          FlipSpiro(mol, center-&gt;GetIdx());</a>
+<a name="ln1722">        else if (idxs.size() &gt;= 2)</a>
+<a name="ln1723">          Swap(mol, center-&gt;GetIdx(), idxs.at(0), center-&gt;GetIdx(), idxs.at(1));</a>
+<a name="ln1724">        else {</a>
+<a name="ln1725">          // It will only reach here if it can only find one non-ring bond</a>
+<a name="ln1726">          // -- this is the case if the other non-ring bond is an implicit H</a>
+<a name="ln1727">          //    or a lone pair</a>
+<a name="ln1728">          // Solution: Find where a new bond vector would be placed, and</a>
+<a name="ln1729">          //           replace the atom's coordinates with these</a>
+<a name="ln1730">          OBAtom* non_ring_atom = mol.GetAtom(idxs.at(0));</a>
+<a name="ln1731">          OBBond* non_ring_bond = mol.GetBond(center, non_ring_atom);</a>
+<a name="ln1732">          vector3 newcoords = OBBuilder::GetNewBondVector(center, non_ring_bond-&gt;GetLength());</a>
+<a name="ln1733">          SwapWithVector(mol, center-&gt;GetIdx(), idxs.at(0), center-&gt;GetIdx(), newcoords);</a>
+<a name="ln1734">        }</a>
+<a name="ln1735">      }</a>
+<a name="ln1736">    }</a>
+<a name="ln1737"> </a>
+<a name="ln1738">    return success; // did we fix all atoms, including ring stereo?</a>
+<a name="ln1739">  }</a>
+<a name="ln1740"> </a>
+<a name="ln1741">  bool OBBuilder::FixRingStereo(std::vector&lt;std::pair&lt;OBStereo::Ref, bool&gt; &gt; atomIds, OBMol &amp;mol,</a>
+<a name="ln1742">                                OBStereo::Refs &amp;unfixedcenters)</a>
+<a name="ln1743">  {</a>
+<a name="ln1744">    bool inversion = false;</a>
+<a name="ln1745">    if (atomIds.size() == 0) return inversion;</a>
+<a name="ln1746"> </a>
+<a name="ln1747">    // Have we dealt with a particular ring stereo? (Indexed by Id)</a>
+<a name="ln1748">    OBBitVec seen;</a>
+<a name="ln1749"> </a>
+<a name="ln1750">    for(unsigned int n=0; n&lt;atomIds.size(); ++n) {</a>
+<a name="ln1751">      // Keep looping until you come to an unseen wrong stereo</a>
+<a name="ln1752">      if (seen.BitIsSet(atomIds[n].first) || atomIds[n].second) continue;</a>
+<a name="ln1753"> </a>
+<a name="ln1754">      OBBitVec fragment; // Indexed by Id</a>
+<a name="ln1755">      AddRingNbrs(fragment, mol.GetAtomById(atomIds[n].first), mol);</a>
+<a name="ln1756"> </a>
+<a name="ln1757">      // Which ring stereos does this fragment contain, and</a>
+<a name="ln1758">      // are the majority of them right or wrong?</a>
+<a name="ln1759">      OBStereo::Refs wrong, right;</a>
+<a name="ln1760">      for (unsigned int i=0; i&lt;atomIds.size(); ++i)</a>
+<a name="ln1761">        if (fragment.BitIsSet(atomIds[i].first)) {</a>
+<a name="ln1762">          if (atomIds[i].second)</a>
+<a name="ln1763">            right.push_back(atomIds[i].first);</a>
+<a name="ln1764">          else</a>
+<a name="ln1765">            wrong.push_back(atomIds[i].first);</a>
+<a name="ln1766">          seen.SetBitOn(atomIds[i].first);</a>
+<a name="ln1767">        }</a>
+<a name="ln1768"> </a>
+<a name="ln1769">      if (right &gt; wrong) { // Inverting would make things worse!</a>
+<a name="ln1770">        unfixedcenters.insert(unfixedcenters.end(), wrong.begin(), wrong.end());</a>
+<a name="ln1771">        continue;</a>
+<a name="ln1772">      }</a>
+<a name="ln1773">      unfixedcenters.insert(unfixedcenters.end(), right.begin(), right.end());</a>
+<a name="ln1774"> </a>
+<a name="ln1775">      // Invert the coordinates (QUESTION: should I invert relative to the centroid?)</a>
+<a name="ln1776">      inversion = true;</a>
+<a name="ln1777">      FOR_ATOMS_OF_MOL(a, mol)</a>
+<a name="ln1778">        if (fragment.BitIsSet(a-&gt;GetId()))</a>
+<a name="ln1779">          a-&gt;SetVector( - a-&gt;GetVector());</a>
+<a name="ln1780"> </a>
+<a name="ln1781">      // Add neighbouring bonds back onto the fragment</a>
+<a name="ln1782">      // TODO: Handle spiro</a>
+<a name="ln1783">      std::vector&lt;OBBond*&gt; reconnect;</a>
+<a name="ln1784">      FOR_ATOMS_OF_MOL(a, mol)</a>
+<a name="ln1785">        if (fragment.BitIsSet(a-&gt;GetId()))</a>
+<a name="ln1786">          FOR_BONDS_OF_ATOM(b, &amp;*a)</a>
+<a name="ln1787">            if (!b-&gt;IsInRing())</a>
+<a name="ln1788">              reconnect.push_back(&amp;*b);</a>
+<a name="ln1789"> </a>
+<a name="ln1790">      for (std::vector&lt;OBBond*&gt;::iterator bi=reconnect.begin(); bi!=reconnect.end(); ++bi) {</a>
+<a name="ln1791">        OBBond* b = *bi;</a>
+<a name="ln1792">        int bo = b-&gt;GetBondOrder();</a>
+<a name="ln1793">        int begin = b-&gt;GetBeginAtomIdx();</a>
+<a name="ln1794">        int end = b-&gt;GetEndAtomIdx();</a>
+<a name="ln1795">        mol.DeleteBond(b);</a>
+<a name="ln1796">        OBBuilder::Connect(mol, begin, end, bo);</a>
+<a name="ln1797">      }</a>
+<a name="ln1798">    }</a>
+<a name="ln1799"> </a>
+<a name="ln1800">    return inversion;</a>
+<a name="ln1801">  }</a>
+<a name="ln1802"> </a>
+<a name="ln1803">  void OBBuilder::AddRingNbrs(OBBitVec &amp;fragment, OBAtom *atom, OBMol &amp;mol)</a>
+<a name="ln1804">  {</a>
+<a name="ln1805">    // Add the nbrs to the fragment, but don't add the neighbours of a spiro atom.</a>
+<a name="ln1806">    FOR_NBORS_OF_ATOM (nbr, atom) {</a>
+<a name="ln1807">      if (mol.GetBond(&amp;*nbr, atom)-&gt;IsInRing() &amp;&amp; !fragment.BitIsSet(nbr-&gt;GetId())</a>
+<a name="ln1808">          &amp;&amp; !OBBuilder::IsSpiroAtom(atom-&gt;GetId(), mol)) {</a>
+<a name="ln1809">        fragment.SetBitOn(nbr-&gt;GetId());</a>
+<a name="ln1810">        AddRingNbrs(fragment, &amp;*nbr, mol);</a>
+<a name="ln1811">      }</a>
+<a name="ln1812">    }</a>
+<a name="ln1813">  }</a>
+<a name="ln1814"> </a>
+<a name="ln1815">} // end namespace OpenBabel</a>
+<a name="ln1816"> </a>
+<a name="ln1817"> </a>
+<a name="ln1818">//! \file builder.cpp</a>
+<a name="ln1819">//! \brief Handle OBBuilder class</a>
+
+</code></pre>
+<div class="balloon" rel="376"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v519/" target="_blank">V519</a> The 'newbond' variable is assigned values twice successively. Perhaps this is a mistake. Check lines: 375, 376.</p></div>
+<div class="balloon" rel="1205"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: ratoms.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

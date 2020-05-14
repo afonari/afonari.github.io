@@ -1,0 +1,1714 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>ichicans.c</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/*</a>
+<a name="ln2"> * International Chemical Identifier (InChI)</a>
+<a name="ln3"> * Version 1</a>
+<a name="ln4"> * Software version 1.04</a>
+<a name="ln5"> * September 9, 2011</a>
+<a name="ln6"> *</a>
+<a name="ln7"> * The InChI library and programs are free software developed under the</a>
+<a name="ln8"> * auspices of the International Union of Pure and Applied Chemistry (IUPAC).</a>
+<a name="ln9"> * Originally developed at NIST. Modifications and additions by IUPAC </a>
+<a name="ln10"> * and the InChI Trust.</a>
+<a name="ln11"> *</a>
+<a name="ln12"> * IUPAC/InChI-Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln13"> * Software version 1.0.</a>
+<a name="ln14"> * Copyright (C) IUPAC and InChI Trust Limited</a>
+<a name="ln15"> * </a>
+<a name="ln16"> * This library is free software; you can redistribute it and/or modify it under the </a>
+<a name="ln17"> * terms of the IUPAC/InChI Trust Licence for the International Chemical Identifier </a>
+<a name="ln18"> * (InChI) Software version 1.0; either version 1.0 of the License, or </a>
+<a name="ln19"> * (at your option) any later version.</a>
+<a name="ln20"> * </a>
+<a name="ln21"> * This library is distributed in the hope that it will be useful, </a>
+<a name="ln22"> * but WITHOUT ANY WARRANTY; without even the implied warranty of </a>
+<a name="ln23"> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  </a>
+<a name="ln24"> * See the IUPAC/InChI Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln25"> * Software version 1.0 for more details.</a>
+<a name="ln26"> * </a>
+<a name="ln27"> * You should have received a copy of the IUPAC/InChI Trust Licence for the </a>
+<a name="ln28"> * International Chemical Identifier (InChI) Software version 1.0 along with </a>
+<a name="ln29"> * this library; if not, write to:</a>
+<a name="ln30"> * </a>
+<a name="ln31"> * The InChI Trust</a>
+<a name="ln32"> * c/o FIZ CHEMIE Berlin</a>
+<a name="ln33"> * Franklinstrasse 11</a>
+<a name="ln34"> * 10587 Berlin</a>
+<a name="ln35"> * GERMANY</a>
+<a name="ln36"> * </a>
+<a name="ln37"> */</a>
+<a name="ln38"> </a>
+<a name="ln39"> </a>
+<a name="ln40">#include &lt;stdio.h&gt;</a>
+<a name="ln41">#include &lt;stdlib.h&gt;</a>
+<a name="ln42">#include &lt;string.h&gt;</a>
+<a name="ln43"> </a>
+<a name="ln44"> </a>
+<a name="ln45">#include &quot;mode.h&quot;</a>
+<a name="ln46"> </a>
+<a name="ln47">#include &quot;incomdef.h&quot;</a>
+<a name="ln48">#include &quot;extr_ct.h&quot;</a>
+<a name="ln49">#include &quot;ichitaut.h&quot;</a>
+<a name="ln50">#include &quot;ichicant.h&quot;</a>
+<a name="ln51">#include &quot;ichicomn.h&quot;</a>
+<a name="ln52">#include &quot;ichister.h&quot;</a>
+<a name="ln53"> </a>
+<a name="ln54">#include &quot;ichicomp.h&quot;</a>
+<a name="ln55"> </a>
+<a name="ln56"> </a>
+<a name="ln57"> </a>
+<a name="ln58"> </a>
+<a name="ln59">typedef struct tagStereoBondNeighbor {  /*  *n = sort key */</a>
+<a name="ln60">    AT_RANK       nRank;       /*  *1 opposite atom rank; equal ranks mean constit. equivalence */</a>
+<a name="ln61">    AT_RANK       nNeighRank1; /*  rank of the neighbor in the direction to the opposite atom */</a>
+<a name="ln62">    AT_RANK       nNeighRank2; /*  rank of the opposite atom neighbor in the direction to the current atom */</a>
+<a name="ln63">    AT_RANK       num;       /*  number of same type bonds to constitutionally equivalent neighbors */</a>
+<a name="ln64">    AT_RANK       num_any_parity;     /*  at least one atom has parity in 1..4 range */</a>
+<a name="ln65">    AT_RANK       num_defined_parity; /*  number of neighbors with defined parity &lt;= num */</a>
+<a name="ln66">    /* AT_RANK       num_undef_parity; */</a>
+<a name="ln67">    /* AT_RANK       num_unkn_parity; */</a>
+<a name="ln68">    AT_RANK       what2do;</a>
+<a name="ln69">    U_CHAR        cumulene_len; /*  high nimble bits: (cumulene length - 1) */</a>
+<a name="ln70">    U_CHAR        bond_type;   /*  *2 all same, not a real bond type */</a>
+<a name="ln71">} STEREO_BOND_NEIGH;</a>
+<a name="ln72"> </a>
+<a name="ln73">/* local prototypes */</a>
+<a name="ln74">int SetHalfStereoBondIllDefPariy( sp_ATOM *at, int jn, /* atom number*/ int k1 /* stereo bond number*/, int new_parity );</a>
+<a name="ln75">int RemoveHalfStereoBond( sp_ATOM *at, int jn, /* atom number*/ int k1 /* stereo bond number*/ );</a>
+<a name="ln76">int SetKnownStereoBondParities( sp_ATOM *at, int num_atoms, const AT_RANK *nCanonRank,</a>
+<a name="ln77">                                const AT_RANK *nRank, const AT_RANK *nAtomNumber );</a>
+<a name="ln78">int MarkKnownEqualStereoBondParities( sp_ATOM *at, int num_atoms,</a>
+<a name="ln79">                                      const AT_RANK *nRank, const AT_RANK *nAtomNumber );</a>
+<a name="ln80">int GetNextNeighborAndRank( sp_ATOM *at, AT_RANK cur, AT_RANK prev, AT_RANK *n, AT_RANK *cr, const AT_RANK *nCanonRank );</a>
+<a name="ln81">int GetAndCheckNextNeighbors( sp_ATOM *at, AT_RANK cur1, AT_RANK prev1, AT_RANK cur2, AT_RANK prev2,</a>
+<a name="ln82">                              AT_RANK *n1, AT_RANK *n2, AT_RANK *nVisited1, AT_RANK *nVisited2,</a>
+<a name="ln83">                              const AT_RANK *nRank, const AT_RANK *nCanonRank );</a>
+<a name="ln84">AT_RANK PathsHaveIdenticalKnownParities( sp_ATOM *at, AT_RANK prev1, AT_RANK cur1, AT_RANK prev2, AT_RANK cur2,</a>
+<a name="ln85">                                         AT_RANK *nVisited1, AT_RANK *nVisited2,</a>
+<a name="ln86">                                         const AT_RANK *nRank, const AT_RANK *nCanonRank, AT_RANK nLength );</a>
+<a name="ln87">int RemoveKnownNonStereoBondParities( sp_ATOM *at, int num_atoms, const AT_RANK *nCanonRank,</a>
+<a name="ln88">                                      const AT_RANK *nRank, CANON_STAT *pCS);</a>
+<a name="ln89">int SetKnownStereoCenterParities( sp_ATOM *at, int num_atoms, const AT_RANK *nCanonRank,</a>
+<a name="ln90">                                  const AT_RANK *nRank, const AT_RANK *nAtomNumber );</a>
+<a name="ln91">int RemoveKnownNonStereoCenterParities( sp_ATOM *at, int num_atoms, const AT_RANK *nCanonRank,</a>
+<a name="ln92">                                        const AT_RANK *nRank, CANON_STAT *pCS);</a>
+<a name="ln93">int MarkKnownEqualStereoCenterParities( sp_ATOM *at, int num_atoms,</a>
+<a name="ln94">                                        const AT_RANK *nRank, const AT_RANK *nAtomNumber );</a>
+<a name="ln95"> </a>
+<a name="ln96">/**********************************************************************************/</a>
+<a name="ln97">/*  Depth First Search for an atom with parity */</a>
+<a name="ln98">int find_atoms_with_parity( sp_ATOM *at, S_CHAR *visited, int from_atom, int cur_atom )</a>
+<a name="ln99">{</a>
+<a name="ln100">    int i, next_atom;</a>
+<a name="ln101">    if ( visited[cur_atom] )</a>
+<a name="ln102">        return 0;</a>
+<a name="ln103">    if ( at[cur_atom].parity )</a>
+<a name="ln104">        return 1;</a>
+<a name="ln105">    visited[cur_atom] = 1;</a>
+<a name="ln106">    for ( i = 0; i &lt; at[cur_atom].valence; i ++ ) {</a>
+<a name="ln107">        next_atom = at[cur_atom].neighbor[i];</a>
+<a name="ln108">        if ( next_atom != from_atom &amp;&amp; find_atoms_with_parity( at, visited, cur_atom, next_atom ) )</a>
+<a name="ln109">            return 1;</a>
+<a name="ln110">    }</a>
+<a name="ln111">    return 0;</a>
+<a name="ln112">}</a>
+<a name="ln113">/**********************************************************************************/</a>
+<a name="ln114">int SetHalfStereoBondIllDefPariy( sp_ATOM *at, int jn, /* atom number*/ int k1 /* stereo bond number*/, int new_parity )</a>
+<a name="ln115">{</a>
+<a name="ln116">    int parity;</a>
+<a name="ln117">    if ( k1 &lt; MAX_NUM_STEREO_BOND_NEIGH &amp;&amp; at[jn].stereo_bond_neighbor[k1] ) {</a>
+<a name="ln118">        parity = at[jn].stereo_bond_parity[k1] ^ PARITY_VAL(at[jn].stereo_bond_parity[k1]);</a>
+<a name="ln119">        at[jn].stereo_bond_parity[k1] = parity | PARITY_VAL(new_parity);</a>
+<a name="ln120">        at[jn].parity = PARITY_VAL(new_parity);</a>
+<a name="ln121">        return 1;  /*  success */</a>
+<a name="ln122">    }</a>
+<a name="ln123">    return 0; /*  failed             */</a>
+<a name="ln124">}</a>
+<a name="ln125"> </a>
+<a name="ln126">/**********************************************************************************/</a>
+<a name="ln127">int RemoveHalfStereoBond( sp_ATOM *at, int jn, /* atom number*/ int k1 /* stereo bond number*/ )</a>
+<a name="ln128">{</a>
+<a name="ln129">    int k2;    </a>
+<a name="ln130">    if ( k1 &lt; MAX_NUM_STEREO_BOND_NEIGH &amp;&amp; at[jn].stereo_bond_neighbor[k1] ) {</a>
+<a name="ln131">        for ( k2 = k1; k2+1 &lt; MAX_NUM_STEREO_BOND_NEIGH; k2++ ) {</a>
+<a name="ln132">            at[jn].stereo_bond_neighbor[k2] = at[jn].stereo_bond_neighbor[k2+1];</a>
+<a name="ln133">            at[jn].stereo_bond_ord[k2]      = at[jn].stereo_bond_ord[k2+1];</a>
+<a name="ln134">            at[jn].stereo_bond_z_prod[k2]   = at[jn].stereo_bond_z_prod[k2+1];</a>
+<a name="ln135">            at[jn].stereo_bond_parity[k2]   = at[jn].stereo_bond_parity[k2+1];</a>
+<a name="ln136">        }</a>
+<a name="ln137">        at[jn].stereo_bond_neighbor[k2] = 0;</a>
+<a name="ln138">        at[jn].stereo_bond_ord[k2]      = 0;</a>
+<a name="ln139">        at[jn].stereo_bond_z_prod[k2]   = 0;</a>
+<a name="ln140">        at[jn].stereo_bond_parity[k2]   = 0;</a>
+<a name="ln141"> </a>
+<a name="ln142">        if ( !at[jn].stereo_bond_neighbor[0] ) {  /*  curled braces added 6-6-2002 */</a>
+<a name="ln143">            at[jn].parity                  = 0;</a>
+<a name="ln144">            at[jn].stereo_atom_parity      = 0;</a>
+<a name="ln145">            at[jn].final_parity            = 0;</a>
+<a name="ln146">            /* at[jn].bHasStereoOrEquToStereo = 0; */</a>
+<a name="ln147">        }</a>
+<a name="ln148">        return 1; /*  success            */</a>
+<a name="ln149">    }</a>
+<a name="ln150">    return 0; /*  failed             */</a>
+<a name="ln151">}</a>
+<a name="ln152"> </a>
+<a name="ln153">/**********************************************************************************/</a>
+<a name="ln154">int SetOneStereoBondIllDefParity( sp_ATOM *at, int jc, /* atom number*/ int k /* stereo bond ord. number*/, int new_parity )</a>
+<a name="ln155">{</a>
+<a name="ln156">    int k1, ret=0, kn, jn = (int)at[jc].stereo_bond_neighbor[k]-1;</a>
+<a name="ln157"> </a>
+<a name="ln158">    /*  opposite end */</a>
+<a name="ln159">    for ( k1 = kn = ret = 0; k1 &lt; MAX_NUM_STEREO_BOND_NEIGH &amp;&amp; (kn=at[jn].stereo_bond_neighbor[k1]); k1++ ) {</a>
+<a name="ln160">        if ( kn - 1 == jc ) {</a>
+<a name="ln161">            ret = SetHalfStereoBondIllDefPariy( at, jn, /* atom number*/ k1 /* stereo bond number*/, new_parity );</a>
+<a name="ln162">            break;</a>
+<a name="ln163">        }</a>
+<a name="ln164">    }</a>
+<a name="ln165">    if ( ret ) {</a>
+<a name="ln166">        ret = SetHalfStereoBondIllDefPariy( at, jc, k, new_parity );</a>
+<a name="ln167">    }     </a>
+<a name="ln168">    return ret;</a>
+<a name="ln169">}</a>
+<a name="ln170"> </a>
+<a name="ln171">/**********************************************************************************/</a>
+<a name="ln172">int RemoveOneStereoBond( sp_ATOM *at, int jc, /* atom number*/ int k /* stereo bond number*/ )</a>
+<a name="ln173">{</a>
+<a name="ln174">    int k1, ret=0, kn, jn = (int)at[jc].stereo_bond_neighbor[k]-1;</a>
+<a name="ln175"> </a>
+<a name="ln176">    /*  opposite end */</a>
+<a name="ln177">    for ( k1 = kn = ret = 0; k1 &lt; MAX_NUM_STEREO_BOND_NEIGH &amp;&amp; (kn=at[jn].stereo_bond_neighbor[k1]); k1++ ) {</a>
+<a name="ln178">        if ( kn - 1 == jc ) {</a>
+<a name="ln179">            ret = RemoveHalfStereoBond( at, jn, k1 );</a>
+<a name="ln180">            break;</a>
+<a name="ln181">        }</a>
+<a name="ln182">    }</a>
+<a name="ln183">    if ( ret ) {</a>
+<a name="ln184">        ret = RemoveHalfStereoBond( at, jc, k );</a>
+<a name="ln185">    }     </a>
+<a name="ln186">    return ret;</a>
+<a name="ln187">}</a>
+<a name="ln188">/**********************************************************************************/</a>
+<a name="ln189">int RemoveOneStereoCenter( sp_ATOM *at, int jc /* atom number*/ )</a>
+<a name="ln190">{</a>
+<a name="ln191">    if ( at[jc].parity ) {</a>
+<a name="ln192">        at[jc].parity             = 0; /*  remove parity */</a>
+<a name="ln193">        at[jc].stereo_atom_parity = 0;</a>
+<a name="ln194">        at[jc].final_parity       = 0;</a>
+<a name="ln195">        /*  at[jc].bHasStereoOrEquToStereo = 0; */</a>
+<a name="ln196">        return 1;</a>
+<a name="ln197">    }</a>
+<a name="ln198">    return 0; /*  failed: not a stereo center */</a>
+<a name="ln199">}</a>
+<a name="ln200">/**********************************************************************************/</a>
+<a name="ln201">/*  Remove stereo parity from centers having constitutionally equivalent */</a>
+<a name="ln202">/*  cut-vertex neighbors whose attachments do not have stereogenic elements. */</a>
+<a name="ln203">/*  Currently checks ALL constitutionally equivalent neighbors. */</a>
+<a name="ln204">/*  To optimize, check only one. */</a>
+<a name="ln205">int UnmarkNonStereo( sp_ATOM *at, int num_atoms, const AT_RANK *nRank, const AT_RANK *nAtomNumber, int bIsotopic )</a>
+<a name="ln206">{</a>
+<a name="ln207">    int i, i1, i2, j, k, k1, k2, kn /* neigh*/, val, ic/* center*/, jc, num_implicit_H;</a>
+<a name="ln208">    int num_neighbors_with_parity, num_no_parity_atoms, num_removed_parities=-1, num_removed_parities0;</a>
+<a name="ln209">    AT_RANK nNeighborNumber[MAX_NUM_STEREO_ATOM_NEIGH];</a>
+<a name="ln210">    AT_RANK nPrevAtomRank, nPrevNeighRank;</a>
+<a name="ln211">    S_CHAR *visited = (S_CHAR *) inchi_malloc(num_atoms * sizeof(visited[0]));</a>
+<a name="ln212">    if ( !visited )</a>
+<a name="ln213">        goto exit_function;</a>
+<a name="ln214">    num_removed_parities = 0;</a>
+<a name="ln215">    num_no_parity_atoms  = 0;</a>
+<a name="ln216"> </a>
+<a name="ln217">    do {</a>
+<a name="ln218">        num_removed_parities0 = num_removed_parities;</a>
+<a name="ln219">        for ( i = i1 = 0, nPrevAtomRank = 0; i &lt;= num_atoms; i++ ) {</a>
+<a name="ln220">            /*  bounds violation check (i!=num_atoms) added 6-21-2002 */</a>
+<a name="ln221">            if ( i == num_atoms || nPrevAtomRank != nRank[j = nAtomNumber[i]]</a>
+<a name="ln222">                 /* at[j].parity &amp;&amp; 1 &lt; at[j].valence &amp;&amp; at[j].valence &lt; MAX_NUM_STEREO_ATOM_NEIGH*/ ) {</a>
+<a name="ln223">                </a>
+<a name="ln224">                /*  end of constitutionally equivalent atoms sequence */</a>
+<a name="ln225">                </a>
+<a name="ln226">                /* nPrevRank = nRank[j]; */</a>
+<a name="ln227">                i2 = i;</a>
+<a name="ln228">                if ( i2 - i1 &gt; num_no_parity_atoms /*&amp;&amp; at[jc = nAtomNumber[i1]].parity*/ ) {</a>
+<a name="ln229">                    /*  at[nAtomNumber[i1]]..at[nAtomNumber[i2-1]] are constitutionally equivalent and some of them have parity */</a>
+<a name="ln230">                    jc = nAtomNumber[i1];</a>
+<a name="ln231">                    num_no_parity_atoms = 0;</a>
+<a name="ln232">                    val = at[jc].valence; /*  all equivalent atoms have equal valences, etc. (except parities) */</a>
+<a name="ln233">                    num_implicit_H = at[jc].endpoint? 0 : at[jc].num_H;</a>
+<a name="ln234">                    /*  Only atoms with valence &lt;= MAX_NUM_STEREO_ATOM_NEIGH may have parity. However, check: */</a>
+<a name="ln235">                    if ( val + num_implicit_H &gt; MAX_NUM_STEREO_ATOM_NEIGH ) {</a>
+<a name="ln236">                        continue;  /*  program error ??? */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln237">                    }</a>
+<a name="ln238">                    for ( k = 0; k &lt; val; k ++ ) {</a>
+<a name="ln239">                        nNeighborNumber[k] = k; /*  initialize an array of indexes for sorting */</a>
+<a name="ln240">                    }</a>
+<a name="ln241">                    /*  check parities */</a>
+<a name="ln242">                    for ( ic = i1; ic &lt; i2; ic ++ ) {</a>
+<a name="ln243">                        jc = nAtomNumber[ic];</a>
+<a name="ln244">                        /*  sort neighbors according to their canon. equivalence ranks */</a>
+<a name="ln245">                        pNeighborsForSort = at[jc].neighbor;</a>
+<a name="ln246">                        pn_RankForSort    = nRank;</a>
+<a name="ln247">                        insertions_sort( nNeighborNumber, val, sizeof(nNeighborNumber[0]), CompNeighborsAT_NUMBER );</a>
+<a name="ln248">                        num_neighbors_with_parity = -1; /*  non-zero */</a>
+<a name="ln249">                        for ( k = k1 = 0, nPrevNeighRank = 0; k &lt;= val; k ++ ) {</a>
+<a name="ln250">                            if ( k == val || nPrevNeighRank != nRank[at[jc].neighbor[nNeighborNumber[k]]] ) {</a>
+<a name="ln251">                                k2 = k;</a>
+<a name="ln252">                                if ( k2 - k1 &gt; 1 ) {</a>
+<a name="ln253">                                    /*  found 2 or more constitutionally equivalent neighbors */</a>
+<a name="ln254">                                    /*  Check if they have only non-stereogenic neighbors */</a>
+<a name="ln255">                                    for ( kn = k1, num_neighbors_with_parity = 0; kn &lt; k2; kn ++ ) {</a>
+<a name="ln256">                                        memset( visited, 0, num_atoms * sizeof(visited[0]));</a>
+<a name="ln257">                                        visited[jc] = 1; /*  starting point; the only atom with parity */</a>
+<a name="ln258">                                        num_neighbors_with_parity +=</a>
+<a name="ln259">                                        find_atoms_with_parity( at, visited, jc, (int)at[jc].neighbor[nNeighborNumber[kn]] );</a>
+<a name="ln260">                                    }</a>
+<a name="ln261">                                }</a>
+<a name="ln262">                                if ( !num_neighbors_with_parity ) {</a>
+<a name="ln263">                                    break; /*  at[jc] cannot have defined parity */</a>
+<a name="ln264">                                }</a>
+<a name="ln265">                                if ( k + 1 &lt; val ) {</a>
+<a name="ln266">                                    k1 = k; /*  at least 2 more neighbors left */</a>
+<a name="ln267">                                    nPrevNeighRank = nRank[at[jc].neighbor[nNeighborNumber[k]]];</a>
+<a name="ln268">                                } else {</a>
+<a name="ln269">                                    break;</a>
+<a name="ln270">                                }</a>
+<a name="ln271">                            }</a>
+<a name="ln272">                        }</a>
+<a name="ln273">                        if ( num_implicit_H &gt; 1 ) {</a>
+<a name="ln274">                            if ( ((bIsotopic &amp;&amp; (at[jc].num_iso_H[0] &gt; 1)) ||</a>
+<a name="ln275">                                               at[jc].num_iso_H[1] &gt; 1 ||</a>
+<a name="ln276">                                               at[jc].num_iso_H[2] &gt; 1 ) ||</a>
+<a name="ln277">                                  num_implicit_H &gt; NUM_H_ISOTOPES        ||</a>
+<a name="ln278">                                  !bIsotopic </a>
+<a name="ln279">                                ) {</a>
+<a name="ln280">                                num_neighbors_with_parity = 0;</a>
+<a name="ln281">                            }</a>
+<a name="ln282">                        }</a>
+<a name="ln283">                        /*  increment if: */</a>
+<a name="ln284">                        /*  (a) constitutionally equivalent neighbors do exist, and */</a>
+<a name="ln285">                        /*  (b) all constitutionally equivalent neighbors do not have parity, and */</a>
+<a name="ln286">                        /*  (c) all constitutionally equivalent neighbors are not connected to atoms with parity */</a>
+<a name="ln287">                        num_no_parity_atoms += !num_neighbors_with_parity;</a>
+<a name="ln288">                    }</a>
+<a name="ln289">                    if ( num_no_parity_atoms == i2 - i1 ) {</a>
+<a name="ln290">                        /*  all atoms at[nAtomNumber[i1]]..at[nAtomNumber[i2-1]] cannot be */</a>
+<a name="ln291">                        /*  stereo centers or belong to stereo bonds */</a>
+<a name="ln292">                        for ( ic = i1; ic &lt; i2; ic ++ ) {</a>
+<a name="ln293">                            int jn;</a>
+<a name="ln294">                            jc = nAtomNumber[ic];</a>
+<a name="ln295">                            at[jc].parity             = 0; /*  remove parity */</a>
+<a name="ln296">                            at[jc].stereo_atom_parity = 0;</a>
+<a name="ln297">                            at[jc].final_parity       = 0;</a>
+<a name="ln298">                            at[jc].bHasStereoOrEquToStereo = 0;</a>
+<a name="ln299">                            /*  remove stereo bonds */</a>
+<a name="ln300">                            for ( k = 0; k &lt; MAX_NUM_STEREO_BOND_NEIGH &amp;&amp; (jn=at[jc].stereo_bond_neighbor[k]); k++ ) {</a>
+<a name="ln301">                                jn--; /*  stereo bond neighbor */</a>
+<a name="ln302">                                /*  opposite end */</a>
+<a name="ln303">                                for ( k1 = 0; k1 &lt; MAX_NUM_STEREO_BOND_NEIGH &amp;&amp; (kn=at[jn].stereo_bond_neighbor[k1]); k1++ ) {</a>
+<a name="ln304">                                    if ( kn - 1 == jc ) {</a>
+<a name="ln305">                                        RemoveHalfStereoBond( at, jn, k1 );</a>
+<a name="ln306">                                        break;</a>
+<a name="ln307">                                    }</a>
+<a name="ln308">                                }</a>
+<a name="ln309">                                /*  at at[jc] stereo bond end; since references to all at[jc] */</a>
+<a name="ln310">                                /*  stereo bond neighbors are to be removed, do not shift them */</a>
+<a name="ln311">                                at[jc].stereo_bond_neighbor[k] = 0;</a>
+<a name="ln312">                                at[jc].stereo_bond_ord[k]      = 0;</a>
+<a name="ln313">                                at[jc].stereo_bond_z_prod[k]   = 0;</a>
+<a name="ln314">                                at[jc].stereo_bond_parity[k]   = 0;</a>
+<a name="ln315">                            </a>
+<a name="ln316">                            }</a>
+<a name="ln317"> </a>
+<a name="ln318">                        }</a>
+<a name="ln319">                        num_removed_parities += num_no_parity_atoms;</a>
+<a name="ln320">                    }</a>
+<a name="ln321"> </a>
+<a name="ln322">                }</a>
+<a name="ln323">                if ( i &lt; num_atoms ) {</a>
+<a name="ln324">                    nPrevAtomRank = nRank[j];</a>
+<a name="ln325">                    i1 = i;</a>
+<a name="ln326">                }</a>
+<a name="ln327">                num_no_parity_atoms = 0;</a>
+<a name="ln328">            }</a>
+<a name="ln329">            num_no_parity_atoms += (i &lt; num_atoms &amp;&amp; !at[j].parity);</a>
+<a name="ln330">        }</a>
+<a name="ln331">    } while ( num_removed_parities != num_removed_parities0 );</a>
+<a name="ln332"> </a>
+<a name="ln333">exit_function:</a>
+<a name="ln334">    if ( visited )</a>
+<a name="ln335">        inchi_free( visited );</a>
+<a name="ln336">    return num_removed_parities;</a>
+<a name="ln337">}</a>
+<a name="ln338">/**********************************************************************************</a>
+<a name="ln339"> *</a>
+<a name="ln340"> *  Add stereo descriptor(s) for atom #i</a>
+<a name="ln341"> *</a>
+<a name="ln342"> **********************************************************************************/</a>
+<a name="ln343">int FillSingleStereoDescriptors(sp_ATOM *at, int i, int num_trans, const AT_RANK *nRank</a>
+<a name="ln344">                          , AT_STEREO_CARB *LinearCTStereoCarb, int *nStereoCarbLen, int nMaxStereoCarbLen</a>
+<a name="ln345">                          , AT_STEREO_DBLE *LinearCTStereoDble, int *nStereoDbleLen, int nMaxStereoDbleLen</a>
+<a name="ln346">                          , int bAllene )</a>
+<a name="ln347">{</a>
+<a name="ln348">    if ( !LinearCTStereoDble &amp;&amp; !LinearCTStereoCarb ) {</a>
+<a name="ln349">            return 0; /*  return immediately if no stereo have been requested */</a>
+<a name="ln350">    }</a>
+<a name="ln351"> </a>
+<a name="ln352">        /***************************************************</a>
+<a name="ln353">           add stereo centers and stereo bonds to the CT</a>
+<a name="ln354">         ***************************************************/</a>
+<a name="ln355">        if ( at[i].parity || at[i].stereo_bond_neighbor[0] ) {</a>
+<a name="ln356">            AT_RANK r_neigh, rank = nRank[i];</a>
+<a name="ln357">            AT_NUMB nNeighborNumber2[MAXVAL];</a>
+<a name="ln358">            unsigned parity;</a>
+<a name="ln359">            int      k;</a>
+<a name="ln360">            int num_allene = 0;</a>
+<a name="ln361">            if ( ATOM_PARITY_WELL_DEF(at[i].parity) &amp;&amp; num_trans &lt; 0 ) {</a>
+<a name="ln362">                /*  number of neighbors transpositions to the sorted order is unknown. Find it. */</a>
+<a name="ln363">                /*  If parity is not well-defined then doing this is a waste of time */</a>
+<a name="ln364">                int num_neigh = at[i].valence;</a>
+<a name="ln365">                for ( k = 0; k &lt; num_neigh; k ++) {</a>
+<a name="ln366">                    nNeighborNumber2[k] = k;</a>
+<a name="ln367">                }</a>
+<a name="ln368">                pNeighborsForSort = at[i].neighbor;</a>
+<a name="ln369">                pn_RankForSort    = nRank;</a>
+<a name="ln370">                num_trans=insertions_sort( nNeighborNumber2, num_neigh, sizeof(nNeighborNumber2[0]), CompNeighborsAT_NUMBER );</a>
+<a name="ln371">#ifndef CT_NEIGH_INCREASE</a>
+<a name="ln372">                num_trans += ((num_neigh*(num_neigh-1))/2)%2;  /*  get correct parity for ascending order */</a>
+<a name="ln373">#endif</a>
+<a name="ln374">            }</a>
+<a name="ln375"> </a>
+<a name="ln376">            /*  stereo bonds */</a>
+<a name="ln377">            if ( LinearCTStereoDble &amp;&amp; at[i].stereo_bond_neighbor[0] ) {</a>
+<a name="ln378"> </a>
+<a name="ln379">                /* HalfStereoBondParity( sp_ATOM *at, int at_no1, int i_sb_neigh, AT_RANK *nRank ) */</a>
+<a name="ln380">                AT_NUMB nStereoNeighNumber[MAX_NUM_STEREO_BONDS], nStereoNeigh[MAX_NUM_STEREO_BONDS], n;</a>
+<a name="ln381">                int       num_stereo, stereo_neigh, stereo_neigh_ord, stereo_bond_parity;</a>
+<a name="ln382">                for ( num_stereo = 0;</a>
+<a name="ln383">                      num_stereo &lt; MAX_NUM_STEREO_BONDS &amp;&amp;</a>
+<a name="ln384">                      (n=at[i].stereo_bond_neighbor[num_stereo]); num_stereo ++ ) {</a>
+<a name="ln385">                    nStereoNeighNumber[num_stereo] = num_stereo;</a>
+<a name="ln386">                    nStereoNeigh[num_stereo] = n-1;</a>
+<a name="ln387">                    num_allene += IS_ALLENE_CHAIN(at[i].stereo_bond_parity[num_stereo]);</a>
+<a name="ln388">                }</a>
+<a name="ln389">                if ( (bAllene &gt; 0 &amp;&amp; !num_allene) || (bAllene == 0 &amp;&amp; num_allene) ) {</a>
+<a name="ln390">                    return 0;</a>
+<a name="ln391">                }</a>
+<a name="ln392">                /*  sort stereo bonds according to the ranks of the neighbors */</a>
+<a name="ln393">                pNeighborsForSort = nStereoNeigh;</a>
+<a name="ln394">                pn_RankForSort    = nRank;</a>
+<a name="ln395">                insertions_sort( nStereoNeighNumber, num_stereo, sizeof(nStereoNeighNumber[0]), CompNeighborsAT_NUMBER );</a>
+<a name="ln396"> </a>
+<a name="ln397">                /*  process stereo bonds one by one */</a>
+<a name="ln398">                for ( k = 0; k &lt; num_stereo; k ++ ) {</a>
+<a name="ln399">                    stereo_neigh = nStereoNeigh[stereo_neigh_ord=(int)nStereoNeighNumber[k]];</a>
+<a name="ln400">                    if ( (r_neigh = (AT_NUMB)nRank[stereo_neigh]) CT_NEIGH_SMALLER_THAN rank ) {</a>
+<a name="ln401">                        /* accept only neighbors that have smaller ranks */</a>
+<a name="ln402">                        stereo_bond_parity = PARITY_VAL(at[i].stereo_bond_parity[stereo_neigh_ord]);</a>
+<a name="ln403">                        if ( stereo_bond_parity == AB_PARITY_NONE )</a>
+<a name="ln404">                            continue;</a>
+<a name="ln405"> </a>
+<a name="ln406">                        /* stereo_neigh      = at[i].stereo_bond_neighbor[nStereoNeighNumber[k]]-1; */</a>
+<a name="ln407">                        if ( ATOM_PARITY_KNOWN(stereo_bond_parity) ) {</a>
+<a name="ln408">                            parity = stereo_bond_parity;</a>
+<a name="ln409">                        } else</a>
+<a name="ln410">                        if ( ATOM_PARITY_WELL_DEF(at[i].parity) &amp;&amp;</a>
+<a name="ln411">                             ATOM_PARITY_WELL_DEF(at[stereo_neigh].parity) &amp;&amp;</a>
+<a name="ln412">                             MIN_DOT_PROD &lt;= abs(at[i].stereo_bond_z_prod[stereo_neigh_ord]) ) {</a>
+<a name="ln413">                            /*  bond parity can be calculated */</a>
+<a name="ln414">                            int half_parity1, half_parity2, j, nn, stereo_neigh_ord2;</a>
+<a name="ln415">                            stereo_neigh_ord2 = -1;</a>
+<a name="ln416">                            for ( j = 0; j &lt; MAX_NUM_STEREO_BONDS &amp;&amp;</a>
+<a name="ln417">                                         (nn=(int)at[stereo_neigh].stereo_bond_neighbor[j]); j++ ) {</a>
+<a name="ln418">                                if ( i+1 == nn ) {</a>
+<a name="ln419">                                    /* found the opposite end of the stereo bond */</a>
+<a name="ln420">                                    stereo_neigh_ord2 = j;</a>
+<a name="ln421">                                    break;</a>
+<a name="ln422">                                }</a>
+<a name="ln423">                            }</a>
+<a name="ln424">                            if ( stereo_neigh_ord2 &gt;= 0 ) {</a>
+<a name="ln425">                                half_parity1 = HalfStereoBondParity( at, i, stereo_neigh_ord, nRank );</a>
+<a name="ln426">                                half_parity2 = HalfStereoBondParity( at, stereo_neigh, stereo_neigh_ord2, nRank );</a>
+<a name="ln427">                                if ( ATOM_PARITY_WELL_DEF(half_parity1) &amp;&amp;</a>
+<a name="ln428">                                     ATOM_PARITY_WELL_DEF(half_parity2)  ) {</a>
+<a name="ln429">                                    parity = 2 - ( half_parity1 + half_parity2</a>
+<a name="ln430">                                             + (at[i].stereo_bond_z_prod[stereo_neigh_ord] &lt; 0))%2; </a>
+<a name="ln431">                                } else {</a>
+<a name="ln432">                                    return CT_STEREOBOND_ERROR;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln433">                                }</a>
+<a name="ln434">                            } else {</a>
+<a name="ln435">                                return CT_STEREOBOND_ERROR;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln436">                            }</a>
+<a name="ln437">                        } else {</a>
+<a name="ln438">                            /*  parity cannot be calculated: not enough info or 'unknown' */</a>
+<a name="ln439">                            if ( AB_PARITY_NONE == (parity = inchi_max(at[i].parity, at[stereo_neigh].parity)) )</a>
+<a name="ln440">                                continue;</a>
+<a name="ln441">                            if ( ATOM_PARITY_WELL_DEF(parity) )</a>
+<a name="ln442">                                parity = AB_PARITY_UNDF; /*  should not happen */</a>
+<a name="ln443">                        }</a>
+<a name="ln444">                        if ( CHECK_OVERFLOW(*nStereoDbleLen, nMaxStereoDbleLen) )</a>
+<a name="ln445">                            return CT_OVERFLOW;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln446">                        /*  first stereo bond atom */</a>
+<a name="ln447">                        LinearCTStereoDble[*nStereoDbleLen].at_num1 = rank;</a>
+<a name="ln448">                        /*  second stereo bond atom (opposite end) */</a>
+<a name="ln449">                        LinearCTStereoDble[*nStereoDbleLen].at_num2 = r_neigh;</a>
+<a name="ln450">                        /*  bond parity */</a>
+<a name="ln451">                        LinearCTStereoDble[*nStereoDbleLen].parity = parity;</a>
+<a name="ln452">                        (*nStereoDbleLen) ++;</a>
+<a name="ln453">                    }</a>
+<a name="ln454">                }</a>
+<a name="ln455">            }</a>
+<a name="ln456"> </a>
+<a name="ln457"> </a>
+<a name="ln458">            /*  stereo carbon */</a>
+<a name="ln459">            if ( bAllene &gt; 0 ) {</a>
+<a name="ln460">                return 0;</a>
+<a name="ln461">            }</a>
+<a name="ln462">            if ( LinearCTStereoCarb &amp;&amp; !at[i].stereo_bond_neighbor[0] ) {</a>
+<a name="ln463">                if ( CHECK_OVERFLOW(*nStereoCarbLen, nMaxStereoCarbLen) )</a>
+<a name="ln464">                    return CT_OVERFLOW;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln465">                /*  stereo atom rank */</a>
+<a name="ln466">                LinearCTStereoCarb[*nStereoCarbLen].at_num = rank;</a>
+<a name="ln467">                /*  stereo atom parity */</a>
+<a name="ln468">                parity = ATOM_PARITY_WELL_DEF(at[i].parity)? (2 - (at[i].parity + num_trans)%2) : at[i].parity;</a>
+<a name="ln469">                LinearCTStereoCarb[*nStereoCarbLen].parity = parity;</a>
+<a name="ln470">                (*nStereoCarbLen) ++;</a>
+<a name="ln471">            }</a>
+<a name="ln472"> </a>
+<a name="ln473">        }</a>
+<a name="ln474"> </a>
+<a name="ln475">        return 0;</a>
+<a name="ln476">}</a>
+<a name="ln477">/**********************************************************************************/</a>
+<a name="ln478">void SwitchAtomStereoAndIsotopicStereo( sp_ATOM *at, int num_atoms, int *bSwitched )</a>
+<a name="ln479">{</a>
+<a name="ln480">    int i;</a>
+<a name="ln481">    /*  switch atom stereo data */</a>
+<a name="ln482">    for ( i = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln483">        inchi_swap( (char*)&amp;at[i].parity, (char*)&amp;at[i].parity2, sizeof( at[i].parity ) );</a>
+<a name="ln484">        inchi_swap( (char*)&amp;at[i].final_parity, (char*)&amp;at[i].final_parity2, sizeof( at[i].final_parity ) );</a>
+<a name="ln485">        inchi_swap( (char*)&amp;at[i].stereo_atom_parity, (char*)&amp;at[i].stereo_atom_parity2, sizeof( at[i].stereo_atom_parity ) );</a>
+<a name="ln486">        inchi_swap( (char*)&amp;at[i].bHasStereoOrEquToStereo, (char*)&amp;at[i].bHasStereoOrEquToStereo2, sizeof( at[i].bHasStereoOrEquToStereo ) );</a>
+<a name="ln487"> </a>
+<a name="ln488">        inchi_swap( (char*)at[i].stereo_bond_neighbor, (char*)at[i].stereo_bond_neighbor2, sizeof( at[i].stereo_bond_neighbor ) );</a>
+<a name="ln489">        inchi_swap( (char*)at[i].stereo_bond_ord, (char*)at[i].stereo_bond_ord2, sizeof( at[i].stereo_bond_ord ) );</a>
+<a name="ln490">        inchi_swap( (char*)at[i].stereo_bond_z_prod, (char*)at[i].stereo_bond_z_prod2, sizeof( at[i].stereo_bond_z_prod ) );</a>
+<a name="ln491">        inchi_swap( (char*)at[i].stereo_bond_parity, (char*)at[i].stereo_bond_parity2, sizeof( at[i].stereo_bond_parity ) );</a>
+<a name="ln492">    }</a>
+<a name="ln493">    *bSwitched = !*bSwitched;</a>
+<a name="ln494">}</a>
+<a name="ln495">/**********************************************************************************/</a>
+<a name="ln496">void SetCtToIsotopicStereo( CANON_STAT *pCS, CANON_STAT *pCS2 )</a>
+<a name="ln497">{</a>
+<a name="ln498">    pCS-&gt;LinearCTStereoDble  = pCS2-&gt;LinearCTIsotopicStereoDble; /*  enable stereo */</a>
+<a name="ln499">    pCS-&gt;LinearCTStereoCarb  = pCS2-&gt;LinearCTIsotopicStereoCarb;</a>
+<a name="ln500"> </a>
+<a name="ln501">    pCS-&gt;LinearCTStereoDbleInv  = pCS2-&gt;LinearCTIsotopicStereoDbleInv; /*  enable inv. stereo */</a>
+<a name="ln502">    pCS-&gt;LinearCTStereoCarbInv  = pCS2-&gt;LinearCTIsotopicStereoCarbInv;</a>
+<a name="ln503">    pCS-&gt;nMaxLenLinearCTStereoDble = pCS2-&gt;nMaxLenLinearCTIsotopicStereoDble;</a>
+<a name="ln504">    pCS-&gt;nMaxLenLinearCTStereoCarb = pCS2-&gt;nMaxLenLinearCTIsotopicStereoCarb;</a>
+<a name="ln505"> </a>
+<a name="ln506">    pCS-&gt;nLenLinearCTStereoDble = pCS2-&gt;nLenLinearCTIsotopicStereoDble;</a>
+<a name="ln507">    pCS-&gt;nLenLinearCTStereoCarb = pCS2-&gt;nLenLinearCTIsotopicStereoCarb;</a>
+<a name="ln508">}</a>
+<a name="ln509">/**********************************************************************************/</a>
+<a name="ln510">void SetCtToNonIsotopicStereo( CANON_STAT *pCS, CANON_STAT *pCS2 )</a>
+<a name="ln511">{</a>
+<a name="ln512">    pCS-&gt;LinearCTStereoDble  = pCS2-&gt;LinearCTStereoDble; /*  enable stereo */</a>
+<a name="ln513">    pCS-&gt;LinearCTStereoCarb  = pCS2-&gt;LinearCTStereoCarb;</a>
+<a name="ln514"> </a>
+<a name="ln515">    pCS-&gt;LinearCTStereoDbleInv  = pCS2-&gt;LinearCTStereoDbleInv; /*  enable inv. stereo */</a>
+<a name="ln516">    pCS-&gt;LinearCTStereoCarbInv  = pCS2-&gt;LinearCTStereoCarbInv;</a>
+<a name="ln517">    pCS-&gt;nMaxLenLinearCTStereoDble = pCS2-&gt;nMaxLenLinearCTStereoDble;</a>
+<a name="ln518">    pCS-&gt;nMaxLenLinearCTStereoCarb = pCS2-&gt;nMaxLenLinearCTStereoCarb;</a>
+<a name="ln519"> </a>
+<a name="ln520">    pCS-&gt;nLenLinearCTStereoDble = pCS2-&gt;nLenLinearCTStereoDble;</a>
+<a name="ln521">    pCS-&gt;nLenLinearCTStereoCarb = pCS2-&gt;nLenLinearCTStereoCarb;</a>
+<a name="ln522"> </a>
+<a name="ln523">    pCS-&gt;nLenLinearCTIsotopicStereoDble = pCS2-&gt;nLenLinearCTIsotopicStereoDble;</a>
+<a name="ln524">    pCS-&gt;nLenLinearCTIsotopicStereoCarb = pCS2-&gt;nLenLinearCTIsotopicStereoCarb;</a>
+<a name="ln525">}</a>
+<a name="ln526"> </a>
+<a name="ln527">/**********************************************************************************/</a>
+<a name="ln528">int FillAllStereoDescriptors( sp_ATOM *at, int num_atoms, const AT_RANK *nCanonRank, const AT_RANK *nAtomNumberCanon, CANON_STAT *pCS )</a>
+<a name="ln529">{</a>
+<a name="ln530">    int ret=0, i;</a>
+<a name="ln531">    /*  initialize zero lengths */</a>
+<a name="ln532">    pCS-&gt;nLenLinearCTStereoCarb = 0;</a>
+<a name="ln533">    pCS-&gt;nLenLinearCTStereoDble = 0;</a>
+<a name="ln534"> </a>
+<a name="ln535">    /*  fill atom by atom */</a>
+<a name="ln536">    for ( i = 0; !ret &amp;&amp; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln537">        ret = FillSingleStereoDescriptors( at, (int)nAtomNumberCanon[i], -1, nCanonRank</a>
+<a name="ln538">                          , pCS-&gt;LinearCTStereoCarb, &amp;pCS-&gt;nLenLinearCTStereoCarb, pCS-&gt;nMaxLenLinearCTStereoCarb</a>
+<a name="ln539">                          , pCS-&gt;LinearCTStereoDble, &amp;pCS-&gt;nLenLinearCTStereoDble, pCS-&gt;nMaxLenLinearCTStereoDble</a>
+<a name="ln540">                          , 0 /* bAllene */ );</a>
+<a name="ln541">    }</a>
+<a name="ln542">    for ( i = 0; !ret &amp;&amp; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln543">        ret = FillSingleStereoDescriptors( at, (int)nAtomNumberCanon[i], -1, nCanonRank</a>
+<a name="ln544">                          , pCS-&gt;LinearCTStereoCarb, &amp;pCS-&gt;nLenLinearCTStereoCarb, pCS-&gt;nMaxLenLinearCTStereoCarb</a>
+<a name="ln545">                          , pCS-&gt;LinearCTStereoDble, &amp;pCS-&gt;nLenLinearCTStereoDble, pCS-&gt;nMaxLenLinearCTStereoDble</a>
+<a name="ln546">                          , 1 /* bAllene */);</a>
+<a name="ln547">    }</a>
+<a name="ln548"> </a>
+<a name="ln549">    return ret;</a>
+<a name="ln550">}</a>
+<a name="ln551">/**********************************************************************************/</a>
+<a name="ln552">/*  Find stereo bond parities known in advance */</a>
+<a name="ln553">int SetKnownStereoBondParities( sp_ATOM *at, int num_atoms, const AT_RANK *nCanonRank,</a>
+<a name="ln554">                                const AT_RANK *nRank, const AT_RANK *nAtomNumber )</a>
+<a name="ln555">{</a>
+<a name="ln556">    int i, j, n, m, j1, k, num_neigh1, num_neigh2, iMax1, parity;</a>
+<a name="ln557">    int trans_i1, trans_i2, trans_k1, trans_k2, prev_trans, trans_k, num_set;</a>
+<a name="ln558">    int i1, i2, k1, k2, n1, n2, m1, m2, /*stereo_bond_parity,*/ cumulene_len;</a>
+<a name="ln559">    AT_RANK nAtomRank1, nAtomRank2, nAtom1NeighRank;</a>
+<a name="ln560">    AT_RANK nNeighRank1[MAX_NUM_STEREO_BONDS], nNeighRank2[MAX_NUM_STEREO_BONDS];</a>
+<a name="ln561">    AT_RANK nNeighCanonRank1[MAX_NUM_STEREO_BONDS], nNeighCanonRank2[MAX_NUM_STEREO_BONDS];</a>
+<a name="ln562">    for ( i1 = 0, num_set = 0; i1 &lt; num_atoms; i1 ++ ) {</a>
+<a name="ln563">        if ( !at[i1].parity || !at[i1].stereo_bond_neighbor[0] ) {</a>
+<a name="ln564">            continue;</a>
+<a name="ln565">        }</a>
+<a name="ln566"> </a>
+<a name="ln567">        if ( !PARITY_WELL_DEF(at[i1].parity) ) {</a>
+<a name="ln568">            continue;</a>
+<a name="ln569">        }</a>
+<a name="ln570">        nAtomRank1  = nRank[i1];</a>
+<a name="ln571">        iMax1       = (int)nAtomRank1-1;</a>
+<a name="ln572">        num_neigh1  = at[i1].valence;</a>
+<a name="ln573">        for ( n1 = 0; n1 &lt; MAX_NUM_STEREO_BONDS &amp;&amp; (i2=(int)at[i1].stereo_bond_neighbor[n1]); n1++ ) {</a>
+<a name="ln574">            i2 --;</a>
+<a name="ln575">            /*  found a stereo bond at[i1]-at[i2] adjacent to at[i1] */</a>
+<a name="ln576">            for ( n2 = 0, m=0; n2 &lt; MAX_NUM_STEREO_BONDS &amp;&amp; (m=(int)at[i2].stereo_bond_neighbor[n2]) &amp;&amp; m-1 != i1; n2++ )</a>
+<a name="ln577">                ; /* locate stereo bond (#n2) at the opposite atom at[i2] */</a>
+<a name="ln578">            if ( m-1 != i1 || at[i1].stereo_bond_parity[n1] != at[i2].stereo_bond_parity[n2] ) {</a>
+<a name="ln579">                return CT_STEREOCOUNT_ERR; /*  program error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln580">            }</a>
+<a name="ln581">            if ( i1 &lt; i2 ) {</a>
+<a name="ln582">                continue; /* do not process same bond 2 times */</a>
+<a name="ln583">            }</a>
+<a name="ln584"> </a>
+<a name="ln585">            if ( PARITY_KNOWN(at[i1].stereo_bond_parity[n1]) || !PARITY_VAL(at[i1].stereo_bond_parity[n1]) ) {</a>
+<a name="ln586">                continue;</a>
+<a name="ln587">            }</a>
+<a name="ln588">            if ( !PARITY_WELL_DEF(at[i1].parity) || !PARITY_WELL_DEF(at[i2].parity) ) {</a>
+<a name="ln589">                continue;</a>
+<a name="ln590">            }</a>
+<a name="ln591">            if ( PARITY_VAL(at[i1].stereo_bond_parity[n1]) != AB_PARITY_CALC ) {</a>
+<a name="ln592">                continue;  /*  ?? program error ?? should not happen */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln593">            }</a>
+<a name="ln594">            /*stereo_bond_parity = PARITY_VAL(at[i1].stereo_bond_parity[n1]);*/</a>
+<a name="ln595">            cumulene_len       = BOND_CHAIN_LEN(at[i1].stereo_bond_parity[n1]);</a>
+<a name="ln596">            nAtomRank2         = nRank[i2];</a>
+<a name="ln597">            nAtom1NeighRank    = nRank[(int)at[i1].neighbor[(int)at[i1].stereo_bond_ord[n1]]];</a>
+<a name="ln598">            num_neigh2  = at[i2].valence;</a>
+<a name="ln599">            /*  store ranks of at[i1] stereo bond neighbors except one connected by a stereo bond */</a>
+<a name="ln600">            k = (int)at[i1].stereo_bond_ord[n1];</a>
+<a name="ln601">            trans_i1 = 0;</a>
+<a name="ln602">            for ( i = j = 0; i &lt; num_neigh1; i ++ ) {</a>
+<a name="ln603">                if ( i != k ) {</a>
+<a name="ln604">                    nNeighRank1[j] = nRank[(int)at[i1].neighbor[i]];</a>
+<a name="ln605">                    j ++;</a>
+<a name="ln606">                }</a>
+<a name="ln607">            }</a>
+<a name="ln608">            if ( j == 2 ) {</a>
+<a name="ln609">                if ( nNeighRank1[0] == nNeighRank1[1] ) {</a>
+<a name="ln610">                    /*  neighbors are constitutionally identical, can't find bond parity */</a>
+<a name="ln611">                    continue;</a>
+<a name="ln612">                }</a>
+<a name="ln613">                trans_i1 = insertions_sort(nNeighRank1, j, sizeof(nNeighRank1[0]), comp_AT_RANK);</a>
+<a name="ln614">            }</a>
+<a name="ln615">            /*  store ranks of at[i2] stereo bond neighbors except one connected by a stereo bond */</a>
+<a name="ln616">            k = (int)at[i2].stereo_bond_ord[n2];</a>
+<a name="ln617">            trans_i2 = 0;</a>
+<a name="ln618">            for ( i = j = 0; i &lt; num_neigh2; i ++ ) {</a>
+<a name="ln619">                if ( i != k ) {</a>
+<a name="ln620">                    nNeighRank2[j] = nRank[(int)at[i2].neighbor[i]];</a>
+<a name="ln621">                    j ++;</a>
+<a name="ln622">                }</a>
+<a name="ln623">            }</a>
+<a name="ln624">            if ( j == 2 ) {</a>
+<a name="ln625">                if ( nNeighRank2[0] == nNeighRank2[1] ) {</a>
+<a name="ln626">                    /*  neighbors are constitutionally identical, can't find bond parity */</a>
+<a name="ln627">                    continue;</a>
+<a name="ln628">                }</a>
+<a name="ln629">                trans_i2 = insertions_sort(nNeighRank2, j, sizeof(nNeighRank2[0]), comp_AT_RANK);</a>
+<a name="ln630">            }</a>
+<a name="ln631">            prev_trans = -1;</a>
+<a name="ln632">            trans_k1   = -2;</a>
+<a name="ln633">            trans_k    = -4; /* 2004-04-28 */</a>
+<a name="ln634">            /*  find all pairs of atoms that can be mapped on at[i1], at[i2] pair */</a>
+<a name="ln635">            for ( j1 = 0; j1 &lt;= iMax1 &amp;&amp; nAtomRank1==nRank[k1=(int)nAtomNumber[iMax1-j1]]; j1 ++ ) {</a>
+<a name="ln636">                /*  at[k1] is constitutionally equivalent to at[i1] */</a>
+<a name="ln637">                /*  find all at[k1] neighbors that have rank nAtomRank2; */</a>
+<a name="ln638">                /*  then find at[k2] constitutionally equivalent at at[i2] */</a>
+<a name="ln639">                if ( at[k1].valence != num_neigh1 ) {</a>
+<a name="ln640">                    return CT_STEREOCOUNT_ERR; /*  program error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln641">                }</a>
+<a name="ln642">                for ( m1 = 0; m1 &lt; num_neigh1; m1 ++ ) {</a>
+<a name="ln643">                    int prev, next, len;</a>
+<a name="ln644">                    if ( nAtom1NeighRank != nRank[k2=(int)at[k1].neighbor[m1]] ) {</a>
+<a name="ln645">                        continue;</a>
+<a name="ln646">                    }</a>
+<a name="ln647">                    m2 = -1; /*  undefined yet */</a>
+<a name="ln648">                    prev = k1;</a>
+<a name="ln649">                    len  = 0;</a>
+<a name="ln650">                    if ( cumulene_len ) {</a>
+<a name="ln651">                        for ( len=0, next = (int)at[k1].neighbor[m1]; len &lt; cumulene_len; len ++ ) {</a>
+<a name="ln652">                            if ( at[next].valence == 2 &amp;&amp; !at[next].num_H ) {</a>
+<a name="ln653">                                j = ((int)at[next].neighbor[0] == prev);</a>
+<a name="ln654">                                prev = next;</a>
+<a name="ln655">                                next = at[next].neighbor[j];</a>
+<a name="ln656">                            } else {</a>
+<a name="ln657">                                break; /*  cannot continue */</a>
+<a name="ln658">                            }</a>
+<a name="ln659">                        }</a>
+<a name="ln660">                        if ( len != cumulene_len || nAtomRank2 != nRank[next] ) {</a>
+<a name="ln661">                            continue;  /*  not found */</a>
+<a name="ln662">                        }</a>
+<a name="ln663">                        k2 = next;</a>
+<a name="ln664">                    }</a>
+<a name="ln665">                    if ( at[k2].valence != num_neigh2 ) {</a>
+<a name="ln666">                        return CT_STEREOCOUNT_ERR; /*  program error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln667">                    }</a>
+<a name="ln668">                    /*  store canon. ranks of at[k1] neighbors */ /*  use i,j,k,m,n */</a>
+<a name="ln669">                    for ( n = j = 0; n &lt; num_neigh1; n ++ ) {</a>
+<a name="ln670">                        if ( n != m1 ) {</a>
+<a name="ln671">                            i=(int)at[k1].neighbor[n];</a>
+<a name="ln672">                            for ( m = 0; m &lt; num_neigh1-1; m ++ ) {</a>
+<a name="ln673">                                if ( nRank[i] == nNeighRank1[m] ) {</a>
+<a name="ln674">                                    nNeighCanonRank1[m] = nCanonRank[i];</a>
+<a name="ln675">                                    j ++;</a>
+<a name="ln676">                                    break;</a>
+<a name="ln677">                                }</a>
+<a name="ln678">                            }</a>
+<a name="ln679">                        }</a>
+<a name="ln680">                    }</a>
+<a name="ln681">                    if ( j != num_neigh1-1 ) {</a>
+<a name="ln682">                        return CT_STEREOCOUNT_ERR;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln683">                    }</a>
+<a name="ln684">                    if ( j == 2 ) {</a>
+<a name="ln685">                        trans_k1 = insertions_sort(nNeighCanonRank1, j, sizeof(nNeighCanonRank1[0]), comp_AT_RANK);</a>
+<a name="ln686">                    } else {</a>
+<a name="ln687">                        trans_k1 = 0;</a>
+<a name="ln688">                    }</a>
+<a name="ln689">                    /*  store canon. ranks of at[k2] neighbors */ /*  use i,j,k,m,n */</a>
+<a name="ln690">                    for ( n = j = 0; n &lt; num_neigh2; n ++ ) {</a>
+<a name="ln691">                        i=(int)at[k2].neighbor[n];</a>
+<a name="ln692">                        if ( i == prev ) { /* neighbor belongs to the stereobond */</a>
+<a name="ln693">                            m2 = n;</a>
+<a name="ln694">                        } else {</a>
+<a name="ln695">                            for ( m = 0; m &lt; num_neigh2-1; m ++ ) {</a>
+<a name="ln696">                                if ( nRank[i] == nNeighRank2[m] ) {</a>
+<a name="ln697">                                    nNeighCanonRank2[m] = nCanonRank[i];</a>
+<a name="ln698">                                    j ++;</a>
+<a name="ln699">                                    break;</a>
+<a name="ln700">                                }</a>
+<a name="ln701">                            }</a>
+<a name="ln702">                        }</a>
+<a name="ln703">                    }</a>
+<a name="ln704">                    if ( j != num_neigh2-1 || m2 &lt; 0 ) {</a>
+<a name="ln705">                        return CT_STEREOCOUNT_ERR;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln706">                    }</a>
+<a name="ln707">                    if ( j == 2 ) {</a>
+<a name="ln708">                        trans_k2 = insertions_sort(nNeighCanonRank2, j, sizeof(nNeighCanonRank2[0]), comp_AT_RANK);</a>
+<a name="ln709">                    } else {</a>
+<a name="ln710">                        trans_k2 = 0;</a>
+<a name="ln711">                    }</a>
+<a name="ln712">                    trans_k = (trans_k1 + trans_k2)%2;</a>
+<a name="ln713">                    if ( prev_trans &lt; 0 ) {</a>
+<a name="ln714">                        prev_trans = trans_k;</a>
+<a name="ln715">                    } else</a>
+<a name="ln716">                    if ( prev_trans != trans_k ) { /* was != trans_k1, changed 9-23-2003 */</a>
+<a name="ln717">                        break; /*  different number of transpositions */</a>
+<a name="ln718">                    }</a>
+<a name="ln719">                } /* end of the second atom mapping cycle */</a>
+<a name="ln720">                if ( prev_trans &gt;= 0 &amp;&amp; prev_trans != trans_k ) { /* was != trans_k1, changed 9-23-2003 */</a>
+<a name="ln721">                    break;</a>
+<a name="ln722">                }</a>
+<a name="ln723">            } /* end of the first atom mapping cycle */</a>
+<a name="ln724">            if ( prev_trans == trans_k ) { /* was == trans_k1, changed 9-23-2003 */</a>
+<a name="ln725">                int z_prod;</a>
+<a name="ln726">                /*  all mappings of canonical numbers on the */</a>
+<a name="ln727">                /*  stereo bond at[i1]-at[i2] produce equivalent numberings. */</a>
+<a name="ln728">                /*  Therefore the stereo bond parity is known at this time. */</a>
+<a name="ln729">                /*  parity_1 = at[i1].parity + (trans_i1 + trans_k1 + num_neigh1 - 1) + (int)at[i1].stereo_bond_ord[n1] */</a>
+<a name="ln730">                /*  expression in parentheses is equivalent to rank[first neigh] &gt; rank[second neigh] */</a>
+<a name="ln731">                /*  same for parity_2. */</a>
+<a name="ln732">                /*  parity_2 = at[i2].parity + (trans_i2 + trans_k2 + num_neigh2 - 1) + (int)at[i2].stereo_bond_ord[n2] */</a>
+<a name="ln733">                /*  Sum of the two parities (without stereo_bond_z_prod) is: */</a>
+<a name="ln734">                parity = (at[i1].parity + at[i2].parity + prev_trans + trans_i1 + trans_i2</a>
+<a name="ln735">                              + num_neigh1 + num_neigh2</a>
+<a name="ln736">                              + (int)at[i1].stereo_bond_ord[n1] + (int)at[i2].stereo_bond_ord[n2] ) %2;</a>
+<a name="ln737">                z_prod = at[i1].stereo_bond_z_prod[n1];</a>
+<a name="ln738">                if ( MIN_DOT_PROD &gt; abs(z_prod)) {</a>
+<a name="ln739">                    parity = AB_PARITY_UNDF; /*  undefined because of geometry */</a>
+<a name="ln740">                } else {</a>
+<a name="ln741">                    parity = (z_prod &gt; 0)? 2 - parity : 1 + parity;</a>
+<a name="ln742">                }</a>
+<a name="ln743">                at[i1].stereo_bond_parity[n1] = ALL_BUT_PARITY(at[i1].stereo_bond_parity[n1]) | parity;</a>
+<a name="ln744">                at[i2].stereo_bond_parity[n2] = ALL_BUT_PARITY(at[i2].stereo_bond_parity[n2]) | parity;</a>
+<a name="ln745">                num_set ++;</a>
+<a name="ln746">            }</a>
+<a name="ln747">        }</a>
+<a name="ln748">    }</a>
+<a name="ln749">    return num_set;</a>
+<a name="ln750">}</a>
+<a name="ln751">/**********************************************************************************/</a>
+<a name="ln752">/*  Find stereo center parities known in advance */</a>
+<a name="ln753">int MarkKnownEqualStereoBondParities( sp_ATOM *at, int num_atoms,</a>
+<a name="ln754">                                      const AT_RANK *nRank, const AT_RANK *nAtomNumber )</a>
+<a name="ln755">{</a>
+<a name="ln756">    int j, n, m, j1, num_neigh1, num_neigh2, iMax1;</a>
+<a name="ln757">    int num_set, /*num_sb1, num_sb2,*/ bDifferentParities;</a>
+<a name="ln758">    int i1, i2, k1, k2, n1, n2, m1, m2, s1, s2, stereo_bond_parity, stereo_bond_parity2, cumulene_len;</a>
+<a name="ln759">    AT_RANK nAtomRank1, nAtomRank2, nAtom1NeighRank, nAtom2NeighRank;</a>
+<a name="ln760">    num_set = 0;</a>
+<a name="ln761">    for ( i1 = 0, num_set = 0; i1 &lt; num_atoms; i1 ++ ) {</a>
+<a name="ln762">        if ( !at[i1].parity || !at[i1].stereo_bond_neighbor[0] ) {</a>
+<a name="ln763">            continue;</a>
+<a name="ln764">        }</a>
+<a name="ln765">        nAtomRank1  = nRank[i1];</a>
+<a name="ln766">        iMax1       = (int)nAtomRank1-1;</a>
+<a name="ln767">        num_neigh1  = at[i1].valence;</a>
+<a name="ln768">        /*  count stereogenic bonds adjacent to at[i1] */</a>
+<a name="ln769">        for ( n1 = 0; n1 &lt; MAX_NUM_STEREO_BONDS &amp;&amp; at[i1].stereo_bond_neighbor[n1]; n1++ )</a>
+<a name="ln770">            ;</a>
+<a name="ln771">        /*num_sb1 = n1;*/</a>
+<a name="ln772">        /*  search for bonds possibly constitutionally equivalent to each of the adjacent bonds */</a>
+<a name="ln773">        /*  and find if all of them have same already known parity */</a>
+<a name="ln774">        for ( n1 = 0, i2 = 0; n1 &lt; MAX_NUM_STEREO_BONDS &amp;&amp; (i2=(int)at[i1].stereo_bond_neighbor[n1]); n1++ ) {</a>
+<a name="ln775">            i2 --;</a>
+<a name="ln776">            nAtomRank2         = nRank[i2];</a>
+<a name="ln777">            if ( nAtomRank2 &lt; nAtomRank1 || (nAtomRank2 == nAtomRank1 &amp;&amp; i1 &lt; i2) ) {</a>
+<a name="ln778">                /*  An attempt to reduce unnecessary repetitions. */</a>
+<a name="ln779">                /*  We still have repetitions because we do not accumulate a list of */</a>
+<a name="ln780">                /*  processed (nAtomRank2, nAtomRank1) pairs. */</a>
+<a name="ln781">                continue;</a>
+<a name="ln782">            }</a>
+<a name="ln783">            bDifferentParities = -1;   /*  parities have not been compared yet */</a>
+<a name="ln784">            /*  found a stereo bond at[i1]-at[i2] (adjacent to at[i1]) */</a>
+<a name="ln785">            /*</a>
+<a name="ln786">            if ( !PARITY_KNOWN(at[i1].stereo_bond_parity[n1]) || (at[i1].stereo_bond_parity[n1] &amp; KNOWN_PARITIES_EQL) ) {</a>
+<a name="ln787">                continue;</a>
+<a name="ln788">            }</a>
+<a name="ln789">            */</a>
+<a name="ln790">            if ( at[i1].stereo_bond_parity[n1] &amp; KNOWN_PARITIES_EQL ) {</a>
+<a name="ln791">                continue;</a>
+<a name="ln792">            }</a>
+<a name="ln793">            /*  stereo bond has known or unknown parity; we have not checked it yet */</a>
+<a name="ln794">            for ( n2 = 0; n2 &lt; MAX_NUM_STEREO_BONDS &amp;&amp; at[i2].stereo_bond_neighbor[n2]; n2++ )</a>
+<a name="ln795">                ;</a>
+<a name="ln796">            /*num_sb2 = n2;*/</a>
+<a name="ln797">            for ( n2 = 0, m = 0; n2 &lt; MAX_NUM_STEREO_BONDS &amp;&amp; (m=(int)at[i2].stereo_bond_neighbor[n2]) &amp;&amp; m-1 != i1; n2++ )</a>
+<a name="ln798">                ;</a>
+<a name="ln799">            if ( m-1 != i1 || at[i1].stereo_bond_parity[n1] != at[i2].stereo_bond_parity[n2] ) {</a>
+<a name="ln800">                return CT_STEREOCOUNT_ERR; /*  program error: stereo bonds data in two directions are different */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln801">            }</a>
+<a name="ln802">            stereo_bond_parity = PARITY_VAL(at[i1].stereo_bond_parity[n1]);</a>
+<a name="ln803">            cumulene_len       = BOND_CHAIN_LEN(at[i1].stereo_bond_parity[n1]);</a>
+<a name="ln804">            nAtom1NeighRank    = nRank[(int)at[i1].neighbor[(int)at[i1].stereo_bond_ord[n1]]];</a>
+<a name="ln805">            nAtom2NeighRank    = nRank[(int)at[i2].neighbor[(int)at[i2].stereo_bond_ord[n2]]];</a>
+<a name="ln806">            num_neigh2  = at[i2].valence;</a>
+<a name="ln807">            /*  find all pairs of atoms that possibly can be mapped on at[i1], at[i2] pair */</a>
+<a name="ln808">            /*  (we may also find pairs that cannot be mapped, but we cannot miss any pair */</a>
+<a name="ln809">            /*  that can be mapped) */</a>
+<a name="ln810">            for ( j1 = 0; j1 &lt;= iMax1 &amp;&amp; nAtomRank1==nRank[k1=(int)nAtomNumber[iMax1-j1]]; j1 ++ ) {</a>
+<a name="ln811">                /*  at[k1] is constitutionally equivalent to at[i1] */</a>
+<a name="ln812">                /*  find all at[k1] stereo bond neighbors at[k2] that have rank nAtomRank2; */</a>
+<a name="ln813">                /*  then find at[k2] constitutionally equivalent at at[i2] */</a>
+<a name="ln814">                if ( at[k1].valence != num_neigh1 ) {</a>
+<a name="ln815">                    return CT_STEREOCOUNT_ERR; /*  program error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln816">                }</a>
+<a name="ln817">                if ( !at[k1].bHasStereoOrEquToStereo ) {</a>
+<a name="ln818">                    at[k1].bHasStereoOrEquToStereo = 1;</a>
+<a name="ln819">                }</a>
+<a name="ln820">                /* -- do not check number of stereo bonds, check bonds themselves --</a>
+<a name="ln821">                for ( s1 = 0; s1 &lt; MAX_NUM_STEREO_BONDS &amp;&amp; at[k1].stereo_bond_neighbor[s1]; s1++ )</a>
+<a name="ln822">                    ;</a>
+<a name="ln823">                if ( num_sb1 != s1 ) {</a>
+<a name="ln824">                    bDifferentParities = 1;</a>
+<a name="ln825">                }</a>
+<a name="ln826">                */</a>
+<a name="ln827">                for ( m1 = 0; m1 &lt; num_neigh1; m1 ++ ) {</a>
+<a name="ln828">                    /*  Looking for at[k1] neighbor with nRank=nAtom1NeighRank. */</a>
+<a name="ln829">                    /*  This neighbor may be on the bond constit. equivalent to at[i1]-at[i2] stereo bond */</a>
+<a name="ln830">                    /*  (or may be constit. equivalent an adjacent to at[i1] atom in a stereogenic cumulene chain) */</a>
+<a name="ln831">                    int prev, next, len;</a>
+<a name="ln832">                    if ( nAtom1NeighRank != nRank[k2=(int)at[k1].neighbor[m1]] ) {</a>
+<a name="ln833">                        continue;</a>
+<a name="ln834">                    }</a>
+<a name="ln835">                    /*  found at[k1] neighbor with nRank=nAtom1NeighRank */</a>
+<a name="ln836">                    m2 = -1; /*  undefined yet */</a>
+<a name="ln837">                    prev = k1;</a>
+<a name="ln838">                    len  = 0;</a>
+<a name="ln839">                    /*  if cumulene then bypass the cumulene chain */</a>
+<a name="ln840">                    if ( cumulene_len ) {</a>
+<a name="ln841">                        for ( len=0, next = (int)at[k1].neighbor[m1]; len &lt; cumulene_len; len ++ ) {</a>
+<a name="ln842">                            if ( at[next].valence == 2 &amp;&amp; !at[next].num_H ) {</a>
+<a name="ln843">                                j = ((int)at[next].neighbor[0] == prev);</a>
+<a name="ln844">                                prev = next;</a>
+<a name="ln845">                                next = at[next].neighbor[j];</a>
+<a name="ln846">                            } else {</a>
+<a name="ln847">                                break; /*  cannot continue: end of cumulene chain */</a>
+<a name="ln848">                            }</a>
+<a name="ln849">                        }</a>
+<a name="ln850">                        if ( len != cumulene_len || nAtomRank2 != nRank[next] ) {</a>
+<a name="ln851">                            continue;  /*  cumulene chain not found at this neighbor */</a>
+<a name="ln852">                        }</a>
+<a name="ln853">                        if ( nAtom2NeighRank != nRank[prev] ) {</a>
+<a name="ln854">                            /* continue; */ /*  ??? program error ??? If not, must be a very rare event */</a>
+<a name="ln855">                            return CT_STEREOCOUNT_ERR;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln856">                        }</a>
+<a name="ln857">                        k2 = next;</a>
+<a name="ln858">                    }</a>
+<a name="ln859">                    </a>
+<a name="ln860">                    /*  a connected pair of constit. equivalent atoms found */</a>
+<a name="ln861">                    if ( at[k2].valence != num_neigh2 ) {</a>
+<a name="ln862">                        return CT_STEREOCOUNT_ERR; /*  program error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln863">                    }</a>
+<a name="ln864">                    for ( n = 0; n &lt; num_neigh2; n ++ ) {</a>
+<a name="ln865">                        if ( prev == (int)at[k2].neighbor[n] ) {</a>
+<a name="ln866">                            m2 = n; /*  found bond from the opposite end of a possibly stereogenic bond */</a>
+<a name="ln867">                            break;</a>
+<a name="ln868">                        }</a>
+<a name="ln869">                    }</a>
+<a name="ln870">                    if ( m2 &lt; 0 ) {</a>
+<a name="ln871">                        return CT_STEREOCOUNT_ERR; /*  program error: opposite direction bond not found */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln872">                    }</a>
+<a name="ln873">                    if ( !at[k2].bHasStereoOrEquToStereo ) {</a>
+<a name="ln874">                        at[k2].bHasStereoOrEquToStereo = 1;</a>
+<a name="ln875">                    }</a>
+<a name="ln876"> </a>
+<a name="ln877">                    /*  check if atoms at[k1] and at[k2] are connected by a stereo bond */</a>
+<a name="ln878">                    for ( s1 = 0, m = 0; s1 &lt; MAX_NUM_STEREO_BONDS &amp;&amp; (m=(int)at[k1].stereo_bond_neighbor[s1]) &amp;&amp; m-1 != k2; s1++ )</a>
+<a name="ln879">                        ;</a>
+<a name="ln880">                    if ( m-1 != k2 ) {</a>
+<a name="ln881">                        bDifferentParities = 1; /*  cannot find the stereo bond */</a>
+<a name="ln882">                        at[k1].bHasStereoOrEquToStereo =</a>
+<a name="ln883">                        at[k2].bHasStereoOrEquToStereo = 2;</a>
+<a name="ln884">                        continue;</a>
+<a name="ln885">                    }</a>
+<a name="ln886">                    /*  -- do not check number of stereo bonds, check bonds themselves --</a>
+<a name="ln887">                    for ( s2 = 0; s2 &lt; MAX_NUM_STEREO_BONDS &amp;&amp; at[k2].stereo_bond_neighbor[s2]; s2++ )</a>
+<a name="ln888">                        ;</a>
+<a name="ln889">                    if ( num_sb2 != s2 ) {</a>
+<a name="ln890">                        bDifferentParities = 1;</a>
+<a name="ln891">                        continue;</a>
+<a name="ln892">                    }</a>
+<a name="ln893">                    */</a>
+<a name="ln894">                    for ( s2 = 0, m = 0; s2 &lt; MAX_NUM_STEREO_BONDS &amp;&amp; (m=(int)at[k2].stereo_bond_neighbor[s2]) &amp;&amp; m-1 != k1; s2++ )</a>
+<a name="ln895">                        ;</a>
+<a name="ln896">                    if ( m-1 != k1 ) {</a>
+<a name="ln897">                        /*</a>
+<a name="ln898">                        bDifferentParities = 1; // cannot find the stereo bond</a>
+<a name="ln899">                        continue;</a>
+<a name="ln900">                        */</a>
+<a name="ln901">                        return CT_STEREOCOUNT_ERR; /*  program error: opposite direction bond not found */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln902">                    }</a>
+<a name="ln903">                    if ( at[k1].stereo_bond_parity[s1] != at[k2].stereo_bond_parity[s2] ) {</a>
+<a name="ln904">                        bDifferentParities = 1;</a>
+<a name="ln905">                        continue;</a>
+<a name="ln906">                    }</a>
+<a name="ln907">                    stereo_bond_parity2 = PARITY_VAL(at[k1].stereo_bond_parity[s1]);</a>
+<a name="ln908">                    if ( stereo_bond_parity2 != stereo_bond_parity ) {</a>
+<a name="ln909">                        bDifferentParities = 1;</a>
+<a name="ln910">                        continue;</a>
+<a name="ln911">                    }</a>
+<a name="ln912">                    if ( stereo_bond_parity2 == stereo_bond_parity &amp;&amp; bDifferentParities &lt; 0 ) {</a>
+<a name="ln913">                        bDifferentParities = 0;</a>
+<a name="ln914">                    }</a>
+<a name="ln915">                }</a>
+<a name="ln916">            }</a>
+<a name="ln917">            /*  mark equal parities */</a>
+<a name="ln918">            if ( 0 == bDifferentParities &amp;&amp; PARITY_KNOWN( stereo_bond_parity ) ) {</a>
+<a name="ln919">                for ( j1 = 0; j1 &lt;= iMax1 &amp;&amp; nAtomRank1==nRank[k1=(int)nAtomNumber[iMax1-j1]]; j1 ++ ) {</a>
+<a name="ln920">                    /*  at[k1] is constitutionally equivalent to at[i1] */</a>
+<a name="ln921">                    for ( s1 = 0, k2 = 0; s1 &lt; MAX_NUM_STEREO_BONDS &amp;&amp; (k2=(int)at[k1].stereo_bond_neighbor[s1]); s1++ ) {</a>
+<a name="ln922">                        k2--;</a>
+<a name="ln923">                        if ( nRank[k2] == nAtomRank2 ) {</a>
+<a name="ln924">                            int b1, b2;</a>
+<a name="ln925">                            for ( s2 = 0, m = 0; s2 &lt; MAX_NUM_STEREO_BONDS &amp;&amp; (m=(int)at[k2].stereo_bond_neighbor[s2])</a>
+<a name="ln926">                                  &amp;&amp; m-1 != k1; s2++ )</a>
+<a name="ln927">                                ;</a>
+<a name="ln928">                            if ( m-1 != k1 ) {</a>
+<a name="ln929">                                return CT_STEREOCOUNT_ERR; /*  program error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln930">                            }</a>
+<a name="ln931">                            /*  mark the stereo bonds */</a>
+<a name="ln932">                            b1 = !(at[k1].stereo_bond_parity[s1] &amp; KNOWN_PARITIES_EQL);</a>
+<a name="ln933">                            b2 = !(at[k2].stereo_bond_parity[s2] &amp; KNOWN_PARITIES_EQL);</a>
+<a name="ln934">                            if ( 2 == b1 + b2 ) {</a>
+<a name="ln935">                                at[k1].stereo_bond_parity[s1] |= KNOWN_PARITIES_EQL;</a>
+<a name="ln936">                                at[k2].stereo_bond_parity[s2] |= KNOWN_PARITIES_EQL;</a>
+<a name="ln937">                                num_set ++;</a>
+<a name="ln938">                            } else</a>
+<a name="ln939">                            if ( b1 || b2 ) {</a>
+<a name="ln940">                                return CT_STEREOCOUNT_ERR; /*  program error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln941">                            }</a>
+<a name="ln942">                        }</a>
+<a name="ln943">                    }</a>
+<a name="ln944">                }</a>
+<a name="ln945">            }</a>
+<a name="ln946">        }</a>
+<a name="ln947">    }</a>
+<a name="ln948">    return num_set;</a>
+<a name="ln949">}</a>
+<a name="ln950">#if ( REMOVE_KNOWN_NONSTEREO == 1 ) /* { */</a>
+<a name="ln951">/**********************************************************************************/</a>
+<a name="ln952">/*   Return next atom number (and its canon. rank) on the path prev-&gt;cur-&gt;next */</a>
+<a name="ln953">/*   in order of ascending canonical ranks of the next atoms:  *cr(output) &gt;  *cr(input) */</a>
+<a name="ln954">/*   To start the sequence let *cr=0 */</a>
+<a name="ln955">/*   If no more neighbors available the return value = 0; if successgul then the return value = 1. */</a>
+<a name="ln956">int GetNextNeighborAndRank( sp_ATOM *at, AT_RANK cur, AT_RANK prev, AT_RANK *n, AT_RANK *cr, const AT_RANK *nCanonRank )</a>
+<a name="ln957">{</a>
+<a name="ln958">    int i, val;</a>
+<a name="ln959">    AT_RANK cr1 = MAX_ATOMS+1, j, j1=MAX_ATOMS+1, crj;</a>
+<a name="ln960"> </a>
+<a name="ln961">    for ( i = 0, val = at[(int)cur].valence; i &lt; val; i ++ ) {</a>
+<a name="ln962">        if ( (j=at[cur].neighbor[i]) != prev &amp;&amp; </a>
+<a name="ln963">             cr1 &gt; (crj=nCanonRank[(int)j]) &amp;&amp; crj &gt; *cr ) {</a>
+<a name="ln964">            cr1 = crj;</a>
+<a name="ln965">            j1  = j;</a>
+<a name="ln966">        }</a>
+<a name="ln967">    }</a>
+<a name="ln968">    if ( cr1 &lt;= MAX_ATOMS ) {</a>
+<a name="ln969">        *cr = cr1;</a>
+<a name="ln970">        *n  = (AT_RANK)j1;</a>
+<a name="ln971">        return 1;</a>
+<a name="ln972">    }</a>
+<a name="ln973">    return 0;  /*  program error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln974">}</a>
+<a name="ln975"> </a>
+<a name="ln976">/**********************************************************************************/</a>
+<a name="ln977">/*  Find next pair of neighbors having the next greater canon. rank */</a>
+<a name="ln978">/*  The neighbors should be constitutionally identical and traversed simultaneouly or not traversed at all */</a>
+<a name="ln979">/*  If a bond cur1-*n1 or cur2-*n2 is a stereo bond then reject if their stereo bond parities are different or */</a>
+<a name="ln980">/*    cannot be calculated without breaking ties. */</a>
+<a name="ln981">int GetAndCheckNextNeighbors( sp_ATOM *at, AT_RANK cur1, AT_RANK prev1, AT_RANK cur2, AT_RANK prev2,</a>
+<a name="ln982">                              AT_RANK *n1, AT_RANK *n2, AT_RANK *nVisited1, AT_RANK *nVisited2,</a>
+<a name="ln983">                              const AT_RANK *nRank, const AT_RANK *nCanonRank )</a>
+<a name="ln984">{</a>
+<a name="ln985">    AT_RANK cr1, cr2, s1, s2;</a>
+<a name="ln986">    int     i1, i2, k1, k2;</a>
+<a name="ln987">    cr1 = ( *n1 &gt; MAX_ATOMS )? 0 : nCanonRank[(int)*n1];</a>
+<a name="ln988">    cr2 = ( *n2 &gt; MAX_ATOMS )? 0 : nCanonRank[(int)*n2];</a>
+<a name="ln989">    if ( !GetNextNeighborAndRank( at, cur1, prev1, n1, &amp;cr1, nCanonRank ) ||</a>
+<a name="ln990">         !GetNextNeighborAndRank( at, cur2, prev2, n2, &amp;cr2, nCanonRank ) ||</a>
+<a name="ln991">         nRank[(int)*n1] != nRank[(int)*n2] || nVisited1[(int)*n1] != nVisited2[(int)*n2] ) {</a>
+<a name="ln992">        return 0;  /*  program error; no breakpoint here */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln993">    }</a>
+<a name="ln994"> </a>
+<a name="ln995">    /*  Even though the bond or cumulene might have already been checked, check it: this is */</a>
+<a name="ln996">    /*  the only place we can check stereo bonds and cumulenes that are not edges of the DFS tree */</a>
+<a name="ln997">    /*  The code works both for a stereo bond and a stereogenic cumulene. */</a>
+<a name="ln998">    for ( i1 = 0, k1 = 0; i1 &lt; MAX_NUM_STEREO_BONDS &amp;&amp;</a>
+<a name="ln999">                          (s1=at[cur1].stereo_bond_neighbor[i1]) &amp;&amp;</a>
+<a name="ln1000">                         !(k1=(at[cur1].neighbor[(int)at[cur1].stereo_bond_ord[i1]] == *n1)); i1 ++ )</a>
+<a name="ln1001">        ;</a>
+<a name="ln1002">    for ( i2 = 0, k2 = 0; i2 &lt; MAX_NUM_STEREO_BONDS &amp;&amp;</a>
+<a name="ln1003">                          (s2=at[cur2].stereo_bond_neighbor[i2]) &amp;&amp;</a>
+<a name="ln1004">                         !(k2=(at[cur2].neighbor[(int)at[cur2].stereo_bond_ord[i2]] == *n2)); i2 ++ )</a>
+<a name="ln1005">        ;</a>
+<a name="ln1006">    if ( k1 != k2 ) {    </a>
+<a name="ln1007">        return 0; /*  possibly not an error: constit. equivalent atoms on a stereo bond and not on a stereo bond */</a>
+<a name="ln1008">    }</a>
+<a name="ln1009">    if ( k1 /* yes, it is a stero bond */ &amp;&amp;</a>
+<a name="ln1010">         ( at[cur1].stereo_bond_parity[i1] != at[cur2].stereo_bond_parity[i2] ||</a>
+<a name="ln1011">           /* PARITY_KNOWN (at[cur1].stereo_bond_parity[i1] ) */  /*  replaced 08-13-2002 with the next: */</a>
+<a name="ln1012">           !PARITY_WELL_DEF (at[cur1].stereo_bond_parity[i1] ) /*  it suffices to check only one parity */</a>
+<a name="ln1013">    ) ) {</a>
+<a name="ln1014">        return 0; /*  different or (currently) unknown stereo bond parities */</a>
+<a name="ln1015">    }</a>
+<a name="ln1016">    return 1; /*  stereo bonds have known parities */</a>
+<a name="ln1017">}</a>
+<a name="ln1018"> </a>
+<a name="ln1019">/**********************************************************************************/</a>
+<a name="ln1020">/*  Simultaneously DFS-traverse 2 paths starting at the bonds prev1-&gt;cur1 and prev2-&gt;cur2 */</a>
+<a name="ln1021">/*  The two paths MUST go through the pairs of constitutionally identical atoms, each atom being on one path. */</a>
+<a name="ln1022">/*  Reject if encountered atoms having currently unknown (without breaking ties) */</a>
+<a name="ln1023">/*      parities or having different known or unknown or undefined parities. */</a>
+<a name="ln1024">/*  Save length of the path into nVisited[cur. atom number]. */</a>
+<a name="ln1025">/*  Only one nVisited[] array is sufficient because the paths from the beginning are in different ring systems. */</a>
+<a name="ln1026">AT_RANK PathsHaveIdenticalKnownParities( sp_ATOM *at, AT_RANK prev1, AT_RANK cur1, AT_RANK prev2, AT_RANK cur2,</a>
+<a name="ln1027">                                         AT_RANK *nVisited1, AT_RANK *nVisited2,</a>
+<a name="ln1028">                                         const AT_RANK *nRank, const AT_RANK *nCanonRank, AT_RANK nLength )</a>
+<a name="ln1029">{</a>
+<a name="ln1030">    int k;</a>
+<a name="ln1031">    AT_RANK n1, n2;</a>
+<a name="ln1032"> </a>
+<a name="ln1033">    nLength ++;   /*  number of successfully traversed pairs of atoms */</a>
+<a name="ln1034">    nVisited1[cur1] = nLength;</a>
+<a name="ln1035">    nVisited2[cur2] = nLength;</a>
+<a name="ln1036">    /*  the atoms must be either both stereogenic and have well-defined parities or non-stereogenic at all. */</a>
+<a name="ln1037">    if ( at[cur1].stereo_atom_parity != at[cur2].stereo_atom_parity ||</a>
+<a name="ln1038">         (at[cur1].stereo_atom_parity &amp;&amp; !PARITY_WELL_DEF (at[cur1].stereo_atom_parity))</a>
+<a name="ln1039">          ) {</a>
+<a name="ln1040">        return 0;  /*  Reject: Different or unknown in advance parities */</a>
+<a name="ln1041">    }</a>
+<a name="ln1042"> </a>
+<a name="ln1043">    if ( at[cur1].valence != at[cur2].valence ) {</a>
+<a name="ln1044">        return 0;  /*  program error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln1045">    }</a>
+<a name="ln1046">    if ( at[cur1].valence == 1 ) {</a>
+<a name="ln1047">        return nLength; /*  so far success */</a>
+<a name="ln1048">    }</a>
+<a name="ln1049">    </a>
+<a name="ln1050"> </a>
+<a name="ln1051">    for ( k = 1, n1 = MAX_ATOMS+1, n2=MAX_ATOMS+1; k &lt; at[cur1].valence; k ++ ) {</a>
+<a name="ln1052">        /*  start from 1: since we do not go back, we have only (at[cur1].valence-1) bonds to try */</a>
+<a name="ln1053">        if ( !GetAndCheckNextNeighbors( at, cur1, prev1, cur2, prev2,</a>
+<a name="ln1054">                              &amp;n1, &amp;n2, nVisited1, nVisited2, nRank, nCanonRank ) ) {</a>
+<a name="ln1055">            return 0; /*  different neighbors                       */</a>
+<a name="ln1056">        }</a>
+<a name="ln1057">        /*  In a DFS we do not traverse already visited atoms */</a>
+<a name="ln1058">        if ( !nVisited1[n1] ) { /*  recursion */</a>
+<a name="ln1059">            if ( ! (nLength = PathsHaveIdenticalKnownParities( at, cur1, n1, cur2, n2, nVisited1, nVisited2, nRank, nCanonRank, nLength ) ) ) {</a>
+<a name="ln1060">                return 0;</a>
+<a name="ln1061">            }</a>
+<a name="ln1062">        }</a>
+<a name="ln1063">    }</a>
+<a name="ln1064">    /*  To be on a safe side, recheck after all nVisited[] have been set */</a>
+<a name="ln1065">    for ( k = 1, n1 = MAX_ATOMS+1, n2=MAX_ATOMS+1; k &lt; at[cur1].valence; k ++ ) {</a>
+<a name="ln1066">        /*  start from 1: since we do not go back, we have only (at[cur1].valence-1) bonds to try */</a>
+<a name="ln1067">        if ( !GetAndCheckNextNeighbors( at, cur1, prev1, cur2, prev2,</a>
+<a name="ln1068">                              &amp;n1, &amp;n2, nVisited1, nVisited2, nRank, nCanonRank ) ) {</a>
+<a name="ln1069">            return 0; /*  different neighbors */</a>
+<a name="ln1070">        }</a>
+<a name="ln1071">    }</a>
+<a name="ln1072"> </a>
+<a name="ln1073">    </a>
+<a name="ln1074">    return nLength;</a>
+<a name="ln1075"> </a>
+<a name="ln1076">}</a>
+<a name="ln1077"> </a>
+<a name="ln1078">/**********************************************************************************/</a>
+<a name="ln1079">/*  Remove stereo marks from the bonds that are known to be non-stereo */</a>
+<a name="ln1080">/*  (compare neighbors if they are attached by cut-edges) */</a>
+<a name="ln1081">int RemoveKnownNonStereoBondParities( sp_ATOM *at, int num_atoms, const AT_RANK *nCanonRank,</a>
+<a name="ln1082">                                      const AT_RANK *nRank, CANON_STAT *pCS)</a>
+<a name="ln1083">{</a>
+<a name="ln1084">    int j, n, m, ret;</a>
+<a name="ln1085">    </a>
+<a name="ln1086">    int i1, n1, s2;</a>
+<a name="ln1087">    AT_RANK nAtomRank1, nAtomRank2, neigh[3], opposite_atom, *nVisited = NULL;</a>
+<a name="ln1088">    ret = 0;</a>
+<a name="ln1089">    for ( i1 = 0; i1 &lt; num_atoms; i1 ++ ) {</a>
+<a name="ln1090">        if ( at[i1].valence != 3 || !at[i1].stereo_bond_neighbor[0] ) {</a>
+<a name="ln1091">            continue;</a>
+<a name="ln1092">        }</a>
+<a name="ln1093">        for ( n1 = 0; n1 &lt; MAX_NUM_STEREO_BONDS &amp;&amp; (s2=at[i1].stereo_bond_neighbor[n1]); n1++ ) {</a>
+<a name="ln1094">            if ( !PARITY_CALCULATE(at[i1].stereo_bond_parity[n1]) &amp;&amp; PARITY_WELL_DEF(at[i1].stereo_bond_parity[n1]) ) {</a>
+<a name="ln1095">                continue;</a>
+<a name="ln1096">            }</a>
+<a name="ln1097">            opposite_atom = (AT_RANK)(s2-1);</a>
+<a name="ln1098">            /* s2 = at[i1].neighbor[m=(int)at[i1].stereo_bond_ord[n1]]; */</a>
+<a name="ln1099">            m=(int)at[i1].stereo_bond_ord[n1];</a>
+<a name="ln1100">            for ( j = 0, n = 0; j &lt; at[i1].valence; j ++ ) {      </a>
+<a name="ln1101">                /* if ( at[i1].neighbor[j] != s2 ) */</a>
+<a name="ln1102">                if ( j != m )</a>
+<a name="ln1103">                {</a>
+<a name="ln1104">                    neigh[n++] = at[i1].neighbor[j]; </a>
+<a name="ln1105">                }</a>
+<a name="ln1106">            }</a>
+<a name="ln1107">            if ( n &gt; 2 ) {</a>
+<a name="ln1108">                ret = CT_STEREOBOND_ERROR;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln1109">                goto exit_function;</a>
+<a name="ln1110">            }</a>
+<a name="ln1111">            if ( n != 2 || nRank[(int)neigh[0]] != nRank[(int)neigh[1]] ) {</a>
+<a name="ln1112">                continue; /*  may happen if another half-bond has not a defined parity */</a>
+<a name="ln1113">            }</a>
+<a name="ln1114">            if ( at[i1].nRingSystem == at[(int)neigh[0]].nRingSystem ) {</a>
+<a name="ln1115">                continue;  /*  no more ring system membership check is necessary because     */</a>
+<a name="ln1116">            }              /*  the two neighbors are to be constitutionally equivalent atoms */</a>
+<a name="ln1117">            if ( !nVisited &amp;&amp; !(nVisited = (AT_RANK*) inchi_malloc( sizeof(nVisited[0])*num_atoms ) ) ) {</a>
+<a name="ln1118">                ret = CT_OUT_OF_RAM;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln1119">                goto exit_function;</a>
+<a name="ln1120">            }</a>
+<a name="ln1121">            memset( nVisited, 0, sizeof(nVisited[0])*num_atoms );</a>
+<a name="ln1122">            nVisited[i1] = 1;</a>
+<a name="ln1123">            if ( PathsHaveIdenticalKnownParities( at, (AT_RANK)i1, neigh[0], (AT_RANK)i1, neigh[1], nVisited, nVisited, nRank, nCanonRank, 1 ) ) {</a>
+<a name="ln1124">                if ( !RemoveOneStereoBond( at, i1, /* atom number*/ n1 /* stereo bond number*/ ) ) {</a>
+<a name="ln1125">                    ret = CT_STEREOBOND_ERROR;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln1126">                    goto exit_function;</a>
+<a name="ln1127">                }</a>
+<a name="ln1128">                n1 --; /*  cycle counter may temporarily become negative */</a>
+<a name="ln1129">                /*  Remove from pCS */</a>
+<a name="ln1130">                nAtomRank1 = inchi_max( nCanonRank[i1], nCanonRank[opposite_atom]);</a>
+<a name="ln1131">                nAtomRank2 = inchi_min( nCanonRank[i1], nCanonRank[opposite_atom]);</a>
+<a name="ln1132">                for ( n = 0, m = pCS-&gt;nLenLinearCTStereoDble-1; n &lt;= m; n ++ ) {</a>
+<a name="ln1133">                    if ( pCS-&gt;LinearCTStereoDble[n].at_num1 == nAtomRank1 &amp;&amp;</a>
+<a name="ln1134">                         pCS-&gt;LinearCTStereoDble[n].at_num2 == nAtomRank2 ) {</a>
+<a name="ln1135">                        if ( n &lt; m ) { /*  remove pCS-&gt;LinearCTStereoDble[n] */</a>
+<a name="ln1136">                            memmove( pCS-&gt;LinearCTStereoDble + n,</a>
+<a name="ln1137">                                     pCS-&gt;LinearCTStereoDble + n + 1,</a>
+<a name="ln1138">                                     (m-n)*sizeof(pCS-&gt;LinearCTStereoDble[0]) );</a>
+<a name="ln1139">                        }</a>
+<a name="ln1140">                        pCS-&gt;nLenLinearCTStereoDble --;</a>
+<a name="ln1141">#if ( bRELEASE_VERSION == 0 )</a>
+<a name="ln1142">                        pCS-&gt;bExtract |= EXTR_KNOWN_USED_TO_REMOVE_PARITY;</a>
+<a name="ln1143">#endif</a>
+<a name="ln1144">                        m = -1;   /*  set flag &quot;found&quot; */</a>
+<a name="ln1145">                        break;</a>
+<a name="ln1146">                    }</a>
+<a name="ln1147">                }</a>
+<a name="ln1148">                if ( m &gt;= 0) {</a>
+<a name="ln1149">                    ret = CT_STEREOCOUNT_ERR;  /*  bond not found  &lt;BRKPT&gt; */</a>
+<a name="ln1150">                    goto exit_function;</a>
+<a name="ln1151">                }</a>
+<a name="ln1152">                ret ++;  /*  number of removed known in advance non-stereo bonds */</a>
+<a name="ln1153">            }</a>
+<a name="ln1154">        }</a>
+<a name="ln1155">    }</a>
+<a name="ln1156"> </a>
+<a name="ln1157">exit_function:</a>
+<a name="ln1158"> </a>
+<a name="ln1159">    if ( nVisited ) {</a>
+<a name="ln1160">        inchi_free( nVisited );</a>
+<a name="ln1161">    }</a>
+<a name="ln1162">    return ret;</a>
+<a name="ln1163">}</a>
+<a name="ln1164">#endif /* } REMOVE_KNOWN_NONSTEREO */</a>
+<a name="ln1165">/**********************************************************************************/</a>
+<a name="ln1166">/*  Find stereo center parities known in advance */</a>
+<a name="ln1167">int SetKnownStereoCenterParities( sp_ATOM *at, int num_atoms, const AT_RANK *nCanonRank,</a>
+<a name="ln1168">                                  const AT_RANK *nRank, const AT_RANK *nAtomNumber )</a>
+<a name="ln1169">{</a>
+<a name="ln1170">    int i, j, n, m, j1, k, num_neigh, iMax, trans_i, trans_k, prev_trans, num_set;</a>
+<a name="ln1171">    AT_RANK nAtomRank;</a>
+<a name="ln1172">    AT_RANK nNeighRank[MAX_NUM_STEREO_ATOM_NEIGH];</a>
+<a name="ln1173">    AT_RANK nNeighCanonRank[MAX_NUM_STEREO_ATOM_NEIGH];</a>
+<a name="ln1174">    for ( i = 0, num_set = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln1175">        if ( !at[i].parity || at[i].stereo_bond_neighbor[0] ) {</a>
+<a name="ln1176">            continue;</a>
+<a name="ln1177">        }</a>
+<a name="ln1178">        if ( at[i].stereo_atom_parity != AB_PARITY_CALC || !PARITY_WELL_DEF(at[i].parity) ) {</a>
+<a name="ln1179">            continue;</a>
+<a name="ln1180">        }</a>
+<a name="ln1181">        num_neigh = at[i].valence;</a>
+<a name="ln1182">        for ( j = 0; j &lt; num_neigh; j ++ ) {</a>
+<a name="ln1183">            nNeighRank[j] = nRank[(int)at[i].neighbor[j]];</a>
+<a name="ln1184">        }</a>
+<a name="ln1185">        nAtomRank = nRank[i];</a>
+<a name="ln1186">        if ( num_neigh == 1 ) {  /* other neighbors must be implicit H */</a>
+<a name="ln1187">            at[i].stereo_atom_parity = at[i].parity;</a>
+<a name="ln1188">            trans_i = 0;</a>
+<a name="ln1189">        } else {</a>
+<a name="ln1190">            /* sort constitutional equivalence ranks of the neighbors */</a>
+<a name="ln1191">            trans_i = insertions_sort(nNeighRank, num_neigh, sizeof(nNeighRank[0]), comp_AT_RANK);</a>
+<a name="ln1192">            for ( j = 1; j &lt; num_neigh; j ++ ) {</a>
+<a name="ln1193">                if ( nNeighRank[j-1] == nNeighRank[j] )</a>
+<a name="ln1194">                    break; /* at[i] has consitutionally identical neighbors */</a>
+<a name="ln1195">            }</a>
+<a name="ln1196">            if ( j &lt; num_neigh ) {</a>
+<a name="ln1197">                /*  at least 2 neighbors are const. identical; parity cannot be calculated at this time */</a>
+<a name="ln1198">                continue; /*  try next stereo atom */</a>
+<a name="ln1199">            }</a>
+<a name="ln1200">        }</a>
+<a name="ln1201">        prev_trans = -1;</a>
+<a name="ln1202">        trans_k    =  0;</a>
+<a name="ln1203">        /*  find neighbors of constitutionally equivalent stereo centers */</a>
+<a name="ln1204">        /*  and at[i] parities in case those centers are mapped on at[i] */</a>
+<a name="ln1205">        for ( iMax = (int)nAtomRank-1, j1 = 0; j1 &lt;= iMax &amp;&amp; nAtomRank==nRank[k=(int)nAtomNumber[iMax-j1]]; j1 ++ ) {</a>
+<a name="ln1206">            /*  at[k] is constitutionally equivalent to at[i] */</a>
+<a name="ln1207">            if ( (int)at[k].valence != num_neigh ) {</a>
+<a name="ln1208">                return CT_STEREOCOUNT_ERR;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln1209">            }</a>
+<a name="ln1210">            /* -- commented out to accept  non-stereogenic atoms since     --</a>
+<a name="ln1211">               -- they may participate in mapping stereocenters 12-16-2003 --</a>
+<a name="ln1212">            if ( !PARITY_VAL(at[k].parity) ) {</a>
+<a name="ln1213">                continue; // not a stereogenic atom</a>
+<a name="ln1214">            }</a>
+<a name="ln1215">            */</a>
+<a name="ln1216">            for ( j = 0, m = 0; m &lt; num_neigh; m ++ ) {</a>
+<a name="ln1217">                for ( n = 0; n &lt; num_neigh; n ++ ) {</a>
+<a name="ln1218">                    if ( nRank[(int)at[k].neighbor[n]] == nNeighRank[m] ) {</a>
+<a name="ln1219">                        /* save canonical numbers (ranks) of the neighbors in</a>
+<a name="ln1220">                         * order of increasing constit. equivalence ranks */</a>
+<a name="ln1221">                        nNeighCanonRank[m] = nCanonRank[(int)at[k].neighbor[n]];</a>
+<a name="ln1222">                        j ++;</a>
+<a name="ln1223">                        break;</a>
+<a name="ln1224">                    }</a>
+<a name="ln1225">                }</a>
+<a name="ln1226">            }</a>
+<a name="ln1227">            if ( j != num_neigh ) {</a>
+<a name="ln1228">                return CT_STEREOCOUNT_ERR;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln1229">            }</a>
+<a name="ln1230">            trans_k = insertions_sort(nNeighCanonRank, num_neigh, sizeof(nNeighCanonRank[0]), comp_AT_RANK);</a>
+<a name="ln1231">            trans_k %= 2;</a>
+<a name="ln1232">            if ( prev_trans &lt; 0 ) {</a>
+<a name="ln1233">                prev_trans = trans_k;</a>
+<a name="ln1234">            } else</a>
+<a name="ln1235">            if ( trans_k != prev_trans ) {</a>
+<a name="ln1236">                /*  different mappings may produce different parities. Cannot find the parity at this time */</a>
+<a name="ln1237">                /*  this may happen when a set of constit. equivalent atoms has non-contiguous canonical numbers */</a>
+<a name="ln1238">               break;</a>
+<a name="ln1239">            }</a>
+<a name="ln1240">        }</a>
+<a name="ln1241">        if ( trans_k == prev_trans ) {</a>
+<a name="ln1242">            at[i].stereo_atom_parity = 2 - (at[i].parity + trans_i + prev_trans ) % 2;</a>
+<a name="ln1243">            num_set ++;</a>
+<a name="ln1244">        }</a>
+<a name="ln1245">    }</a>
+<a name="ln1246">    return num_set;</a>
+<a name="ln1247">}</a>
+<a name="ln1248"> </a>
+<a name="ln1249">#if ( REMOVE_KNOWN_NONSTEREO == 1 ) /* { */</a>
+<a name="ln1250">/**********************************************************************************/</a>
+<a name="ln1251">/*  DFS along paths starting from the stereocenter through pairs of cut-edges  */</a>
+<a name="ln1252">int RemoveKnownNonStereoCenterParities( sp_ATOM *at, int num_atoms, const AT_RANK *nCanonRank,</a>
+<a name="ln1253">                                        const AT_RANK *nRank, CANON_STAT *pCS)</a>
+<a name="ln1254">{</a>
+<a name="ln1255">    int i, j, n, m, k, num_neigh, ret = 0;</a>
+<a name="ln1256">    /*AT_RANK nAtomRank;*/</a>
+<a name="ln1257">    AT_RANK nNeighRank[MAX_NUM_STEREO_ATOM_NEIGH], nNeighOrd[MAX_NUM_STEREO_ATOM_NEIGH];</a>
+<a name="ln1258">    </a>
+<a name="ln1259">    AT_RANK *nVisited = NULL;</a>
+<a name="ln1260">    </a>
+<a name="ln1261">    for ( i = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln1262">        if ( !at[i].parity || at[i].stereo_bond_neighbor[0] ) {</a>
+<a name="ln1263">            continue;</a>
+<a name="ln1264">        }</a>
+<a name="ln1265">        if ( !PARITY_CALCULATE(at[i].stereo_atom_parity) &amp;&amp; PARITY_WELL_DEF(at[i].stereo_atom_parity) ) {</a>
+<a name="ln1266">            continue;</a>
+<a name="ln1267">        }</a>
+<a name="ln1268">        num_neigh = at[i].valence;</a>
+<a name="ln1269">        for ( j = 0; j &lt; num_neigh; j ++ ) {</a>
+<a name="ln1270">            nNeighRank[j] = nRank[(int)at[i].neighbor[j]];</a>
+<a name="ln1271">            nNeighOrd[j]  = j;</a>
+<a name="ln1272">        }</a>
+<a name="ln1273">        /*nAtomRank = nRank[i];*/</a>
+<a name="ln1274">        if ( num_neigh == 1 ) {</a>
+<a name="ln1275">            continue;</a>
+<a name="ln1276">        }</a>
+<a name="ln1277">        pn_RankForSort = nNeighRank;</a>
+<a name="ln1278">        insertions_sort(nNeighOrd, num_neigh, sizeof(nNeighRank[0]), CompRanksOrd);</a>
+<a name="ln1279">        for ( j = k = 1; k &amp;&amp; j &lt; num_neigh; j ++ ) {</a>
+<a name="ln1280">            if ( at[i].nRingSystem != at[(int)at[i].neighbor[(int)nNeighOrd[j]]].nRingSystem &amp;&amp;</a>
+<a name="ln1281">                 /*  no more ring system membership check is necessary because */</a>
+<a name="ln1282">                 /*  the two neighbors are to be constitutionally equivalent atoms: */</a>
+<a name="ln1283">                nNeighRank[nNeighOrd[j-1]] == nNeighRank[nNeighOrd[j]] ) {</a>
+<a name="ln1284">                k = j;</a>
+<a name="ln1285">                do {</a>
+<a name="ln1286">                    if ( !nVisited &amp;&amp; !(nVisited = (AT_RANK*) inchi_malloc( sizeof(nVisited[0])*num_atoms ) ) ) {</a>
+<a name="ln1287">                        ret = CT_OUT_OF_RAM;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln1288">                        goto exit_function;</a>
+<a name="ln1289">                    }</a>
+<a name="ln1290">                    memset( nVisited, 0, sizeof(nVisited[0])*num_atoms );</a>
+<a name="ln1291">                    nVisited[i] = 1;</a>
+<a name="ln1292">                    if ( PathsHaveIdenticalKnownParities( at, (AT_RANK)i, at[i].neighbor[(int)nNeighOrd[j-1]],</a>
+<a name="ln1293">                                                              (AT_RANK)i, at[i].neighbor[(int)nNeighOrd[k]],</a>
+<a name="ln1294">                                                              nVisited, nVisited, nRank, nCanonRank, 1 ) ) {</a>
+<a name="ln1295">                        at[i].parity             = 0; /*  remove parity */</a>
+<a name="ln1296">                        at[i].stereo_atom_parity = 0;</a>
+<a name="ln1297">                        at[i].final_parity       = 0;</a>
+<a name="ln1298">                        /* at[i].bHasStereoOrEquToStereo = 0; */</a>
+<a name="ln1299">                        for ( n = 0, m = pCS-&gt;nLenLinearCTStereoCarb-1; n &lt;= m; n ++ ) {</a>
+<a name="ln1300">                            if ( pCS-&gt;LinearCTStereoCarb[n].at_num == nCanonRank[i] ) {</a>
+<a name="ln1301">                                if ( n &lt; m ) { /*  remove pCS-&gt;LinearCTStereoCarb[n] */</a>
+<a name="ln1302">                                    memmove( pCS-&gt;LinearCTStereoCarb + n,</a>
+<a name="ln1303">                                             pCS-&gt;LinearCTStereoCarb + n + 1,</a>
+<a name="ln1304">                                             (m-n)*sizeof(pCS-&gt;LinearCTStereoCarb[0]) );</a>
+<a name="ln1305">                                }</a>
+<a name="ln1306">                                pCS-&gt;nLenLinearCTStereoCarb --;</a>
+<a name="ln1307">                                k = 0;</a>
+<a name="ln1308">#if ( bRELEASE_VERSION == 0 )</a>
+<a name="ln1309">                                pCS-&gt;bExtract |= EXTR_KNOWN_USED_TO_REMOVE_PARITY;</a>
+<a name="ln1310">#endif</a>
+<a name="ln1311">                                break;</a>
+<a name="ln1312">                            }</a>
+<a name="ln1313">                        }</a>
+<a name="ln1314">                        if ( k ) {</a>
+<a name="ln1315">                            ret = CT_STEREOCOUNT_ERR;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln1316">                            goto exit_function;</a>
+<a name="ln1317">                        }</a>
+<a name="ln1318">                        ret ++;</a>
+<a name="ln1319">                        break;</a>
+<a name="ln1320">                    }</a>
+<a name="ln1321">                } while ( ++k &lt; num_neigh &amp;&amp; nNeighRank[nNeighOrd[j-1]] == nNeighRank[nNeighOrd[k]] );</a>
+<a name="ln1322">            }</a>
+<a name="ln1323">        }</a>
+<a name="ln1324">    }</a>
+<a name="ln1325"> </a>
+<a name="ln1326">exit_function:</a>
+<a name="ln1327"> </a>
+<a name="ln1328">    if ( nVisited ) {</a>
+<a name="ln1329">        inchi_free( nVisited );</a>
+<a name="ln1330">    }</a>
+<a name="ln1331"> </a>
+<a name="ln1332">    return ret;</a>
+<a name="ln1333">}</a>
+<a name="ln1334">#endif /* } REMOVE_KNOWN_NONSTEREO */</a>
+<a name="ln1335">/**********************************************************************************/</a>
+<a name="ln1336">/*  Find stereo center parities known in advance */</a>
+<a name="ln1337">int MarkKnownEqualStereoCenterParities( sp_ATOM *at, int num_atoms,</a>
+<a name="ln1338">                                        const AT_RANK *nRank, const AT_RANK *nAtomNumber )</a>
+<a name="ln1339">{</a>
+<a name="ln1340">    int i, j1, k, num_centers, iMax, bDifferentParities;</a>
+<a name="ln1341">    AT_RANK nAtomRank;</a>
+<a name="ln1342">    int  parity, parity_k;</a>
+<a name="ln1343">    num_centers = 0;</a>
+<a name="ln1344">    for ( i = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln1345">        if ( !at[i].parity || at[i].stereo_bond_neighbor[0] ) {</a>
+<a name="ln1346">            continue;</a>
+<a name="ln1347">        }</a>
+<a name="ln1348">        if ( at[i].bHasStereoOrEquToStereo ) {</a>
+<a name="ln1349">            continue; /* already marked */</a>
+<a name="ln1350">        }</a>
+<a name="ln1351">        if ( /*!PARITY_KNOWN(at[i].stereo_atom_parity) ||*/ (at[i].stereo_atom_parity &amp; KNOWN_PARITIES_EQL) ) {</a>
+<a name="ln1352">            continue;</a>
+<a name="ln1353">        }</a>
+<a name="ln1354">        parity    = PARITY_VAL(at[i].stereo_atom_parity);</a>
+<a name="ln1355">        if ( parity == AB_PARITY_NONE ) {</a>
+<a name="ln1356">            continue;</a>
+<a name="ln1357">        }</a>
+<a name="ln1358">        nAtomRank = nRank[i];</a>
+<a name="ln1359">        bDifferentParities = -1;</a>
+<a name="ln1360">        /*  find constitutionally equivalent stereo centers and compare their known at this time parities */</a>
+<a name="ln1361">        for ( iMax = (int)nAtomRank-1, j1 = 0; j1 &lt;= iMax &amp;&amp; nAtomRank==nRank[k=(int)nAtomNumber[iMax-j1]]; j1 ++ ) {</a>
+<a name="ln1362">            /*  at[k] is constitutionally equivalent to at[i] */</a>
+<a name="ln1363">            parity_k = PARITY_VAL(at[k].stereo_atom_parity);</a>
+<a name="ln1364">            if ( parity_k != parity ) {</a>
+<a name="ln1365">                bDifferentParities = 1;</a>
+<a name="ln1366">            } else</a>
+<a name="ln1367">            if ( parity_k == parity &amp;&amp; bDifferentParities &lt; 0 ) {</a>
+<a name="ln1368">                bDifferentParities = 0;</a>
+<a name="ln1369">            }</a>
+<a name="ln1370">            if ( !parity_k ) {</a>
+<a name="ln1371">                at[k].bHasStereoOrEquToStereo = 2;</a>
+<a name="ln1372">            } else</a>
+<a name="ln1373">            if ( !at[k].bHasStereoOrEquToStereo ) {</a>
+<a name="ln1374">                at[k].bHasStereoOrEquToStereo = 1;</a>
+<a name="ln1375">            }</a>
+<a name="ln1376">        }</a>
+<a name="ln1377">        if ( 0 == bDifferentParities &amp;&amp; PARITY_KNOWN( parity ) ) {</a>
+<a name="ln1378">            for ( iMax = (int)nAtomRank-1, j1 = 0; j1 &lt;= iMax &amp;&amp; nAtomRank==nRank[k=(int)nAtomNumber[iMax-j1]]; j1 ++ ) {</a>
+<a name="ln1379">                /*  at[k] is constitutionally equivalent to at[i] */</a>
+<a name="ln1380">                at[k].stereo_atom_parity |= KNOWN_PARITIES_EQL;</a>
+<a name="ln1381">                num_centers ++;</a>
+<a name="ln1382">            }</a>
+<a name="ln1383">        }</a>
+<a name="ln1384">    }</a>
+<a name="ln1385">    return num_centers;</a>
+<a name="ln1386">}</a>
+<a name="ln1387">/*****************************************************************************/</a>
+<a name="ln1388">/* invert known parities in at[] and in pCS-&gt;LinearCTStereoDble              */</a>
+<a name="ln1389">/*                                      pCS-&gt;LinearCTStereoCarb              */</a>
+<a name="ln1390">/* nCanonRank[] contains canonical ranks used to fill pCS-&gt;LinearCTStereo... */</a>
+<a name="ln1391">/* nAtomNumberCanon[] will be filled with atom numbers in canonical order    */</a>
+<a name="ln1392">/*****************************************************************************/</a>
+<a name="ln1393">int InvertStereo( sp_ATOM *at, int num_at_tg,</a>
+<a name="ln1394">                  AT_RANK *nCanonRank, AT_RANK *nAtomNumberCanon,</a>
+<a name="ln1395">                  CANON_STAT *pCS, int bInvertLinearCTStereo )</a>
+<a name="ln1396">{</a>
+<a name="ln1397">    int i, j, j1, j2, num_changes, parity, cumulene_len;</a>
+<a name="ln1398">    num_changes = 0;</a>
+<a name="ln1399">    for ( i = 0; i &lt; num_at_tg; i ++ ) {</a>
+<a name="ln1400">        nAtomNumberCanon[(int)nCanonRank[i]-1] = i;</a>
+<a name="ln1401">    }</a>
+<a name="ln1402">    for ( i = 0; i &lt; pCS-&gt;nLenLinearCTStereoCarb; i ++ ) {</a>
+<a name="ln1403">        parity = pCS-&gt;LinearCTStereoCarb[i].parity;</a>
+<a name="ln1404">        if ( ATOM_PARITY_WELL_DEF( parity ) ) {</a>
+<a name="ln1405">            j = nAtomNumberCanon[(int)pCS-&gt;LinearCTStereoCarb[i].at_num-1];</a>
+<a name="ln1406">            if ( PARITY_WELL_DEF(at[j].parity) ) {</a>
+<a name="ln1407">                at[j].parity ^= AB_INV_PARITY_BITS;</a>
+<a name="ln1408">            } else {</a>
+<a name="ln1409">                goto exit_error; /* inconsistency */</a>
+<a name="ln1410">            }</a>
+<a name="ln1411">            if ( bInvertLinearCTStereo ) {</a>
+<a name="ln1412">                pCS-&gt;LinearCTStereoCarb[i].parity ^= AB_INV_PARITY_BITS;</a>
+<a name="ln1413">            }</a>
+<a name="ln1414">            num_changes ++;</a>
+<a name="ln1415">            if ( PARITY_WELL_DEF(at[j].stereo_atom_parity) ) {</a>
+<a name="ln1416">                at[j].stereo_atom_parity ^= AB_INV_PARITY_BITS;</a>
+<a name="ln1417">            }</a>
+<a name="ln1418">            if ( PARITY_WELL_DEF(at[j].final_parity) ) {</a>
+<a name="ln1419">                at[j].final_parity ^= AB_INV_PARITY_BITS;</a>
+<a name="ln1420">            }</a>
+<a name="ln1421">        }</a>
+<a name="ln1422">    }</a>
+<a name="ln1423">    for ( i = 0; i &lt; pCS-&gt;nLenLinearCTStereoDble; i ++ ) {</a>
+<a name="ln1424">        parity = pCS-&gt;LinearCTStereoDble[i].parity;</a>
+<a name="ln1425">        if ( ATOM_PARITY_WELL_DEF( parity ) ) {</a>
+<a name="ln1426">            j1 = nAtomNumberCanon[(int)pCS-&gt;LinearCTStereoDble[i].at_num1-1];</a>
+<a name="ln1427">            cumulene_len = BOND_CHAIN_LEN(at[j1].stereo_bond_parity[0]);</a>
+<a name="ln1428">            if ( cumulene_len % 2 ) {</a>
+<a name="ln1429">                /* invert only in case of allene */</a>
+<a name="ln1430">                j2 = nAtomNumberCanon[(int)pCS-&gt;LinearCTStereoDble[i].at_num2-1];</a>
+<a name="ln1431">                /* checks for debug only */</a>
+<a name="ln1432">                if ( 1 &lt; MAX_NUM_STEREO_BONDS ) {</a>
+<a name="ln1433">                    if ( at[j1].stereo_bond_neighbor[1] ||</a>
+<a name="ln1434">                         at[j2].stereo_bond_neighbor[1] ) {</a>
+<a name="ln1435">                        goto exit_error; /* inconsitency: atom has more than one cumulene bond */</a>
+<a name="ln1436">                    }</a>
+<a name="ln1437">                }</a>
+<a name="ln1438">                if ( cumulene_len != BOND_CHAIN_LEN(at[j2].stereo_bond_parity[0]) ||</a>
+<a name="ln1439">                     j1+1 != at[j2].stereo_bond_neighbor[0] ||</a>
+<a name="ln1440">                     j2+1 != at[j1].stereo_bond_neighbor[0] ) {</a>
+<a name="ln1441">                    goto exit_error; /* inconsitency: atoms should refer to each other */</a>
+<a name="ln1442">                }</a>
+<a name="ln1443">                /* invert parities */</a>
+<a name="ln1444">                if ( PARITY_WELL_DEF(at[j1].parity) &amp;&amp; PARITY_WELL_DEF(at[j2].parity) ) {</a>
+<a name="ln1445">                    j  = inchi_min( j1, j2 ); </a>
+<a name="ln1446">                    at[j].parity ^= AB_INV_PARITY_BITS; /* for reversability always invert only atom with the smaller number */</a>
+<a name="ln1447">                } else {</a>
+<a name="ln1448">                    goto exit_error; /* inconsistency */</a>
+<a name="ln1449">                }</a>
+<a name="ln1450">                if ( bInvertLinearCTStereo ) {</a>
+<a name="ln1451">                    pCS-&gt;LinearCTStereoDble[i].parity ^= AB_INV_PARITY_BITS;</a>
+<a name="ln1452">                }</a>
+<a name="ln1453">                num_changes ++;</a>
+<a name="ln1454">                if ( PARITY_WELL_DEF(at[j1].stereo_bond_parity[0]) ) {</a>
+<a name="ln1455">                    at[j1].stereo_bond_parity[0] ^= AB_INV_PARITY_BITS;</a>
+<a name="ln1456">                }</a>
+<a name="ln1457">                if ( PARITY_WELL_DEF(at[j2].stereo_bond_parity[0]) ) {</a>
+<a name="ln1458">                    at[j2].stereo_bond_parity[0] ^= AB_INV_PARITY_BITS;</a>
+<a name="ln1459">                }</a>
+<a name="ln1460">            }</a>
+<a name="ln1461">        }</a>
+<a name="ln1462">    }</a>
+<a name="ln1463"> </a>
+<a name="ln1464">    return num_changes;</a>
+<a name="ln1465"> </a>
+<a name="ln1466">exit_error:</a>
+<a name="ln1467"> </a>
+<a name="ln1468">    return CT_STEREOCOUNT_ERR;</a>
+<a name="ln1469">}</a>
+<a name="ln1470">/**********************************************************************************/</a>
+<a name="ln1471">/*  Make sure atoms stereo descriptors fit molecular symmetry and remove */</a>
+<a name="ln1472">/*  parity from obviously non-stereo atoms and bonds */</a>
+<a name="ln1473">int FillOutStereoParities( sp_ATOM *at, int num_atoms, const AT_RANK *nCanonRank, const AT_RANK *nAtomNumberCanon,</a>
+<a name="ln1474">                           const AT_RANK *nRank, const AT_RANK *nAtomNumber, CANON_STAT *pCS, int bIsotopic )</a>
+<a name="ln1475">{</a>
+<a name="ln1476">    int ret;</a>
+<a name="ln1477">    /*  unmark atoms with 2 or more constitutionally equivalent neighbors */</a>
+<a name="ln1478">    /*  such that there is no path through them to an atom with parity */</a>
+<a name="ln1479">    ret = UnmarkNonStereo( at, num_atoms, nRank, nAtomNumber, bIsotopic );</a>
+<a name="ln1480">    if ( ret &lt; 0 )</a>
+<a name="ln1481">        return ret;  /*  program error? */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln1482">    ret = FillAllStereoDescriptors( at, num_atoms, nCanonRank, nAtomNumberCanon, pCS ); /*  ret&lt;0: error */</a>
+<a name="ln1483">    if ( !ret ) {</a>
+<a name="ln1484">        ret = pCS-&gt;nLenLinearCTStereoCarb + pCS-&gt;nLenLinearCTStereoDble;</a>
+<a name="ln1485">    }</a>
+<a name="ln1486">    if ( ret &lt; 0 ) {</a>
+<a name="ln1487">        return ret; /*  program error? */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln1488">    }</a>
+<a name="ln1489"> </a>
+<a name="ln1490">    if ( ret &gt;= 0 ) {</a>
+<a name="ln1491">        int ret2;</a>
+<a name="ln1492">        ret2 = SetKnownStereoCenterParities( at, num_atoms, nCanonRank, nRank, nAtomNumber );</a>
+<a name="ln1493">        if ( ret2 &gt;= 0 ) {</a>
+<a name="ln1494">            ret2 = MarkKnownEqualStereoCenterParities( at, num_atoms, nRank, nAtomNumber );</a>
+<a name="ln1495">        }</a>
+<a name="ln1496">        if ( ret2 &gt;= 0 ) {</a>
+<a name="ln1497">            ret2 = SetKnownStereoBondParities( at, num_atoms, nCanonRank, nRank, nAtomNumber );</a>
+<a name="ln1498">            if ( ret2 &gt;= 0 ) {</a>
+<a name="ln1499">                ret2 = MarkKnownEqualStereoBondParities( at, num_atoms, nRank, nAtomNumber);</a>
+<a name="ln1500">            }</a>
+<a name="ln1501">        }</a>
+<a name="ln1502">#if ( REMOVE_KNOWN_NONSTEREO == 1 ) /* { */</a>
+<a name="ln1503">        if ( ret2 &gt;= 0 ) {</a>
+<a name="ln1504">            int ret3;</a>
+<a name="ln1505">            do {</a>
+<a name="ln1506">                ret2 = RemoveKnownNonStereoCenterParities( at, num_atoms, nCanonRank, nRank, pCS);</a>
+<a name="ln1507">                if ( ret2 &gt;= 0 ) {</a>
+<a name="ln1508">                    ret3 = RemoveKnownNonStereoBondParities( at, num_atoms, nCanonRank, nRank, pCS);</a>
+<a name="ln1509">                    ret2 = ret3 &gt;= 0? ret2+ret3 : ret3;</a>
+<a name="ln1510">                }</a>
+<a name="ln1511">            }</a>
+<a name="ln1512">            while( ret2 &gt; 0 );  </a>
+<a name="ln1513">        }</a>
+<a name="ln1514">        if ( RETURNED_ERROR( ret2 ) ) {</a>
+<a name="ln1515">            ret = ret2;</a>
+<a name="ln1516">        }</a>
+<a name="ln1517">#endif /* } REMOVE_KNOWN_NONSTEREO */</a>
+<a name="ln1518">    }</a>
+<a name="ln1519"> </a>
+<a name="ln1520">    return ret; /*  non-zero means error */</a>
+<a name="ln1521">}</a>
+<a name="ln1522">/**********************************************************************************/</a>
+<a name="ln1523">int GetStereoNeighborPos( sp_ATOM *at, int iAt1, int iAt2 )</a>
+<a name="ln1524">{</a>
+<a name="ln1525">    int k1;</a>
+<a name="ln1526">    AT_RANK sNeigh = (AT_RANK)(iAt2+1);</a>
+<a name="ln1527">    AT_RANK s;</a>
+<a name="ln1528">    for ( k1 = 0; k1 &lt; MAX_NUM_STEREO_BONDS &amp;&amp; (s = at[iAt1].stereo_bond_neighbor[k1]); k1 ++ ) {</a>
+<a name="ln1529">        if ( s == sNeigh ) {</a>
+<a name="ln1530">            return k1;</a>
+<a name="ln1531">        }</a>
+<a name="ln1532">    }</a>
+<a name="ln1533">    return -1; /*  neighbor not found */</a>
+<a name="ln1534">}</a>
+<a name="ln1535"> </a>
+<a name="ln1536">/**********************************************************************************/</a>
+<a name="ln1537">/*  Extracted from FillSingleStereoDescriptors(...) */</a>
+<a name="ln1538">/**********************************************************************************/</a>
+<a name="ln1539">int GetStereoBondParity(sp_ATOM *at, int i, int n, AT_RANK *nRank )</a>
+<a name="ln1540">{</a>
+<a name="ln1541">int k1, k2, s, parity;</a>
+<a name="ln1542">        </a>
+<a name="ln1543">    if ( at[i].stereo_bond_neighbor[0] ) {</a>
+<a name="ln1544">        for ( k1 = 0; k1 &lt; MAX_NUM_STEREO_BONDS &amp;&amp; (s = (int)at[i].stereo_bond_neighbor[k1]); k1 ++ ) {</a>
+<a name="ln1545">            if ( --s == n ) {</a>
+<a name="ln1546">                goto neigh1_found;</a>
+<a name="ln1547">            }</a>
+<a name="ln1548">        }</a>
+<a name="ln1549">        return -1; /*  error: not a stereo neighbor */</a>
+<a name="ln1550">neigh1_found:</a>
+<a name="ln1551">        if ( PARITY_KNOWN( at[i].stereo_bond_parity[k1] ) ) {</a>
+<a name="ln1552">            return PARITY_VAL( at[i].stereo_bond_parity[k1] );</a>
+<a name="ln1553">        }</a>
+<a name="ln1554">        for ( k2 = 0; k2 &lt; MAX_NUM_STEREO_BONDS &amp;&amp; (s = (int)at[n].stereo_bond_neighbor[k2]); k2 ++ ) {</a>
+<a name="ln1555">            if ( --s == i ) {</a>
+<a name="ln1556">                goto neigh2_found;</a>
+<a name="ln1557">            }</a>
+<a name="ln1558">        }</a>
+<a name="ln1559">        return -1; /*  error: not a stereo neighbor */</a>
+<a name="ln1560">neigh2_found:;</a>
+<a name="ln1561">    } else {</a>
+<a name="ln1562">        return -1; /*  error: not a stereo bond */</a>
+<a name="ln1563">    }</a>
+<a name="ln1564"> </a>
+<a name="ln1565">    if ( ATOM_PARITY_WELL_DEF(at[i].parity) &amp;&amp;</a>
+<a name="ln1566">         ATOM_PARITY_WELL_DEF(at[n].parity) &amp;&amp;</a>
+<a name="ln1567">         MIN_DOT_PROD &lt;= abs(at[i].stereo_bond_z_prod[k1]) ) {</a>
+<a name="ln1568">        /*  bond parity can be calculated */</a>
+<a name="ln1569">        int half_parity1, half_parity2;</a>
+<a name="ln1570">        /*  check whether all neighbors are defined */</a>
+<a name="ln1571"> </a>
+<a name="ln1572"> </a>
+<a name="ln1573">        half_parity1 = HalfStereoBondParity( at, i, k1, nRank );</a>
+<a name="ln1574">        half_parity2 = HalfStereoBondParity( at, n, k2, nRank );</a>
+<a name="ln1575">        if ( !half_parity1 || !half_parity2 )</a>
+<a name="ln1576">            return 0; /*  ranks undefined or not a stereo bond */</a>
+<a name="ln1577">        if ( ATOM_PARITY_WELL_DEF(half_parity1) &amp;&amp;</a>
+<a name="ln1578">             ATOM_PARITY_WELL_DEF(half_parity2)  ) {</a>
+<a name="ln1579">            parity = 2 - ( half_parity1 + half_parity2</a>
+<a name="ln1580">                     + (at[i].stereo_bond_z_prod[k1] &lt; 0))%2; </a>
+<a name="ln1581">        } else {</a>
+<a name="ln1582">            return CT_STEREOBOND_ERROR;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln1583">        }</a>
+<a name="ln1584">    } else {</a>
+<a name="ln1585">        /*  parity cannot be calculated: not enough info or 'unknown' */</a>
+<a name="ln1586">        if ( AB_PARITY_NONE != (parity = inchi_max(at[i].parity, at[n].parity)) ) {</a>
+<a name="ln1587">            parity = AB_PARITY_UNDF; /*  should not happen */</a>
+<a name="ln1588">        }</a>
+<a name="ln1589">    }</a>
+<a name="ln1590">    return parity;</a>
+<a name="ln1591">}</a>
+<a name="ln1592"> </a>
+<a name="ln1593"> </a>
+<a name="ln1594"> </a>
+<a name="ln1595"> </a>
+<a name="ln1596">/**********************************************************************************/</a>
+<a name="ln1597">/*  Extracted from FillSingleStereoDescriptors(...) */</a>
+<a name="ln1598">/**********************************************************************************/</a>
+<a name="ln1599">int GetPermutationParity( sp_ATOM *at, AT_RANK nAvoidNeighbor, AT_RANK *nCanonRank )</a>
+<a name="ln1600">{</a>
+<a name="ln1601">    AT_RANK nNeighRank[MAX_NUM_STEREO_ATOM_NEIGH];</a>
+<a name="ln1602">    int     j, k, parity;</a>
+<a name="ln1603">    if ( at-&gt;valence &gt; MAX_NUM_STEREO_ATOM_NEIGH ) {</a>
+<a name="ln1604">        parity = -1; /*  error */</a>
+<a name="ln1605">    } else {</a>
+<a name="ln1606">        for ( j = k = 0; j &lt; at-&gt;valence; j ++ ) {</a>
+<a name="ln1607">            if ( at-&gt;neighbor[j] != nAvoidNeighbor ) {</a>
+<a name="ln1608">                nNeighRank[k++] = nCanonRank[(int)at-&gt;neighbor[j]];</a>
+<a name="ln1609">            }</a>
+<a name="ln1610">        }</a>
+<a name="ln1611">        if ( k ) {</a>
+<a name="ln1612">            parity = insertions_sort( nNeighRank, k, sizeof(nNeighRank[0]), comp_AT_RANK);</a>
+<a name="ln1613">            if ( nNeighRank[0] ) {</a>
+<a name="ln1614">                parity = 2 - parity % 2;</a>
+<a name="ln1615">            } else {</a>
+<a name="ln1616">                parity = 0; /*  not all ranks are known */</a>
+<a name="ln1617">            }</a>
+<a name="ln1618">        } else {</a>
+<a name="ln1619">            /* special case: HX= with implicit H */</a>
+<a name="ln1620">            parity = 2;</a>
+<a name="ln1621">        }</a>
+<a name="ln1622">    }</a>
+<a name="ln1623">    return parity;</a>
+<a name="ln1624">}</a>
+<a name="ln1625">/**********************************************************************************/</a>
+<a name="ln1626">int GetStereoCenterParity(sp_ATOM *at, int i, AT_RANK *nRank )</a>
+<a name="ln1627">{</a>
+<a name="ln1628">    AT_NUMB  nNeighborNumber2[MAXVAL];</a>
+<a name="ln1629">    int      parity;</a>
+<a name="ln1630">    int      k, num_trans;</a>
+<a name="ln1631"> </a>
+<a name="ln1632">    if ( !at[i].parity ) {</a>
+<a name="ln1633">        return 0; /*  not a stereo center */</a>
+<a name="ln1634">    }</a>
+<a name="ln1635">    if ( at[i].stereo_bond_neighbor[0] ) {</a>
+<a name="ln1636">        return -1;  /*  a stereo bond atom, not a stereo center */</a>
+<a name="ln1637">    }</a>
+<a name="ln1638"> </a>
+<a name="ln1639">    if ( ATOM_PARITY_WELL_DEF(at[i].parity) ) {</a>
+<a name="ln1640">        /*  number of neighbors transpositions to the sorted order is unknown. Find it. */</a>
+<a name="ln1641">        /*  If parity is not well-defined then doing this is a waste of time */</a>
+<a name="ln1642">        int num_neigh = at[i].valence;</a>
+<a name="ln1643">        for ( k = 0; k &lt; num_neigh; k ++) {</a>
+<a name="ln1644">            if ( !nRank[(int)at[i].neighbor[k]] )</a>
+<a name="ln1645">                return 0; /*  stereo at[i] does not belong to the traversed part of the structure */</a>
+<a name="ln1646">            nNeighborNumber2[k] = k;</a>
+<a name="ln1647">        }</a>
+<a name="ln1648">        pNeighborsForSort = at[i].neighbor;</a>
+<a name="ln1649">        pn_RankForSort    = nRank;</a>
+<a name="ln1650">        num_trans=insertions_sort( nNeighborNumber2, num_neigh, sizeof(nNeighborNumber2[0]), CompNeighborsAT_NUMBER );</a>
+<a name="ln1651">#ifndef CT_NEIGH_INCREASE</a>
+<a name="ln1652">        num_trans += ((num_neigh*(num_neigh-1))/2)%2;  /*  get correct parity for ascending order */</a>
+<a name="ln1653">#endif</a>
+<a name="ln1654">        parity = 2 - (at[i].parity + num_trans)%2;</a>
+<a name="ln1655">    } else {</a>
+<a name="ln1656">        parity = at[i].parity;</a>
+<a name="ln1657">    }</a>
+<a name="ln1658"> </a>
+<a name="ln1659">    return parity;</a>
+<a name="ln1660">}</a>
+
+</code></pre>
+<div class="balloon" rel="324"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v614/" target="_blank">V614</a> Potentially uninitialized variable 'j' used.</p></div>
+<div class="balloon" rel="393"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v507/" target="_blank">V507</a> Pointer to local array 'nStereoNeigh' is stored outside the scope of this array. Such a pointer will become invalid.</p></div>
+<div class="balloon" rel="578"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v781/" target="_blank">V781</a> The value of the 'i2' variable is checked after it was used. Perhaps there is a mistake in program logic. Check lines: 578, 581.</p></div>
+<div class="balloon" rel="776"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v781/" target="_blank">V781</a> The value of the 'i2' variable is checked after it was used. Perhaps there is a mistake in program logic. Check lines: 776, 777.</p></div>
+<div class="balloon" rel="912"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true.</p></div>
+<div class="balloon" rel="1277"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v507/" target="_blank">V507</a> Pointer to local array 'nNeighRank' is stored outside the scope of this array. Such a pointer will become invalid.</p></div>
+<div class="balloon" rel="1367"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: parity_k == parity.</p></div>
+<div class="balloon" rel="1490"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'ret >= 0' is always true.</p></div>
+<div class="balloon" rel="1565"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v779/" target="_blank">V779</a> Unreachable code detected. It is possible that an error is present.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

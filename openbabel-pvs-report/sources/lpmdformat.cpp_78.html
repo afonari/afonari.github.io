@@ -1,0 +1,469 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>lpmdformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Copyright (C) 2012 GNM http://www.gnm.cl</a>
+<a name="ln3"> </a>
+<a name="ln4">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln5">it under the terms of the GNU General Public License as published by</a>
+<a name="ln6">the Free Software Foundation version 2 of the License.</a>
+<a name="ln7"> </a>
+<a name="ln8">This program is distributed in the hope that it will be useful,</a>
+<a name="ln9">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln10">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln11">GNU General Public License for more details.</a>
+<a name="ln12">***********************************************************************/</a>
+<a name="ln13"> </a>
+<a name="ln14">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln15">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln16">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln17">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln18">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln20"> </a>
+<a name="ln21">#include &lt;cstdlib&gt;</a>
+<a name="ln22"> </a>
+<a name="ln23">using namespace std;</a>
+<a name="ln24">namespace OpenBabel</a>
+<a name="ln25">{</a>
+<a name="ln26"> </a>
+<a name="ln27">class LpmdFormat : public OBMoleculeFormat</a>
+<a name="ln28">// Derive directly from OBFormat for objects which are not molecules.</a>
+<a name="ln29">{</a>
+<a name="ln30"> public:</a>
+<a name="ln31">  //Register this format type ID in the constructor</a>
+<a name="ln32">  LpmdFormat()</a>
+<a name="ln33">  {</a>
+<a name="ln34">   file_line=0;</a>
+<a name="ln35">   OBConversion::RegisterFormat(&quot;lpmd&quot;,this);</a>
+<a name="ln36">  }</a>
+<a name="ln37">  virtual const char* Description() //required</a>
+<a name="ln38">  {</a>
+<a name="ln39">   return</a>
+<a name="ln40">    &quot;LPMD format\n&quot;</a>
+<a name="ln41">    &quot;Read and write LPMD's atomic configuration file\n\n&quot;</a>
+<a name="ln42">    &quot;Read Options e.g. -ab\n&quot;</a>
+<a name="ln43">    &quot;  s  Output single bonds only\n&quot;</a>
+<a name="ln44">    &quot;  b  Disable bonding entirely\n\n&quot;</a>
+<a name="ln45">    &quot;Write Options e.g. -xf 1\n&quot;</a>
+<a name="ln46">    &quot;  f# Indicate the level of the output file: 0 (default), 1 or 2.\n&quot;</a>
+<a name="ln47">    &quot;  m# Indicate the mode for level 2 output files\n&quot;</a>
+<a name="ln48">    &quot;        0 (default) is for accelerations and 1 for forces\n&quot;</a>
+<a name="ln49">    &quot;  c &lt;vectorcells&gt; Set the cell vectors if not present\n&quot;</a>
+<a name="ln50">    &quot;        Example: ``-xc 10.0,0,0,0.0,10.0,0.0,0.0,0.0,20.0``\n&quot;</a>
+<a name="ln51">    &quot;  e Add the charge to the output file\n\n&quot;</a>
+<a name="ln52">    ;</a>
+<a name="ln53">  };</a>
+<a name="ln54"> </a>
+<a name="ln55">  //Optional URL where the file format is specified</a>
+<a name="ln56">  virtual const char* SpecificationURL()</a>
+<a name="ln57">  {return &quot;http://www.lpmd.cl/index.php/documentation/the-lpmd-format&quot;;};</a>
+<a name="ln58"> </a>
+<a name="ln59">  //Optional</a>
+<a name="ln60">  virtual const char* GetMIMEType()  { return &quot;chemical/lpmd&quot;; };</a>
+<a name="ln61"> </a>
+<a name="ln62">  virtual int SkipObjects(int n, OBConversion* pConv)</a>
+<a name="ln63">  {</a>
+<a name="ln64">   return 0;</a>
+<a name="ln65">  };</a>
+<a name="ln66"> </a>
+<a name="ln67">  ////////////////////////////////////////////////////</a>
+<a name="ln68">  /// Declarations for the &quot;API&quot; interface functions. Definitions are below</a>
+<a name="ln69"> </a>
+<a name="ln70">  //Converts a string to a numerical type</a>
+<a name="ln71">  //This purloined from: http://www.codeguru.com/forum/showthread.php?t=231054</a>
+<a name="ln72">  template &lt;class T&gt;</a>
+<a name="ln73">  bool from_string(T&amp; t, const std::string&amp; s, std::ios_base&amp; (*f)(std::ios_base&amp;))</a>
+<a name="ln74">  {</a>
+<a name="ln75">   std::istringstream iss(s);</a>
+<a name="ln76">   return !(iss &gt;&gt; f &gt;&gt; t).fail();</a>
+<a name="ln77">  }</a>
+<a name="ln78"> </a>
+<a name="ln79">  bool ReadHeader(std::istream &amp;ifs, OBMol &amp;mol);</a>
+<a name="ln80">  bool ReadAtom(std::istream &amp;ifs, OBMol &amp;mol);</a>
+<a name="ln81">  virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln82">  virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln83"> </a>
+<a name="ln84"> private:</a>
+<a name="ln85">  char buffer[BUFF_SIZE];</a>
+<a name="ln86">  std::vector&lt;std::string&gt; tokens;</a>
+<a name="ln87">  std::vector&lt;std::string&gt; headers; //Header information.</a>
+<a name="ln88">  int N; //the number of atoms</a>
+<a name="ln89">  int file_line;</a>
+<a name="ln90">  std::vector&lt; vector3 &gt; forces;</a>
+<a name="ln91">  std::vector&lt; vector3 &gt; accele;</a>
+<a name="ln92">  std::vector&lt; vector3 &gt; veloci;</a>
+<a name="ln93">};</a>
+<a name="ln94"> </a>
+<a name="ln95">LpmdFormat theLpmdFormat;</a>
+<a name="ln96"> </a>
+<a name="ln97">bool LpmdFormat::ReadHeader( std::istream &amp;ifs, OBMol &amp;mol )</a>
+<a name="ln98">{</a>
+<a name="ln99"> //Header Line</a>
+<a name="ln100"> if( ! ifs.getline(buffer,BUFF_SIZE) )</a>
+<a name="ln101"> {</a>
+<a name="ln102">  obErrorLog.ThrowError(__FUNCTION__,&quot;Problem reading header line&quot;,obWarning);</a>
+<a name="ln103">  return false;</a>
+<a name="ln104"> }</a>
+<a name="ln105"> tokenize(tokens, buffer,&quot; &quot;);</a>
+<a name="ln106"> if(tokens.size() == 0)</a>
+<a name="ln107"> {</a>
+<a name="ln108">  obErrorLog.ThrowError(__FUNCTION__,&quot;The initial line it is empty!!! non LPMD format&quot;,obError);</a>
+<a name="ln109">  return false;</a>
+<a name="ln110"> }</a>
+<a name="ln111"> if(tokens.at(0).compare(&quot;LPMD&quot;) != 0 || tokens.at(1).compare(&quot;2.0&quot;) != 0)</a>
+<a name="ln112"> {</a>
+<a name="ln113">  obErrorLog.ThrowError(__FUNCTION__,&quot;The start line, doesn't identify this file like a lpmd 2.0 file&quot;,obError);</a>
+<a name="ln114">  return false;</a>
+<a name="ln115"> }</a>
+<a name="ln116"> if(tokens.size()==3 &amp;&amp; tokens.at(2).compare(&quot;Z&quot;)==0)</a>
+<a name="ln117"> {</a>
+<a name="ln118">  obErrorLog.ThrowError(__FUNCTION__,&quot;There is not support for zipped files yet.&quot;,obError);</a>
+<a name="ln119">  return false;</a>
+<a name="ln120"> }</a>
+<a name="ln121"> if ( ! ifs.getline(buffer,BUFF_SIZE) )</a>
+<a name="ln122"> {</a>
+<a name="ln123">  obErrorLog.ThrowError(__FUNCTION__,&quot;Problem reading header line&quot;,obError);</a>
+<a name="ln124">  return false;</a>
+<a name="ln125"> }</a>
+<a name="ln126"> tokenize(headers, buffer, &quot; &quot;);</a>
+<a name="ln127"> if(headers.size()&lt;=1 || headers.at(0).compare(&quot;HDR&quot;)!=0)</a>
+<a name="ln128"> {</a>
+<a name="ln129">  obErrorLog.ThrowError(__FUNCTION__,&quot;Problem reading header, check the HDR line&quot;,obError);</a>
+<a name="ln130"> }</a>
+<a name="ln131"> file_line = 2;</a>
+<a name="ln132"> return true;</a>
+<a name="ln133">} // End ReadHeader</a>
+<a name="ln134">/////////////////////////////////////////////////////////////////</a>
+<a name="ln135">bool LpmdFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln136">{</a>
+<a name="ln137"> OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln138"> if (pmol == nullptr) return false;</a>
+<a name="ln139"> </a>
+<a name="ln140"> N=0;</a>
+<a name="ln141"> std::istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln142"> OBMol &amp;mol = *pmol;</a>
+<a name="ln143"> </a>
+<a name="ln144"> //Read the header only once.</a>
+<a name="ln145"> if(file_line==0)</a>
+<a name="ln146"> {</a>
+<a name="ln147">  if ( ! ReadHeader( ifs, mol ) ) return false;</a>
+<a name="ln148"> }</a>
+<a name="ln149"> std::stringstream ErrMsg;</a>
+<a name="ln150"> //Read the cell vectors.</a>
+<a name="ln151"> double ax=0.0e0,ay=0.0e0,az=0.0e0;</a>
+<a name="ln152"> double bx=0.0e0,by=0.0e0,bz=0.0e0;</a>
+<a name="ln153"> double cx=0.0e0,cy=0.0e0,cz=0.0e0;</a>
+<a name="ln154"> //Reading the number of atoms.</a>
+<a name="ln155"> ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln156"> file_line++;</a>
+<a name="ln157"> tokenize(tokens, buffer, &quot; &quot;);</a>
+<a name="ln158"> if(tokens.size()!=1)</a>
+<a name="ln159"> {</a>
+<a name="ln160">  obErrorLog.ThrowError(__FUNCTION__,&quot;The number of atoms line was not correctly readed&quot;,obError);</a>
+<a name="ln161"> }</a>
+<a name="ln162"> from_string&lt;int&gt;(N, tokens.at(0), std::dec);</a>
+<a name="ln163"> </a>
+<a name="ln164"> tokens.clear();</a>
+<a name="ln165"> ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln166"> file_line++;</a>
+<a name="ln167"> tokenize(tokens, buffer, &quot; &quot;);</a>
+<a name="ln168"> from_string&lt;double&gt;(ax, tokens.at(0), std::dec);</a>
+<a name="ln169"> from_string&lt;double&gt;(ay, tokens.at(1), std::dec);</a>
+<a name="ln170"> from_string&lt;double&gt;(az, tokens.at(2), std::dec);</a>
+<a name="ln171"> from_string&lt;double&gt;(bx, tokens.at(3), std::dec);</a>
+<a name="ln172"> from_string&lt;double&gt;(by, tokens.at(4), std::dec);</a>
+<a name="ln173"> from_string&lt;double&gt;(bz, tokens.at(5), std::dec);</a>
+<a name="ln174"> from_string&lt;double&gt;(cx, tokens.at(6), std::dec);</a>
+<a name="ln175"> from_string&lt;double&gt;(cy, tokens.at(7), std::dec);</a>
+<a name="ln176"> from_string&lt;double&gt;(cz, tokens.at(8), std::dec);</a>
+<a name="ln177"> </a>
+<a name="ln178"> vector3 vx = vector3(ax,ay,az);</a>
+<a name="ln179"> vector3 vy = vector3(bx,by,bz);</a>
+<a name="ln180"> vector3 vz = vector3(cx,cy,cz);</a>
+<a name="ln181"> OBUnitCell * unitcell = new OBUnitCell();</a>
+<a name="ln182"> unitcell-&gt;SetData( vx, vy, vz );</a>
+<a name="ln183"> </a>
+<a name="ln184"> //////////////////////////////////////////////////////</a>
+<a name="ln185"> //Start molecule modification.////////////////////////</a>
+<a name="ln186"> //////////////////////////////////////////////////////</a>
+<a name="ln187"> mol.BeginModify();</a>
+<a name="ln188"> mol.SetData( unitcell );</a>
+<a name="ln189"> </a>
+<a name="ln190"> for(int i=0 ; i&lt;N ; ++i)</a>
+<a name="ln191"> {</a>
+<a name="ln192">  OBAtom *atom  = mol.NewAtom();</a>
+<a name="ln193">  ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln194">  file_line++;</a>
+<a name="ln195">  tokenize(tokens, buffer, &quot; &quot;);</a>
+<a name="ln196">  if(int(headers.size()-1)!=tokens.size())</a>
+<a name="ln197">  {</a>
+<a name="ln198">   ErrMsg &lt;&lt; &quot;There was a problem reading an atomic configuration,  &quot;</a>
+<a name="ln199">          &lt;&lt; &quot;the line # &quot; &lt;&lt; file_line &lt;&lt; &quot; doesn't have the number &quot;</a>
+<a name="ln200">	  &lt;&lt; &quot;of columns indicated in the HDR (second line). &quot;;</a>
+<a name="ln201">   obErrorLog.ThrowError(__FUNCTION__, ErrMsg.str(), obError);</a>
+<a name="ln202">  }</a>
+<a name="ln203">  //Based in the OBAtom class, only X Y Z VX VY VZ FX FY FZ</a>
+<a name="ln204">  //FCH PCH CHG are the first candidates to use from a LPMD file.</a>
+<a name="ln205">  double X=0.0,Y=0.0,Z=0.0, VX=0.0, VY=0.0, VZ=0.0;</a>
+<a name="ln206">  double AX=0.0, AY=0.0, AZ=0.0, FX=0.0, FY=0.0, FZ=0.0;</a>
+<a name="ln207">  double CHG=0.0,FCH=0.0;</a>
+<a name="ln208">  std::string symbol = &quot;Xx&quot;;</a>
+<a name="ln209">  int ma=0,mf=0; //mode for acceleration or forces.</a>
+<a name="ln210">  for(int i=1 ; i &lt; headers.size() ; ++i) //the first element is HDR</a>
+<a name="ln211">  {</a>
+<a name="ln212">   //Basic information position and atomic symbol.</a>
+<a name="ln213">   if(headers.at(i).compare(&quot;X&quot;)==0) from_string&lt;double&gt;(X, tokens.at(i-1), std::dec);</a>
+<a name="ln214">   if(headers.at(i).compare(&quot;Y&quot;)==0) from_string&lt;double&gt;(Y, tokens.at(i-1), std::dec);</a>
+<a name="ln215">   if(headers.at(i).compare(&quot;Z&quot;)==0) from_string&lt;double&gt;(Z, tokens.at(i-1), std::dec);</a>
+<a name="ln216">   if(headers.at(i).compare(&quot;SYM&quot;)==0) symbol = tokens.at(i-1);</a>
+<a name="ln217">   //Velocities</a>
+<a name="ln218">   if(headers.at(i).compare(&quot;VX&quot;)==0) from_string&lt;double&gt;(VX, tokens.at(i-1), std::dec);</a>
+<a name="ln219">   if(headers.at(i).compare(&quot;VY&quot;)==0) from_string&lt;double&gt;(VY, tokens.at(i-1), std::dec);</a>
+<a name="ln220">   if(headers.at(i).compare(&quot;VZ&quot;)==0) from_string&lt;double&gt;(VZ, tokens.at(i-1), std::dec);</a>
+<a name="ln221">   //Accelerations</a>
+<a name="ln222">   if(headers.at(i).compare(&quot;AX&quot;)==0) {from_string&lt;double&gt;(AX, tokens.at(i-1), std::dec);ma++;}</a>
+<a name="ln223">   if(headers.at(i).compare(&quot;AY&quot;)==0) {from_string&lt;double&gt;(AY, tokens.at(i-1), std::dec);ma++;}</a>
+<a name="ln224">   if(headers.at(i).compare(&quot;AZ&quot;)==0) {from_string&lt;double&gt;(AZ, tokens.at(i-1), std::dec);ma++;}</a>
+<a name="ln225">   //Forces</a>
+<a name="ln226">   if(headers.at(i).compare(&quot;FX&quot;)==0) {from_string&lt;double&gt;(FX, tokens.at(i-1), std::dec);mf++;}</a>
+<a name="ln227">   if(headers.at(i).compare(&quot;FY&quot;)==0) {from_string&lt;double&gt;(FY, tokens.at(i-1), std::dec);mf++;}</a>
+<a name="ln228">   if(headers.at(i).compare(&quot;FZ&quot;)==0) {from_string&lt;double&gt;(FZ, tokens.at(i-1), std::dec);mf++;}</a>
+<a name="ln229">   //Charges</a>
+<a name="ln230">   if(headers.at(i).compare(&quot;CHG&quot;)==0) from_string&lt;double&gt;(CHG, tokens.at(i-1), std::dec);</a>
+<a name="ln231">   if(headers.at(i).compare(&quot;PHG&quot;)==0) from_string&lt;double&gt;(CHG, tokens.at(i-1), std::dec);</a>
+<a name="ln232">   if(headers.at(i).compare(&quot;FHG&quot;)==0) from_string&lt;double&gt;(FCH, tokens.at(i-1), std::dec);</a>
+<a name="ln233">  }</a>
+<a name="ln234">  atom-&gt;SetVector(unitcell-&gt;FractionalToCartesian(vector3(X,Y,Z)));</a>
+<a name="ln235">  int atomicNum = OBElements::GetAtomicNum(symbol.c_str());</a>
+<a name="ln236">  atom-&gt;SetAtomicNum(atomicNum);</a>
+<a name="ln237">  //Conditional or zero??</a>
+<a name="ln238">  if( CHG!=0.0e0 ) atom-&gt;SetPartialCharge(CHG);</a>
+<a name="ln239">  //Always fill it?</a>
+<a name="ln240">  if(ma!=0 &amp;&amp; mf ==0)</a>
+<a name="ln241">  {</a>
+<a name="ln242">   double mass = atom-&gt;GetAtomicMass();</a>
+<a name="ln243">   double FX = AX/mass; double FY = AY/mass; double FZ = AZ/mass;</a>
+<a name="ln244">  }</a>
+<a name="ln245">  forces.push_back(vector3(FX,FY,FZ));</a>
+<a name="ln246">  veloci.push_back(vector3(VX,VY,VZ));</a>
+<a name="ln247"> }</a>
+<a name="ln248"> </a>
+<a name="ln249"> OBConformerData * conformer = new OBConformerData();</a>
+<a name="ln250"> std::vector&lt; std::vector&lt; vector3 &gt; &gt; forceslist;</a>
+<a name="ln251"> std::vector&lt; std::vector&lt; vector3 &gt; &gt; velocilist;</a>
+<a name="ln252"> forceslist.push_back( forces );</a>
+<a name="ln253"> velocilist.push_back( veloci );</a>
+<a name="ln254"> conformer-&gt;SetForces( forceslist );</a>
+<a name="ln255"> conformer-&gt;SetVelocities( velocilist );</a>
+<a name="ln256"> mol.SetData(conformer);</a>
+<a name="ln257"> </a>
+<a name="ln258"> while(ifs.peek() != EOF &amp;&amp; ifs.good() &amp;&amp;</a>
+<a name="ln259">       (ifs.peek() == '\n' || ifs.peek() == '\r'))</a>
+<a name="ln260">   ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln261"> </a>
+<a name="ln262"> if (!pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln263">    mol.ConnectTheDots();</a>
+<a name="ln264"> if (!pConv-&gt;IsOption(&quot;s&quot;,OBConversion::INOPTIONS) &amp;&amp; !pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln265">    mol.PerceiveBondOrders();</a>
+<a name="ln266"> </a>
+<a name="ln267"> mol.EndModify();</a>
+<a name="ln268"> return true;</a>
+<a name="ln269">}</a>
+<a name="ln270"> </a>
+<a name="ln271">////////////////////////////////////////////////////////////////</a>
+<a name="ln272"> </a>
+<a name="ln273">bool LpmdFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln274">{</a>
+<a name="ln275"> OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln276"> if (pmol == nullptr) return false;</a>
+<a name="ln277"> </a>
+<a name="ln278"> ostream&amp; ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln279"> OBMol &amp;mol = *pmol;</a>
+<a name="ln280"> OBUnitCell myUC;</a>
+<a name="ln281"> OBUnitCell *uc = nullptr;</a>
+<a name="ln282"> </a>
+<a name="ln283"> std::vector&lt; std::vector&lt; vector3 &gt; &gt; forceslist;</a>
+<a name="ln284"> std::vector&lt; std::vector&lt; vector3 &gt; &gt; velocilist;</a>
+<a name="ln285"> </a>
+<a name="ln286"> std::stringstream ErrMsg;</a>
+<a name="ln287"> std::vector &lt; vector3 &gt; v;</a>
+<a name="ln288"> </a>
+<a name="ln289"> //Vectors read from command line.</a>
+<a name="ln290"> const char *c = pConv-&gt;IsOption(&quot;c&quot;);</a>
+<a name="ln291"> if(c)</a>
+<a name="ln292"> {</a>
+<a name="ln293">  double ax=0.0,ay=0.0,az=0.0;</a>
+<a name="ln294">  double bx=0.0,by=0.0,bz=0.0;</a>
+<a name="ln295">  double cx=0.0,cy=0.0,cz=0.0;</a>
+<a name="ln296">  tokenize(tokens, c, &quot;,&quot;);</a>
+<a name="ln297">  from_string&lt;double&gt;(ax, tokens.at(0), std::dec);</a>
+<a name="ln298">  from_string&lt;double&gt;(ay, tokens.at(1), std::dec);</a>
+<a name="ln299">  from_string&lt;double&gt;(az, tokens.at(2), std::dec);</a>
+<a name="ln300">  from_string&lt;double&gt;(bx, tokens.at(3), std::dec);</a>
+<a name="ln301">  from_string&lt;double&gt;(by, tokens.at(4), std::dec);</a>
+<a name="ln302">  from_string&lt;double&gt;(bz, tokens.at(5), std::dec);</a>
+<a name="ln303">  from_string&lt;double&gt;(cx, tokens.at(6), std::dec);</a>
+<a name="ln304">  from_string&lt;double&gt;(cy, tokens.at(7), std::dec);</a>
+<a name="ln305">  from_string&lt;double&gt;(cz, tokens.at(8), std::dec);</a>
+<a name="ln306">  v.push_back(vector3(ax,ay,az));</a>
+<a name="ln307">  v.push_back(vector3(bx,by,bz));</a>
+<a name="ln308">  v.push_back(vector3(cx,cy,cz));</a>
+<a name="ln309">  myUC.SetData(v[0],v[1],v[2]);</a>
+<a name="ln310">  uc = &amp;myUC;</a>
+<a name="ln311"> }</a>
+<a name="ln312"> </a>
+<a name="ln313"> if(mol.HasData(OBGenericDataType::UnitCell))</a>
+<a name="ln314"> {</a>
+<a name="ln315">  v.clear();</a>
+<a name="ln316">  uc = (OBUnitCell*)mol.GetData(OBGenericDataType::UnitCell);</a>
+<a name="ln317">  v = uc -&gt; GetCellVectors();</a>
+<a name="ln318"> }</a>
+<a name="ln319"> else if(v.size()!=3)</a>
+<a name="ln320"> {</a>
+<a name="ln321">  ErrMsg &lt;&lt; &quot;\n*******************************************************************\n&quot;</a>
+<a name="ln322">   &lt;&lt; &quot;Molecule -&gt; &quot; &lt;&lt; pConv-&gt;GetOutputIndex()&lt;&lt; &quot; : \n&quot;</a>
+<a name="ln323">   &lt;&lt; &quot;The original file doesn't have the information about the unitcell\n&quot;</a>
+<a name="ln324">   &lt;&lt; &quot;*******************************************************************\n&quot;;</a>
+<a name="ln325">  obErrorLog.ThrowError(__FUNCTION__, ErrMsg.str(), obError);</a>
+<a name="ln326">  return false;</a>
+<a name="ln327"> }</a>
+<a name="ln328"> </a>
+<a name="ln329"> //Define level and mode [(f)orce or (a)cceleration] and extra [(c)harge].</a>
+<a name="ln330"> int level=0, mode=0;</a>
+<a name="ln331"> bool charge = false;</a>
+<a name="ln332"> const char* p = pConv-&gt;IsOption(&quot;f&quot;);</a>
+<a name="ln333"> const char* q = pConv-&gt;IsOption(&quot;m&quot;);</a>
+<a name="ln334"> const char* r = pConv-&gt;IsOption(&quot;e&quot;);</a>
+<a name="ln335"> if(p) level = atoi(p);</a>
+<a name="ln336"> if(q) mode  = atoi(q);</a>
+<a name="ln337"> if(r) charge = true;</a>
+<a name="ln338"> </a>
+<a name="ln339"> if(pConv-&gt;GetOutputIndex()==1)</a>
+<a name="ln340"> {</a>
+<a name="ln341">  ofs &lt;&lt; &quot;LPMD 2.0 L\n&quot; ;</a>
+<a name="ln342">  ofs &lt;&lt; &quot;HDR X Y Z &quot;;</a>
+<a name="ln343">  if(level&gt;=1) ofs &lt;&lt; &quot;VX VY VZ &quot;;</a>
+<a name="ln344">  if(level&gt;=2 &amp;&amp; mode==0) ofs &lt;&lt; &quot;AX AY AZ &quot;;</a>
+<a name="ln345">  if(level&gt;=2 &amp;&amp; mode==1) ofs &lt;&lt; &quot;FX FY FZ &quot;;</a>
+<a name="ln346">  if(charge) ofs &lt;&lt; &quot;CHG &quot;;</a>
+<a name="ln347">  ofs &lt;&lt; '\n';</a>
+<a name="ln348"> }</a>
+<a name="ln349"> </a>
+<a name="ln350"> snprintf(buffer, BUFF_SIZE, &quot;%d\n&quot;, mol.NumAtoms());</a>
+<a name="ln351"> ofs &lt;&lt; buffer;</a>
+<a name="ln352"> </a>
+<a name="ln353"> //Fill velocities and forces.</a>
+<a name="ln354"> if(mol.HasData(OBGenericDataType::ConformerData))</a>
+<a name="ln355"> {</a>
+<a name="ln356">  OBConformerData * conformer = (OBConformerData*)mol.GetData(OBGenericDataType::ConformerData);</a>
+<a name="ln357">  forceslist = conformer-&gt;GetForces();</a>
+<a name="ln358">  velocilist = conformer-&gt;GetVelocities();</a>
+<a name="ln359"> }</a>
+<a name="ln360"> else</a>
+<a name="ln361"> {</a>
+<a name="ln362">  std::vector &lt; vector3 &gt; empty;</a>
+<a name="ln363">  empty.push_back(vector3(0,0,0));</a>
+<a name="ln364">  empty.push_back(vector3(0,0,0));</a>
+<a name="ln365">  empty.push_back(vector3(0,0,0));</a>
+<a name="ln366">  for(int i=0; i &lt; mol.NumAtoms() ; ++i)</a>
+<a name="ln367">  {</a>
+<a name="ln368">   forceslist.push_back(empty);</a>
+<a name="ln369">   velocilist.push_back(empty);</a>
+<a name="ln370">  }</a>
+<a name="ln371"> }</a>
+<a name="ln372"> </a>
+<a name="ln373"> //Cell vectors</a>
+<a name="ln374"> snprintf(buffer, BUFF_SIZE, &quot;%-10.3f%-10.3f%-10.3f&quot;, v[0].x(),v[0].y(),v[0].z());</a>
+<a name="ln375"> ofs &lt;&lt; buffer;</a>
+<a name="ln376"> snprintf(buffer, BUFF_SIZE, &quot;%-10.3f%-10.3f%-10.3f&quot;, v[1].x(),v[1].y(),v[1].z());</a>
+<a name="ln377"> ofs &lt;&lt; buffer;</a>
+<a name="ln378"> snprintf(buffer, BUFF_SIZE, &quot;%-10.3f%-10.3f%-10.3f\n&quot;, v[2].x(),v[2].y(),v[2].z());</a>
+<a name="ln379"> ofs &lt;&lt; buffer;</a>
+<a name="ln380"> </a>
+<a name="ln381"> //Iteration over atoms</a>
+<a name="ln382"> for(int i=0;i&lt;mol.NumAtoms();++i)</a>
+<a name="ln383"> {</a>
+<a name="ln384">  OBAtom *atom = mol.GetAtom(i + 1);</a>
+<a name="ln385">  vector3 tmp=uc-&gt;CartesianToFractional(vector3(atom-&gt;GetX(),atom-&gt;GetY(),atom-&gt;GetZ()));</a>
+<a name="ln386">  snprintf(buffer, BUFF_SIZE, &quot;%-3s%15.5f%15.5f%15.5f&quot;,OBElements::GetSymbol(atom-&gt;GetAtomicNum()),</a>
+<a name="ln387">   tmp.GetX(),</a>
+<a name="ln388">   tmp.GetY(),</a>
+<a name="ln389">   tmp.GetZ());</a>
+<a name="ln390">  ofs &lt;&lt; buffer;</a>
+<a name="ln391">  if(level&gt;=1)</a>
+<a name="ln392">  {</a>
+<a name="ln393">   vector3 v = vector3(velocilist[0][i].x(),velocilist[0][i].y(),velocilist[0][i].z());</a>
+<a name="ln394">   snprintf(buffer, BUFF_SIZE, &quot;%15.5f%15.5f%15.5f&quot;,v.x(),v.y(),v.z());</a>
+<a name="ln395">   ofs &lt;&lt; buffer;</a>
+<a name="ln396">  }</a>
+<a name="ln397">  if(level&gt;=2 &amp;&amp; mode==0)</a>
+<a name="ln398">  {</a>
+<a name="ln399">   double mass = atom -&gt; GetAtomicMass();</a>
+<a name="ln400">   vector3 a = vector3(forceslist[0][i].x()/mass,forceslist[0][i].y()/mass,forceslist[0][i].z()/mass);</a>
+<a name="ln401">   snprintf(buffer, BUFF_SIZE, &quot;%15.5f%15.5f%15.5f&quot;,a.x(),a.y(),a.z());</a>
+<a name="ln402">   ofs &lt;&lt; buffer;</a>
+<a name="ln403">  }</a>
+<a name="ln404">  if(level&gt;=2 &amp;&amp; mode==1)</a>
+<a name="ln405">  {</a>
+<a name="ln406">   vector3 force = vector3(forceslist[0][i].x(),forceslist[0][i].y(),forceslist[0][i].z());</a>
+<a name="ln407">   snprintf(buffer, BUFF_SIZE, &quot;%15.5f%15.5f%15.5f&quot;,force.x(),force.y(),force.z());</a>
+<a name="ln408">   ofs &lt;&lt; buffer;</a>
+<a name="ln409">  }</a>
+<a name="ln410">  if(charge)</a>
+<a name="ln411">  {</a>
+<a name="ln412">   snprintf(buffer, BUFF_SIZE, &quot;%15.5f&quot;, atom -&gt; GetPartialCharge());</a>
+<a name="ln413">   ofs &lt;&lt; buffer;</a>
+<a name="ln414">  }</a>
+<a name="ln415">  ofs &lt;&lt; '\n';</a>
+<a name="ln416"> }</a>
+<a name="ln417"> </a>
+<a name="ln418"> return(true);</a>
+<a name="ln419">}</a>
+<a name="ln420"> </a>
+<a name="ln421">} //namespace OpenBabel</a>
+
+</code></pre>
+<div class="balloon" rel="243"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v561/" target="_blank">V561</a> It's probably better to assign value to 'FX' variable than to declare it anew. Previous declaration: lpmdformat.cpp, line 206.</p></div>
+<div class="balloon" rel="243"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v561/" target="_blank">V561</a> It's probably better to assign value to 'FY' variable than to declare it anew. Previous declaration: lpmdformat.cpp, line 206.</p></div>
+<div class="balloon" rel="243"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v561/" target="_blank">V561</a> It's probably better to assign value to 'FZ' variable than to declare it anew. Previous declaration: lpmdformat.cpp, line 206.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

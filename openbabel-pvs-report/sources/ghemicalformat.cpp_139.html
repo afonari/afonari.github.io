@@ -1,0 +1,357 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>ghemicalformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">  Copyright (C) 2000-2006 by Geoffrey Hutchison</a>
+<a name="ln3">  Some portions Copyright (C) 2004 by Chris Morley</a>
+<a name="ln4"> </a>
+<a name="ln5">  This program is free software; you can redistribute it and/or modify</a>
+<a name="ln6">  it under the terms of the GNU General Public License as published by</a>
+<a name="ln7">  the Free Software Foundation version 2 of the License.</a>
+<a name="ln8"> </a>
+<a name="ln9">  This program is distributed in the hope that it will be useful,</a>
+<a name="ln10">  but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln11">  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln12">  GNU General Public License for more details.</a>
+<a name="ln13"> ***********************************************************************/</a>
+<a name="ln14"> </a>
+<a name="ln15">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln16"> </a>
+<a name="ln17">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln18">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln24">#include &lt;cstdlib&gt;</a>
+<a name="ln25"> </a>
+<a name="ln26"> </a>
+<a name="ln27">using namespace std;</a>
+<a name="ln28">namespace OpenBabel</a>
+<a name="ln29">{</a>
+<a name="ln30"> </a>
+<a name="ln31">  class GhemicalFormat : public OBMoleculeFormat</a>
+<a name="ln32">  {</a>
+<a name="ln33">    public:</a>
+<a name="ln34">      //Register this format type ID</a>
+<a name="ln35">      GhemicalFormat()</a>
+<a name="ln36">      {</a>
+<a name="ln37">        //        OBConversion::RegisterFormat(&quot;mm1gp&quot;,this);</a>
+<a name="ln38">        //        OBConversion::RegisterFormat(&quot;qm1gp&quot;,this);</a>
+<a name="ln39">        OBConversion::RegisterFormat(&quot;gpr&quot;,this);</a>
+<a name="ln40">      }</a>
+<a name="ln41"> </a>
+<a name="ln42">      virtual const char* Description() //required</a>
+<a name="ln43">      {</a>
+<a name="ln44">        return</a>
+<a name="ln45">          &quot;Ghemical format\n&quot;</a>
+<a name="ln46">          &quot;Open source molecular modelling\n&quot;;</a>
+<a name="ln47">      };</a>
+<a name="ln48"> </a>
+<a name="ln49">      virtual const char* SpecificationURL()</a>
+<a name="ln50">      { return &quot;http://www.uku.fi/~thassine/ghemical/&quot;; }; //optional</a>
+<a name="ln51"> </a>
+<a name="ln52">      //Flags() can return be any the following combined by | or be omitted if none apply</a>
+<a name="ln53">      // NOTREADABLE  READONEONLY  NOTWRITABLE  WRITEONEONLY</a>
+<a name="ln54">      virtual unsigned int Flags()</a>
+<a name="ln55">      {</a>
+<a name="ln56">        return READONEONLY | WRITEONEONLY;</a>
+<a name="ln57">      };</a>
+<a name="ln58"> </a>
+<a name="ln59">      //*** This section identical for most OBMol conversions ***</a>
+<a name="ln60">      ////////////////////////////////////////////////////</a>
+<a name="ln61">      /// The &quot;API&quot; interface functions</a>
+<a name="ln62">      virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln63">      virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln64">  };</a>
+<a name="ln65">  //***</a>
+<a name="ln66"> </a>
+<a name="ln67">  //Make an instance of the format class</a>
+<a name="ln68">  GhemicalFormat theGhemicalFormat;</a>
+<a name="ln69"> </a>
+<a name="ln70">  /////////////////////////////////////////////////////////////////</a>
+<a name="ln71">  bool GhemicalFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln72">  {</a>
+<a name="ln73"> </a>
+<a name="ln74">    OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln75">    if (pmol == nullptr)</a>
+<a name="ln76">      return false;</a>
+<a name="ln77"> </a>
+<a name="ln78">    //Define some references so we can use the old parameter names</a>
+<a name="ln79">    istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln80">    OBMol &amp;mol = *pmol;</a>
+<a name="ln81">    const char* title = pConv-&gt;GetTitle();</a>
+<a name="ln82"> </a>
+<a name="ln83">    int i;</a>
+<a name="ln84">    int natoms, nbonds;</a>
+<a name="ln85">    char buffer[BUFF_SIZE];</a>
+<a name="ln86">    string str,str1;</a>
+<a name="ln87">    double x,y,z;</a>
+<a name="ln88">    OBAtom *atom;</a>
+<a name="ln89">    vector&lt;string&gt; vs;</a>
+<a name="ln90">    char bobuf[100];</a>
+<a name="ln91">    string bostr;</a>
+<a name="ln92">    int bgn,end,order;</a>
+<a name="ln93">    bool hasPartialCharges = false;</a>
+<a name="ln94"> </a>
+<a name="ln95">    mol.BeginModify();</a>
+<a name="ln96"> </a>
+<a name="ln97">    // Get !Header line with version number</a>
+<a name="ln98">    ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln99">    sscanf(buffer,&quot;%*s %*s %d&quot;, &amp;i);</a>
+<a name="ln100">    if (!i)</a>
+<a name="ln101">      return false;</a>
+<a name="ln102"> </a>
+<a name="ln103">    // Get !Info line with number of coord sets</a>
+<a name="ln104">    ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln105">    sscanf(buffer,&quot;%*s %d&quot;, &amp;i);</a>
+<a name="ln106">    if (!i)</a>
+<a name="ln107">      return false;</a>
+<a name="ln108"> </a>
+<a name="ln109">    // Get !Atoms line with number</a>
+<a name="ln110">    ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln111">    sscanf(buffer,&quot;%*s %d&quot;, &amp;natoms);</a>
+<a name="ln112">    if (!natoms)</a>
+<a name="ln113">      return(false);</a>
+<a name="ln114"> </a>
+<a name="ln115">    for (i = 1; i &lt;= natoms; i ++)</a>
+<a name="ln116">    {</a>
+<a name="ln117">      if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln118">        return(false);</a>
+<a name="ln119">      tokenize(vs,buffer);</a>
+<a name="ln120">      if (vs.size() &lt; 2)</a>
+<a name="ln121">        return(false);</a>
+<a name="ln122">      atom = mol.NewAtom();</a>
+<a name="ln123">      atom-&gt;SetAtomicNum(atoi(vs[1].c_str()));</a>
+<a name="ln124">    }</a>
+<a name="ln125"> </a>
+<a name="ln126">    // Get !Bonds line with number</a>
+<a name="ln127">    ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln128">    sscanf(buffer,&quot;%*s %d&quot;, &amp;nbonds);</a>
+<a name="ln129">    if (nbonds != 0)</a>
+<a name="ln130">      for (i = 0; i &lt; nbonds; i++)</a>
+<a name="ln131">      {</a>
+<a name="ln132">        if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln133">          return(false);</a>
+<a name="ln134">        if (!sscanf(buffer,&quot;%d%d%2s&quot;,&amp;bgn,&amp;end,bobuf))</a>
+<a name="ln135">          return (false);</a>
+<a name="ln136">        bostr = bobuf;</a>
+<a name="ln137">        order = 1;</a>
+<a name="ln138">        if      (bostr == &quot;D&quot;)</a>
+<a name="ln139">          order = 2;</a>
+<a name="ln140">        else if (bostr == &quot;T&quot;)</a>
+<a name="ln141">          order = 3;</a>
+<a name="ln142">        else if (bostr == &quot;C&quot;)</a>
+<a name="ln143">          order = 5; // Conjugated ~= Aromatic</a>
+<a name="ln144">        mol.AddBond(bgn+1,end+1,order);</a>
+<a name="ln145">      }</a>
+<a name="ln146"> </a>
+<a name="ln147">    // Get !Coord line</a>
+<a name="ln148">    ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln149">    for (i = 1; i &lt;= natoms; i ++)</a>
+<a name="ln150">    {</a>
+<a name="ln151">      if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln152">        return(false);</a>
+<a name="ln153">      tokenize(vs,buffer);</a>
+<a name="ln154">      if (vs.size() != 4)</a>
+<a name="ln155">        return(false);</a>
+<a name="ln156">      atom = mol.GetAtom(i);</a>
+<a name="ln157">      x = 10.0*atof((char*)vs[1].c_str());</a>
+<a name="ln158">      y = 10.0*atof((char*)vs[2].c_str());</a>
+<a name="ln159">      z = 10.0*atof((char*)vs[3].c_str());</a>
+<a name="ln160">      atom-&gt;SetVector(x,y,z); //set coordinates</a>
+<a name="ln161">    }</a>
+<a name="ln162"> </a>
+<a name="ln163">    if (ifs.getline(buffer, BUFF_SIZE) &amp;&amp; (strstr(buffer, &quot;!Charges&quot;) != nullptr</a>
+<a name="ln164">          || strstr(buffer, &quot;!PartialCharges&quot;) != nullptr))</a>
+<a name="ln165">    {</a>
+<a name="ln166">      hasPartialCharges = true;</a>
+<a name="ln167">      for (i = 1; i &lt;= natoms; i ++)</a>
+<a name="ln168">      {</a>
+<a name="ln169">        if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln170">          return(false);</a>
+<a name="ln171">        tokenize(vs,buffer);</a>
+<a name="ln172">        if (vs.size() != 2)</a>
+<a name="ln173">          return(false);</a>
+<a name="ln174">        atom = mol.GetAtom(i);</a>
+<a name="ln175">        atom-&gt;SetPartialCharge(atof((char*)vs[1].c_str()));</a>
+<a name="ln176">      }</a>
+<a name="ln177">    }</a>
+<a name="ln178"> </a>
+<a name="ln179">    // look for the !End block if it exists</a>
+<a name="ln180">    while (ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln181">    {</a>
+<a name="ln182">      if (strstr(buffer, &quot;!End&quot;) != nullptr)</a>
+<a name="ln183">        break;</a>
+<a name="ln184">    }</a>
+<a name="ln185"> </a>
+<a name="ln186">    // clean out remaining blank lines</a>
+<a name="ln187">    std::streampos ipos;</a>
+<a name="ln188">    do</a>
+<a name="ln189">    {</a>
+<a name="ln190">      ipos = ifs.tellg();</a>
+<a name="ln191">      ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln192">    }</a>
+<a name="ln193">    while(strlen(buffer) == 0 &amp;&amp; !ifs.eof() );</a>
+<a name="ln194">    ifs.seekg(ipos);</a>
+<a name="ln195"> </a>
+<a name="ln196">    mol.EndModify();</a>
+<a name="ln197">    if (hasPartialCharges)</a>
+<a name="ln198">      mol.SetPartialChargesPerceived();</a>
+<a name="ln199">    mol.SetTitle(title);</a>
+<a name="ln200">    return(true);</a>
+<a name="ln201">  }</a>
+<a name="ln202"> </a>
+<a name="ln203">  ////////////////////////////////////////////////////////////////</a>
+<a name="ln204"> </a>
+<a name="ln205">  bool GhemicalFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln206">  {</a>
+<a name="ln207">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln208">    if (pmol == nullptr)</a>
+<a name="ln209">      return false;</a>
+<a name="ln210"> </a>
+<a name="ln211">    //Define some references so we can use the old parameter names</a>
+<a name="ln212">    ostream &amp;ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln213">    OBMol &amp;mol = *pmol;</a>
+<a name="ln214"> </a>
+<a name="ln215">    // delete dummy atoms</a>
+<a name="ln216">    FOR_ATOMS_OF_MOL(atom, pmol)</a>
+<a name="ln217">      if (atom-&gt;GetAtomicNum() == 0)</a>
+<a name="ln218">        mol.DeleteAtom(&amp;*atom);</a>
+<a name="ln219"> </a>
+<a name="ln220">    // Ghemical header -- here &quot;version 1.0&quot; format</a>
+<a name="ln221">    ofs &lt;&lt; &quot;!Header gpr 100\n&quot;;</a>
+<a name="ln222"> </a>
+<a name="ln223">    // Number of coordinate sets</a>
+<a name="ln224">    ofs &lt;&lt; &quot;!Info 1\n&quot;;</a>
+<a name="ln225"> </a>
+<a name="ln226">    // Atom definitions</a>
+<a name="ln227">    ofs &lt;&lt; &quot;!Atoms &quot; &lt;&lt; mol.NumAtoms() &lt;&lt; '\n';</a>
+<a name="ln228"> </a>
+<a name="ln229">    FOR_ATOMS_OF_MOL(atom, mol)</a>
+<a name="ln230">      ofs &lt;&lt; (atom-&gt;GetIdx() - 1) &lt;&lt; &quot; &quot; &lt;&lt; atom-&gt;GetAtomicNum() &lt;&lt; '\n';</a>
+<a name="ln231"> </a>
+<a name="ln232">    // Bond definitions</a>
+<a name="ln233">    ofs &lt;&lt; &quot;!Bonds &quot; &lt;&lt; mol.NumBonds() &lt;&lt; '\n';</a>
+<a name="ln234"> </a>
+<a name="ln235">    char bond_char;</a>
+<a name="ln236">    FOR_BONDS_OF_MOL(bond, mol)</a>
+<a name="ln237">    {</a>
+<a name="ln238">      switch(bond-&gt;GetBondOrder())</a>
+<a name="ln239">      {</a>
+<a name="ln240">        case 1 :</a>
+<a name="ln241">          bond_char = 'S';</a>
+<a name="ln242">          break;</a>
+<a name="ln243">        case 2 :</a>
+<a name="ln244">          bond_char = 'D';</a>
+<a name="ln245">          break;</a>
+<a name="ln246">        case 3 :</a>
+<a name="ln247">          bond_char = 'T';</a>
+<a name="ln248">          break;</a>
+<a name="ln249">        case 5 :</a>
+<a name="ln250">          bond_char = 'C';</a>
+<a name="ln251">          break;</a>
+<a name="ln252">        default :</a>
+<a name="ln253">          bond_char = 'S';</a>
+<a name="ln254">      }</a>
+<a name="ln255">      if (bond-&gt;IsAromatic())</a>
+<a name="ln256">        bond_char = 'C';</a>
+<a name="ln257">      ofs &lt;&lt; bond-&gt;GetBeginAtomIdx()-1 &lt;&lt; ' '</a>
+<a name="ln258">        &lt;&lt; bond-&gt;GetEndAtomIdx()-1 &lt;&lt; ' '</a>
+<a name="ln259">        &lt;&lt;  bond_char &lt;&lt; '\n';</a>
+<a name="ln260">    }</a>
+<a name="ln261"> </a>
+<a name="ln262">    // Coordinate sets (here only 1)</a>
+<a name="ln263">    ofs &lt;&lt; &quot;!Coord\n&quot;;</a>
+<a name="ln264"> </a>
+<a name="ln265">    FOR_ATOMS_OF_MOL(atom, mol)</a>
+<a name="ln266">    {</a>
+<a name="ln267">      ofs &lt;&lt; atom-&gt;GetIdx()-1 &lt;&lt; ' '</a>
+<a name="ln268">        &lt;&lt; atom-&gt;GetX()/10.0 &lt;&lt; ' '</a>
+<a name="ln269">        &lt;&lt; atom-&gt;GetY()/10.0 &lt;&lt; ' '</a>
+<a name="ln270">        &lt;&lt; atom-&gt;GetZ()/10.0 &lt;&lt; '\n';</a>
+<a name="ln271">    }</a>
+<a name="ln272"> </a>
+<a name="ln273">    // Calculated charges</a>
+<a name="ln274">    ofs &lt;&lt; &quot;!Charges\n&quot;;</a>
+<a name="ln275"> </a>
+<a name="ln276">    FOR_ATOMS_OF_MOL(atom, mol)</a>
+<a name="ln277">    {</a>
+<a name="ln278">      ofs &lt;&lt; atom-&gt;GetIdx()-1 &lt;&lt; ' '</a>
+<a name="ln279">        &lt;&lt; atom-&gt;GetPartialCharge() &lt;&lt; '\n';</a>
+<a name="ln280">    }</a>
+<a name="ln281"> </a>
+<a name="ln282">    OBSetData *gmsset = (OBSetData *)pmol-&gt;GetData(&quot;gamess&quot;);</a>
+<a name="ln283">    if(gmsset)</a>
+<a name="ln284">    {</a>
+<a name="ln285">      ofs &lt;&lt; &quot;!GAMESS&quot; &lt;&lt; endl;</a>
+<a name="ln286">      std::vector&lt;OBGenericData*&gt;::iterator i,j;</a>
+<a name="ln287"> </a>
+<a name="ln288">      for(i = gmsset-&gt;GetBegin(); i != gmsset-&gt;GetEnd(); ++i)</a>
+<a name="ln289">      {</a>
+<a name="ln290">        OBSetData *cset = (OBSetData *)(*i);</a>
+<a name="ln291">        if(cset)</a>
+<a name="ln292">        {</a>
+<a name="ln293">          string section = cset-&gt;GetAttribute();</a>
+<a name="ln294">          for(j = cset-&gt;GetBegin(); j != cset-&gt;GetEnd(); ++j)</a>
+<a name="ln295">          {</a>
+<a name="ln296">            OBPairData *pd = (OBPairData *) (*j);</a>
+<a name="ln297">            if(pd)</a>
+<a name="ln298">            {</a>
+<a name="ln299">              ofs &lt;&lt; section &lt;&lt; &quot; &quot; &lt;&lt; pd-&gt;GetAttribute() &lt;&lt; &quot; &quot; &lt;&lt; pd-&gt;GetValue() &lt;&lt; endl;</a>
+<a name="ln300">            }</a>
+<a name="ln301">          }</a>
+<a name="ln302">        }</a>
+<a name="ln303">      }</a>
+<a name="ln304">    }</a>
+<a name="ln305"> </a>
+<a name="ln306">    ofs &lt;&lt; &quot;!End\n&quot;;</a>
+<a name="ln307"> </a>
+<a name="ln308">    return(true);</a>
+<a name="ln309">  }</a>
+<a name="ln310"> </a>
+<a name="ln311">} //namespace OpenBabel</a>
+
+</code></pre>
+<div class="balloon" rel="188"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v663/" target="_blank">V663</a> Infinite loop is possible. The 'cin.eof()' condition is insufficient to break from the loop. Consider adding the 'cin.fail()' function call to the conditional expression.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

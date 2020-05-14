@@ -1,0 +1,1084 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>mopacformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Copyright (C) 1998-2001 by OpenEye Scientific Software, Inc.</a>
+<a name="ln3">Some portions Copyright (C) 2001-2006 by Geoffrey R. Hutchison</a>
+<a name="ln4">Some portions Copyright (C) 2004 by Chris Morley</a>
+<a name="ln5"> </a>
+<a name="ln6">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln7">it under the terms of the GNU General Public License as published by</a>
+<a name="ln8">the Free Software Foundation version 2 of the License.</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is distributed in the hope that it will be useful,</a>
+<a name="ln11">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln12">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln13">GNU General Public License for more details.</a>
+<a name="ln14">***********************************************************************/</a>
+<a name="ln15">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln16"> </a>
+<a name="ln17">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln18">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/internalcoord.h&gt;</a>
+<a name="ln24">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln25">#include &lt;cstdlib&gt;</a>
+<a name="ln26"> </a>
+<a name="ln27">using namespace std;</a>
+<a name="ln28">namespace OpenBabel</a>
+<a name="ln29">{</a>
+<a name="ln30"> </a>
+<a name="ln31">  class MOPACFormat : public OBMoleculeFormat</a>
+<a name="ln32">  {</a>
+<a name="ln33">  public:</a>
+<a name="ln34">    //Register this format type ID</a>
+<a name="ln35">    MOPACFormat()</a>
+<a name="ln36">    {</a>
+<a name="ln37">      OBConversion::RegisterFormat(&quot;mopout&quot;,this, &quot;chemical/x-mopac-out&quot;);</a>
+<a name="ln38">      OBConversion::RegisterFormat(&quot;moo&quot;,this, &quot;chemical/x-mopac-out&quot;);</a>
+<a name="ln39">    }</a>
+<a name="ln40"> </a>
+<a name="ln41">    virtual const char* Description() //required</a>
+<a name="ln42">    {</a>
+<a name="ln43">      return</a>
+<a name="ln44">        &quot;MOPAC Output format\n&quot;</a>
+<a name="ln45">        &quot;Read Options e.g. -as\n&quot;</a>
+<a name="ln46">        &quot;  s  Output single bonds only\n&quot;</a>
+<a name="ln47">        &quot;  b  Disable bonding entirely\n\n&quot;;</a>
+<a name="ln48">    };</a>
+<a name="ln49"> </a>
+<a name="ln50">    virtual unsigned int Flags()</a>
+<a name="ln51">    {</a>
+<a name="ln52">      return NOTWRITABLE;</a>
+<a name="ln53">    };</a>
+<a name="ln54"> </a>
+<a name="ln55">    virtual const char* GetMIMEType()</a>
+<a name="ln56">    { return &quot;chemical/x-mopac-out&quot;; };</a>
+<a name="ln57"> </a>
+<a name="ln58">    /// The &quot;API&quot; interface functions</a>
+<a name="ln59">    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln60">    //	virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv); Is Read Only</a>
+<a name="ln61">  };</a>
+<a name="ln62"> </a>
+<a name="ln63">  //Make an instance of the format class</a>
+<a name="ln64">  MOPACFormat theMOPACFormat;</a>
+<a name="ln65"> </a>
+<a name="ln66">  /////////////////////////////////////////////////////////////////</a>
+<a name="ln67">  bool MOPACFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln68">  {</a>
+<a name="ln69"> </a>
+<a name="ln70">    OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln71">    if (pmol == nullptr)</a>
+<a name="ln72">      return false;</a>
+<a name="ln73"> </a>
+<a name="ln74">    //Define some references so we can use the old parameter names</a>
+<a name="ln75">    istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln76">    OBMol &amp;mol = *pmol;</a>
+<a name="ln77">    const char* title= pConv-&gt;GetTitle();</a>
+<a name="ln78"> </a>
+<a name="ln79">    char buffer[BUFF_SIZE];</a>
+<a name="ln80">    string str,str1;</a>
+<a name="ln81">    double x,y,z;</a>
+<a name="ln82">    OBAtom *atom;</a>
+<a name="ln83">    vector&lt;string&gt; vs;</a>
+<a name="ln84">    vector&lt;double&gt; charges;</a>
+<a name="ln85">    bool hasPartialCharges = false;</a>
+<a name="ln86">    double energy;</a>
+<a name="ln87">    OBVectorData *dipoleMoment = nullptr;</a>
+<a name="ln88">    bool readingVibrations = false;</a>
+<a name="ln89">    vector&lt; vector&lt;vector3&gt; &gt; displacements; // vibrational displacements</a>
+<a name="ln90">    vector&lt;double&gt; frequencies, intensities;</a>
+<a name="ln91">    vector&lt;double&gt; orbitalEnergies;</a>
+<a name="ln92">    vector&lt;string&gt; orbitalSymmetries; // left empty for now</a>
+<a name="ln93"> </a>
+<a name="ln94">    // Translation vectors (if present)</a>
+<a name="ln95">    vector3 translationVectors[3];</a>
+<a name="ln96">    int numTranslationVectors = 0;</a>
+<a name="ln97">    int alphaHOMO = 0;</a>
+<a name="ln98"> </a>
+<a name="ln99">    mol.BeginModify();</a>
+<a name="ln100">    while	(ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln101">      {</a>
+<a name="ln102">        // Avoid &quot;FORCE CONSTANT IN CARTESIAN COORDINATES&quot; (PR#3417992)</a>
+<a name="ln103">        if (strstr(buffer, &quot;  CARTESIAN COORDINATES&quot;) != nullptr)</a>
+<a name="ln104">          {</a>
+<a name="ln105">            // mol.EndModify();</a>
+<a name="ln106">            mol.Clear();</a>
+<a name="ln107">            ifs.getline(buffer,BUFF_SIZE);	// blank</a>
+<a name="ln108"> </a>
+<a name="ln109">            // could either be columns or real data</a>
+<a name="ln110">            ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln111">            tokenize(vs, buffer);</a>
+<a name="ln112">            if (vs.size() != 5 || vs[0][0] != '1') { // first character should be atom 1</a>
+<a name="ln113">              // those were column headings</a>
+<a name="ln114">              ifs.getline(buffer,BUFF_SIZE);	// blank</a>
+<a name="ln115">              ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln116">              tokenize(vs,buffer);</a>
+<a name="ln117">            }</a>
+<a name="ln118">            // now we're at real data</a>
+<a name="ln119">            while (vs.size() == 5)</a>
+<a name="ln120">              {</a>
+<a name="ln121">                atom = mol.NewAtom();</a>
+<a name="ln122">                atom-&gt;SetAtomicNum(OBElements::GetAtomicNum(vs[1].c_str()));</a>
+<a name="ln123">                x = atof((char*)vs[2].c_str());</a>
+<a name="ln124">                y = atof((char*)vs[3].c_str());</a>
+<a name="ln125">                z = atof((char*)vs[4].c_str());</a>
+<a name="ln126">                atom-&gt;SetVector(x,y,z);</a>
+<a name="ln127"> </a>
+<a name="ln128">                if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln129">                  break;</a>
+<a name="ln130">                tokenize(vs,buffer);</a>
+<a name="ln131">              }</a>
+<a name="ln132">          }</a>
+<a name="ln133">        // ANGSTROMS but not DEGREES (cartesians, not angles)</a>
+<a name="ln134">        else if (strstr(buffer, &quot;(ANGSTROMS)&quot;) != nullptr &amp;&amp; strstr(buffer, &quot;(DEGREES)&quot;) == nullptr)</a>
+<a name="ln135">          { // newer versions don't print CARTESIAN for final geometry</a>
+<a name="ln136">            mol.Clear();</a>
+<a name="ln137">            ifs.getline(buffer,BUFF_SIZE);	// blank</a>
+<a name="ln138">            ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln139">            tokenize(vs,buffer);</a>
+<a name="ln140">            while (vs.size() == 8)</a>
+<a name="ln141">              {</a>
+<a name="ln142">                if (strcmp(vs[1].c_str(), &quot;Tv&quot;) != 0)</a>
+<a name="ln143">                  {</a>
+<a name="ln144">                    atom = mol.NewAtom();</a>
+<a name="ln145">                    atom-&gt;SetAtomicNum(OBElements::GetAtomicNum(vs[1].c_str()));</a>
+<a name="ln146">                    x = atof((char*)vs[2].c_str());</a>
+<a name="ln147">                    y = atof((char*)vs[4].c_str());</a>
+<a name="ln148">                    z = atof((char*)vs[6].c_str());</a>
+<a name="ln149">                    atom-&gt;SetVector(x,y,z);</a>
+<a name="ln150">                  }</a>
+<a name="ln151"> </a>
+<a name="ln152">                if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln153">                  break;</a>
+<a name="ln154">                tokenize(vs,buffer);</a>
+<a name="ln155">              }</a>
+<a name="ln156">          }</a>
+<a name="ln157">        else if (strstr(buffer, &quot;UNIT CELL TRANSLATION&quot;) != nullptr)</a>
+<a name="ln158">          {</a>
+<a name="ln159">            numTranslationVectors = 0; // ignore old translationVectors</a>
+<a name="ln160">            ifs.getline(buffer,BUFF_SIZE);	// blank</a>
+<a name="ln161">            ifs.getline(buffer,BUFF_SIZE);	// column headings</a>
+<a name="ln162">            ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln163">            tokenize(vs,buffer);</a>
+<a name="ln164">            while (vs.size() == 5)</a>
+<a name="ln165">              {</a>
+<a name="ln166">                x = atof((char*)vs[2].c_str());</a>
+<a name="ln167">                y = atof((char*)vs[3].c_str());</a>
+<a name="ln168">                z = atof((char*)vs[4].c_str());</a>
+<a name="ln169"> </a>
+<a name="ln170">                translationVectors[numTranslationVectors++].Set(x, y, z);</a>
+<a name="ln171">                if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln172">                  break;</a>
+<a name="ln173">                tokenize(vs,buffer);</a>
+<a name="ln174">              }</a>
+<a name="ln175">          }</a>
+<a name="ln176">        // Optimized translation vectors:</a>
+<a name="ln177">        else if (strstr(buffer, &quot;FINAL  POINT  AND  DERIVATIVES&quot;) != nullptr)</a>
+<a name="ln178">          {</a>
+<a name="ln179">            numTranslationVectors = 0; // Reset</a>
+<a name="ln180">            ifs.getline(buffer,BUFF_SIZE);	// blank</a>
+<a name="ln181">            ifs.getline(buffer,BUFF_SIZE);	// column headings</a>
+<a name="ln182">            ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln183">            tokenize(vs,buffer);</a>
+<a name="ln184">            while (vs.size() == 8)</a>
+<a name="ln185">              {</a>
+<a name="ln186">                // Skip coords -- these would be overwritten by the later</a>
+<a name="ln187">                // CARTESIAN COORDINATES block anyway</a>
+<a name="ln188">                if (strcmp(vs.at(2).c_str(), &quot;Tv&quot;) != 0)</a>
+<a name="ln189">                  {</a>
+<a name="ln190">                    if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln191">                      break;</a>
+<a name="ln192">                    tokenize(vs,buffer);</a>
+<a name="ln193">                    continue;</a>
+<a name="ln194">                  }</a>
+<a name="ln195">                const char coord = vs[4].at(0);</a>
+<a name="ln196">                double val = atof(vs[5].c_str());</a>
+<a name="ln197">                bool isZ = false;</a>
+<a name="ln198">                switch (coord) {</a>
+<a name="ln199">                case 'X':</a>
+<a name="ln200">                  x = val;</a>
+<a name="ln201">                  break;</a>
+<a name="ln202">                case 'Y':</a>
+<a name="ln203">                  y = val;</a>
+<a name="ln204">                  break;</a>
+<a name="ln205">                case 'Z':</a>
+<a name="ln206">                  z = val;</a>
+<a name="ln207">                  isZ = true;</a>
+<a name="ln208">                  break;</a>
+<a name="ln209">                default:</a>
+<a name="ln210">                  cerr &lt;&lt; &quot;Reading MOPAC Tv values: unknown coordinate '&quot;</a>
+<a name="ln211">                       &lt;&lt; coord &lt;&lt; &quot;', value: &quot; &lt;&lt; val &lt;&lt; endl;</a>
+<a name="ln212">                  break;</a>
+<a name="ln213">                }</a>
+<a name="ln214"> </a>
+<a name="ln215">                if (isZ)</a>
+<a name="ln216">                  translationVectors[numTranslationVectors++].Set(x, y, z);</a>
+<a name="ln217"> </a>
+<a name="ln218">                if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln219">                  break;</a>
+<a name="ln220">                tokenize(vs,buffer);</a>
+<a name="ln221">              }</a>
+<a name="ln222">          }</a>
+<a name="ln223">        else if (strstr(buffer, &quot;NC:NB:NA:I&quot;) != nullptr) // z-matrix</a>
+<a name="ln224">          {</a>
+<a name="ln225">            mol.Clear();</a>
+<a name="ln226">            vector&lt;OBInternalCoord*&gt; vic;</a>
+<a name="ln227">            vector&lt;unsigned int&gt; indices;</a>
+<a name="ln228">            vic.push_back(nullptr);</a>
+<a name="ln229"> </a>
+<a name="ln230">            while (ifs.getline(buffer,BUFF_SIZE)) {</a>
+<a name="ln231">              tokenize(vs,buffer);</a>
+<a name="ln232">              if (vs.size() == 0)</a>
+<a name="ln233">                break;</a>
+<a name="ln234">              else if (vs.size() &lt; 11)</a>
+<a name="ln235">                break;</a>
+<a name="ln236"> </a>
+<a name="ln237">              atom = mol.NewAtom();</a>
+<a name="ln238"> </a>
+<a name="ln239">              OBInternalCoord *coord = new OBInternalCoord;</a>
+<a name="ln240">              coord-&gt;_dst = atof(vs[2].c_str());</a>
+<a name="ln241">              coord-&gt;_ang = atof(vs[4].c_str());</a>
+<a name="ln242">              coord-&gt;_tor = atof(vs[6].c_str());</a>
+<a name="ln243">              vic.push_back(coord);</a>
+<a name="ln244"> </a>
+<a name="ln245">              indices.push_back(atoi(vs[8].c_str()));</a>
+<a name="ln246">              indices.push_back(atoi(vs[9].c_str()));</a>
+<a name="ln247">              indices.push_back(atoi(vs[10].c_str()));</a>
+<a name="ln248"> </a>
+<a name="ln249">              // symbol in column 1</a>
+<a name="ln250">              atom-&gt;SetAtomicNum(OBElements::GetAtomicNum(vs[1].c_str()));</a>
+<a name="ln251">            }</a>
+<a name="ln252">            // read the z-matrix</a>
+<a name="ln253"> </a>
+<a name="ln254">            // now fill in the atom ids into the internal coords</a>
+<a name="ln255">            unsigned int idx = 0;</a>
+<a name="ln256">            FOR_ATOMS_OF_MOL (a, mol) {</a>
+<a name="ln257">              if ((indices[idx] &gt; 0) &amp;&amp; (indices[idx] &lt;= mol.NumAtoms()))</a>
+<a name="ln258">                vic[a-&gt;GetIdx()]-&gt;_a = mol.GetAtom(indices[idx]);</a>
+<a name="ln259">              else</a>
+<a name="ln260">                vic[a-&gt;GetIdx()]-&gt;_a = nullptr;</a>
+<a name="ln261"> </a>
+<a name="ln262">              if ((indices[idx+1] &gt; 0) &amp;&amp; (indices[idx+1] &lt;= mol.NumAtoms()))</a>
+<a name="ln263">                vic[a-&gt;GetIdx()]-&gt;_b = mol.GetAtom(indices[idx+1]);</a>
+<a name="ln264">              else</a>
+<a name="ln265">                vic[a-&gt;GetIdx()]-&gt;_b = nullptr;</a>
+<a name="ln266"> </a>
+<a name="ln267">              if ((indices[idx+2] &gt; 0) &amp;&amp; (indices[idx+2] &lt;= mol.NumAtoms()))</a>
+<a name="ln268">                vic[a-&gt;GetIdx()]-&gt;_c = mol.GetAtom(indices[idx+2]);</a>
+<a name="ln269">              else</a>
+<a name="ln270">                vic[a-&gt;GetIdx()]-&gt;_c = nullptr;</a>
+<a name="ln271"> </a>
+<a name="ln272">              idx += 3;</a>
+<a name="ln273">            }</a>
+<a name="ln274">            InternalToCartesian(vic,mol);</a>
+<a name="ln275">            // coordinates should be set</a>
+<a name="ln276">          }</a>
+<a name="ln277">        else if (strstr(buffer, &quot;DOUBLY OCCUPIED LEVELS&quot;) != nullptr)</a>
+<a name="ln278">          {</a>
+<a name="ln279">            tokenize(vs, buffer);</a>
+<a name="ln280">            if (vs.size() &lt; 9)</a>
+<a name="ln281">              continue;</a>
+<a name="ln282">            alphaHOMO = atoi(vs[8].c_str());</a>
+<a name="ln283">          }</a>
+<a name="ln284">        else if (strstr(buffer, &quot;EIGENVALUES&quot;) != nullptr)</a>
+<a name="ln285">          {</a>
+<a name="ln286">            ifs.getline(buffer, BUFF_SIZE); // real data</a>
+<a name="ln287">            tokenize(vs, buffer);</a>
+<a name="ln288">            while(vs.size() &gt; 0) { // ends with a blank line</a>
+<a name="ln289">              for (unsigned int orbital = 0; orbital &lt; vs.size(); ++orbital) {</a>
+<a name="ln290">                // orbitals are listed in eV already, no conversion needed</a>
+<a name="ln291">                orbitalEnergies.push_back(atof(vs[orbital].c_str()));</a>
+<a name="ln292">              }</a>
+<a name="ln293">              ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln294">              tokenize(vs, buffer);</a>
+<a name="ln295">            }</a>
+<a name="ln296">          }</a>
+<a name="ln297">        else if (strstr(buffer, &quot;FINAL HEAT&quot;) != nullptr)</a>
+<a name="ln298">          {</a>
+<a name="ln299">            sscanf(buffer,&quot;%*s%*s%*s%*s%*s%lf&quot;,&amp;energy);</a>
+<a name="ln300">            mol.SetEnergy(energy);</a>
+<a name="ln301">          }</a>
+<a name="ln302">        else if (strstr(buffer, &quot;ELECTROSTATIC POTENTIAL CHARGES&quot;) != nullptr)</a>
+<a name="ln303">          {</a>
+<a name="ln304">            hasPartialCharges = true;</a>
+<a name="ln305">            charges.clear(); // Mulliken Charges</a>
+<a name="ln306">            ifs.getline(buffer,BUFF_SIZE);	// blank</a>
+<a name="ln307">            ifs.getline(buffer,BUFF_SIZE);	// column headings</a>
+<a name="ln308">            ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln309">            tokenize(vs,buffer);</a>
+<a name="ln310">            if (vs.size() &lt; 1) return false; // timvdm 18/06/2008</a>
+<a name="ln311">            while (vs.size() &gt; 0 &amp;&amp; strstr(vs[0].c_str(), &quot;DIPOLE&quot;) == nullptr)</a>
+<a name="ln312">              {</a>
+<a name="ln313">                if (vs.size() &lt; 3) break;</a>
+<a name="ln314">                atom = mol.GetAtom(atoi(vs[0].c_str()));</a>
+<a name="ln315">                if (atom != nullptr)</a>
+<a name="ln316">                  atom-&gt;SetPartialCharge(atof(vs[2].c_str()));</a>
+<a name="ln317">                charges.push_back(atof(vs[2].c_str()));</a>
+<a name="ln318"> </a>
+<a name="ln319">                if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln320">                  break;</a>
+<a name="ln321">                tokenize(vs,buffer);</a>
+<a name="ln322">              }</a>
+<a name="ln323">          }</a>
+<a name="ln324">        else if (strstr(buffer, &quot;NET ATOMIC CHARGES&quot;) != nullptr)</a>
+<a name="ln325">          {</a>
+<a name="ln326">            hasPartialCharges = true;</a>
+<a name="ln327">            charges.clear();</a>
+<a name="ln328">            ifs.getline(buffer,BUFF_SIZE);	// blank</a>
+<a name="ln329">            ifs.getline(buffer,BUFF_SIZE);	// column headings</a>
+<a name="ln330">            ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln331">            tokenize(vs,buffer);</a>
+<a name="ln332">            if (vs.size() &lt; 1) return false; // timvdm 18/06/2008</a>
+<a name="ln333">            while (vs.size() &gt; 0 &amp;&amp; strstr(vs[0].c_str(), &quot;DIPOLE&quot;) == nullptr)</a>
+<a name="ln334">              {</a>
+<a name="ln335">                if (vs.size() &lt; 3) break;</a>
+<a name="ln336">                atom = mol.GetAtom(atoi(vs[0].c_str()));</a>
+<a name="ln337">                if (atom != nullptr)</a>
+<a name="ln338">                  atom-&gt;SetPartialCharge(atof(vs[2].c_str()));</a>
+<a name="ln339">                charges.push_back(atof(vs[2].c_str()));</a>
+<a name="ln340"> </a>
+<a name="ln341">                if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln342">                  break;</a>
+<a name="ln343">                tokenize(vs,buffer);</a>
+<a name="ln344">              }</a>
+<a name="ln345">            // Now we should be at DIPOLE line. If missing, break out of block</a>
+<a name="ln346">            // and continue parsing file.</a>
+<a name="ln347">            if (vs.size() == 0 || strstr(vs[0].c_str(), &quot;DIPOLE&quot;) != nullptr)</a>
+<a name="ln348">              continue;</a>
+<a name="ln349">            if (!ifs.getline(buffer,BUFF_SIZE))	// POINT CHARGE</a>
+<a name="ln350">              continue; // let the outer loop handle this</a>
+<a name="ln351">            ifs.getline(buffer,BUFF_SIZE);	// HYBRID</a>
+<a name="ln352">            ifs.getline(buffer,BUFF_SIZE);	// SUM</a>
+<a name="ln353">            tokenize(vs, buffer);</a>
+<a name="ln354">            if (vs.size() == 5) {</a>
+<a name="ln355">              if (dipoleMoment)</a>
+<a name="ln356">                delete dipoleMoment;</a>
+<a name="ln357"> </a>
+<a name="ln358">              dipoleMoment = new OBVectorData;</a>
+<a name="ln359">              double x, y, z;</a>
+<a name="ln360">              x = atof(vs[1].c_str());</a>
+<a name="ln361">              y = atof(vs[2].c_str());</a>
+<a name="ln362">              z = atof(vs[3].c_str());</a>
+<a name="ln363">              dipoleMoment-&gt;SetData(x, y, z);</a>
+<a name="ln364">              dipoleMoment-&gt;SetAttribute(&quot;Dipole Moment&quot;);</a>
+<a name="ln365">              dipoleMoment-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln366">            }</a>
+<a name="ln367"> </a>
+<a name="ln368">            if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln369">              break;</a>
+<a name="ln370">          }</a>
+<a name="ln371">        else if(strstr(buffer,&quot;MASS-WEIGHTED COORDINATE ANALYSIS&quot;) != nullptr)</a>
+<a name="ln372">          { // the correct vibrations -- earlier bits aren't mass-weighted</a>
+<a name="ln373">            readingVibrations = true;</a>
+<a name="ln374">            if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln375">              break;</a>
+<a name="ln376">          }</a>
+<a name="ln377">        else if (readingVibrations &amp;&amp; strstr(buffer, &quot;Root No.&quot;) != nullptr)</a>
+<a name="ln378">          {</a>
+<a name="ln379">            ifs.getline(buffer, BUFF_SIZE); // blank line</a>
+<a name="ln380">            ifs.getline(buffer, BUFF_SIZE); // symmetry labels (for OB-2.3)</a>
+<a name="ln381">            ifs.getline(buffer, BUFF_SIZE); // blank</a>
+<a name="ln382">            ifs.getline(buffer, BUFF_SIZE); // frequencies</a>
+<a name="ln383">            tokenize(vs, buffer);</a>
+<a name="ln384">            for (unsigned int i = 0; i &lt; vs.size(); ++i) {</a>
+<a name="ln385">              frequencies.push_back(atof(vs[i].c_str()));</a>
+<a name="ln386">            }</a>
+<a name="ln387">            ifs.getline(buffer, BUFF_SIZE); // blank</a>
+<a name="ln388"> </a>
+<a name="ln389">            // now real work</a>
+<a name="ln390">            unsigned int prevModeCount = displacements.size();</a>
+<a name="ln391">            unsigned int newModes = frequencies.size() - displacements.size();</a>
+<a name="ln392">            vector&lt;vector3&gt; displacement;</a>
+<a name="ln393">            for (unsigned int i = 0; i &lt; newModes; ++i) {</a>
+<a name="ln394">              displacements.push_back(displacement);</a>
+<a name="ln395">            }</a>
+<a name="ln396"> </a>
+<a name="ln397">            ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln398">            tokenize(vs, buffer);</a>
+<a name="ln399">            unsigned int modeCount = vs.size();</a>
+<a name="ln400">            vector&lt;double&gt; x, y, z;</a>
+<a name="ln401">            while(modeCount &gt; 1) {</a>
+<a name="ln402">              x.clear();</a>
+<a name="ln403">              for (unsigned int i = 1; i &lt; modeCount; ++i) {</a>
+<a name="ln404">                x.push_back(atof(vs[i].c_str()));</a>
+<a name="ln405">              }</a>
+<a name="ln406">              y.clear();</a>
+<a name="ln407">              ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln408">              tokenize(vs, buffer);</a>
+<a name="ln409">              for (unsigned int i = 1; i &lt; modeCount; ++i) {</a>
+<a name="ln410">                y.push_back(atof(vs[i].c_str()));</a>
+<a name="ln411">              }</a>
+<a name="ln412"> </a>
+<a name="ln413">              z.clear();</a>
+<a name="ln414">              ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln415">              tokenize(vs, buffer);</a>
+<a name="ln416">              for (unsigned int i = 1; i &lt; modeCount; ++i) {</a>
+<a name="ln417">                z.push_back(atof(vs[i].c_str()));</a>
+<a name="ln418">              }</a>
+<a name="ln419"> </a>
+<a name="ln420">              // OK, now we have x, y, z for all new modes for one atom</a>
+<a name="ln421">              for (unsigned int i = 0; i &lt; modeCount - 1;  ++i) {</a>
+<a name="ln422">                if (displacements.size() &lt; prevModeCount + i + 1)</a>
+<a name="ln423">                  displacements.push_back(displacement);</a>
+<a name="ln424">                displacements[prevModeCount + i].push_back(vector3(x[i], y[i], z[i]));</a>
+<a name="ln425">              }</a>
+<a name="ln426"> </a>
+<a name="ln427">              // Next set of atoms</a>
+<a name="ln428">              ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln429">              tokenize(vs, buffer);</a>
+<a name="ln430">              modeCount = vs.size();</a>
+<a name="ln431">            }</a>
+<a name="ln432">          }</a>
+<a name="ln433">        else if (readingVibrations &amp;&amp; strstr(buffer, &quot;T-DIPOLE&quot;) != nullptr)</a>
+<a name="ln434">          {</a>
+<a name="ln435">            unsigned int currentIntensity = intensities.size();</a>
+<a name="ln436">            tokenize(vs, buffer);</a>
+<a name="ln437">            if (vs.size() &lt; 2)</a>
+<a name="ln438">              break;</a>
+<a name="ln439"> </a>
+<a name="ln440">            double transDipole = atof(vs[1].c_str());</a>
+<a name="ln441">            intensities.push_back(frequencies[currentIntensity] * transDipole * transDipole);</a>
+<a name="ln442">          }</a>
+<a name="ln443">      }</a>
+<a name="ln444"> </a>
+<a name="ln445">    if (mol.NumAtoms() == 0) { // e.g., if we're at the end of a file PR#1737209</a>
+<a name="ln446">      mol.EndModify();</a>
+<a name="ln447">      return false;</a>
+<a name="ln448">    }</a>
+<a name="ln449"> </a>
+<a name="ln450">    if (!pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln451">      mol.ConnectTheDots();</a>
+<a name="ln452">    if (!pConv-&gt;IsOption(&quot;s&quot;,OBConversion::INOPTIONS)</a>
+<a name="ln453">        &amp;&amp; !pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln454">      mol.PerceiveBondOrders();</a>
+<a name="ln455"> </a>
+<a name="ln456">    mol.EndModify();</a>
+<a name="ln457"> </a>
+<a name="ln458">    if (hasPartialCharges)</a>
+<a name="ln459">      {</a>
+<a name="ln460">        mol.SetPartialChargesPerceived();</a>
+<a name="ln461">        FOR_ATOMS_OF_MOL(atom, mol) {</a>
+<a name="ln462">          atom-&gt;SetPartialCharge(charges[atom-&gt;GetIdx()-1]); // atom index issue</a>
+<a name="ln463">        }</a>
+<a name="ln464"> </a>
+<a name="ln465">        // Annotate that partial charges come from MOPAC Mulliken</a>
+<a name="ln466">        OBPairData *dp = new OBPairData;</a>
+<a name="ln467">        dp-&gt;SetAttribute(&quot;PartialCharges&quot;);</a>
+<a name="ln468">        dp-&gt;SetValue(&quot;Mulliken&quot;);</a>
+<a name="ln469">        dp-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln470">        mol.SetData(dp);</a>
+<a name="ln471">      }</a>
+<a name="ln472">    if (dipoleMoment)</a>
+<a name="ln473">      mol.SetData(dipoleMoment);</a>
+<a name="ln474">    if (frequencies.size() != 0) { // we found some vibrations</a>
+<a name="ln475">      OBVibrationData *vd = new OBVibrationData;</a>
+<a name="ln476">      vd-&gt;SetData(displacements, frequencies, intensities);</a>
+<a name="ln477">      vd-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln478">      mol.SetData(vd);</a>
+<a name="ln479">    }</a>
+<a name="ln480"> </a>
+<a name="ln481">    // Attach unit cell translation vectors if found</a>
+<a name="ln482">    if (numTranslationVectors == 3) {</a>
+<a name="ln483">      OBUnitCell* uc = new OBUnitCell;</a>
+<a name="ln484">      uc-&gt;SetData(translationVectors[0], translationVectors[1], translationVectors[2]);</a>
+<a name="ln485">      uc-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln486">      mol.SetData(uc);</a>
+<a name="ln487">    }</a>
+<a name="ln488"> </a>
+<a name="ln489">    // Attach orbitals if found</a>
+<a name="ln490">    if (alphaHOMO &gt; 0) {</a>
+<a name="ln491">      OBOrbitalData *od = new OBOrbitalData();</a>
+<a name="ln492">      od-&gt;LoadClosedShellOrbitals(orbitalEnergies, orbitalSymmetries, alphaHOMO);</a>
+<a name="ln493">      od-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln494">      mol.SetData(od);</a>
+<a name="ln495">    }</a>
+<a name="ln496"> </a>
+<a name="ln497">    mol.SetTitle(title);</a>
+<a name="ln498"> </a>
+<a name="ln499">    return(true);</a>
+<a name="ln500">  }</a>
+<a name="ln501"> </a>
+<a name="ln502">  //************************************************************</a>
+<a name="ln503">  class MOPACCARTFormat : public OBMoleculeFormat</a>
+<a name="ln504">  {</a>
+<a name="ln505">  public:</a>
+<a name="ln506">    //Register this format type ID</a>
+<a name="ln507">    MOPACCARTFormat()</a>
+<a name="ln508">    {</a>
+<a name="ln509">      OBConversion::RegisterFormat(&quot;mopcrt&quot;,this, &quot;chemical/x-mopac-input&quot;);</a>
+<a name="ln510">      OBConversion::RegisterFormat(&quot;mop&quot;,this, &quot;chemical/x-mopac-input&quot;);</a>
+<a name="ln511">      OBConversion::RegisterFormat(&quot;mpc&quot;,this, &quot;chemical/x-mopac-input&quot;);</a>
+<a name="ln512">      // Command-line keywords</a>
+<a name="ln513">      OBConversion::RegisterOptionParam(&quot;k&quot;, nullptr, 1, OBConversion::OUTOPTIONS);</a>
+<a name="ln514">      // Command-line keyword file</a>
+<a name="ln515">      OBConversion::RegisterOptionParam(&quot;f&quot;, nullptr, 1, OBConversion::OUTOPTIONS);</a>
+<a name="ln516">    }</a>
+<a name="ln517"> </a>
+<a name="ln518">    virtual const char* Description() //required</a>
+<a name="ln519">    {</a>
+<a name="ln520">      return</a>
+<a name="ln521">        &quot;MOPAC Cartesian format\n&quot;</a>
+<a name="ln522">        &quot;Read Options e.g. -as\n&quot;</a>
+<a name="ln523">        &quot;  s  Output single bonds only\n&quot;</a>
+<a name="ln524">        &quot;  b  Disable bonding entirely\n\n&quot;</a>
+<a name="ln525">        &quot;Write Options e.g. -xk\n&quot;</a>
+<a name="ln526">        &quot;  k  \&quot;keywords\&quot; Use the specified keywords for input\n&quot;</a>
+<a name="ln527">        &quot;  f    &lt;file&gt;     Read the file specified for input keywords\n&quot;</a>
+<a name="ln528">        &quot;  u               Write the crystallographic unit cell, if present.\n\n&quot;;</a>
+<a name="ln529">    };</a>
+<a name="ln530"> </a>
+<a name="ln531">    virtual const char* GetMIMEType()</a>
+<a name="ln532">    { return &quot;chemical/x-mopac-input&quot;; };</a>
+<a name="ln533"> </a>
+<a name="ln534">    /// The &quot;API&quot; interface functions</a>
+<a name="ln535">    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln536">    virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln537"> </a>
+<a name="ln538">    ////////////////////////////////////////////////////</a>
+<a name="ln539">  };</a>
+<a name="ln540"> </a>
+<a name="ln541">  //Make an instance of the format class</a>
+<a name="ln542">  MOPACCARTFormat theMOPACCARTFormat;</a>
+<a name="ln543"> </a>
+<a name="ln544">  /////////////////////////////////////////////////////////////////</a>
+<a name="ln545">  // Here is a to-do list for a more complete MOPAC input reader</a>
+<a name="ln546">  // - cjh 2011-07-02</a>
+<a name="ln547">  //</a>
+<a name="ln548">  // A. Comment lines</a>
+<a name="ln549">  //</a>
+<a name="ln550">  // A comment line begins with * and may be specified anywhere.</a>
+<a name="ln551">  //</a>
+<a name="ln552">  // Status: implemented in the geometry block, not in header</a>
+<a name="ln553">  //</a>
+<a name="ln554">  //</a>
+<a name="ln555">  // B. Header</a>
+<a name="ln556">  //</a>
+<a name="ln557">  // MOPAC supports line continuation for keywords using the special keywords &amp; and +</a>
+<a name="ln558">  // if &amp; is present, keywords continue on the next line</a>
+<a name="ln559">  // &amp; may be specified on lines 1 and 2 only</a>
+<a name="ln560">  // the total length of the header remains fixed at three lines; the number of lines</a>
+<a name="ln561">  // available for description is reduced accordingly</a>
+<a name="ln562">  // If + is present, keywords continue on the next line</a>
+<a name="ln563">  // AND the total length of the header is extended by one line</a>
+<a name="ln564">  // Up to two + may be used</a>
+<a name="ln565">  //</a>
+<a name="ln566">  // References</a>
+<a name="ln567">  // ----------</a>
+<a name="ln568">  // MOPAC 7.1:</a>
+<a name="ln569">  // MOPAC 2009: http://openmopac.net/manual/allkeys.html</a>
+<a name="ln570">  //</a>
+<a name="ln571">  // Status: not implemented</a>
+<a name="ln572">  //</a>
+<a name="ln573">  //</a>
+<a name="ln574">  // C. Processing atom name</a>
+<a name="ln575">  //</a>
+<a name="ln576">  // 1. MOPAC offers some unique atom names</a>
+<a name="ln577">  // In MOPAC 7.1:</a>
+<a name="ln578">  //</a>
+<a name="ln579">  // XX dummy atom - OB already understands this</a>
+<a name="ln580">  //</a>
+<a name="ln581">  // sparkles</a>
+<a name="ln582">  // +	A 100% ionic alkali metal</a>
+<a name="ln583">  // ++	A 100% ionic alkaline earth metal</a>
+<a name="ln584">  // -	A 100% ionic halogen-like atom</a>
+<a name="ln585">  // --	A 100% ionic group VI-like atom.</a>
+<a name="ln586">  // (Section 6.12 of MOPAC 7 Manual)</a>
+<a name="ln587">  //</a>
+<a name="ln588">  // Cb	(Capped bond) A special type of monovalent atom</a>
+<a name="ln589">  //    existing purely to satisfy valence</a>
+<a name="ln590">  // (Section 3.5 of MOPAC 7 Manual)</a>
+<a name="ln591">  //</a>
+<a name="ln592">  // Tv - Translation vector defining 1-D periodicity for polymers</a>
+<a name="ln593">  //</a>
+<a name="ln594">  // In MOPAC 2009:</a>
+<a name="ln595">  // 2. All of the above, plus:</a>
+<a name="ln596">  // +3 - A +3 sparkle</a>
+<a name="ln597">  // -3 - A -3 sparkle</a>
+<a name="ln598">  // Fr - A sparkle with charge  1/2 (NOT Francium!)</a>
+<a name="ln599">  // At - A sparkle with charge -1/2 (NOT Actinium)</a>
+<a name="ln600">  // X  - also a dummy atom</a>
+<a name="ln601">  // D  - Deuterium - OB already understands this</a>
+<a name="ln602">  // T  - Tritium - OB already understands this</a>
+<a name="ln603">  // Tv - up to 3 translation vectors can be specified for periodic cells</a>
+<a name="ln604">  //      in 1D, 2D and 3D</a>
+<a name="ln605">  //</a>
+<a name="ln606">  // Isotopes can be specified with isotopic mass</a>
+<a name="ln607">  // e.g. C13.0034</a>
+<a name="ln608">  //</a>
+<a name="ln609">  // 3. optional atom labels can be specified with ()</a>
+<a name="ln610">  // e.g. &quot;Mg(At center of porphyrin ring)&quot;</a>
+<a name="ln611">  // label is text in () and can be up to 38 characters long</a>
+<a name="ln612">  // it CAN include spaces</a>
+<a name="ln613">  // if it is &quot;+&quot; or &quot;-&quot;, this specifies atomic charges in MOPAC 2009</a>
+<a name="ln614">  // Both mass and label can be specified, e.g. C1(on C5)34.96885</a>
+<a name="ln615">  //</a>
+<a name="ln616">  // In MOPAC 7.x only the Z-matrix format is documented to support labels</a>
+<a name="ln617">  // but in MOPAC 2009 labels are officially supported in all formats</a>
+<a name="ln618">  //</a>
+<a name="ln619">  // References</a>
+<a name="ln620">  // ----------</a>
+<a name="ln621">  // MOPAC 7.x: http://nova.colombo58.unimi.it/manual/pdf/Mopac7.pdf</a>
+<a name="ln622">  // MOPAC 2009: http://openmopac.net/manual/Labels.html</a>
+<a name="ln623">  //</a>
+<a name="ln624">  // Status: atom labels and isotopes recognized but thrown away</a>
+<a name="ln625">  //</a>
+<a name="ln626">  //</a>
+<a name="ln627">  // D. Mixed coordinate format</a>
+<a name="ln628">  //</a>
+<a name="ln629">  // MOPAC2009 supports mixed internal and Cartesian coordinate specification</a>
+<a name="ln630">  // but the code as it stands will currently fail to process the coordinates</a>
+<a name="ln631">  // correctly in this forma</a>
+<a name="ln632">  //</a>
+<a name="ln633">  // Status: throws error if this format is encountered</a>
+<a name="ln634">  //</a>
+<a name="ln635">  // -cjh 2011-07-02</a>
+<a name="ln636">  bool MOPACCARTFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln637">  {</a>
+<a name="ln638"> </a>
+<a name="ln639">    OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln640">    if (pmol == nullptr)</a>
+<a name="ln641">      return false;</a>
+<a name="ln642"> </a>
+<a name="ln643">    //Define some references so we can use the old parameter names</a>
+<a name="ln644">    istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln645">    OBMol &amp;mol = *pmol;</a>
+<a name="ln646">    const char* title= pConv-&gt;GetTitle();</a>
+<a name="ln647"> </a>
+<a name="ln648">    char buffer[BUFF_SIZE];</a>
+<a name="ln649">    string str, atomLabel, elementSymbol;</a>
+<a name="ln650">    double x,y,z, isotopeMass;</a>
+<a name="ln651">    OBAtom *atom;</a>
+<a name="ln652">    vector&lt;string&gt; vs;</a>
+<a name="ln653"> </a>
+<a name="ln654">    // Translation vectors (if present)</a>
+<a name="ln655">    vector3 translationVectors[3];</a>
+<a name="ln656">    int numTranslationVectors = 0;</a>
+<a name="ln657">    //</a>
+<a name="ln658"> </a>
+<a name="ln659">    ifs.getline(buffer,BUFF_SIZE); // keywords</a>
+<a name="ln660">    ifs.getline(buffer,BUFF_SIZE); // filename</a>
+<a name="ln661">    ifs.getline(buffer,BUFF_SIZE); // title (currently ignored)</a>
+<a name="ln662"> </a>
+<a name="ln663">    mol.BeginModify();</a>
+<a name="ln664"> </a>
+<a name="ln665">    while (ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln666">      {</a>
+<a name="ln667">        isotopeMass = 0;</a>
+<a name="ln668">        elementSymbol = &quot;&quot;;</a>
+<a name="ln669"> </a>
+<a name="ln670">        //First see if this is a comment line - skip comment lines</a>
+<a name="ln671">        if (buffer[0] == '*') continue;</a>
+<a name="ln672"> </a>
+<a name="ln673">        //First see if there is a label defined</a>
+<a name="ln674">        tokenize(vs,buffer,&quot;()&quot;);</a>
+<a name="ln675">        if (vs.size() &gt; 3) //Only one label allowed per line</a>
+<a name="ln676">          {</a>
+<a name="ln677">            //TODO Replace with correct OBError.ThrowError() call</a>
+<a name="ln678">            cerr &lt;&lt; &quot;Invalid format in geometry specification: There appears to be more than one atom label specified!\n&quot;;</a>
+<a name="ln679">            return false;</a>
+<a name="ln680">          }</a>
+<a name="ln681">        else if (1 &lt; vs.size() &amp;&amp; vs.size() &lt;= 3) //There is a label</a>
+<a name="ln682">          {</a>
+<a name="ln683">            elementSymbol = vs[0];</a>
+<a name="ln684">            atomLabel = vs[1];</a>
+<a name="ln685">            strcpy(buffer,vs[2].c_str());</a>
+<a name="ln686">          }</a>
+<a name="ln687">        else //no label, reset buffer</a>
+<a name="ln688">          strcpy(buffer,vs[0].c_str());</a>
+<a name="ln689"> </a>
+<a name="ln690">        //Now parse the rest of the line</a>
+<a name="ln691">        //There should be three cases:</a>
+<a name="ln692">        //1. There are 7 tokens and the first token is a number specifying the isotope mass</a>
+<a name="ln693">        //2. There are 7 tokens and the first token is a string containing the element symbol</a>
+<a name="ln694">        //3. There are 6 tokens and the first token is a number specifying the Cartesian x coordinate</a>
+<a name="ln695">        tokenize(vs,buffer);</a>
+<a name="ln696">        if (vs.size() == 0)</a>
+<a name="ln697">          break;</a>
+<a name="ln698">        else if (vs.size() &lt; 6)</a>
+<a name="ln699">          {</a>
+<a name="ln700">            //TODO Replace with correct OBError.ThrowError() call</a>
+<a name="ln701">            cerr &lt;&lt; &quot;Invalid format in geometry specification.\n&quot;;</a>
+<a name="ln702">            return false;</a>
+<a name="ln703">          }</a>
+<a name="ln704">        else if (vs.size() &gt; 7) //cjh 2011-07-02</a>
+<a name="ln705">          {</a>
+<a name="ln706">            //TODO Replace with correct OBError.ThrowError() call</a>
+<a name="ln707">            cerr &lt;&lt; &quot;Mixed Cartesian and internal coordinates are currently not supported.\n&quot;;</a>
+<a name="ln708">            return false;</a>
+<a name="ln709">          }</a>
+<a name="ln710">        else if (vs.size() == 7)</a>
+<a name="ln711">          {</a>
+<a name="ln712">            if (elementSymbol == &quot;&quot;)</a>
+<a name="ln713">              elementSymbol = vs[0];</a>
+<a name="ln714">            else</a>
+<a name="ln715">              isotopeMass = atof((char*)vs[0].c_str());</a>
+<a name="ln716"> </a>
+<a name="ln717">            x = atof((char*)vs[1].c_str());</a>
+<a name="ln718">            y = atof((char*)vs[3].c_str());</a>
+<a name="ln719">            z = atof((char*)vs[5].c_str());</a>
+<a name="ln720">          }</a>
+<a name="ln721">        else //vs.size() == 6</a>
+<a name="ln722">          {</a>
+<a name="ln723">            x = atof((char*)vs[0].c_str());</a>
+<a name="ln724">            y = atof((char*)vs[2].c_str());</a>
+<a name="ln725">            z = atof((char*)vs[4].c_str());</a>
+<a name="ln726">          }</a>
+<a name="ln727"> </a>
+<a name="ln728">        if (elementSymbol == &quot;Tv&quot;) //MOPAC translation vector</a>
+<a name="ln729">          {</a>
+<a name="ln730">            translationVectors[numTranslationVectors++].Set(x, y, z);</a>
+<a name="ln731">          }</a>
+<a name="ln732">        else</a>
+<a name="ln733">          {</a>
+<a name="ln734">            atom = mol.NewAtom();</a>
+<a name="ln735">            atom-&gt;SetVector(x,y,z); //set coordinates</a>
+<a name="ln736">            //set atomic number</a>
+<a name="ln737">            atom-&gt;SetAtomicNum(OBElements::GetAtomicNum(elementSymbol.c_str()));</a>
+<a name="ln738">          }</a>
+<a name="ln739">      }</a>
+<a name="ln740"> </a>
+<a name="ln741">    // Attach unit cell translation vectors if found</a>
+<a name="ln742">    if (numTranslationVectors &gt; 0) {</a>
+<a name="ln743">      OBUnitCell* uc = new OBUnitCell;</a>
+<a name="ln744">      uc-&gt;SetData(translationVectors[0], translationVectors[1], translationVectors[2]);</a>
+<a name="ln745">      uc-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln746">      mol.SetData(uc);</a>
+<a name="ln747">    }</a>
+<a name="ln748"> </a>
+<a name="ln749">    if (!pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln750">      mol.ConnectTheDots();</a>
+<a name="ln751">    if (!pConv-&gt;IsOption(&quot;s&quot;,OBConversion::INOPTIONS) &amp;&amp;</a>
+<a name="ln752">        !pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln753">      mol.PerceiveBondOrders();</a>
+<a name="ln754">    mol.SetTitle(title);</a>
+<a name="ln755"> </a>
+<a name="ln756">    mol.EndModify();</a>
+<a name="ln757"> </a>
+<a name="ln758">    return(true);</a>
+<a name="ln759">  }</a>
+<a name="ln760"> </a>
+<a name="ln761">  ////////////////////////////////////////////////////////////////</a>
+<a name="ln762"> </a>
+<a name="ln763">  bool MOPACCARTFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln764">  {</a>
+<a name="ln765">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln766">    if (pmol == nullptr)</a>
+<a name="ln767">      return false;</a>
+<a name="ln768"> </a>
+<a name="ln769">    //Define some references so we can use the old parameter names</a>
+<a name="ln770">    ostream &amp;ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln771">    OBMol &amp;mol = *pmol;</a>
+<a name="ln772"> </a>
+<a name="ln773">    //    unsigned int i;</a>
+<a name="ln774">    char buffer[BUFF_SIZE];</a>
+<a name="ln775"> </a>
+<a name="ln776">    const char *keywords = pConv-&gt;IsOption(&quot;k&quot;,OBConversion::OUTOPTIONS);</a>
+<a name="ln777">    const char *keywordFile = pConv-&gt;IsOption(&quot;f&quot;,OBConversion::OUTOPTIONS);</a>
+<a name="ln778">    bool writeUnitCell = nullptr != pConv-&gt;IsOption(&quot;u&quot;, OBConversion::OUTOPTIONS);</a>
+<a name="ln779">    string defaultKeywords = &quot;PUT KEYWORDS HERE&quot;;</a>
+<a name="ln780"> </a>
+<a name="ln781">    if(keywords)</a>
+<a name="ln782">      defaultKeywords = keywords;</a>
+<a name="ln783"> </a>
+<a name="ln784">    if (keywordFile)</a>
+<a name="ln785">      {</a>
+<a name="ln786">        ifstream kfstream(keywordFile);</a>
+<a name="ln787">        string keyBuffer;</a>
+<a name="ln788">        if (kfstream)</a>
+<a name="ln789">          {</a>
+<a name="ln790">            while (getline(kfstream, keyBuffer))</a>
+<a name="ln791">              ofs &lt;&lt; keyBuffer &lt;&lt; endl;</a>
+<a name="ln792">          }</a>
+<a name="ln793">      }</a>
+<a name="ln794">    else {</a>
+<a name="ln795">      ofs &lt;&lt; defaultKeywords;</a>
+<a name="ln796">      if (mol.GetTotalCharge() != 0)</a>
+<a name="ln797">        ofs &lt;&lt; &quot; CHARGE=&quot; &lt;&lt; mol.GetTotalCharge();</a>
+<a name="ln798">      </a>
+<a name="ln799">      // should handle GetTotalSpinMultiplicity() too</a>
+<a name="ln800">      ofs &lt;&lt; endl;</a>
+<a name="ln801">    }</a>
+<a name="ln802"> </a>
+<a name="ln803">    ofs &lt;&lt; mol.GetTitle() &lt;&lt; endl;</a>
+<a name="ln804">    ofs &lt;&lt; endl; // comment</a>
+<a name="ln805"> </a>
+<a name="ln806">    string str,str1;</a>
+<a name="ln807">    FOR_ATOMS_OF_MOL(atom, mol)</a>
+<a name="ln808">      {</a>
+<a name="ln809">        snprintf(buffer,BUFF_SIZE,&quot;%-3s%8.5f 1 %8.5f 1 %8.5f 1&quot;,</a>
+<a name="ln810">                 OBElements::GetSymbol(atom-&gt;GetAtomicNum()),</a>
+<a name="ln811">                 atom-&gt;GetX(),</a>
+<a name="ln812">                 atom-&gt;GetY(),</a>
+<a name="ln813">                 atom-&gt;GetZ());</a>
+<a name="ln814">        ofs &lt;&lt; buffer &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln815">      }</a>
+<a name="ln816"> </a>
+<a name="ln817">    OBUnitCell *uc = (OBUnitCell*)mol.GetData(OBGenericDataType::UnitCell);</a>
+<a name="ln818">    if (uc &amp;&amp; writeUnitCell) {</a>
+<a name="ln819">      //      uc-&gt;FillUnitCell(&amp;mol); // complete the unit cell with symmetry-derived atoms</a>
+<a name="ln820"> </a>
+<a name="ln821">      vector&lt;vector3&gt; cellVectors = uc-&gt;GetCellVectors();</a>
+<a name="ln822">      for (vector&lt;vector3&gt;::iterator i = cellVectors.begin(); i != cellVectors.end(); ++i) {</a>
+<a name="ln823">        snprintf(buffer,BUFF_SIZE,&quot;Tv %8.5f 1 %8.5f 1 %8.5f 1&quot;,</a>
+<a name="ln824">                 i-&gt;x(),</a>
+<a name="ln825">                 i-&gt;y(),</a>
+<a name="ln826">                 i-&gt;z());</a>
+<a name="ln827">        ofs &lt;&lt; buffer &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln828">      }</a>
+<a name="ln829">    }</a>
+<a name="ln830"> </a>
+<a name="ln831">    return(true);</a>
+<a name="ln832">  }</a>
+<a name="ln833"> </a>
+<a name="ln834">  //************************************************************</a>
+<a name="ln835">  class MOPACINTFormat : public OBMoleculeFormat</a>
+<a name="ln836">  {</a>
+<a name="ln837">  public:</a>
+<a name="ln838">    //Register this format type ID</a>
+<a name="ln839">    MOPACINTFormat()</a>
+<a name="ln840">    {</a>
+<a name="ln841">      OBConversion::RegisterFormat(&quot;mopin&quot;, this, &quot;chemical/x-mopac-input&quot;);</a>
+<a name="ln842">      // Command-line keywords</a>
+<a name="ln843">      OBConversion::RegisterOptionParam(&quot;k&quot;, nullptr, 1, OBConversion::OUTOPTIONS);</a>
+<a name="ln844">      // Command-line keyword file</a>
+<a name="ln845">      OBConversion::RegisterOptionParam(&quot;f&quot;, nullptr, 1, OBConversion::OUTOPTIONS);</a>
+<a name="ln846">    }</a>
+<a name="ln847"> </a>
+<a name="ln848">    virtual const char* Description() //required</a>
+<a name="ln849">    {</a>
+<a name="ln850">      return &quot;MOPAC Internal\n&quot;</a>
+<a name="ln851">        &quot;Write Options e.g. -xk\n&quot;</a>
+<a name="ln852">        &quot;  k  \&quot;keywords\&quot; Use the specified keywords for input\n&quot;</a>
+<a name="ln853">        &quot;  f    &lt;file&gt;     Read the file specified for input keywords\n\n&quot;;</a>
+<a name="ln854">    };</a>
+<a name="ln855"> </a>
+<a name="ln856">    virtual const char* GetMIMEType()</a>
+<a name="ln857">    { return &quot;chemical/x-mopac-input&quot;; };</a>
+<a name="ln858"> </a>
+<a name="ln859">    ////////////////////////////////////////////////////</a>
+<a name="ln860">    /// The &quot;API&quot; interface functions</a>
+<a name="ln861">    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln862">    virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln863">  };</a>
+<a name="ln864"> </a>
+<a name="ln865">  //Make an instance of the format class</a>
+<a name="ln866">  MOPACINTFormat theMOPACINTFormat;</a>
+<a name="ln867"> </a>
+<a name="ln868">  /////////////////////////////////////////////////////////////////</a>
+<a name="ln869">  bool MOPACINTFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln870">  {</a>
+<a name="ln871">    OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln872">    if (pmol == nullptr)</a>
+<a name="ln873">      return false;</a>
+<a name="ln874"> </a>
+<a name="ln875">    istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln876">    OBMol &amp;mol = *pmol;</a>
+<a name="ln877">    const char* title= pConv-&gt;GetTitle();</a>
+<a name="ln878"> </a>
+<a name="ln879">    char buffer[BUFF_SIZE];</a>
+<a name="ln880">    OBAtom *atom;</a>
+<a name="ln881">    vector&lt;string&gt; vs;</a>
+<a name="ln882"> </a>
+<a name="ln883">    vector&lt;OBInternalCoord*&gt; vic;</a>
+<a name="ln884">    vector&lt;unsigned int&gt; indices;</a>
+<a name="ln885">    vic.push_back(nullptr);</a>
+<a name="ln886"> </a>
+<a name="ln887">    ifs.getline(buffer,BUFF_SIZE); // keywords</a>
+<a name="ln888">    ifs.getline(buffer,BUFF_SIZE); // filename</a>
+<a name="ln889">    ifs.getline(buffer,BUFF_SIZE); // title (currently ignored)</a>
+<a name="ln890"> </a>
+<a name="ln891">    mol.BeginModify();</a>
+<a name="ln892"> </a>
+<a name="ln893">    while (ifs.getline(buffer,BUFF_SIZE)) {</a>
+<a name="ln894">      tokenize(vs,buffer);</a>
+<a name="ln895">      if (vs.size() == 0)</a>
+<a name="ln896">        break;</a>
+<a name="ln897">      else if (vs.size() &lt; 10)</a>
+<a name="ln898">        return false;</a>
+<a name="ln899">      atom = mol.NewAtom();</a>
+<a name="ln900"> </a>
+<a name="ln901">      OBInternalCoord *coord = new OBInternalCoord;</a>
+<a name="ln902">      //vic[atom-&gt;GetIdx()]-&gt;_dst = atof(vs[1].c_str());</a>
+<a name="ln903">      //vic[atom-&gt;GetIdx()]-&gt;_ang = atof(vs[3].c_str());</a>
+<a name="ln904">      //vic[atom-&gt;GetIdx()]-&gt;_tor = atof(vs[5].c_str());</a>
+<a name="ln905">      coord-&gt;_dst = atof(vs[1].c_str());</a>
+<a name="ln906">      coord-&gt;_ang = atof(vs[3].c_str());</a>
+<a name="ln907">      coord-&gt;_tor = atof(vs[5].c_str());</a>
+<a name="ln908">      vic.push_back(coord);</a>
+<a name="ln909"> </a>
+<a name="ln910">      indices.push_back(atoi(vs[7].c_str()));</a>
+<a name="ln911">      indices.push_back(atoi(vs[8].c_str()));</a>
+<a name="ln912">      indices.push_back(atoi(vs[9].c_str()));</a>
+<a name="ln913"> </a>
+<a name="ln914">      atom-&gt;SetAtomicNum(OBElements::GetAtomicNum(vs[0].c_str()));</a>
+<a name="ln915">    }</a>
+<a name="ln916"> </a>
+<a name="ln917">    unsigned int idx = 0;</a>
+<a name="ln918">    FOR_ATOMS_OF_MOL (a, mol) {</a>
+<a name="ln919">      if ((indices[idx] &gt; 0) &amp;&amp; (indices[idx] &lt;= mol.NumAtoms()))</a>
+<a name="ln920">        vic[a-&gt;GetIdx()]-&gt;_a = mol.GetAtom(indices[idx]);</a>
+<a name="ln921">      else</a>
+<a name="ln922">        vic[a-&gt;GetIdx()]-&gt;_a = nullptr;</a>
+<a name="ln923"> </a>
+<a name="ln924">      if ((indices[idx+1] &gt; 0) &amp;&amp; (indices[idx+1] &lt;= mol.NumAtoms()))</a>
+<a name="ln925">        vic[a-&gt;GetIdx()]-&gt;_b = mol.GetAtom(indices[idx+1]);</a>
+<a name="ln926">      else</a>
+<a name="ln927">        vic[a-&gt;GetIdx()]-&gt;_b = nullptr;</a>
+<a name="ln928"> </a>
+<a name="ln929">      if ((indices[idx+2] &gt; 0) &amp;&amp; (indices[idx+2] &lt;= mol.NumAtoms()))</a>
+<a name="ln930">        vic[a-&gt;GetIdx()]-&gt;_c = mol.GetAtom(indices[idx+2]);</a>
+<a name="ln931">      else</a>
+<a name="ln932">        vic[a-&gt;GetIdx()]-&gt;_c = nullptr;</a>
+<a name="ln933"> </a>
+<a name="ln934">      idx += 3;</a>
+<a name="ln935">    }</a>
+<a name="ln936"> </a>
+<a name="ln937">    /*</a>
+<a name="ln938">      vector&lt;OBInternalCoord*&gt;::iterator j;</a>
+<a name="ln939">      for (j = vic.begin(); j != vic.end(); j++) {</a>
+<a name="ln940">      cout &lt;&lt; (*j)-&gt;_dst &lt;&lt; &quot; &quot; &lt;&lt; (*j)-&gt;_ang &lt;&lt; &quot; &quot; &lt;&lt; (*j)-&gt;_tor &lt;&lt; &quot; &quot;;</a>
+<a name="ln941">      if ((*j)-&gt;_a)</a>
+<a name="ln942">      cout &lt;&lt; (*j)-&gt;_a-&gt;GetIdx() &lt;&lt; &quot; &quot;;</a>
+<a name="ln943">      if ((*j)-&gt;_b)</a>
+<a name="ln944">      cout &lt;&lt; (*j)-&gt;_b-&gt;GetIdx() &lt;&lt; &quot; &quot;;</a>
+<a name="ln945">      if ((*j)-&gt;_c)</a>
+<a name="ln946">      cout &lt;&lt; (*j)-&gt;_c-&gt;GetIdx() &lt;&lt; endl;</a>
+<a name="ln947">      }</a>
+<a name="ln948">    */</a>
+<a name="ln949">    InternalToCartesian(vic,mol);</a>
+<a name="ln950"> </a>
+<a name="ln951">    if (!pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln952">      mol.ConnectTheDots();</a>
+<a name="ln953">    if (!pConv-&gt;IsOption(&quot;s&quot;,OBConversion::INOPTIONS) &amp;&amp; !pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln954">      mol.PerceiveBondOrders();</a>
+<a name="ln955">    mol.SetTitle(title);</a>
+<a name="ln956"> </a>
+<a name="ln957">    return(true);</a>
+<a name="ln958">  }</a>
+<a name="ln959"> </a>
+<a name="ln960">  /////////////////////////////////////////////////////////////////</a>
+<a name="ln961">  bool MOPACINTFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln962">  {</a>
+<a name="ln963">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln964">    if (pmol == nullptr)</a>
+<a name="ln965">      return false;</a>
+<a name="ln966"> </a>
+<a name="ln967">    ostream &amp;ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln968">    OBMol &amp;mol = *pmol;</a>
+<a name="ln969"> </a>
+<a name="ln970">    char type[16], buffer[BUFF_SIZE];</a>
+<a name="ln971">    OBAtom *a,*b,*c;</a>
+<a name="ln972"> </a>
+<a name="ln973">    vector&lt;OBInternalCoord*&gt; vic;</a>
+<a name="ln974">    vic.push_back(nullptr);</a>
+<a name="ln975"> </a>
+<a name="ln976">    for (unsigned int i = 0; i&lt;mol.NumAtoms(); i++)</a>
+<a name="ln977">      vic.push_back(new OBInternalCoord);</a>
+<a name="ln978"> </a>
+<a name="ln979">    CartesianToInternal(vic,mol);</a>
+<a name="ln980"> </a>
+<a name="ln981">    const char *keywords = pConv-&gt;IsOption(&quot;k&quot;,OBConversion::OUTOPTIONS);</a>
+<a name="ln982">    const char *keywordFile = pConv-&gt;IsOption(&quot;f&quot;,OBConversion::OUTOPTIONS);</a>
+<a name="ln983">    string defaultKeywords = &quot;PUT KEYWORDS HERE&quot;;</a>
+<a name="ln984"> </a>
+<a name="ln985">    if(keywords)</a>
+<a name="ln986">      {</a>
+<a name="ln987">        defaultKeywords = keywords;</a>
+<a name="ln988">      }</a>
+<a name="ln989"> </a>
+<a name="ln990">    if (keywordFile)</a>
+<a name="ln991">      {</a>
+<a name="ln992">        ifstream kfstream(keywordFile);</a>
+<a name="ln993">        string keyBuffer;</a>
+<a name="ln994">        if (kfstream)</a>
+<a name="ln995">          {</a>
+<a name="ln996">            while (getline(kfstream, keyBuffer))</a>
+<a name="ln997">              ofs &lt;&lt; keyBuffer &lt;&lt; endl;</a>
+<a name="ln998">          }</a>
+<a name="ln999">      }</a>
+<a name="ln1000">    else</a>
+<a name="ln1001">      ofs &lt;&lt; defaultKeywords &lt;&lt; endl;</a>
+<a name="ln1002"> </a>
+<a name="ln1003">    ofs &lt;&lt; mol.GetTitle() &lt;&lt; endl;</a>
+<a name="ln1004">    ofs &lt;&lt; endl; // comment</a>
+<a name="ln1005"> </a>
+<a name="ln1006">    double r,w,t;</a>
+<a name="ln1007">    FOR_ATOMS_OF_MOL (atom, mol) {</a>
+<a name="ln1008">      a = vic[atom-&gt;GetIdx()]-&gt;_a;</a>
+<a name="ln1009">      b = vic[atom-&gt;GetIdx()]-&gt;_b;</a>
+<a name="ln1010">      c = vic[atom-&gt;GetIdx()]-&gt;_c;</a>
+<a name="ln1011">      r = vic[atom-&gt;GetIdx()]-&gt;_dst;</a>
+<a name="ln1012">      w = vic[atom-&gt;GetIdx()]-&gt;_ang;</a>
+<a name="ln1013">      t = vic[atom-&gt;GetIdx()]-&gt;_tor;</a>
+<a name="ln1014"> </a>
+<a name="ln1015">      strncpy(type, OBElements::GetSymbol(atom-&gt;GetAtomicNum()), 16);</a>
+<a name="ln1016">      type[15] = '\0';</a>
+<a name="ln1017"> </a>
+<a name="ln1018">      if (t &lt; 0)</a>
+<a name="ln1019">        t += 360;</a>
+<a name="ln1020">      snprintf(buffer, BUFF_SIZE, &quot;%-2s %10.6f  1  %10.6f  1  %10.6f  1  &quot;, type, r, w, t);</a>
+<a name="ln1021">      ofs &lt;&lt; buffer;</a>
+<a name="ln1022">      if (atom-&gt;GetIdx() == 1)</a>
+<a name="ln1023">        snprintf(buffer, BUFF_SIZE, &quot;%4d%4d%4d\n&quot;, 0, 0, 0);</a>
+<a name="ln1024">      if (atom-&gt;GetIdx() == 2)</a>
+<a name="ln1025">        snprintf(buffer, BUFF_SIZE, &quot;%4d%4d%4d\n&quot;, a-&gt;GetIdx(), 0, 0);</a>
+<a name="ln1026">      if (atom-&gt;GetIdx() == 3)</a>
+<a name="ln1027">        snprintf(buffer, BUFF_SIZE, &quot;%4d%4d%4d\n&quot;, a-&gt;GetIdx(), b-&gt;GetIdx(), 0);</a>
+<a name="ln1028">      if (atom-&gt;GetIdx() &gt;= 4)</a>
+<a name="ln1029">        snprintf(buffer, BUFF_SIZE, &quot;%4d%4d%4d\n&quot;, a-&gt;GetIdx(), b-&gt;GetIdx(), c-&gt;GetIdx());</a>
+<a name="ln1030">      ofs &lt;&lt; buffer;</a>
+<a name="ln1031">    }</a>
+<a name="ln1032"> </a>
+<a name="ln1033">    return(true);</a>
+<a name="ln1034">  }</a>
+<a name="ln1035"> </a>
+<a name="ln1036"> </a>
+<a name="ln1037">} //namespace OpenBabel</a>
+
+</code></pre>
+<div class="balloon" rel="447"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v773/" target="_blank">V773</a> The function was exited without releasing the 'dipoleMoment' pointer. A memory leak is possible.</p></div>
+<div class="balloon" rel="681"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: vs.size() <= 3.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

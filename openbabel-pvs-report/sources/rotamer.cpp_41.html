@@ -1,0 +1,766 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>rotamer.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">rotamer.cpp - Handle rotamer list data.</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 1998, 1999, 2000-2002 OpenEye Scientific Software, Inc.</a>
+<a name="ln5">Some portions Copyright (C) 2001-2006 by Geoffrey R. Hutchison</a>
+<a name="ln6"> </a>
+<a name="ln7">This file is part of the Open Babel project.</a>
+<a name="ln8">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln11">it under the terms of the GNU General Public License as published by</a>
+<a name="ln12">the Free Software Foundation version 2 of the License.</a>
+<a name="ln13"> </a>
+<a name="ln14">This program is distributed in the hope that it will be useful,</a>
+<a name="ln15">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln16">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln17">GNU General Public License for more details.</a>
+<a name="ln18">***********************************************************************/</a>
+<a name="ln19">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln20"> </a>
+<a name="ln21">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/ring.h&gt;</a>
+<a name="ln24">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln25">#include &lt;openbabel/rotamer.h&gt;</a>
+<a name="ln26"> </a>
+<a name="ln27">#define OB_TITLE_SIZE     254</a>
+<a name="ln28">#define OB_BINARY_SETWORD 32</a>
+<a name="ln29"> </a>
+<a name="ln30">using namespace std;</a>
+<a name="ln31"> </a>
+<a name="ln32">namespace OpenBabel</a>
+<a name="ln33">{</a>
+<a name="ln34"> </a>
+<a name="ln35">  /** \class OBRotamerList rotamer.h &lt;openbabel/rotamer.h&gt;</a>
+<a name="ln36"> </a>
+<a name="ln37">      A high-level class for rotamer / conformer generation, intended mainly</a>
+<a name="ln38">      for use with the related class OBRotorList and the OBRotorRules database</a>
+<a name="ln39"> </a>
+<a name="ln40">      Rotamers represent conformational isomers formed simply by rotation of</a>
+<a name="ln41">      dihedral angles. On the other hand, conformers may include geometric</a>
+<a name="ln42">      relaxation (i.e., slight modification of bond lengths, bond angles, etc.)</a>
+<a name="ln43"> </a>
+<a name="ln44">      The following shows an example of generating 2 conformers using different</a>
+<a name="ln45">      rotor states. Similar code could be used for systematic or Monte Carlo</a>
+<a name="ln46">      conformer sampling when combined with energy evaluation (molecular</a>
+<a name="ln47">      mechanics or otherwise).</a>
+<a name="ln48"> </a>
+<a name="ln49">      \code</a>
+<a name="ln50">      OBRotorList rl; // used to sample all rotatable bonds via the OBRotorRules data</a>
+<a name="ln51">      // If you want to &quot;fix&quot; any particular atoms (i.e., freeze them in space)</a>
+<a name="ln52">      // then set up an OBBitVec of the fixed atoms and call</a>
+<a name="ln53">      // rl.SetFixAtoms(bitvec);</a>
+<a name="ln54">      rl.Setup(mol);</a>
+<a name="ln55"> </a>
+<a name="ln56">      // How many rotatable bonds are there?</a>
+<a name="ln57">      cerr &lt;&lt; &quot; Number of rotors: &quot; &lt;&lt; rl.Size() &lt;&lt; endl;</a>
+<a name="ln58"> </a>
+<a name="ln59">      // indexed from 1, rotorKey[0] = 0</a>
+<a name="ln60">      std::vector&lt;int&gt; rotorKey(rl.Size() + 1, 0);</a>
+<a name="ln61"> </a>
+<a name="ln62">      // each entry represents the configuration of a rotor</a>
+<a name="ln63">      // e.g. indexes into OBRotor::GetResolution() -- the different angles</a>
+<a name="ln64">      //   to sample for a rotamer search</a>
+<a name="ln65">      for (unsigned int i = 0; i &lt; rl.Size() + 1; ++i)</a>
+<a name="ln66">      rotorKey[i] = 0; // could be anything from 0 .. OBRotor-&gt;GetResolution().size()</a>
+<a name="ln67">      // -1 is for no rotation</a>
+<a name="ln68"> </a>
+<a name="ln69">      // The OBRotamerList can generate conformations (i.e., coordinate sets)</a>
+<a name="ln70">      OBRotamerList rotamers;</a>
+<a name="ln71">      rotamers.SetBaseCoordinateSets(mol);</a>
+<a name="ln72">      rotamers.Setup(mol, rl);</a>
+<a name="ln73"> </a>
+<a name="ln74">      rotamers.AddRotamer(rotorKey);</a>
+<a name="ln75">      rotorKey[1] = 2; // switch one rotor</a>
+<a name="ln76">      rotamers.AddRotamer(rotorKey);</a>
+<a name="ln77"> </a>
+<a name="ln78">      rotamers.ExpandConformerList(mol, mol.GetConformers());</a>
+<a name="ln79"> </a>
+<a name="ln80">      // change the molecule conformation</a>
+<a name="ln81">      mol.SetConformer(0); // rotorKey 0, 0, ...</a>
+<a name="ln82">      conv.Write(&amp;mol);</a>
+<a name="ln83"> </a>
+<a name="ln84">      mol.SetConformer(1); // rotorKey 0, 2, ...</a>
+<a name="ln85"> </a>
+<a name="ln86">      \endcode</a>
+<a name="ln87"> </a>
+<a name="ln88">  **/</a>
+<a name="ln89"> </a>
+<a name="ln90">  //test byte ordering</a>
+<a name="ln91">  static int SINT = 0x00000001;</a>
+<a name="ln92">  static unsigned char *STPTR = (unsigned char*)&amp;SINT;</a>
+<a name="ln93">  const bool SwabInt = (STPTR[0]!=0);</a>
+<a name="ln94"> </a>
+<a name="ln95">#if !HAVE_RINT</a>
+<a name="ln96">  inline double rint(double x)</a>
+<a name="ln97">  {</a>
+<a name="ln98">    return ( (x &lt; 0.0) ? ceil(x-0.5) : floor(x+0.5));</a>
+<a name="ln99">  }</a>
+<a name="ln100">#endif</a>
+<a name="ln101"> </a>
+<a name="ln102">  void SetRotorToAngle(double *c,OBAtom **ref,double ang,vector&lt;int&gt; atoms);</a>
+<a name="ln103"> </a>
+<a name="ln104">  int Swab(int i)</a>
+<a name="ln105">  {</a>
+<a name="ln106">    unsigned char tmp[4],c;</a>
+<a name="ln107">    memcpy(tmp,(char*)&amp;i,sizeof(int));</a>
+<a name="ln108">    c = tmp[0];</a>
+<a name="ln109">    tmp[0] = tmp[3];</a>
+<a name="ln110">    tmp[3] = c;</a>
+<a name="ln111">    c = tmp[1];</a>
+<a name="ln112">    tmp[1] = tmp[2];</a>
+<a name="ln113">    tmp[2] = c;</a>
+<a name="ln114">    memcpy((char*)&amp;i,tmp,sizeof(int));</a>
+<a name="ln115">    return(i);</a>
+<a name="ln116">  }</a>
+<a name="ln117"> </a>
+<a name="ln118">  OBGenericData* OBRotamerList::Clone(OBBase* newparent) const</a>
+<a name="ln119">  {</a>
+<a name="ln120">    //Since the class contains OBAtom pointers, the new copy use</a>
+<a name="ln121">    //these from the new molecule, newparent</a>
+<a name="ln122">    OBMol* newmol = static_cast&lt;OBMol*&gt;(newparent);</a>
+<a name="ln123"> </a>
+<a name="ln124">    OBRotamerList *new_rml = new OBRotamerList;</a>
+<a name="ln125">    new_rml-&gt;_attr = _attr;</a>
+<a name="ln126">    new_rml-&gt;_type = _type;</a>
+<a name="ln127"> </a>
+<a name="ln128">    //Set base coordinates</a>
+<a name="ln129">    unsigned int k,l;</a>
+<a name="ln130">    vector&lt;double*&gt; bc;</a>
+<a name="ln131">    double *c = nullptr;</a>
+<a name="ln132">    double *cc = nullptr;</a>
+<a name="ln133">    for (k=0 ; k&lt;NumBaseCoordinateSets() ; ++k)</a>
+<a name="ln134">      {</a>
+<a name="ln135">        c = new double [3*NumAtoms()];</a>
+<a name="ln136">        cc = GetBaseCoordinateSet(k);</a>
+<a name="ln137">        for (l=0 ; l&lt;3*NumAtoms() ; ++l)</a>
+<a name="ln138">					c[l] = cc[l];</a>
+<a name="ln139">        bc.push_back(c);</a>
+<a name="ln140">      }</a>
+<a name="ln141">    if (NumBaseCoordinateSets())</a>
+<a name="ln142">			new_rml-&gt;SetBaseCoordinateSets(bc,NumAtoms());</a>
+<a name="ln143"> </a>
+<a name="ln144">    //Set reference array</a>
+<a name="ln145">    unsigned char *ref = new unsigned char [NumRotors()*4];</a>
+<a name="ln146">    if (ref)</a>
+<a name="ln147">      {</a>
+<a name="ln148">        GetReferenceArray(ref);</a>
+<a name="ln149">        new_rml-&gt;Setup(*newmol,ref,NumRotors());</a>
+<a name="ln150">        delete [] ref;</a>
+<a name="ln151">      }</a>
+<a name="ln152"> </a>
+<a name="ln153">    //Set Rotamers</a>
+<a name="ln154">    unsigned char *rotamers = new unsigned char [(NumRotors()+1)*NumRotamers()];</a>
+<a name="ln155">    if (rotamers)</a>
+<a name="ln156">      {</a>
+<a name="ln157">        vector&lt;unsigned char*&gt;::const_iterator kk;</a>
+<a name="ln158">        unsigned int idx=0;</a>
+<a name="ln159">        for (kk = _vrotamer.begin();kk != _vrotamer.end();++kk)</a>
+<a name="ln160">          {</a>
+<a name="ln161">            memcpy(&amp;rotamers[idx],(const unsigned char*)*kk,sizeof(unsigned char)*(NumRotors()+1));</a>
+<a name="ln162">            idx += sizeof(unsigned char)*(NumRotors()+1);</a>
+<a name="ln163">          }</a>
+<a name="ln164">        new_rml-&gt;AddRotamers(rotamers,NumRotamers());</a>
+<a name="ln165">        delete [] rotamers;</a>
+<a name="ln166">      }</a>
+<a name="ln167">    return new_rml;</a>
+<a name="ln168">  }</a>
+<a name="ln169"> </a>
+<a name="ln170">  OBRotamerList::~OBRotamerList()</a>
+<a name="ln171">  {</a>
+<a name="ln172">    vector&lt;unsigned char*&gt;::iterator i;</a>
+<a name="ln173">    for (i = _vrotamer.begin();i != _vrotamer.end();++i)</a>
+<a name="ln174">      delete [] *i;</a>
+<a name="ln175"> </a>
+<a name="ln176">    vector&lt;pair&lt;OBAtom**,vector&lt;int&gt; &gt; &gt;::iterator j;</a>
+<a name="ln177">    for (j = _vrotor.begin();j != _vrotor.end();++j)</a>
+<a name="ln178">      delete [] j-&gt;first;</a>
+<a name="ln179"> </a>
+<a name="ln180">    //Delete the interal base coordinate list</a>
+<a name="ln181">    unsigned int k;</a>
+<a name="ln182">    for (k=0 ; k&lt;_c.size() ; ++k)</a>
+<a name="ln183">      delete [] _c[k];</a>
+<a name="ln184">  }</a>
+<a name="ln185"> </a>
+<a name="ln186">  void OBRotamerList::GetReferenceArray(unsigned char *ref)const</a>
+<a name="ln187">  {</a>
+<a name="ln188">    int j;</a>
+<a name="ln189">		vector&lt;pair&lt;OBAtom**,vector&lt;int&gt; &gt; &gt;::const_iterator i;</a>
+<a name="ln190">    for (j=0,i = _vrotor.begin();i != _vrotor.end();++i)</a>
+<a name="ln191">      {</a>
+<a name="ln192">        ref[j++] = (unsigned char)(i-&gt;first[0])-&gt;GetIdx();</a>
+<a name="ln193">        ref[j++] = (unsigned char)(i-&gt;first[1])-&gt;GetIdx();</a>
+<a name="ln194">        ref[j++] = (unsigned char)(i-&gt;first[2])-&gt;GetIdx();</a>
+<a name="ln195">        ref[j++] = (unsigned char)(i-&gt;first[3])-&gt;GetIdx();</a>
+<a name="ln196">      }</a>
+<a name="ln197">  }</a>
+<a name="ln198"> </a>
+<a name="ln199">  void OBRotamerList::Setup(OBMol &amp;mol,OBRotorList &amp;rl)</a>
+<a name="ln200">  {</a>
+<a name="ln201">    //clear the old stuff out if necessary</a>
+<a name="ln202">    _vres.clear();</a>
+<a name="ln203">    vector&lt;unsigned char*&gt;::iterator j;</a>
+<a name="ln204">    for (j = _vrotamer.begin();j != _vrotamer.end();++j)</a>
+<a name="ln205">      delete [] *j;</a>
+<a name="ln206">    _vrotamer.clear();</a>
+<a name="ln207"> </a>
+<a name="ln208">    vector&lt;pair&lt;OBAtom**,vector&lt;int&gt; &gt; &gt;::iterator k;</a>
+<a name="ln209">    for (k = _vrotor.begin();k != _vrotor.end();++k)</a>
+<a name="ln210">      delete [] k-&gt;first;</a>
+<a name="ln211">    _vrotor.clear();</a>
+<a name="ln212">    _vrings.clear();</a>
+<a name="ln213">    _vringTors.clear();</a>
+<a name="ln214"> </a>
+<a name="ln215">    //create the new list</a>
+<a name="ln216">    OBRotor *rotor;</a>
+<a name="ln217">    vector&lt;OBRotor*&gt;::iterator i;</a>
+<a name="ln218">    vector&lt;int&gt; children;</a>
+<a name="ln219"> </a>
+<a name="ln220">    int ref[4];</a>
+<a name="ln221">    OBAtom **atomlist;</a>
+<a name="ln222">    for (rotor = rl.BeginRotor(i);rotor;rotor = rl.NextRotor(i))</a>
+<a name="ln223">      {</a>
+<a name="ln224">        atomlist = new OBAtom* [4];</a>
+<a name="ln225">        rotor-&gt;GetDihedralAtoms(ref);</a>
+<a name="ln226">        atomlist[0] = mol.GetAtom(ref[0]);</a>
+<a name="ln227">        atomlist[1] = mol.GetAtom(ref[1]);</a>
+<a name="ln228">        atomlist[2] = mol.GetAtom(ref[2]);</a>
+<a name="ln229">        atomlist[3] = mol.GetAtom(ref[3]);</a>
+<a name="ln230">        mol.FindChildren(children,ref[1],ref[2]);</a>
+<a name="ln231">        _vrotor.push_back(pair&lt;OBAtom**,vector&lt;int&gt; &gt; (atomlist,children));</a>
+<a name="ln232">        _vres.push_back(rotor-&gt;GetResolution());</a>
+<a name="ln233">      }</a>
+<a name="ln234"> </a>
+<a name="ln235">    // if the rotor list has ring bonds, build up an index</a>
+<a name="ln236">    if (rl.HasRingRotors()){</a>
+<a name="ln237">      // go through rings</a>
+<a name="ln238">      // for each step of the path, see if there's a matching rotor</a>
+<a name="ln239">      vector&lt;int&gt; path;</a>
+<a name="ln240">      int pSize;</a>
+<a name="ln241">      vector&lt;double&gt; ringTorsions;</a>
+<a name="ln242">      vector&lt;int&gt; ringRotors;</a>
+<a name="ln243">      FOR_RINGS_OF_MOL(r, mol)</a>
+<a name="ln244">      {</a>
+<a name="ln245">        ringTorsions.clear();</a>
+<a name="ln246">        ringRotors.clear();</a>
+<a name="ln247"> </a>
+<a name="ln248">        pSize = r-&gt;Size();</a>
+<a name="ln249">        if (pSize &lt; 4)</a>
+<a name="ln250">          continue; // not rotatable</a>
+<a name="ln251"> </a>
+<a name="ln252">        path = r-&gt;_path;</a>
+<a name="ln253">        for (int j = 0; j &lt; pSize; ++j) {</a>
+<a name="ln254">          double torsion = mol.GetTorsion(path[(j + pSize - 1) % pSize],</a>
+<a name="ln255">                                       path[(j + pSize) % pSize],</a>
+<a name="ln256">                                       path[(j + pSize + 1) % pSize],</a>
+<a name="ln257">                                       path[(j + pSize + 2) % pSize]);</a>
+<a name="ln258">          ringTorsions.push_back(torsion);</a>
+<a name="ln259"> </a>
+<a name="ln260">          // now check to see if any of these things are rotors</a>
+<a name="ln261">          int rotorIndex = -1; // not a rotor</a>
+<a name="ln262">          OBBond *bond = mol.GetBond(path[(j + pSize) % pSize], path[(j + pSize + 1) % pSize]);</a>
+<a name="ln263">          for (rotor = rl.BeginRotor(i);rotor;rotor = rl.NextRotor(i))</a>
+<a name="ln264">            {</a>
+<a name="ln265">              if (bond != rotor-&gt;GetBond())</a>
+<a name="ln266">                continue; // no match at all</a>
+<a name="ln267"> </a>
+<a name="ln268">              // Central bond matches, make sure 1..4 atoms are in the path</a>
+<a name="ln269">              rotor-&gt;GetDihedralAtoms(ref);</a>
+<a name="ln270">              if ( (ref[0] == path[(j + pSize - 1) % pSize] &amp;&amp;</a>
+<a name="ln271">                    ref[3] == path[(j + pSize + 2) % pSize])</a>
+<a name="ln272">                   ||</a>
+<a name="ln273">                   (ref[3] == path[(j + pSize - 1) % pSize] &amp;&amp;</a>
+<a name="ln274">                    ref[0] == path[(j + pSize + 2) % pSize]) ) {</a>
+<a name="ln275">                rotorIndex = rotor-&gt;GetIdx();</a>
+<a name="ln276">              }</a>
+<a name="ln277">            } // end checking all the rotors</a>
+<a name="ln278">          ringRotors.push_back(rotorIndex); // could be -1 if it's not rotatable</a>
+<a name="ln279">        }</a>
+<a name="ln280"> </a>
+<a name="ln281">        _vringTors.push_back(ringTorsions);</a>
+<a name="ln282">        _vrings.push_back(ringRotors);</a>
+<a name="ln283">      } // finished with the rings</a>
+<a name="ln284">    } // if (ring rotors)</a>
+<a name="ln285"> </a>
+<a name="ln286">    vector&lt;double&gt;::iterator n;</a>
+<a name="ln287">    vector&lt;vector&lt;double&gt; &gt;::iterator m;</a>
+<a name="ln288">    for (m = _vres.begin();m != _vres.end();++m)</a>
+<a name="ln289">      for (n = m-&gt;begin();n != m-&gt;end();++n)</a>
+<a name="ln290">        *n *= RAD_TO_DEG;</a>
+<a name="ln291">  }</a>
+<a name="ln292"> </a>
+<a name="ln293">  void OBRotamerList::Setup(OBMol &amp;mol,unsigned char *ref,int nrotors)</a>
+<a name="ln294">  {</a>
+<a name="ln295">    //clear the old stuff out if necessary</a>
+<a name="ln296">    _vres.clear();</a>
+<a name="ln297">    vector&lt;unsigned char*&gt;::iterator j;</a>
+<a name="ln298">    for (j = _vrotamer.begin();j != _vrotamer.end();++j)</a>
+<a name="ln299">      delete [] *j;</a>
+<a name="ln300">    _vrotamer.clear();</a>
+<a name="ln301"> </a>
+<a name="ln302">    vector&lt;pair&lt;OBAtom**,vector&lt;int&gt; &gt; &gt;::iterator k;</a>
+<a name="ln303">    for (k = _vrotor.begin();k != _vrotor.end();++k)</a>
+<a name="ln304">      delete [] k-&gt;first;</a>
+<a name="ln305">    _vrotor.clear();</a>
+<a name="ln306">    _vrings.clear();</a>
+<a name="ln307">    _vringTors.clear();</a>
+<a name="ln308"> </a>
+<a name="ln309">    //create the new list</a>
+<a name="ln310">    int i;</a>
+<a name="ln311">    vector&lt;int&gt; children;</a>
+<a name="ln312"> </a>
+<a name="ln313">    int refatoms[4];</a>
+<a name="ln314">    OBAtom **atomlist;</a>
+<a name="ln315">    for (i = 0; i &lt; nrotors; ++i)</a>
+<a name="ln316">      {</a>
+<a name="ln317">        atomlist = new OBAtom* [4];</a>
+<a name="ln318">        refatoms[0] = (int)ref[i*4  ];</a>
+<a name="ln319">        refatoms[1] = (int)ref[i*4+1];</a>
+<a name="ln320">        refatoms[2] = (int)ref[i*4+2];</a>
+<a name="ln321">        refatoms[3] = (int)ref[i*4+3];</a>
+<a name="ln322">        mol.FindChildren(children,refatoms[1],refatoms[2]);</a>
+<a name="ln323">        atomlist[0] = mol.GetAtom(refatoms[0]);</a>
+<a name="ln324">        atomlist[1] = mol.GetAtom(refatoms[1]);</a>
+<a name="ln325">        atomlist[2] = mol.GetAtom(refatoms[2]);</a>
+<a name="ln326">        atomlist[3] = mol.GetAtom(refatoms[3]);</a>
+<a name="ln327">        _vrotor.push_back(pair&lt;OBAtom**,vector&lt;int&gt; &gt; (atomlist,children));</a>
+<a name="ln328">      }</a>
+<a name="ln329"> </a>
+<a name="ln330">  }</a>
+<a name="ln331"> </a>
+<a name="ln332">  void OBRotamerList::AddRotamer(double *c)</a>
+<a name="ln333">  {</a>
+<a name="ln334">    // TODO: consider implementing periodic boundary conditions</a>
+<a name="ln335">    int idx,size;</a>
+<a name="ln336">    double angle,res=255.0/360.0;</a>
+<a name="ln337">    vector3 v1,v2,v3,v4;</a>
+<a name="ln338"> </a>
+<a name="ln339">    unsigned char *rot = new unsigned char [_vrotor.size()+1];</a>
+<a name="ln340">    rot[0] = (char) 0;</a>
+<a name="ln341"> </a>
+<a name="ln342">    vector&lt;pair&lt;OBAtom**,vector&lt;int&gt; &gt; &gt;::iterator i;</a>
+<a name="ln343">    for (size=1,i = _vrotor.begin();i != _vrotor.end();++i,++size)</a>
+<a name="ln344">      {</a>
+<a name="ln345">        idx = (i-&gt;first[0])-&gt;GetCoordinateIdx();</a>
+<a name="ln346">        v1.Set(c[idx],c[idx+1],c[idx+2]);</a>
+<a name="ln347">        idx = (i-&gt;first[1])-&gt;GetCoordinateIdx();</a>
+<a name="ln348">        v2.Set(c[idx],c[idx+1],c[idx+2]);</a>
+<a name="ln349">        idx = (i-&gt;first[2])-&gt;GetCoordinateIdx();</a>
+<a name="ln350">        v3.Set(c[idx],c[idx+1],c[idx+2]);</a>
+<a name="ln351">        idx = (i-&gt;first[3])-&gt;GetCoordinateIdx();</a>
+<a name="ln352">        v4.Set(c[idx],c[idx+1],c[idx+2]);</a>
+<a name="ln353"> </a>
+<a name="ln354">        angle = CalcTorsionAngle(v1,v2,v3,v4);</a>
+<a name="ln355">        while (angle &lt; 0.0)</a>
+<a name="ln356">          angle += 360.0;</a>
+<a name="ln357">        while (angle &gt; 360.0)</a>
+<a name="ln358">          angle -= 360.0;</a>
+<a name="ln359">        rot[size] = (unsigned char)rint(angle*res);</a>
+<a name="ln360">      }</a>
+<a name="ln361"> </a>
+<a name="ln362">    _vrotamer.push_back(rot);</a>
+<a name="ln363">  }</a>
+<a name="ln364"> </a>
+<a name="ln365">  void OBRotamerList::AddRotamer(int *arr)</a>
+<a name="ln366">  {</a>
+<a name="ln367">    unsigned int i;</a>
+<a name="ln368">    double angle,res=255.0/360.0;</a>
+<a name="ln369"> </a>
+<a name="ln370">    unsigned char *rot = new unsigned char [_vrotor.size()+1];</a>
+<a name="ln371">    rot[0] = (unsigned char)arr[0];</a>
+<a name="ln372"> </a>
+<a name="ln373">    for (i = 0;i &lt; _vrotor.size();++i)</a>
+<a name="ln374">      {</a>
+<a name="ln375">        angle = _vres[i][arr[i+1]];</a>
+<a name="ln376">        while (angle &lt; 0.0)</a>
+<a name="ln377">          angle += 360.0;</a>
+<a name="ln378">        while (angle &gt; 360.0)</a>
+<a name="ln379">          angle -= 360.0;</a>
+<a name="ln380">        rot[i+1] = (unsigned char)rint(angle*res);</a>
+<a name="ln381">      }</a>
+<a name="ln382">    _vrotamer.push_back(rot);</a>
+<a name="ln383">  }</a>
+<a name="ln384"> </a>
+<a name="ln385">  void OBRotamerList::AddRotamer(std::vector&lt;int&gt; arr)</a>
+<a name="ln386">  {</a>
+<a name="ln387">    unsigned int i;</a>
+<a name="ln388">    double angle,res=255.0/360.0;</a>
+<a name="ln389"> </a>
+<a name="ln390">    if (arr.size() != (_vrotor.size() + 1))</a>
+<a name="ln391">      return; // wrong size key</a>
+<a name="ln392"> </a>
+<a name="ln393">    // gotta check for weird ring torsion combinations</a>
+<a name="ln394">    if (_vrings.size()) {</a>
+<a name="ln395">      // go through each ring and update the possible torsions</a>
+<a name="ln396">      for (unsigned int j = 0; j &lt; _vrings.size(); ++j) {</a>
+<a name="ln397">        vector&lt;int&gt; path = _vrings[j];</a>
+<a name="ln398">        double torsionSum = 0.0;</a>
+<a name="ln399"> </a>
+<a name="ln400">        // go around the loop and add up the torsions</a>
+<a name="ln401">        for (unsigned int i = 0; i &lt; path.size(); ++i) {</a>
+<a name="ln402">          if (path[i] == -1) {</a>
+<a name="ln403">            // not a rotor, use the fixed value</a>
+<a name="ln404">            torsionSum += _vringTors[j][i];</a>
+<a name="ln405">            continue;</a>
+<a name="ln406">          }</a>
+<a name="ln407"> </a>
+<a name="ln408">          // what angle are we trying to use with this key?</a>
+<a name="ln409">          angle = _vres[ path[i] ][arr[ path[i]+1 ]]*res;</a>
+<a name="ln410">          while (angle &lt; 0.0)</a>
+<a name="ln411">          	angle += 360.0;</a>
+<a name="ln412">        	while (angle &gt; 360.0)</a>
+<a name="ln413">          	angle -= 360.0;</a>
+<a name="ln414"> </a>
+<a name="ln415">          // update the ring torsion for this setting</a>
+<a name="ln416">          _vringTors[j][i] = angle;</a>
+<a name="ln417">          torsionSum += angle;</a>
+<a name="ln418">        }</a>
+<a name="ln419"> </a>
+<a name="ln420">        // if the sum of the ring torsions is not ~0, bad move</a>
+<a name="ln421">        if (fabs(torsionSum) &gt; 45.0) {</a>
+<a name="ln422">          //          cerr &lt;&lt; &quot; Bad move! &quot; &lt;&lt; fabs(torsionSum) &lt;&lt; endl;</a>
+<a name="ln423">          return; // don't make the move</a>
+<a name="ln424">        }</a>
+<a name="ln425">        //        cerr &lt;&lt; &quot; Good move!&quot; &lt;&lt; endl;</a>
+<a name="ln426">      }</a>
+<a name="ln427">    }</a>
+<a name="ln428"> </a>
+<a name="ln429">    unsigned char *rot = new unsigned char [_vrotor.size()+1];</a>
+<a name="ln430">    rot[0] = (unsigned char)arr[0];</a>
+<a name="ln431"> </a>
+<a name="ln432">    for (i = 0;i &lt; _vrotor.size();++i)</a>
+<a name="ln433">      {</a>
+<a name="ln434">        angle = _vres[i][arr[i+1]];</a>
+<a name="ln435">        while (angle &lt; 0.0)</a>
+<a name="ln436">          angle += 360.0;</a>
+<a name="ln437">        while (angle &gt; 360.0)</a>
+<a name="ln438">          angle -= 360.0;</a>
+<a name="ln439">        rot[i+1] = (unsigned char)rint(angle*res);</a>
+<a name="ln440">      }</a>
+<a name="ln441">    _vrotamer.push_back(rot);</a>
+<a name="ln442">  }</a>
+<a name="ln443"> </a>
+<a name="ln444">  void OBRotamerList::AddRotamer(unsigned char *arr)</a>
+<a name="ln445">  {</a>
+<a name="ln446">    unsigned int i;</a>
+<a name="ln447">    double angle,res=255.0/360.0;</a>
+<a name="ln448"> </a>
+<a name="ln449">    unsigned char *rot = new unsigned char [_vrotor.size()+1];</a>
+<a name="ln450">    rot[0] = (unsigned char)arr[0];</a>
+<a name="ln451"> </a>
+<a name="ln452">    for (i = 0;i &lt; _vrotor.size();++i)</a>
+<a name="ln453">      {</a>
+<a name="ln454">        angle = _vres[i][(int)arr[i+1]];</a>
+<a name="ln455">        while (angle &lt; 0.0)</a>
+<a name="ln456">          angle += 360.0;</a>
+<a name="ln457">        while (angle &gt; 360.0)</a>
+<a name="ln458">          angle -= 360.0;</a>
+<a name="ln459">        rot[i+1] = (unsigned char)rint(angle*res);</a>
+<a name="ln460">      }</a>
+<a name="ln461">    _vrotamer.push_back(rot);</a>
+<a name="ln462">  }</a>
+<a name="ln463"> </a>
+<a name="ln464">  void OBRotamerList::AddRotamers(unsigned char *arr,int nrotamers)</a>
+<a name="ln465">  {</a>
+<a name="ln466">    unsigned int size;</a>
+<a name="ln467">    int i;</a>
+<a name="ln468"> </a>
+<a name="ln469">    size = (unsigned int)_vrotor.size()+1;</a>
+<a name="ln470">    for (i = 0;i &lt; nrotamers;++i)</a>
+<a name="ln471">      {</a>
+<a name="ln472">        unsigned char *rot = new unsigned char [size];</a>
+<a name="ln473">        memcpy(rot,&amp;arr[i*size],sizeof(char)*size);</a>
+<a name="ln474">        _vrotamer.push_back(rot);</a>
+<a name="ln475">      }</a>
+<a name="ln476">  }</a>
+<a name="ln477"> </a>
+<a name="ln478">  void OBRotamerList::ExpandConformerList(OBMol &amp;mol,vector&lt;double*&gt; &amp;clist)</a>
+<a name="ln479">  {</a>
+<a name="ln480">    vector&lt;double*&gt; tmpclist = CreateConformerList(mol);</a>
+<a name="ln481"> </a>
+<a name="ln482">    //transfer the conf list</a>
+<a name="ln483">    vector&lt;double*&gt;::iterator k;</a>
+<a name="ln484">    for (k = clist.begin();k != clist.end();++k)</a>
+<a name="ln485">      delete [] *k;</a>
+<a name="ln486">    clist = tmpclist;</a>
+<a name="ln487">  }</a>
+<a name="ln488"> </a>
+<a name="ln489">  //! Create a conformer list using the internal base set of coordinates</a>
+<a name="ln490">  vector&lt;double*&gt; OBRotamerList::CreateConformerList(OBMol&amp; mol)</a>
+<a name="ln491">  {</a>
+<a name="ln492">    unsigned int j;</a>
+<a name="ln493">    double angle,invres=360.0/255.0;</a>
+<a name="ln494">    unsigned char *conf;</a>
+<a name="ln495">    vector&lt;double*&gt; tmpclist;</a>
+<a name="ln496">    vector&lt;unsigned char*&gt;::iterator i;</a>
+<a name="ln497"> </a>
+<a name="ln498">    for (i = _vrotamer.begin();i != _vrotamer.end();++i)</a>
+<a name="ln499">      {</a>
+<a name="ln500">        conf = *i;</a>
+<a name="ln501">        double *c = new double [mol.NumAtoms()*3];</a>
+<a name="ln502">        memcpy(c,_c[(int)conf[0]],sizeof(double)*mol.NumAtoms()*3);</a>
+<a name="ln503"> </a>
+<a name="ln504">        for (j = 0;j &lt; _vrotor.size();++j)</a>
+<a name="ln505">          {</a>
+<a name="ln506">            angle = invres*((double)conf[j+1]);</a>
+<a name="ln507">            if (angle &gt; 180.0)</a>
+<a name="ln508">              angle -= 360.0;</a>
+<a name="ln509">            SetRotorToAngle(c,_vrotor[j].first,angle,_vrotor[j].second);</a>
+<a name="ln510">          }</a>
+<a name="ln511">        tmpclist.push_back(c);</a>
+<a name="ln512">      }</a>
+<a name="ln513"> </a>
+<a name="ln514">    return tmpclist;</a>
+<a name="ln515">  }</a>
+<a name="ln516"> </a>
+<a name="ln517">  //! Change the current coordinate set</a>
+<a name="ln518">  //! \since version 2.2</a>
+<a name="ln519">  bool OBRotamerList::SetCurrentCoordinates(OBMol &amp;mol, std::vector&lt;int&gt; arr)</a>
+<a name="ln520">  {</a>
+<a name="ln521">    double angle;</a>
+<a name="ln522"> </a>
+<a name="ln523">    if (arr.size() != (_vrotor.size() + 1))</a>
+<a name="ln524">      return false; // wrong size key</a>
+<a name="ln525"> </a>
+<a name="ln526">    // gotta check for weird ring torsion combinations</a>
+<a name="ln527">    if (_vrings.size()) {</a>
+<a name="ln528">      // go through each ring and update the possible torsions</a>
+<a name="ln529">      for (unsigned int j = 0; j &lt; _vrings.size(); ++j) {</a>
+<a name="ln530">        vector&lt;int&gt; path = _vrings[j];</a>
+<a name="ln531">        double torsionSum = 0.0;</a>
+<a name="ln532"> </a>
+<a name="ln533">        // go around the loop and add up the torsions</a>
+<a name="ln534">        for (unsigned int i = 0; i &lt; path.size(); ++i) {</a>
+<a name="ln535">          if (path[i] == -1) {</a>
+<a name="ln536">            // not a rotor, use the fixed value</a>
+<a name="ln537">            torsionSum += _vringTors[j][i];</a>
+<a name="ln538">            continue;</a>
+<a name="ln539">          }</a>
+<a name="ln540"> </a>
+<a name="ln541">          // what angle are we trying to use with this key?</a>
+<a name="ln542">          angle = _vres[ path[i] ][arr[ path[i]+1 ]];</a>
+<a name="ln543">          while (angle &lt; 0.0)</a>
+<a name="ln544">          	angle += 360.0;</a>
+<a name="ln545">        	while (angle &gt; 360.0)</a>
+<a name="ln546">          	angle -= 360.0;</a>
+<a name="ln547"> </a>
+<a name="ln548">          // update the ring torsion for this setting</a>
+<a name="ln549">          _vringTors[j][i] = angle;</a>
+<a name="ln550">          torsionSum += angle;</a>
+<a name="ln551">        }</a>
+<a name="ln552"> </a>
+<a name="ln553">        // if the sum of the ring torsions is not ~0, bad move</a>
+<a name="ln554">        if (fabs(torsionSum) &gt; 45.0) {</a>
+<a name="ln555">          //          cerr &lt;&lt; &quot; Bad move!&quot; &lt;&lt; endl;</a>
+<a name="ln556">          return false; // don't make the move</a>
+<a name="ln557">        }</a>
+<a name="ln558">      }</a>
+<a name="ln559">    }</a>
+<a name="ln560"> </a>
+<a name="ln561">    double *c = mol.GetCoordinates();</a>
+<a name="ln562">    for (unsigned int i = 0;i &lt; _vrotor.size();++i)</a>
+<a name="ln563">      {</a>
+<a name="ln564">				if (arr[i+1] == -1) // skip this rotor</a>
+<a name="ln565">					continue;</a>
+<a name="ln566">				else {</a>
+<a name="ln567">        	angle = _vres[i][arr[i+1]];</a>
+<a name="ln568">        	while (angle &lt; 0.0)</a>
+<a name="ln569">          	angle += 360.0;</a>
+<a name="ln570">        	while (angle &gt; 360.0)</a>
+<a name="ln571">          	angle -= 360.0;</a>
+<a name="ln572">	        SetRotorToAngle(c,_vrotor[i].first,angle,_vrotor[i].second);</a>
+<a name="ln573">				} // set an angle</a>
+<a name="ln574">      } // for rotors</a>
+<a name="ln575"> </a>
+<a name="ln576">    return true;</a>
+<a name="ln577">  }</a>
+<a name="ln578"> </a>
+<a name="ln579">  void OBRotamerList::SetBaseCoordinateSets(OBMol&amp; mol)</a>
+<a name="ln580">  {</a>
+<a name="ln581">    SetBaseCoordinateSets(mol.GetConformers(), mol.NumAtoms());</a>
+<a name="ln582">  }</a>
+<a name="ln583"> </a>
+<a name="ln584">  //Copies the coordinates in bc, NOT the pointers, into the object</a>
+<a name="ln585">  void OBRotamerList::SetBaseCoordinateSets(vector&lt;double*&gt; bc, unsigned int N)</a>
+<a name="ln586">  {</a>
+<a name="ln587">    unsigned int i,j;</a>
+<a name="ln588"> </a>
+<a name="ln589">    //Clear out old data</a>
+<a name="ln590">    for (i=0 ; i&lt;_c.size() ; ++i)</a>
+<a name="ln591">      delete [] _c[i];</a>
+<a name="ln592">    _c.clear();</a>
+<a name="ln593"> </a>
+<a name="ln594">    //Copy new data</a>
+<a name="ln595">    double *c  = nullptr;</a>
+<a name="ln596">    double *cc = nullptr;</a>
+<a name="ln597">    for (i=0 ; i&lt;bc.size() ; ++i)</a>
+<a name="ln598">      {</a>
+<a name="ln599">        c = new double [3*N];</a>
+<a name="ln600">        cc = bc[i];</a>
+<a name="ln601">        for (j=0 ; j&lt;3*N ; ++j)</a>
+<a name="ln602">          c[j] = cc[j];</a>
+<a name="ln603">        _c.push_back(c);</a>
+<a name="ln604">      }</a>
+<a name="ln605">    _NBaseCoords = N;</a>
+<a name="ln606">  }</a>
+<a name="ln607"> </a>
+<a name="ln608">  //! Rotate the coordinates of 'atoms'</a>
+<a name="ln609">  //! such that tor == ang.</a>
+<a name="ln610">  //! Atoms in 'tor' should be ordered such that the 3rd atom is</a>
+<a name="ln611">  //! the pivot around which atoms rotate (ang is in degrees)</a>
+<a name="ln612">  //! \todo This code is identical to OBMol::SetTorsion() and should be combined</a>
+<a name="ln613">  void SetRotorToAngle(double *c, OBAtom **ref,double ang,vector&lt;int&gt; atoms)</a>
+<a name="ln614">  {</a>
+<a name="ln615">    double v1x,v1y,v1z,v2x,v2y,v2z,v3x,v3y,v3z;</a>
+<a name="ln616">    double c1x,c1y,c1z,c2x,c2y,c2z,c3x,c3y,c3z;</a>
+<a name="ln617">    double c1mag,c2mag,radang,costheta,m[9];</a>
+<a name="ln618">    double x,y,z,mag,rotang,sn,cs,t,tx,ty,tz;</a>
+<a name="ln619"> </a>
+<a name="ln620">    int tor[4];</a>
+<a name="ln621">    tor[0] = ref[0]-&gt;GetCoordinateIdx();</a>
+<a name="ln622">    tor[1] = ref[1]-&gt;GetCoordinateIdx();</a>
+<a name="ln623">    tor[2] = ref[2]-&gt;GetCoordinateIdx();</a>
+<a name="ln624">    tor[3] = ref[3]-&gt;GetCoordinateIdx();</a>
+<a name="ln625"> </a>
+<a name="ln626">    //</a>
+<a name="ln627">    //calculate the torsion angle</a>
+<a name="ln628">    //</a>
+<a name="ln629">    v1x = c[tor[0]]   - c[tor[1]];   v2x = c[tor[1]]   - c[tor[2]];</a>
+<a name="ln630">    v1y = c[tor[0]+1] - c[tor[1]+1]; v2y = c[tor[1]+1] - c[tor[2]+1];</a>
+<a name="ln631">    v1z = c[tor[0]+2] - c[tor[1]+2]; v2z = c[tor[1]+2] - c[tor[2]+2];</a>
+<a name="ln632">    v3x = c[tor[2]]   - c[tor[3]];</a>
+<a name="ln633">    v3y = c[tor[2]+1] - c[tor[3]+1];</a>
+<a name="ln634">    v3z = c[tor[2]+2] - c[tor[3]+2];</a>
+<a name="ln635"> </a>
+<a name="ln636">    c1x = v1y*v2z - v1z*v2y;   c2x = v2y*v3z - v2z*v3y;</a>
+<a name="ln637">    c1y = -v1x*v2z + v1z*v2x;  c2y = -v2x*v3z + v2z*v3x;</a>
+<a name="ln638">    c1z = v1x*v2y - v1y*v2x;   c2z = v2x*v3y - v2y*v3x;</a>
+<a name="ln639">    c3x = c1y*c2z - c1z*c2y;</a>
+<a name="ln640">    c3y = -c1x*c2z + c1z*c2x;</a>
+<a name="ln641">    c3z = c1x*c2y - c1y*c2x;</a>
+<a name="ln642"> </a>
+<a name="ln643">    c1mag = c1x*c1x + c1y*c1y + c1z*c1z;</a>
+<a name="ln644">    c2mag = c2x*c2x + c2y*c2y + c2z*c2z;</a>
+<a name="ln645">    if (c1mag*c2mag &lt; 0.01) costheta = 1.0; //avoid div by zero error</a>
+<a name="ln646">    else costheta = (c1x*c2x + c1y*c2y + c1z*c2z)/(sqrt(c1mag*c2mag));</a>
+<a name="ln647"> </a>
+<a name="ln648">    if (costheta &lt; -0.999999) costheta = -0.999999;</a>
+<a name="ln649">    if (costheta &gt;  0.999999) costheta =  0.999999;</a>
+<a name="ln650"> </a>
+<a name="ln651">    if ((v2x*c3x + v2y*c3y + v2z*c3z) &gt; 0.0) radang = -acos(costheta);</a>
+<a name="ln652">    else                                     radang = acos(costheta);</a>
+<a name="ln653"> </a>
+<a name="ln654">    //</a>
+<a name="ln655">    // now we have the torsion angle (radang) - set up the rot matrix</a>
+<a name="ln656">    //</a>
+<a name="ln657"> </a>
+<a name="ln658">    //find the difference between current and requested</a>
+<a name="ln659">    rotang = (DEG_TO_RAD*ang) - radang;</a>
+<a name="ln660"> </a>
+<a name="ln661">    sn = sin(rotang); cs = cos(rotang);t = 1 - cs;</a>
+<a name="ln662">    //normalize the rotation vector</a>
+<a name="ln663">    mag = sqrt(v2x*v2x + v2y*v2y + v2z*v2z);</a>
+<a name="ln664">    if (mag &lt; 0.1) mag = 0.1; // avoid divide by zero error</a>
+<a name="ln665">    x = v2x/mag; y = v2y/mag; z = v2z/mag;</a>
+<a name="ln666"> </a>
+<a name="ln667">    //set up the rotation matrix</a>
+<a name="ln668">    m[0]= t*x*x + cs;     m[1] = t*x*y + sn*z;  m[2] = t*x*z - sn*y;</a>
+<a name="ln669">    m[3] = t*x*y - sn*z;  m[4] = t*y*y + cs;    m[5] = t*y*z + sn*x;</a>
+<a name="ln670">    m[6] = t*x*z + sn*y;  m[7] = t*y*z - sn*x;  m[8] = t*z*z + cs;</a>
+<a name="ln671"> </a>
+<a name="ln672">    //</a>
+<a name="ln673">    //now the matrix is set - time to rotate the atoms</a>
+<a name="ln674">    //</a>
+<a name="ln675">    tx = c[tor[1]];ty = c[tor[1]+1];tz = c[tor[1]+2];</a>
+<a name="ln676">    vector&lt;int&gt;::iterator i;int j;</a>
+<a name="ln677">    for (i = atoms.begin();i != atoms.end();++i)</a>
+<a name="ln678">      {</a>
+<a name="ln679">        j = ((*i)-1)*3;</a>
+<a name="ln680">        c[j] -= tx;c[j+1] -= ty;c[j+2]-= tz;</a>
+<a name="ln681">        x = c[j]*m[0] + c[j+1]*m[1] + c[j+2]*m[2];</a>
+<a name="ln682">        y = c[j]*m[3] + c[j+1]*m[4] + c[j+2]*m[5];</a>
+<a name="ln683">        z = c[j]*m[6] + c[j+1]*m[7] + c[j+2]*m[8];</a>
+<a name="ln684">        c[j] = x; c[j+1] = y; c[j+2] = z;</a>
+<a name="ln685">        c[j] += tx;c[j+1] += ty;c[j+2] += tz;</a>
+<a name="ln686">      }</a>
+<a name="ln687">  }</a>
+<a name="ln688"> </a>
+<a name="ln689">  int PackCoordinate(double c[3],double max[3])</a>
+<a name="ln690">  {</a>
+<a name="ln691">    int tmp;</a>
+<a name="ln692">    double cf;</a>
+<a name="ln693">    cf = c[0];</a>
+<a name="ln694">    tmp  = ((int)(cf*max[0])) &lt;&lt; 20;</a>
+<a name="ln695">    cf = c[1];</a>
+<a name="ln696">    tmp |= ((int)(cf*max[1])) &lt;&lt; 10;</a>
+<a name="ln697">    cf = c[2];</a>
+<a name="ln698">    tmp |= ((int)(cf*max[2]));</a>
+<a name="ln699">    return(tmp);</a>
+<a name="ln700">  }</a>
+<a name="ln701"> </a>
+<a name="ln702">  void UnpackCoordinate(double c[3],double max[3],int tmp)</a>
+<a name="ln703">  {</a>
+<a name="ln704">    double cf;</a>
+<a name="ln705">    cf = (double)(tmp&gt;&gt;20);</a>
+<a name="ln706">    c[0] = cf;</a>
+<a name="ln707">    c[0] *= max[0];</a>
+<a name="ln708">    cf = (double)((tmp&amp;0xffc00)&gt;&gt;10);</a>
+<a name="ln709">    c[1] = cf;</a>
+<a name="ln710">    c[1] *= max[1];</a>
+<a name="ln711">    cf = (double)(tmp&amp;0x3ff);</a>
+<a name="ln712">    c[2] = cf;</a>
+<a name="ln713">    c[2] *= max[2];</a>
+<a name="ln714">  }</a>
+<a name="ln715"> </a>
+<a name="ln716">} //namespace OpenBabel</a>
+<a name="ln717"> </a>
+<a name="ln718">//! \file rotamer.cpp</a>
+<a name="ln719">//! \brief Handle rotamer list data.</a>
+
+</code></pre>
+<div class="balloon" rel="146"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v668/" target="_blank">V668</a> There is no sense in testing the 'ref' pointer against null, as the memory was allocated using the 'new' operator. The exception will be generated in the case of memory allocation error.</p></div>
+<div class="balloon" rel="155"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v668/" target="_blank">V668</a> There is no sense in testing the 'rotamers' pointer against null, as the memory was allocated using the 'new' operator. The exception will be generated in the case of memory allocation error.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,305 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>oberror.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">oberror.cpp - Handle error messages.</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 2002 by Stefan Kebekus</a>
+<a name="ln5">Some portions Copyright (C) 2002-2006 by Geoffrey R. Hutchison</a>
+<a name="ln6"> </a>
+<a name="ln7">This file is part of the Open Babel project.</a>
+<a name="ln8">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln11">it under the terms of the GNU General Public License as published by</a>
+<a name="ln12">the Free Software Foundation version 2 of the License.</a>
+<a name="ln13"> </a>
+<a name="ln14">This program is distributed in the hope that it will be useful, but</a>
+<a name="ln15">WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln16">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</a>
+<a name="ln17">General Public License for more details.</a>
+<a name="ln18">***********************************************************************/</a>
+<a name="ln19"> </a>
+<a name="ln20">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln21"> </a>
+<a name="ln22">#include &lt;iostream&gt;</a>
+<a name="ln23">#include &lt;string&gt;</a>
+<a name="ln24">#include &lt;algorithm&gt;</a>
+<a name="ln25"> </a>
+<a name="ln26">#include &lt;openbabel/oberror.h&gt;</a>
+<a name="ln27"> </a>
+<a name="ln28">using namespace std;</a>
+<a name="ln29"> </a>
+<a name="ln30">namespace OpenBabel</a>
+<a name="ln31">{</a>
+<a name="ln32">  // Initialize the global obErrorLog declared in oberror.h</a>
+<a name="ln33">  OBMessageHandler obErrorLog;</a>
+<a name="ln34"> </a>
+<a name="ln35">  OBError::OBError( const string &amp;method,</a>
+<a name="ln36">                    const string &amp;errorMsg,</a>
+<a name="ln37">                    const string &amp;explanation,</a>
+<a name="ln38">                    const string &amp;possibleCause,</a>
+<a name="ln39">                    const string &amp;suggestedRemedy,</a>
+<a name="ln40">                    const obMessageLevel level) :</a>
+<a name="ln41">    _method(method), _errorMsg(errorMsg), _explanation(explanation),</a>
+<a name="ln42">    _possibleCause(possibleCause), _suggestedRemedy(suggestedRemedy),</a>
+<a name="ln43">    _level(level)</a>
+<a name="ln44">  { }</a>
+<a name="ln45"> </a>
+<a name="ln46">  string OBError::message() const</a>
+<a name="ln47">  {</a>
+<a name="ln48">    string tmp = &quot;==============================\n&quot;;</a>
+<a name="ln49"> </a>
+<a name="ln50">    if (_level == obError)</a>
+<a name="ln51">      tmp += &quot;*** Open Babel Error &quot;;</a>
+<a name="ln52">    else if (_level == obWarning)</a>
+<a name="ln53">      tmp += &quot;*** Open Babel Warning &quot;;</a>
+<a name="ln54">    else if (_level == obInfo)</a>
+<a name="ln55">      tmp += &quot;*** Open Babel Information &quot;;</a>
+<a name="ln56">    else if (_level == obAuditMsg)</a>
+<a name="ln57">      tmp += &quot;*** Open Babel Audit Log &quot;;</a>
+<a name="ln58">    else</a>
+<a name="ln59">      tmp += &quot;*** Open Babel Debugging Message &quot;;</a>
+<a name="ln60"> </a>
+<a name="ln61">    if (_method.length() != 0)</a>
+<a name="ln62">      {</a>
+<a name="ln63">        tmp += &quot; in &quot; + _method + string(&quot;\n  &quot;);</a>
+<a name="ln64">      }</a>
+<a name="ln65">    tmp += _errorMsg + &quot;\n&quot;;</a>
+<a name="ln66">    if (!_explanation.empty())</a>
+<a name="ln67">      tmp += &quot;  &quot; + _explanation + &quot;\n&quot;;</a>
+<a name="ln68">    if (!_possibleCause.empty())</a>
+<a name="ln69">      tmp += &quot;  Possible reason: &quot; + _possibleCause + &quot;\n&quot;;</a>
+<a name="ln70">    if (!_suggestedRemedy.empty())</a>
+<a name="ln71">      tmp += &quot;  Suggestion: &quot; + _suggestedRemedy + &quot;\n&quot;;</a>
+<a name="ln72">    return tmp;</a>
+<a name="ln73">  }</a>
+<a name="ln74"> </a>
+<a name="ln75">  bool OBError::operator== (const OBError&amp; other)const {return GetError()==other.GetError();}</a>
+<a name="ln76"> </a>
+<a name="ln77">  /** \class OBMessageHandler oberror.h &lt;openbabel/oberror.h&gt;</a>
+<a name="ln78"> </a>
+<a name="ln79">  OBMessageHandler represents a configurable error system for Open Babel.</a>
+<a name="ln80"> </a>
+<a name="ln81">  A global error log is defined by the Open Babel library for use of</a>
+<a name="ln82">  internal code as well as code built on top of Open Babel. This class</a>
+<a name="ln83">  allows flexible filtering based on urgency (defined by the</a>
+<a name="ln84">  obMessageLevel type), an &quot;audit log&quot; of molecular changes, including</a>
+<a name="ln85">  recall using the GetMessagesOfLevel method, etc.</a>
+<a name="ln86"> </a>
+<a name="ln87">  The default is to only log and output errors of priority</a>
+<a name="ln88">  obMessageLevel::obError or obMessageLevel::obWarning.</a>
+<a name="ln89"> </a>
+<a name="ln90">  Long-running code may wish to set the size of the in-memory error log</a>
+<a name="ln91">  using the StartLogging / StopLogging methods and</a>
+<a name="ln92">  SetMaxLogEntries. Otherwise, the error log may easily fill up,</a>
+<a name="ln93">  requiring large amounts of memory.</a>
+<a name="ln94"> </a>
+<a name="ln95">  If you wish to divert error output to a different std::ostream (i.e.,</a>
+<a name="ln96">  for graphical display, or a file log), use the SetOutputStream method</a>
+<a name="ln97">  -- the default goes to the std::clog stream. Furthermore, some older</a>
+<a name="ln98">  code uses std::cerr for direct error output, rather than the</a>
+<a name="ln99">  ThrowError() methods in this class. To prevent this, you can turn on</a>
+<a name="ln100">  &quot;error wrapping&quot; using the StartErrorWrap method -- this behavior is</a>
+<a name="ln101">  turned off by default.</a>
+<a name="ln102"> </a>
+<a name="ln103">  To make it easy to use the OBMessageHandler class and error logging</a>
+<a name="ln104">  facilities, a global log is defined:</a>
+<a name="ln105"> </a>
+<a name="ln106">  \code</a>
+<a name="ln107">  OBERROR extern OBMessageHandler obErrorLog;</a>
+<a name="ln108">  \endcode</a>
+<a name="ln109"> </a>
+<a name="ln110">  Therefore, it is very easy to log errors:</a>
+<a name="ln111"> </a>
+<a name="ln112">  \code</a>
+<a name="ln113">  if (atomIndex &lt; 1 || atomIndex &gt; mol.NumAtoms() )</a>
+<a name="ln114">     obErrorLog.ThrowError(__FUNCTION__, &quot;Requested Atom Out of Range&quot;, obDebug);</a>
+<a name="ln115">  \endcode</a>
+<a name="ln116"> </a>
+<a name="ln117">  or</a>
+<a name="ln118"> </a>
+<a name="ln119">  \code</a>
+<a name="ln120">  stringstream errorMsg;</a>
+<a name="ln121">  errorMsg &lt;&lt; &quot; Could not parse line in type translation table types.txt -- incorect number of columns&quot;;</a>
+<a name="ln122">  errorMsg &lt;&lt; &quot; found &quot; &lt;&lt; vc.size() &lt;&lt; &quot; expected &quot; &lt;&lt; _ncols &lt;&lt; &quot;.&quot;;</a>
+<a name="ln123">  obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obInfo);</a>
+<a name="ln124">  \endcode</a>
+<a name="ln125"> </a>
+<a name="ln126">  The __FUNCTION__ builtin is defined by many compilers (e.g., &lt;a</a>
+<a name="ln127">  href=&quot;http://gcc.gnu.org/&quot;&gt;GCC&lt;/a&gt;) but can be defined to an empty</a>
+<a name="ln128">  string on some platforms without this compiler extension.</a>
+<a name="ln129"> </a>
+<a name="ln130">  Output from the error log typically looks like:</a>
+<a name="ln131">  \code</a>
+<a name="ln132">  ==============================</a>
+<a name="ln133">  *** Open Babel Audit Log  in ReadChemObject</a>
+<a name="ln134">  OpenBabel::Read molecule Protein Data Bank format</a>
+<a name="ln135">  ==============================</a>
+<a name="ln136">  *** Open Babel Information  in ParseConectRecord</a>
+<a name="ln137">  WARNING: Problems reading a PDB file</a>
+<a name="ln138">  Problems reading a CONECT record.</a>
+<a name="ln139">  According to the PDB specification,</a>
+<a name="ln140">  the record should have 70 columns, but OpenBabel found 61 columns.</a>
+<a name="ln141">  \endcode</a>
+<a name="ln142"> </a>
+<a name="ln143">  **/</a>
+<a name="ln144"> </a>
+<a name="ln145">  OBMessageHandler::OBMessageHandler() :</a>
+<a name="ln146">    _outputLevel(obWarning), _outputStream(&amp;clog), _logging(true), _maxEntries(100)</a>
+<a name="ln147">  {</a>
+<a name="ln148">    _messageCount[0] = _messageCount[1] = _messageCount[2] = 0;</a>
+<a name="ln149">    _messageCount[3] = _messageCount[4] = 0;</a>
+<a name="ln150">    _filterStreamBuf = _inWrapStreamBuf = nullptr;</a>
+<a name="ln151">    //  StartErrorWrap(); // (don't turn on error wrapping by default)</a>
+<a name="ln152">  }</a>
+<a name="ln153"> </a>
+<a name="ln154">  OBMessageHandler::~OBMessageHandler()</a>
+<a name="ln155">  {</a>
+<a name="ln156">    StopErrorWrap();</a>
+<a name="ln157"> </a>
+<a name="ln158">    // free the internal filter streambuf</a>
+<a name="ln159">    if (_filterStreamBuf != nullptr)</a>
+<a name="ln160">      delete _filterStreamBuf;</a>
+<a name="ln161">  }</a>
+<a name="ln162"> </a>
+<a name="ln163">  void OBMessageHandler::ThrowError(OBError err, errorQualifier qualifier)</a>
+<a name="ln164">  {</a>
+<a name="ln165">    if (!_logging)</a>
+<a name="ln166">      return;</a>
+<a name="ln167"> </a>
+<a name="ln168">    //Output error message if level sufficiently high and, if onceOnly set, it has not been logged before</a>
+<a name="ln169">    if (err.GetLevel() &lt;= _outputLevel &amp;&amp;</a>
+<a name="ln170">      (qualifier!=onceOnly || find(_messageList.begin(), _messageList.end(), err)==_messageList.end()))</a>
+<a name="ln171">    {</a>
+<a name="ln172">      *_outputStream &lt;&lt; err;</a>
+<a name="ln173">    }</a>
+<a name="ln174"> </a>
+<a name="ln175">    _messageList.push_back(err);</a>
+<a name="ln176">    _messageCount[err.GetLevel()]++;</a>
+<a name="ln177">    if (_maxEntries != 0 &amp;&amp; _messageList.size() &gt; _maxEntries)</a>
+<a name="ln178">      _messageList.pop_front();</a>
+<a name="ln179">  }</a>
+<a name="ln180"> </a>
+<a name="ln181">  void OBMessageHandler::ThrowError(const std::string &amp;method,</a>
+<a name="ln182">                                    const std::string &amp;errorMsg,</a>
+<a name="ln183">                                    obMessageLevel level, errorQualifier qualifier)</a>
+<a name="ln184">  {</a>
+<a name="ln185">    if (errorMsg.length() &gt; 1)</a>
+<a name="ln186">      {</a>
+<a name="ln187">        OBError err(method, errorMsg, &quot;&quot;, &quot;&quot;, &quot;&quot;, level);</a>
+<a name="ln188">        ThrowError(err, qualifier);</a>
+<a name="ln189">      }</a>
+<a name="ln190">  }</a>
+<a name="ln191"> </a>
+<a name="ln192">  std::vector&lt;std::string&gt; OBMessageHandler::GetMessagesOfLevel(const obMessageLevel level)</a>
+<a name="ln193">  {</a>
+<a name="ln194">    vector&lt;string&gt; results;</a>
+<a name="ln195">    deque&lt;OBError&gt;::iterator i;</a>
+<a name="ln196">    OBError error;</a>
+<a name="ln197"> </a>
+<a name="ln198">    for (i = _messageList.begin(); i != _messageList.end(); ++i)</a>
+<a name="ln199">      {</a>
+<a name="ln200">        error = (*i);</a>
+<a name="ln201">        if (error.GetLevel() == level)</a>
+<a name="ln202">          results.push_back( error.message() );</a>
+<a name="ln203">      }</a>
+<a name="ln204"> </a>
+<a name="ln205">    return results;</a>
+<a name="ln206">  }</a>
+<a name="ln207"> </a>
+<a name="ln208">  bool OBMessageHandler::StartErrorWrap()</a>
+<a name="ln209">  {</a>
+<a name="ln210">    if (_inWrapStreamBuf != nullptr)</a>
+<a name="ln211">      return true; // already wrapped cerr  -- don't go into loops!</a>
+<a name="ln212"> </a>
+<a name="ln213">    _inWrapStreamBuf = cerr.rdbuf();</a>
+<a name="ln214"> </a>
+<a name="ln215">    if (_filterStreamBuf == nullptr)</a>
+<a name="ln216">      {</a>
+<a name="ln217">        _filterStreamBuf = new(obLogBuf);</a>
+<a name="ln218">      }</a>
+<a name="ln219"> </a>
+<a name="ln220">    cerr.rdbuf(_filterStreamBuf);</a>
+<a name="ln221">    return true;</a>
+<a name="ln222">  }</a>
+<a name="ln223"> </a>
+<a name="ln224">  bool OBMessageHandler::StopErrorWrap()</a>
+<a name="ln225">  {</a>
+<a name="ln226">    if (_inWrapStreamBuf == nullptr)</a>
+<a name="ln227">      return true; // never wrapped cerr</a>
+<a name="ln228"> </a>
+<a name="ln229">    cerr.rdbuf(_inWrapStreamBuf);</a>
+<a name="ln230">    _inWrapStreamBuf = nullptr; //shows not wrapped</a>
+<a name="ln231"> </a>
+<a name="ln232">    // don't delete the filter streambuf yet -- we might start wrapping later</a>
+<a name="ln233">    // it's freed in the dtor</a>
+<a name="ln234"> </a>
+<a name="ln235">    return true;</a>
+<a name="ln236">  }</a>
+<a name="ln237"> </a>
+<a name="ln238">  string OBMessageHandler::GetMessageSummary()</a>
+<a name="ln239">  {</a>
+<a name="ln240">    stringstream summary;</a>
+<a name="ln241">    if (_messageCount[obError] &gt; 0)</a>
+<a name="ln242">      summary &lt;&lt; _messageCount[obError] &lt;&lt; &quot; errors &quot;;</a>
+<a name="ln243">    if (_messageCount[obWarning] &gt; 0)</a>
+<a name="ln244">      summary &lt;&lt; _messageCount[obWarning] &lt;&lt; &quot; warnings &quot;;</a>
+<a name="ln245">    if (_messageCount[obInfo] &gt; 0)</a>
+<a name="ln246">      summary &lt;&lt; _messageCount[obInfo] &lt;&lt; &quot; info messages &quot;;</a>
+<a name="ln247">    if (_messageCount[obAuditMsg] &gt; 0)</a>
+<a name="ln248">      summary &lt;&lt; _messageCount[obAuditMsg] &lt;&lt; &quot; audit log messages &quot;;</a>
+<a name="ln249">    if (_messageCount[obDebug] &gt; 0)</a>
+<a name="ln250">      summary &lt;&lt; _messageCount[obDebug] &lt;&lt; &quot; debugging messages &quot;;</a>
+<a name="ln251"> </a>
+<a name="ln252">    return summary.str();</a>
+<a name="ln253">  }</a>
+<a name="ln254"> </a>
+<a name="ln255">} // end namespace OpenBabel</a>
+<a name="ln256"> </a>
+<a name="ln257">//! \file oberror.cpp</a>
+<a name="ln258">//! \brief Handle error messages, warnings, notices, etc.</a>
+<a name="ln259">//!  Implements OBMessageHandler class.</a>
+
+</code></pre>
+<div class="balloon" rel="215"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1051/" target="_blank">V1051</a> Consider checking for misprints. It's possible that the '_inWrapStreamBuf' should be checked here.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,312 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>inchiformat.h</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Copyright (C) 2005,2006,2007 Chris Morley</a>
+<a name="ln3"> </a>
+<a name="ln4">Based on the IUPAC InChI reference software, which is distributed</a>
+<a name="ln5">under the GNU LGPL:</a>
+<a name="ln6">Copyright (C) 2005 The International Union of Pure and Applied Chemistry</a>
+<a name="ln7">IUPAC International Chemical Identifier (InChI) (contact:secretariat@iupac.org)</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln10">it under the terms of the GNU General Public License as published by</a>
+<a name="ln11">the Free Software Foundation version 2 of the License.</a>
+<a name="ln12"> </a>
+<a name="ln13">This program is distributed in the hope that it will be useful,</a>
+<a name="ln14">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln15">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln16">GNU General Public License for more details.</a>
+<a name="ln17">***********************************************************************/</a>
+<a name="ln18">#ifndef OB_INCHIFORMAT_H</a>
+<a name="ln19">#define OB_INCHIFORMAT_H</a>
+<a name="ln20">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln23"> </a>
+<a name="ln24">#include &quot;inchi_api.h&quot;</a>
+<a name="ln25">#ifdef HAVE_SSTREAM</a>
+<a name="ln26">#include &lt;sstream&gt;</a>
+<a name="ln27">#else</a>
+<a name="ln28">#include &lt;strstream&gt;</a>
+<a name="ln29">#endif</a>
+<a name="ln30">#include &lt;set&gt;</a>
+<a name="ln31">#include &lt;vector&gt;</a>
+<a name="ln32">#include &lt;cstdlib&gt;</a>
+<a name="ln33">#include &lt;algorithm&gt;</a>
+<a name="ln34"> </a>
+<a name="ln35">namespace OpenBabel</a>
+<a name="ln36">{</a>
+<a name="ln37">extern std::string GetInChI(std::istream&amp; is);</a>
+<a name="ln38"> </a>
+<a name="ln39">class InChIFormat : public OBMoleculeFormat</a>
+<a name="ln40">{</a>
+<a name="ln41">public:</a>
+<a name="ln42">  InChIFormat()</a>
+<a name="ln43">  {</a>
+<a name="ln44">    OBConversion::RegisterFormat(&quot;inchi&quot;,this);</a>
+<a name="ln45">    OBConversion::RegisterOptionParam(&quot;n&quot;, this, 0, OBConversion::INOPTIONS);</a>
+<a name="ln46">    OBConversion::RegisterOptionParam(&quot;t&quot;, this);</a>
+<a name="ln47">    OBConversion::RegisterOptionParam(&quot;l&quot;, this);</a>
+<a name="ln48">    OBConversion::RegisterOptionParam(&quot;X&quot;, this, 1, OBConversion::OUTOPTIONS);</a>
+<a name="ln49">    OBConversion::RegisterOptionParam(&quot;K&quot;, this, 0, OBConversion::OUTOPTIONS);</a>
+<a name="ln50">    OBConversion::RegisterOptionParam(&quot;F&quot;, this, 0, OBConversion::OUTOPTIONS);</a>
+<a name="ln51">    OBConversion::RegisterOptionParam(&quot;X&quot;, this, 1, OBConversion::INOPTIONS);</a>
+<a name="ln52">    OBConversion::RegisterOptionParam(&quot;T&quot;, this, 1, OBConversion::OUTOPTIONS);</a>
+<a name="ln53">  }</a>
+<a name="ln54"> </a>
+<a name="ln55">  virtual const char* Description()</a>
+<a name="ln56">  {</a>
+<a name="ln57">    return</a>
+<a name="ln58">    &quot;InChI format\n&quot;</a>
+<a name="ln59">    &quot;IUPAC/NIST molecular identifier\n\n&quot;</a>
+<a name="ln60"> </a>
+<a name="ln61">    &quot;Write Options, e.g. -xa\n&quot;</a>
+<a name="ln62">    &quot;    Standard InChI is written unless certain InChI options are used\n \n&quot;</a>
+<a name="ln63">    &quot; K output InChIKey only\n&quot;</a>
+<a name="ln64">    &quot; t add molecule name after InChI\n&quot;</a>
+<a name="ln65">    &quot; w ignore less important warnings\n&quot;</a>
+<a name="ln66">    &quot;    These are:\n&quot;</a>
+<a name="ln67">    &quot;    \'Omitted undefined stereo\'\n&quot;</a>
+<a name="ln68">    &quot;    \'Charges were rearranged\'\n&quot;</a>
+<a name="ln69">    &quot;    \'Proton(s) added/removed\'\n&quot;</a>
+<a name="ln70">    &quot;    \'Metal was disconnected\'\n&quot;</a>
+<a name="ln71">    &quot; a output auxiliary information\n&quot;</a>
+<a name="ln72">    &quot; l display InChI log\n&quot;</a>
+<a name="ln73">    &quot; r recalculate InChI; normally an input InChI is reused\n&quot;</a>
+<a name="ln74">    &quot; s recalculate wedge and hash bonds(2D structures only)\n \n&quot;</a>
+<a name="ln75">    &quot;    **Uniqueness options** (see also ``--unique`` and ``--sort`` which are more versatile)\n&quot;</a>
+<a name="ln76">    &quot; u output only unique molecules\n&quot;</a>
+<a name="ln77">    &quot; U output only unique molecules and sort them\n&quot;</a>
+<a name="ln78">    &quot; e compare first molecule to others\n&quot;</a>
+<a name="ln79">    &quot;    This can also be done with :ref:`InChICompare format &lt;Compare_molecules_using_InChI&gt;`::\n \n&quot;</a>
+<a name="ln80">    &quot;      babel first.smi second.mol third.cml -ok\n \n&quot;</a>
+<a name="ln81">    &quot; T &lt;param&gt; truncate InChI according to various parameters\n&quot;</a>
+<a name="ln82">    &quot;    See below for possible truncation parameters.\n&quot;</a>
+<a name="ln83">    </a>
+<a name="ln84">    &quot; X &lt;Option string&gt; Additional InChI options\n&quot;</a>
+<a name="ln85">    &quot;    See InChI documentation.\n&quot;</a>
+<a name="ln86">    &quot;    These options should be space delimited in a single quoted string.\n \n&quot;</a>
+<a name="ln87">    &quot;    - Structure perception (compatible with stdInChI): ``NEWPSOFF``, ``DoNotAddH``, ``SNon``\n&quot;</a>
+<a name="ln88">    &quot;    - Stereo interpretation (produces non-standard InChI): ``SRel``, ``SRac``,\n&quot;</a>
+<a name="ln89">    &quot;      ``SUCF``, ``ChiralFlagON``, ``ChiralFlagOFF``\n&quot;</a>
+<a name="ln90">    &quot;    - InChI creation options (produces non-standard InChI): ``SUU``, ``SLUUD``,\n&quot;</a>
+<a name="ln91">    &quot;      ``FixedH``, ``RecMet``, ``KET``, ``15T``\n \n&quot;</a>
+<a name="ln92">    &quot;    The following options are for convenience, e.g. ``-xF``\n&quot;</a>
+<a name="ln93">    &quot;    but produce non-standard InChI.\n&quot;</a>
+<a name="ln94">    &quot; F include fixed hydrogen layer\n&quot;</a>
+<a name="ln95">    &quot; M include bonds to metal\n\n&quot;</a>
+<a name="ln96"> </a>
+<a name="ln97">    &quot;Read Options, e.g. -an\n&quot;</a>
+<a name="ln98">    &quot; X &lt;Option string&gt; List of InChI options\n&quot;</a>
+<a name="ln99">    &quot; n molecule name follows InChI on same line\n&quot;</a>
+<a name="ln100">    &quot; a add InChI string to molecule name\n\n&quot;</a>
+<a name="ln101"> </a>
+<a name="ln102">    &quot;Truncation parameters used with ``-xT``:\n\n&quot;</a>
+<a name="ln103">    &quot;/formula   formula only\n&quot;</a>
+<a name="ln104">    &quot;/connect   formula and connectivity only\n&quot;</a>
+<a name="ln105">    &quot;/nostereo  ignore E/Z and sp3 stereochemistry\n&quot;</a>
+<a name="ln106">    &quot;/nosp3       ignore sp3 stereochemistry\n&quot;</a>
+<a name="ln107">    &quot;/noEZ      ignore E/Z steroeochemistry\n&quot;</a>
+<a name="ln108">    &quot;/nochg     ignore charge and protonation\n&quot;</a>
+<a name="ln109">    &quot;/noiso     ignore isotopes\n\n&quot;</a>
+<a name="ln110">    &quot;Note that these can also be combined, e.g. ``/nochg/noiso``\n&quot;</a>
+<a name="ln111">;</a>
+<a name="ln112">  };</a>
+<a name="ln113"> </a>
+<a name="ln114">  virtual const char* SpecificationURL()</a>
+<a name="ln115">  { return &quot;http://www.iupac.org/inchi/&quot;;};</a>
+<a name="ln116"> </a>
+<a name="ln117">  virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln118">  virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln119">  virtual int  SkipObjects(int n, OBConversion* pConv);</a>
+<a name="ln120"> </a>
+<a name="ln121">  static char CompareInchi(const std::string&amp; Inchi1, const std::string&amp; Inchi2);</a>
+<a name="ln122">  static std::string InChIErrorMessage(const char ch);</a>
+<a name="ln123"> </a>
+<a name="ln124">  ///Removes layers or truncates InChi, according to \param spec</a>
+<a name="ln125">  ///which can contain any number of:/formula /connect /nostereo /nosp3 /noEZ /nochg /noiso</a>
+<a name="ln126">  /// @param inchi The inchi string</a>
+<a name="ln127">  static bool EditInchi(std::string&amp; inchi, std::string&amp; spec);</a>
+<a name="ln128"> </a>
+<a name="ln129">  ///Compare std::strings with embedded numbers so that</a>
+<a name="ln130">  // &quot;a6b&quot; (or &quot;a06b&quot;) is less than &quot;a15b&quot;</a>
+<a name="ln131">  // and &quot;CH4&quot; is less than &quot;C2H6&quot;</a>
+<a name="ln132">  // and &quot;CH4&quot; is less than &quot;ClH&quot; (hydrogen chloride)</a>
+<a name="ln133">  struct InchiLess</a>
+<a name="ln134">    : public std::binary_function&lt;const std::string&amp;, const std::string&amp;, bool&gt;</a>
+<a name="ln135">  {</a>
+<a name="ln136">    bool operator()(const std::string&amp; s1, const std::string&amp; s2) const</a>
+<a name="ln137">    {</a>
+<a name="ln138">      //stop at the first space or the end of the strings</a>
+<a name="ln139">      std::string::const_iterator p1=s1.begin(), p2=s2.begin(),</a>
+<a name="ln140">        p1end=find(s1.begin(), s1.end(), ' '), p2end=find(s2.begin(), s2.end(), ' ');</a>
+<a name="ln141"> </a>
+<a name="ln142">      while( p1&lt;p1end &amp;&amp; p2&lt;p2end)</a>
+<a name="ln143">      {</a>
+<a name="ln144">        int n1=-1,n2=-1;</a>
+<a name="ln145">        if(isdigit(*p1))</a>
+<a name="ln146">          {</a>
+<a name="ln147">            n1 = atoi(&amp;*p1);</a>
+<a name="ln148">            //skip over number</a>
+<a name="ln149">            while(p1!=s1.end() &amp;&amp; isdigit(*p1++)); --p1;</a>
+<a name="ln150">          }</a>
+<a name="ln151">        if(isdigit(*p2))</a>
+<a name="ln152">          {</a>
+<a name="ln153">            n2 = atoi(&amp;*p2);</a>
+<a name="ln154">            while(p2!=s2.end() &amp;&amp; isdigit(*p2++)); --p2;</a>
+<a name="ln155">          }</a>
+<a name="ln156">        if(n1&lt;0 &amp;&amp; n2 &lt; 0)</a>
+<a name="ln157">          {</a>
+<a name="ln158">            //neither numbers</a>
+<a name="ln159">            if(*p1 != *p2)</a>
+<a name="ln160">        return *p1 &lt; *p2;</a>
+<a name="ln161">          }</a>
+<a name="ln162">        else if(n1&gt;=0 &amp;&amp; n2&gt;0)</a>
+<a name="ln163">          {</a>
+<a name="ln164">            //both numbers</a>
+<a name="ln165">            if(n1!=n2)</a>
+<a name="ln166">        return n1 &lt; n2;</a>
+<a name="ln167">          }</a>
+<a name="ln168">        else if(n1&gt;0)</a>
+<a name="ln169">          return islower(*p2)!=0;</a>
+<a name="ln170">        else if(n2&gt;0)</a>
+<a name="ln171">          return !islower(*p1);</a>
+<a name="ln172"> </a>
+<a name="ln173">        ++p1; ++p2; // iterate</a>
+<a name="ln174">      } // while loop</a>
+<a name="ln175">      return false; //identical</a>
+<a name="ln176">    }</a>
+<a name="ln177">  };</a>
+<a name="ln178"> </a>
+<a name="ln179">private:</a>
+<a name="ln180">  ///Erases the layer starting with \param str and, if \param all is true, all the subsequent ones</a>
+<a name="ln181">  static void RemoveLayer (std::string&amp; inchi, const std::string&amp; str, bool all=false);</a>
+<a name="ln182"> </a>
+<a name="ln183">private:</a>
+<a name="ln184">  OBAtom* GetCommonAtom(OBBond* pb1, OBBond* pb2);</a>
+<a name="ln185">  char* GetInChIOptions(OBConversion* pConv, bool Reading);</a>
+<a name="ln186">  void SaveInchi(OBMol* pmol, const std::string&amp; s);</a>
+<a name="ln187"> </a>
+<a name="ln188">  typedef std::set&lt;std::string, InchiLess&gt; nSet;</a>
+<a name="ln189">  nSet allInchi;</a>
+<a name="ln190">  std::string firstInchi;</a>
+<a name="ln191">  std::string firstID;</a>
+<a name="ln192">};</a>
+<a name="ln193"> </a>
+<a name="ln194">//*****************************************************</a>
+<a name="ln195">class InChICompareFormat : public OBMoleculeFormat</a>
+<a name="ln196">{</a>
+<a name="ln197">public:</a>
+<a name="ln198">  InChICompareFormat()</a>
+<a name="ln199">  {</a>
+<a name="ln200">      OBConversion::RegisterFormat(&quot;k&quot;,this);</a>
+<a name="ln201">  }</a>
+<a name="ln202">  virtual const char* Description() //required</a>
+<a name="ln203">  {</a>
+<a name="ln204">    return</a>
+<a name="ln205">      &quot;Compare molecules using InChI\n&quot;</a>
+<a name="ln206">      &quot;A utility format that allows you to compare molecules using their InChIs\n&quot;</a>
+<a name="ln207">      &quot;The first molecule is compared with the rest, e.g.::\n\n&quot;</a>
+<a name="ln208"> </a>
+<a name="ln209">      &quot;  babel first.smi second.mol third.cml -ok\n\n&quot;</a>
+<a name="ln210"> </a>
+<a name="ln211">      &quot;This is the same as using ``-oinchi -xet`` and can take the same options as InChI format\n&quot;</a>
+<a name="ln212">      &quot;(see :ref:`InChI_format`).\n&quot;;</a>
+<a name="ln213">  }</a>
+<a name="ln214">  virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln215">  virtual unsigned int Flags() { return NOTREADABLE;};</a>
+<a name="ln216">};</a>
+<a name="ln217"> </a>
+<a name="ln218">//*****************************************************</a>
+<a name="ln219">class InChIKeyFormat : public OBMoleculeFormat</a>
+<a name="ln220">{</a>
+<a name="ln221">public:</a>
+<a name="ln222">  InChIKeyFormat()</a>
+<a name="ln223">  {</a>
+<a name="ln224">      OBConversion::RegisterFormat(&quot;inchikey&quot;,this);</a>
+<a name="ln225">  }</a>
+<a name="ln226">  virtual const char* Description() //required</a>
+<a name="ln227">  {</a>
+<a name="ln228">    return</a>
+<a name="ln229">      &quot;InChIKey\n&quot;</a>
+<a name="ln230">      &quot;A hashed representation of the InChI.\n\n&quot;</a>
+<a name="ln231"> </a>
+<a name="ln232">      &quot;The InChIKey is a fixed-length (27-character) condensed digital\n&quot;</a>
+<a name="ln233">      &quot;representation of an InChI, developed to make it easy to perform\n&quot;</a>
+<a name="ln234">      &quot;web searches for chemical structures.\n\n&quot;</a>
+<a name="ln235"> </a>
+<a name="ln236">      &quot;An InChIKey consists of 14 characters (derived from the connectivity\n&quot;</a>
+<a name="ln237">      &quot;layer in the InChI), a hyphen, 9 characters (derived from the\n&quot;</a>
+<a name="ln238">      &quot;remaining layers), a character indicating the InChI version, a hyphen\n&quot;</a>
+<a name="ln239">      &quot;and a final checksum character. Contrast the InChI and InChIKey of the\n&quot;</a>
+<a name="ln240">      &quot;molecule represented by the SMILES string `CC(=O)Cl`::\n\n&quot;</a>
+<a name="ln241"> </a>
+<a name="ln242">      &quot;  obabel -:CC(=O)Cl -oinchi\n&quot;</a>
+<a name="ln243">      &quot;  InChI=1S/C2H3ClO/c1-2(3)4/h1H3\n\n&quot;</a>
+<a name="ln244"> </a>
+<a name="ln245">      &quot;  obabel -:CC(=O)Cl -oinchikey\n&quot;</a>
+<a name="ln246">      &quot;  WETWJCDKMRHUPV-UHFFFAOYSA-N\n\n&quot;</a>
+<a name="ln247">      </a>
+<a name="ln248">      &quot;This is the same as using ``-oinchi -xK`` and can take the same options\n&quot;</a>
+<a name="ln249">      &quot;as the InChI format (see :ref:`InChI_format`)::\n\n&quot;</a>
+<a name="ln250"> </a>
+<a name="ln251">      &quot;  obabel -:CC(=O)Cl -oinchi -xK\n&quot;</a>
+<a name="ln252">      &quot;  WETWJCDKMRHUPV-UHFFFAOYSA-N\n\n&quot;</a>
+<a name="ln253"> </a>
+<a name="ln254">      &quot;Note that while a molecule with a particular InChI will always give the\n&quot;</a>
+<a name="ln255">      &quot;same InChIKey, the reverse is not true; there may exist more than one\n&quot;</a>
+<a name="ln256">      &quot;molecule which have different InChIs but yield the same InChIKey.\n&quot;;</a>
+<a name="ln257">  }</a>
+<a name="ln258">  virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln259">  virtual unsigned int Flags() { return NOTREADABLE;};</a>
+<a name="ln260">};</a>
+<a name="ln261"> </a>
+<a name="ln262">}//namespace OpenBabel</a>
+<a name="ln263"> </a>
+<a name="ln264">#endif</a>
+<a name="ln265"> </a>
+
+</code></pre>
+<div class="balloon" rel="149"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v640/" target="_blank">V640</a> The code's operational logic does not correspond with its formatting. The second statement will always be executed. It is possible that curly brackets are missing.</p></div>
+<div class="balloon" rel="154"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v640/" target="_blank">V640</a> The code's operational logic does not correspond with its formatting. The second statement will always be executed. It is possible that curly brackets are missing.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

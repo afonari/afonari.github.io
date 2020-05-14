@@ -1,0 +1,475 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>kekulize.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">kekulize.cpp - Kekulize a molecule</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 2017 Noel M. O'Boyle</a>
+<a name="ln5"> </a>
+<a name="ln6">This file is part of the Open Babel project.</a>
+<a name="ln7">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln10">it under the terms of the GNU General Public License as published by</a>
+<a name="ln11">the Free Software Foundation version 2 of the License.</a>
+<a name="ln12"> </a>
+<a name="ln13">This program is distributed in the hope that it will be useful,</a>
+<a name="ln14">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln15">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln16">GNU General Public License for more details.</a>
+<a name="ln17">***********************************************************************/</a>
+<a name="ln18"> </a>
+<a name="ln19">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln20"> </a>
+<a name="ln21">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln24">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln25">#include &lt;openbabel/kekulize.h&gt;</a>
+<a name="ln26">#include &lt;cstdlib&gt;</a>
+<a name="ln27">#include &lt;cstring&gt;</a>
+<a name="ln28"> </a>
+<a name="ln29">namespace OpenBabel</a>
+<a name="ln30">{</a>
+<a name="ln31">  static unsigned int GetMaxAtomIdx(OBMol* mol)</a>
+<a name="ln32">  {</a>
+<a name="ln33">    return mol-&gt;NumAtoms() + 1;</a>
+<a name="ln34">  }</a>
+<a name="ln35"> </a>
+<a name="ln36">  static unsigned int GetMaxBondIdx(OBMol* mol)</a>
+<a name="ln37">  {</a>
+<a name="ln38">    return mol-&gt;NumBonds();</a>
+<a name="ln39">  }</a>
+<a name="ln40"> </a>
+<a name="ln41">  class Kekulizer</a>
+<a name="ln42">  {</a>
+<a name="ln43">  public:</a>
+<a name="ln44">    Kekulizer(OBMol* mol) : m_mol(mol), needs_dbl_bond(nullptr), doubleBonds(nullptr), kekule_system(nullptr)</a>
+<a name="ln45">    {</a>
+<a name="ln46">      atomArraySize = GetMaxAtomIdx(m_mol) + 1;</a>
+<a name="ln47">      bondArraySize = GetMaxBondIdx(m_mol) + 1;</a>
+<a name="ln48">    }</a>
+<a name="ln49">    ~Kekulizer() {</a>
+<a name="ln50">      delete needs_dbl_bond;</a>
+<a name="ln51">      delete doubleBonds;</a>
+<a name="ln52">      delete kekule_system;</a>
+<a name="ln53">    }</a>
+<a name="ln54">    bool GreedyMatch();</a>
+<a name="ln55">    bool BackTrack();</a>
+<a name="ln56">    void AssignDoubleBonds();</a>
+<a name="ln57">  private:</a>
+<a name="ln58">    bool FindPath(unsigned int atomidx, bool isDoubleBond, OBBitVec &amp;visited);</a>
+<a name="ln59">    OBMol* m_mol;</a>
+<a name="ln60">    OBBitVec *needs_dbl_bond;</a>
+<a name="ln61">    OBBitVec *doubleBonds;</a>
+<a name="ln62">    OBBitVec *kekule_system;</a>
+<a name="ln63">    unsigned int atomArraySize;</a>
+<a name="ln64">    unsigned int bondArraySize;</a>
+<a name="ln65">    std::vector&lt;unsigned int&gt; m_path;</a>
+<a name="ln66">  };</a>
+<a name="ln67"> </a>
+<a name="ln68">  static bool IsSpecialCase(OBAtom* atom)</a>
+<a name="ln69">  {</a>
+<a name="ln70">    switch(atom-&gt;GetAtomicNum()) {</a>
+<a name="ln71">    case 7:</a>
+<a name="ln72">      // Any exo-cyclic double bond from a N</a>
+<a name="ln73">      // e.g. pyridine N-oxide as the double bond form</a>
+<a name="ln74">      if (atom-&gt;GetTotalDegree() == 3 &amp;&amp; atom-&gt;GetFormalCharge() == 0)</a>
+<a name="ln75">        return true;</a>
+<a name="ln76">      break;</a>
+<a name="ln77">    case 16: // e.g. Cs1(=O)ccccn1 but not O=s1(=O)cccn1</a>
+<a name="ln78">      if (atom-&gt;GetTotalDegree() == 4 &amp;&amp; atom-&gt;GetFormalCharge() == 0</a>
+<a name="ln79">          &amp;&amp; atom-&gt;GetTotalValence() &lt; 6)</a>
+<a name="ln80">        return true;</a>
+<a name="ln81">      break;</a>
+<a name="ln82">    }</a>
+<a name="ln83">    return false;</a>
+<a name="ln84">  }</a>
+<a name="ln85"> </a>
+<a name="ln86">  static bool NeedsDoubleBond(OBAtom* atom)</a>
+<a name="ln87">  {</a>
+<a name="ln88">    if (!atom-&gt;IsAromatic())</a>
+<a name="ln89">      return false;</a>
+<a name="ln90"> </a>
+<a name="ln91">    // Does it already have an explicit double bond?</a>
+<a name="ln92">    FOR_BONDS_OF_ATOM(bond, atom) {</a>
+<a name="ln93">      if (bond-&gt;IsAromatic()) continue;</a>
+<a name="ln94">      OBAtom *nbr = bond-&gt;GetNbrAtom(atom);</a>
+<a name="ln95">      switch (bond-&gt;GetBondOrder()) {</a>
+<a name="ln96">      case 0: case 1:</a>
+<a name="ln97">        continue;</a>
+<a name="ln98">      case 2:</a>
+<a name="ln99">        if (IsSpecialCase(atom))</a>
+<a name="ln100">          return true;</a>
+<a name="ln101">        return false;</a>
+<a name="ln102">      default: // bond order &gt; 2</a>
+<a name="ln103">        return false;</a>
+<a name="ln104">      }</a>
+<a name="ln105">    }</a>
+<a name="ln106"> </a>
+<a name="ln107">    // Is it one of the cases where we know that it only has single bonds?</a>
+<a name="ln108">    int chg = atom-&gt;GetFormalCharge();</a>
+<a name="ln109">    int deg = atom-&gt;GetTotalDegree();</a>
+<a name="ln110">    switch (atom-&gt;GetAtomicNum()) {</a>
+<a name="ln111">    case 6:</a>
+<a name="ln112">      if (deg == 3 &amp;&amp; (chg == 1 || chg == -1))</a>
+<a name="ln113">        return false;</a>
+<a name="ln114">      break;</a>
+<a name="ln115">    case 5: case 7: case 15: case 33: case 51: case 83:</a>
+<a name="ln116">      switch (chg) {</a>
+<a name="ln117">      case 0: // e.g. a pyrrole-type nitrogen</a>
+<a name="ln118">        if (deg == 3 || deg &gt; 4)</a>
+<a name="ln119">          return false;</a>
+<a name="ln120">        break;</a>
+<a name="ln121">      case -1:</a>
+<a name="ln122">        if (deg == 2)</a>
+<a name="ln123">          return false;</a>
+<a name="ln124">        break;</a>
+<a name="ln125">      case 1:</a>
+<a name="ln126">        if (deg &gt; 3)</a>
+<a name="ln127">          return false;</a>
+<a name="ln128">      }</a>
+<a name="ln129">      break;</a>
+<a name="ln130">    case 8: case 16: case 34: case 52:</a>
+<a name="ln131">      switch (chg) {</a>
+<a name="ln132">      case 0:</a>
+<a name="ln133">        if (deg == 2 || deg == 4 || deg &gt; 5)</a>
+<a name="ln134">          return false;</a>
+<a name="ln135">        break;</a>
+<a name="ln136">      case -1: case 1:</a>
+<a name="ln137">        if (deg == 3 || deg == 5 || deg &gt; 6)</a>
+<a name="ln138">          return false;</a>
+<a name="ln139">      }</a>
+<a name="ln140">    }</a>
+<a name="ln141"> </a>
+<a name="ln142">    return true; // It needs a double bond</a>
+<a name="ln143">  }</a>
+<a name="ln144"> </a>
+<a name="ln145">  class NodeIterator</a>
+<a name="ln146">  {</a>
+<a name="ln147">  public:</a>
+<a name="ln148">    NodeIterator(unsigned int *&amp;degrees, unsigned int atomArraySize) :</a>
+<a name="ln149">      m_degrees(degrees), m_atomArraySize(atomArraySize),</a>
+<a name="ln150">      m_counter(0), finishedDegTwo(false)</a>
+<a name="ln151">    { }</a>
+<a name="ln152">    unsigned int next()</a>
+<a name="ln153">    {</a>
+<a name="ln154">      m_counter++;</a>
+<a name="ln155"> </a>
+<a name="ln156">      if (!finishedDegTwo) { // return deg 2 nodes first</a>
+<a name="ln157">        for (; m_counter &lt; m_atomArraySize; ++m_counter) {</a>
+<a name="ln158">          if (m_degrees[m_counter] == 2) {</a>
+<a name="ln159">            return m_counter;</a>
+<a name="ln160">          }</a>
+<a name="ln161">        }</a>
+<a name="ln162">        finishedDegTwo = true;</a>
+<a name="ln163">        m_counter = 1; // first atom has idx 1</a>
+<a name="ln164">      }</a>
+<a name="ln165"> </a>
+<a name="ln166">      // return nodes with degree &gt; 2</a>
+<a name="ln167">      for (; m_counter &lt; m_atomArraySize; ++m_counter) {</a>
+<a name="ln168">        if (m_degrees[m_counter] &gt; 2) {</a>
+<a name="ln169">          return m_counter;</a>
+<a name="ln170">        }</a>
+<a name="ln171">      }</a>
+<a name="ln172"> </a>
+<a name="ln173">      // Finished - return 0 signalling the end of iteration</a>
+<a name="ln174">      return 0;</a>
+<a name="ln175">    }</a>
+<a name="ln176">  private:</a>
+<a name="ln177">    unsigned int *&amp;m_degrees; </a>
+<a name="ln178">    unsigned int m_atomArraySize;</a>
+<a name="ln179">    unsigned int m_counter;</a>
+<a name="ln180">    bool finishedDegTwo;</a>
+<a name="ln181">  };</a>
+<a name="ln182"> </a>
+<a name="ln183">  void Kekulizer::AssignDoubleBonds()</a>
+<a name="ln184">  {</a>
+<a name="ln185">    int bit;</a>
+<a name="ln186">    for (bit = doubleBonds-&gt;FirstBit(); bit != doubleBonds-&gt;EndBit(); bit = doubleBonds-&gt;NextBit(bit)) {</a>
+<a name="ln187">      m_mol-&gt;GetBond(bit)-&gt;SetBondOrder(2);</a>
+<a name="ln188">    }</a>
+<a name="ln189">  }</a>
+<a name="ln190"> </a>
+<a name="ln191">  bool Kekulizer::GreedyMatch()</a>
+<a name="ln192">  {</a>
+<a name="ln193"> </a>
+<a name="ln194">    // What atoms need a double bond? The job of kekulization is</a>
+<a name="ln195">    // to give all of these atoms a single double bond.</a>
+<a name="ln196">    needs_dbl_bond = new OBBitVec(atomArraySize); // defaults to all False</a>
+<a name="ln197">    FOR_ATOMS_OF_MOL(atom, m_mol) {</a>
+<a name="ln198">      if (NeedsDoubleBond(&amp;*atom)) {</a>
+<a name="ln199">        needs_dbl_bond-&gt;SetBitOn(atom-&gt;GetIdx());</a>
+<a name="ln200">      }</a>
+<a name="ln201">    }</a>
+<a name="ln202">    // Make a copy of needs_dbl_bond, to restrict the traversal in BackTrack()</a>
+<a name="ln203">    kekule_system = new OBBitVec(*needs_dbl_bond);</a>
+<a name="ln204"> </a>
+<a name="ln205">    // Create lookup of degrees</a>
+<a name="ln206">    unsigned int *degrees = (unsigned int*)malloc(sizeof(unsigned int)*atomArraySize);</a>
+<a name="ln207">    memset(degrees, 0, sizeof(unsigned int)*atomArraySize);</a>
+<a name="ln208">    std::vector&lt;OBAtom*&gt; degreeOneAtoms;</a>
+<a name="ln209">    FOR_ATOMS_OF_MOL(atom, m_mol) {</a>
+<a name="ln210">      unsigned int atom_idx = atom-&gt;GetIdx();</a>
+<a name="ln211">      if (!needs_dbl_bond-&gt;BitIsSet(atom_idx)) {</a>
+<a name="ln212">        degrees[atom_idx] = 0;</a>
+<a name="ln213">        continue;</a>
+<a name="ln214">      }</a>
+<a name="ln215">      unsigned int mdeg = 0;</a>
+<a name="ln216">      FOR_BONDS_OF_ATOM(bond, &amp;*atom) {</a>
+<a name="ln217">        if (!bond-&gt;IsAromatic()) continue;</a>
+<a name="ln218">        OBAtom *nbr = bond-&gt;GetNbrAtom(&amp;*atom);</a>
+<a name="ln219">        if (needs_dbl_bond-&gt;BitIsSet(nbr-&gt;GetIdx()))</a>
+<a name="ln220">          mdeg++;</a>
+<a name="ln221">      }</a>
+<a name="ln222">      degrees[atom_idx] = mdeg;</a>
+<a name="ln223">      if (mdeg == 1)</a>
+<a name="ln224">        degreeOneAtoms.push_back(&amp;*atom);</a>
+<a name="ln225">    }</a>
+<a name="ln226">    </a>
+<a name="ln227">    // Location of assigned double bonds</a>
+<a name="ln228">    doubleBonds = new OBBitVec(bondArraySize); // defaults to all False</a>
+<a name="ln229"> </a>
+<a name="ln230">    bool finished = false;</a>
+<a name="ln231">    while (true) { // Main loop</a>
+<a name="ln232">      </a>
+<a name="ln233">      // Complete all of the degree one nodes</a>
+<a name="ln234">      while (!degreeOneAtoms.empty()) {</a>
+<a name="ln235">        OBAtom* atom = degreeOneAtoms.back();</a>
+<a name="ln236">        degreeOneAtoms.pop_back();</a>
+<a name="ln237">        // some nodes may already have been handled</a>
+<a name="ln238">        if (!needs_dbl_bond-&gt;BitIsSet(atom-&gt;GetIdx())) continue;</a>
+<a name="ln239">        FOR_BONDS_OF_ATOM(bond, atom) {</a>
+<a name="ln240">          if (!bond-&gt;IsAromatic()) continue;</a>
+<a name="ln241">          OBAtom *nbr = bond-&gt;GetNbrAtom(&amp;*atom);</a>
+<a name="ln242">          if (!needs_dbl_bond-&gt;BitIsSet(nbr-&gt;GetIdx())) continue;</a>
+<a name="ln243">          // create a double bond from atom -&gt; nbr</a>
+<a name="ln244">          doubleBonds-&gt;SetBitOn(bond-&gt;GetIdx());</a>
+<a name="ln245">          needs_dbl_bond-&gt;SetBitOff(atom-&gt;GetIdx());</a>
+<a name="ln246">          needs_dbl_bond-&gt;SetBitOff(nbr-&gt;GetIdx());</a>
+<a name="ln247">          // now update degree information for nbr's neighbors</a>
+<a name="ln248">          FOR_BONDS_OF_ATOM(nbrbond, nbr) {</a>
+<a name="ln249">            if (&amp;(*nbrbond) == &amp;(*bond) || !nbrbond-&gt;IsAromatic()) continue;</a>
+<a name="ln250">            OBAtom* nbrnbr = nbrbond-&gt;GetNbrAtom(nbr);</a>
+<a name="ln251">            unsigned int nbrnbrIdx = nbrnbr-&gt;GetIdx();</a>
+<a name="ln252">            if (!needs_dbl_bond-&gt;BitIsSet(nbrnbrIdx)) continue;</a>
+<a name="ln253">            degrees[nbrnbrIdx]--;</a>
+<a name="ln254">            if (degrees[nbrnbrIdx] == 1)</a>
+<a name="ln255">              degreeOneAtoms.push_back(nbrnbr);</a>
+<a name="ln256">          }</a>
+<a name="ln257">          // only a single double bond can be made to atom so we can break here</a>
+<a name="ln258">          break;</a>
+<a name="ln259">        }</a>
+<a name="ln260">      }</a>
+<a name="ln261">      </a>
+<a name="ln262">      if (needs_dbl_bond-&gt;IsEmpty()) {</a>
+<a name="ln263">        finished = true;</a>
+<a name="ln264">        break;</a>
+<a name="ln265">      }</a>
+<a name="ln266"> </a>
+<a name="ln267">      // Now handle any remaining degree 2 or 3 nodes</a>
+<a name="ln268">      // We handle deg 2 nodes first and then 3, and the iteration over these nodes</a>
+<a name="ln269">      // is abstracted away. Once a double-bond is added that generates more</a>
+<a name="ln270">      // degree one nodes, then the iterator is exited</a>
+<a name="ln271">      NodeIterator iterator(degrees, atomArraySize);</a>
+<a name="ln272">      bool change = false;</a>
+<a name="ln273">      while (unsigned int atomIdx = iterator.next()) {</a>
+<a name="ln274">        if (!needs_dbl_bond-&gt;BitIsSet(atomIdx)) continue;</a>
+<a name="ln275">        // The following is almost identical to the code above for deg 1 atoms</a>
+<a name="ln276">        // except for handling the variable 'change'</a>
+<a name="ln277">        OBAtom *atom = m_mol-&gt;GetAtom(atomIdx);</a>
+<a name="ln278">        FOR_BONDS_OF_ATOM(bond, atom) {</a>
+<a name="ln279">          if (!bond-&gt;IsAromatic()) continue;</a>
+<a name="ln280">          OBAtom *nbr = bond-&gt;GetNbrAtom(&amp;*atom);</a>
+<a name="ln281">          if (!needs_dbl_bond-&gt;BitIsSet(nbr-&gt;GetIdx())) continue;</a>
+<a name="ln282">          // create a double bond from atom -&gt; nbr</a>
+<a name="ln283">          doubleBonds-&gt;SetBitOn(bond-&gt;GetIdx());</a>
+<a name="ln284">          needs_dbl_bond-&gt;SetBitOff(atomIdx);</a>
+<a name="ln285">          needs_dbl_bond-&gt;SetBitOff(nbr-&gt;GetIdx());</a>
+<a name="ln286">          // now update degree information for both atom's and nbr's neighbors</a>
+<a name="ln287">          for(int N=0; N&lt;2; N++) {</a>
+<a name="ln288">            OBAtom *ref = N == 0 ? atom : nbr;</a>
+<a name="ln289">            FOR_BONDS_OF_ATOM(nbrbond, ref) {</a>
+<a name="ln290">              if (&amp;(*nbrbond) == &amp;(*bond) || !nbrbond-&gt;IsAromatic()) continue;</a>
+<a name="ln291">              OBAtom* nbrnbr = nbrbond-&gt;GetNbrAtom(ref);</a>
+<a name="ln292">              unsigned int nbrnbrIdx = nbrnbr-&gt;GetIdx();</a>
+<a name="ln293">              if (!needs_dbl_bond-&gt;BitIsSet(nbrnbrIdx)) continue;</a>
+<a name="ln294">              degrees[nbrnbrIdx]--;</a>
+<a name="ln295">              if (degrees[nbrnbrIdx] == 1) {</a>
+<a name="ln296">                degreeOneAtoms.push_back(nbrnbr);</a>
+<a name="ln297">                change = true;</a>
+<a name="ln298">              }</a>
+<a name="ln299">            }</a>
+<a name="ln300">          }</a>
+<a name="ln301">          // only a single double bond can be made to atom so we can break here</a>
+<a name="ln302">          break;</a>
+<a name="ln303">        }</a>
+<a name="ln304">        if (change)</a>
+<a name="ln305">          break; // exit the iterator once we have actually set a double bond</a>
+<a name="ln306">      }</a>
+<a name="ln307"> </a>
+<a name="ln308">      // We exit if we are finished or if no degree 2/3 nodes can be set</a>
+<a name="ln309">      if (!change)</a>
+<a name="ln310">        break;</a>
+<a name="ln311">    }</a>
+<a name="ln312"> </a>
+<a name="ln313">    // Tidy up</a>
+<a name="ln314">    free(degrees);</a>
+<a name="ln315"> </a>
+<a name="ln316">    return finished;</a>
+<a name="ln317">  }</a>
+<a name="ln318"> </a>
+<a name="ln319">  // The isDoubleBond alternates between double and single, as we need to find</a>
+<a name="ln320">  // an alternating path</a>
+<a name="ln321">  bool Kekulizer::FindPath(unsigned int atomidx, bool isDoubleBond, OBBitVec &amp;visited)</a>
+<a name="ln322">  {</a>
+<a name="ln323">    if (needs_dbl_bond-&gt;BitIsSet(atomidx))</a>
+<a name="ln324">      return true;</a>
+<a name="ln325">    visited.SetBitOn(atomidx);</a>
+<a name="ln326">    OBAtom* atom = m_mol-&gt;GetAtom(atomidx);</a>
+<a name="ln327">    FOR_BONDS_OF_ATOM(bond, atom) {</a>
+<a name="ln328">      if (!bond-&gt;IsAromatic()) continue;</a>
+<a name="ln329">      OBAtom *nbr = bond-&gt;GetNbrAtom(atom);</a>
+<a name="ln330">      if (!kekule_system-&gt;BitIsSet(nbr-&gt;GetIdx())) continue;</a>
+<a name="ln331">      if (doubleBonds-&gt;BitIsSet(bond-&gt;GetIdx()) == isDoubleBond) {</a>
+<a name="ln332">        if (visited.BitIsSet(nbr-&gt;GetIdx())) continue;</a>
+<a name="ln333">        bool found_path = FindPath(nbr-&gt;GetIdx(), !isDoubleBond, visited);</a>
+<a name="ln334">        if (found_path) {</a>
+<a name="ln335">          m_path.push_back(nbr-&gt;GetIdx());</a>
+<a name="ln336">          return true;</a>
+<a name="ln337">        }</a>
+<a name="ln338">      }</a>
+<a name="ln339">    }</a>
+<a name="ln340">    visited.SetBitOff(atomidx);</a>
+<a name="ln341">    return false;</a>
+<a name="ln342">  }</a>
+<a name="ln343"> </a>
+<a name="ln344">  bool Kekulizer::BackTrack()</a>
+<a name="ln345">  {</a>
+<a name="ln346">    // With an odd number of bits, it's never going to kekulize fully, but let's fill in as many as we can</a>
+<a name="ln347">    unsigned int count = needs_dbl_bond-&gt;CountBits();</a>
+<a name="ln348"> </a>
+<a name="ln349">    unsigned int total_handled = 0;</a>
+<a name="ln350">    int idx;</a>
+<a name="ln351">    for (idx = needs_dbl_bond-&gt;FirstBit(); idx != needs_dbl_bond-&gt;EndBit(); idx = needs_dbl_bond-&gt;NextBit(idx)) {</a>
+<a name="ln352">      total_handled++;</a>
+<a name="ln353">      // If there is no additional bit available to match this bit, then terminate</a>
+<a name="ln354">      if (total_handled == count)</a>
+<a name="ln355">        return false;</a>
+<a name="ln356"> </a>
+<a name="ln357">      // Our goal is to find an alternating path to another atom</a>
+<a name="ln358">      // that needs a double bond</a>
+<a name="ln359">      needs_dbl_bond-&gt;SetBitOff(idx); // to avoid the trivial null path being found</a>
+<a name="ln360">      OBBitVec visited(atomArraySize);</a>
+<a name="ln361">      m_path.clear();</a>
+<a name="ln362">      bool found_path = FindPath(idx, false, visited);</a>
+<a name="ln363">      if (!found_path) { // could only happen if not kekulizable</a>
+<a name="ln364">        needs_dbl_bond-&gt;SetBitOn(idx); // reset</a>
+<a name="ln365">        continue;</a>
+<a name="ln366">      }</a>
+<a name="ln367">      total_handled++;</a>
+<a name="ln368">      m_path.push_back(idx);</a>
+<a name="ln369">      needs_dbl_bond-&gt;SetBitOff(m_path[0]);</a>
+<a name="ln370">      // Flip all of the bond orders on the path from double&lt;--&gt;single</a>
+<a name="ln371">      for (unsigned int i = 0; i &lt; m_path.size()-1; ++i) {</a>
+<a name="ln372">        OBBond *bond = m_mol-&gt;GetBond(m_path[i], m_path[i + 1]);</a>
+<a name="ln373">        if (i % 2 == 0)</a>
+<a name="ln374">          doubleBonds-&gt;SetBitOn(bond-&gt;GetIdx());</a>
+<a name="ln375">        else</a>
+<a name="ln376">          doubleBonds-&gt;SetBitOff(bond-&gt;GetIdx());</a>
+<a name="ln377">      }</a>
+<a name="ln378">    }</a>
+<a name="ln379">    return needs_dbl_bond-&gt;IsEmpty();</a>
+<a name="ln380">  }</a>
+<a name="ln381"> </a>
+<a name="ln382">// I'd like to thank John Mayfield for many helpful discussions on the topic of</a>
+<a name="ln383">// kekulization, without which this implementation would not have been</a>
+<a name="ln384">// possible.</a>
+<a name="ln385">//</a>
+<a name="ln386">// OBKekulize() implements a two-step kekulization:</a>
+<a name="ln387">//   Step one: try a greedy match</a>
+<a name="ln388">//   Step two: try an exhaustive backtracking (using the results of step one)</a>
+<a name="ln389">//</a>
+<a name="ln390">// The greedy match algorithm is outlined in the thesis of John May</a>
+<a name="ln391">// and indeed NeedsDoubleBond() is based on the implementation in Beam.</a>
+<a name="ln392">// The greedy algorithm almost always works. But when it doesn't, step two is needed.</a>
+<a name="ln393">//</a>
+<a name="ln394">// The goal of the exhaustive backtracking is find a path of alternating single/double</a>
+<a name="ln395">// bonds between two radicals and flip those bonds. For more information, read about</a>
+<a name="ln396">// augmenting paths in the context of perfect matching. John's thesis instead describes</a>
+<a name="ln397">// the use of Edmond's Blossom algorithm which scales better - this may or may not be</a>
+<a name="ln398">// faster in practice for typical chemical graphs.</a>
+<a name="ln399">//</a>
+<a name="ln400">// Potential speedups:</a>
+<a name="ln401">//   * Is OBBitVec performant? I don't know - it seems to do a lot of bounds checking.</a>
+<a name="ln402">//     You could try replacing all usages theoreof with</a>
+<a name="ln403">//     std::vector&lt;char&gt;, where the char could possibly handle several flags.</a>
+<a name="ln404">//   * Before trying the exhaustive search, try a BFS. I have a feeling that this would work</a>
+<a name="ln405">//     90% of the time.</a>
+<a name="ln406">//   * There's a lot of switching between atoms and atom indices (and similar for bonds).</a>
+<a name="ln407">//     Was this completely necessary?</a>
+<a name="ln408">//   * The iterator over degree 2 and 3 nodes may iterate twice - it would have been</a>
+<a name="ln409">//     faster if I just took the first degree 2 or 3 node I came across, but would</a>
+<a name="ln410">//     it have worked as well?</a>
+<a name="ln411"> </a>
+<a name="ln412">  bool OBKekulize(OBMol* mol)</a>
+<a name="ln413">  {</a>
+<a name="ln414">    Kekulizer kekulizer(mol);</a>
+<a name="ln415">    bool success = kekulizer.GreedyMatch();</a>
+<a name="ln416">    if (!success) {</a>
+<a name="ln417">      success = kekulizer.BackTrack();</a>
+<a name="ln418">    }</a>
+<a name="ln419"> </a>
+<a name="ln420">    kekulizer.AssignDoubleBonds();</a>
+<a name="ln421"> </a>
+<a name="ln422">    return success;</a>
+<a name="ln423">  }</a>
+<a name="ln424"> </a>
+<a name="ln425"> </a>
+<a name="ln426">} // end namespace OpenBabel</a>
+<a name="ln427"> </a>
+<a name="ln428">//! \file kekulize.cpp</a>
+<a name="ln429">//! \brief Algorithm to kekulize a molecule</a>
+
+</code></pre>
+<div class="balloon" rel="207"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v575/" target="_blank">V575</a> The potential null pointer is passed into 'memset' function. Inspect the first argument. Check lines: 207, 206.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

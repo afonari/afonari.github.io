@@ -1,0 +1,293 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>getinchi.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Copyright (C) 2006 Chris Morley</a>
+<a name="ln3"> </a>
+<a name="ln4">This file is part of the Open Babel project.</a>
+<a name="ln5">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln6"> </a>
+<a name="ln7">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln8">it under the terms of the GNU General Public License as published by</a>
+<a name="ln9">the Free Software Foundation version 2 of the License.</a>
+<a name="ln10"> </a>
+<a name="ln11">This program is distributed in the hope that it will be useful,</a>
+<a name="ln12">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln13">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln14">GNU General Public License for more details.</a>
+<a name="ln15">***********************************************************************/</a>
+<a name="ln16"> </a>
+<a name="ln17">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln18">#include &lt;fstream&gt;</a>
+<a name="ln19">#include &lt;string&gt;</a>
+<a name="ln20"> </a>
+<a name="ln21">// This macro is used in DLL builds. If it has not</a>
+<a name="ln22">// been set in babelconfig.h, define it as nothing.</a>
+<a name="ln23">#ifndef OBCOMMON</a>
+<a name="ln24">  #define OBCOMMON</a>
+<a name="ln25">#endif</a>
+<a name="ln26"> </a>
+<a name="ln27">using namespace std;</a>
+<a name="ln28">namespace OpenBabel</a>
+<a name="ln29">{</a>
+<a name="ln30"> </a>
+<a name="ln31">///Returns true if character is not one used in an InChI.</a>
+<a name="ln32">bool isnic(char ch)</a>
+<a name="ln33">{</a>
+<a name="ln34">  //This set of characters could be extended</a>
+<a name="ln35">  static std::string nic(&quot;\&quot;\'\\@&lt;&gt;!$%&amp;{}[]&quot;);</a>
+<a name="ln36">  return ch&lt;0 || nic.find(ch)!=std::string::npos;</a>
+<a name="ln37">};</a>
+<a name="ln38"> </a>
+<a name="ln39">/// @brief Reads an InChI (possibly split) from an input stream and returns it as unsplit text.</a>
+<a name="ln40">/// The input stream is left after the end of the extracted InChI ready to look for the next one.</a>
+<a name="ln41">std::string GetInChI(std::istream&amp; is);</a>
+<a name="ln42"> </a>
+<a name="ln43">/*!</a>
+<a name="ln44">This function recovers a normal InChI from an input stream which</a>
+<a name="ln45">contains other arbitrary text. The InChI string can have</a>
+<a name="ln46">extraneous characters inserted, for example because of word wrapping,</a>
+<a name="ln47">provided it follows certain rules.</a>
+<a name="ln48"> </a>
+<a name="ln49">When this file (getinchi.cpp) is read, 15 InChIs will be extracted, e.g.</a>
+<a name="ln50"> babel -iinchi getinchi.cpp -osmi</a>
+<a name="ln51"> </a>
+<a name="ln52">Inside an InChI string ignore anything between &lt; and &gt;</a>
+<a name="ln53">This means that an InChI string can be split up by inserting any number of &lt;br /&gt; elements:</a>
+<a name="ln54">InChI=1/C18H25NO6S/c1-14-9-11-15(12-10-14)26(22,23)19(17(21)25-18(2,3)4)13&lt;br /&gt;-7-6-8-16(20)24-5/h6,8-12H,7,13H2,1-5H3/b8-6-</a>
+<a name="ln55"> </a>
+<a name="ln56">Any whitespace after the &gt; is also ignored, so that newline characters can be added:</a>
+<a name="ln57">InChI=1/C29H33NO4Si/c1-5-32-28(31)26-25(34-27(30-26)22-15-9-6-10-16-22)&lt;br /&gt;</a>
+<a name="ln58">21-33-35(29(2,3)4,23-17-11-7-12-18-23)24-19-13-8-14-20-24&lt;br /&gt;</a>
+<a name="ln59">/h6-20,25-26H,5,21H2,1-4H3/t25-,26-/m0/s1</a>
+<a name="ln60"> </a>
+<a name="ln61">A second consecutive &lt;...&gt; element ends an unquoted InChI string:</a>
+<a name="ln62">&lt;p&gt;</a>
+<a name="ln63">&lt;small&gt;InChI=1/C47H58N2O10SSi/c1-10-56-43(51)47(36(32-41(50)55-9)30-31-49(44(52)59-45&lt;br /&gt;</a>
+<a name="ln64">(3,4)5)60(53,54)37-28-26-34(2)27-29-37)40&lt;br /&gt;</a>
+<a name="ln65">(58-42(48-47)35-20-14-11-15-21-35)33-57-61(46(6,7)8,38-22-16-12-17-23-38)39-24-&lt;br /&gt;</a>
+<a name="ln66">18-13-19-25-39/h11-29,36,40H,10,30-33H2,1-9H3&lt;br /&gt;</a>
+<a name="ln67">/t36-,40-,47-/m0/s1&lt;/small&gt;</a>
+<a name="ln68">&lt;/p&gt;</a>
+<a name="ln69"> </a>
+<a name="ln70">  Dmitrii Tchekhovskoi made a proposal for &quot;InChI hyphenation&quot; or &quot;quoted InChI&quot;.</a>
+<a name="ln71">  http://sourceforge.net/mailarchive/forum.php?thread_id=10200459&amp;forum_id=45166</a>
+<a name="ln72">  This proposal has not been followed up probably because InChKey was introduced.</a>
+<a name="ln73"> </a>
+<a name="ln74">  However this function GetInChI() parses quoted InChIs of this form.</a>
+<a name="ln75">  It also extends this proposal, allowing a wider range of corrupted InChIs to be accepted.</a>
+<a name="ln76"> </a>
+<a name="ln77">The original proposal was essentially:</a>
+<a name="ln78">- When an InChI string is enclosed by &quot; quote characters,</a>
+<a name="ln79">  any whitespace characters it contains (including new lines) are</a>
+<a name="ln80">  ignored.</a>
+<a name="ln81">- Other extraneous strings can also be ignored, but this</a>
+<a name="ln82">  is system dependent.</a>
+<a name="ln83">- The &quot;InChI=&quot; cannot be split.</a>
+<a name="ln84"> </a>
+<a name="ln85">The extensions are:</a>
+<a name="ln86">- The character that encloses a quoted InChI does not have to be &quot;</a>
+<a name="ln87">  and can be any character that is not used in InChI - a NIC</a>
+<a name="ln88">  [never miss the opportunity for a TLA!]. This means that</a>
+<a name="ln89">  conflicts in systems which have other uses for the quote character</a>
+<a name="ln90">  can be avoided.</a>
+<a name="ln91">  As a special case, '&gt;' is not allowed as a quote character because InChI</a>
+<a name="ln92">  strings in HTML commonly start after &lt;...&gt; elements.</a>
+<a name="ln93">- As well as whitespace characters (which are ignored), a quoted</a>
+<a name="ln94">  InChI can contain an extraneous string which starts and ends with</a>
+<a name="ln95">  a NIC. This allows inserted strings like &lt;br /&gt; to be ignored.</a>
+<a name="ln96">  However, only one such extraneous string is allowed.</a>
+<a name="ln97">- There are no restrictions on splitting &quot;InChI=&quot; by whitespace</a>
+<a name="ln98">  characters, allowing a minimum column width of 1.</a>
+<a name="ln99">  If the splitting were by an extraneous string the minimum column</a>
+<a name="ln100">  width is 2.</a>
+<a name="ln101"> </a>
+<a name="ln102">The following are some examples of split InChIs.</a>
+<a name="ln103"> </a>
+<a name="ln104">First two unbroken examples, the first is unquoted</a>
+<a name="ln105">InChI=1/CH4/h1H4 methane</a>
+<a name="ln106">&quot;InChI=1/C4H10O/c1-3-5-4-2/h3-4H2,1-2H3&quot; diethyl ether</a>
+<a name="ln107"> </a>
+<a name="ln108">Multiple white space splitting</a>
+<a name="ln109">@InChI=1/C15H14O3/c1-11(15(16)17)18-</a>
+<a name="ln110">14-10-6-5-9-13(14)12-7-3-2-4-8-12/h2</a>
+<a name="ln111">-11H,1H3,(H,16,17)@</a>
+<a name="ln112"> </a>
+<a name="ln113">Split with extraneous text, which starts and ends with a non-InChI character</a>
+<a name="ln114">'InChI=1/C2H6O/c1-2-&lt;br /&gt;3/h3H,2H2,1H3'</a>
+<a name="ln115"> </a>
+<a name="ln116">Table with wrapped InChI column. (View with fixed font.)</a>
+<a name="ln117"> </a>
+<a name="ln118">'InChI=1/CH4/h1H4'     !flammable!</a>
+<a name="ln119">'InChI=1/C2H2O4/c3-1   !toxic!</a>
+<a name="ln120">(4)2(5)6/h(H,3,4)(H,</a>
+<a name="ln121">5,6)'</a>
+<a name="ln122">'InChI=1/CH4O/c1-2/h   !flammable! !toxic!</a>
+<a name="ln123">2H,1H3'</a>
+<a name="ln124">'InChI=1/H2O/h1H2'</a>
+<a name="ln125">'InChI=1/C10H5ClN2/c   !no information!</a>
+<a name="ln126">11-10-4-2-1-3-9(10)5</a>
+<a name="ln127">-8(6-12)7-13/h1-5H'</a>
+<a name="ln128"> </a>
+<a name="ln129">Quoted text in emails (but InChI is preserved after one break only).</a>
+<a name="ln130">&gt; &quot;InChI=1/C4H7N3OS/c1-7(8)4-9-5-2-3-6-9/h</a>
+<a name="ln131">&gt; 2-4,8H,1H3/p+1/fC4H8N3OS/h5H/q+1/t9?&quot;</a>
+<a name="ln132">&gt;&gt; &quot;InChI=1/C4H7N3OS/c1-7(8)4-9-5-2-3-6-9/</a>
+<a name="ln133">&gt;&gt; h2-4,8H,1H3/p+1/fC4H8N3OS/h5H/q+1/t9?&quot;</a>
+<a name="ln134"> </a>
+<a name="ln135">Column width can be 1 if there is no extraneous text other than whitespace.</a>
+<a name="ln136">(When there is an extraneous string with NICs the minimum column width is 2).</a>
+<a name="ln137">'</a>
+<a name="ln138">I</a>
+<a name="ln139">n</a>
+<a name="ln140">C</a>
+<a name="ln141">h</a>
+<a name="ln142">I</a>
+<a name="ln143">=</a>
+<a name="ln144">1</a>
+<a name="ln145">/</a>
+<a name="ln146">C</a>
+<a name="ln147">l</a>
+<a name="ln148">H</a>
+<a name="ln149">/</a>
+<a name="ln150">h</a>
+<a name="ln151">1</a>
+<a name="ln152">H</a>
+<a name="ln153">'</a>
+<a name="ln154">*/</a>
+<a name="ln155"> </a>
+<a name="ln156">string GetInChI(istream&amp; is)</a>
+<a name="ln157">{</a>
+<a name="ln158">  string prefix(&quot;InChI=&quot;);</a>
+<a name="ln159">  string result;</a>
+<a name="ln160">  enum statetype {before_inchi, match_inchi, unquoted, quoted};</a>
+<a name="ln161">  statetype state = before_inchi;</a>
+<a name="ln162">  char ch, lastch=0, qch=0;</a>
+<a name="ln163">  size_t split_pos = 0;</a>
+<a name="ln164">  bool inelement=false, afterelement=false;</a>
+<a name="ln165"> </a>
+<a name="ln166">  while((ch=is.get())!=EOF)</a>
+<a name="ln167">  {</a>
+<a name="ln168">    if(state==before_inchi)</a>
+<a name="ln169">    {</a>
+<a name="ln170">      if(ch&gt;=0 &amp;&amp; !isspace(ch))</a>
+<a name="ln171">      {</a>
+<a name="ln172">        if(ch==prefix[0])</a>
+<a name="ln173">        {</a>
+<a name="ln174">          result += ch;</a>
+<a name="ln175">          state = match_inchi;</a>
+<a name="ln176">          qch = lastch;</a>
+<a name="ln177">        }</a>
+<a name="ln178">      }</a>
+<a name="ln179">      lastch = ch;</a>
+<a name="ln180">    }</a>
+<a name="ln181"> </a>
+<a name="ln182">    else if(ch=='&lt;')</a>
+<a name="ln183">    {</a>
+<a name="ln184">      // Ignore the content of any &lt;...&gt; elements</a>
+<a name="ln185">      // But a second consecutive  &lt;...&gt; element terminates an unquoted InChI</a>
+<a name="ln186">      if(afterelement &amp;&amp; state==unquoted)</a>
+<a name="ln187">          return result;</a>
+<a name="ln188">      inelement=true;</a>
+<a name="ln189">    }</a>
+<a name="ln190">    else if(inelement)</a>
+<a name="ln191">    {</a>
+<a name="ln192">      if(afterelement)</a>
+<a name="ln193">      {</a>
+<a name="ln194">        //Now  reading after a &lt;...&gt; inserted in the InChI string</a>
+<a name="ln195">        //Neglect whitespace, but any other character reverts to normal InChI parsing</a>
+<a name="ln196">        if(ch&lt;0 || !isspace(ch))</a>
+<a name="ln197">        {</a>
+<a name="ln198">          is.unget();</a>
+<a name="ln199">          afterelement=false;</a>
+<a name="ln200">          inelement=false;</a>
+<a name="ln201">        }</a>
+<a name="ln202">      }</a>
+<a name="ln203">      else</a>
+<a name="ln204">      {</a>
+<a name="ln205">        if(ch=='&gt;')</a>
+<a name="ln206">          afterelement=true; //look for whitespace after end of element</a>
+<a name="ln207">      }</a>
+<a name="ln208">    }</a>
+<a name="ln209"> </a>
+<a name="ln210">    else if(ch&gt;=0 &amp;&amp; isspace(ch))</a>
+<a name="ln211">    {</a>
+<a name="ln212">      if(state==unquoted)</a>
+<a name="ln213">        return result;</a>
+<a name="ln214">    }</a>
+<a name="ln215"> </a>
+<a name="ln216">    else if(isnic(ch))</a>
+<a name="ln217">    {</a>
+<a name="ln218">      if(ch==qch &amp;&amp; state!=match_inchi)</a>
+<a name="ln219">        return result;</a>
+<a name="ln220">      if(split_pos!=0)</a>
+<a name="ln221">        result.erase(split_pos);</a>
+<a name="ln222">      split_pos = result.size();</a>
+<a name="ln223">    }</a>
+<a name="ln224"> </a>
+<a name="ln225">    else</a>
+<a name="ln226">    {</a>
+<a name="ln227">      result += ch;</a>
+<a name="ln228">      if(state==match_inchi)</a>
+<a name="ln229">      {</a>
+<a name="ln230">        if(prefix.compare(0,result.size(),result)==0) //true if correct</a>
+<a name="ln231">        {</a>
+<a name="ln232">          if(result.size()==prefix.size())</a>
+<a name="ln233">            state = isnic(qch)&amp;&amp; qch!='&gt;' ? quoted : unquoted;</a>
+<a name="ln234">        }</a>
+<a name="ln235">        else</a>
+<a name="ln236">        {</a>
+<a name="ln237">          is.unget(); //It may be the start of a real &quot;InChI=&quot;</a>
+<a name="ln238">          result.erase();</a>
+<a name="ln239">          state = before_inchi;</a>
+<a name="ln240">        }</a>
+<a name="ln241">      }</a>
+<a name="ln242">    }</a>
+<a name="ln243">  }</a>
+<a name="ln244">  return result;</a>
+<a name="ln245">}</a>
+<a name="ln246"> </a>
+<a name="ln247">} //namespace</a>
+
+</code></pre>
+<div class="balloon" rel="166"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v739/" target="_blank">V739</a> EOF should not be compared with a value of the 'char' type. The '(ch = is.get())' should be of the 'int' type.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

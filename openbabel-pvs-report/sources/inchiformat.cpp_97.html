@@ -1,0 +1,912 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>inchiformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Copyright (C) 2005,2006,2007 Chris Morley</a>
+<a name="ln3"> </a>
+<a name="ln4">Based on the IUPAC InChI reference software, which is distributed</a>
+<a name="ln5">under the GNU LGPL:</a>
+<a name="ln6">Copyright (C) 2005 The International Union of Pure and Applied Chemistry</a>
+<a name="ln7">IUPAC International Chemical Identifier (InChI) (contact:secretariat@iupac.org)</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln10">it under the terms of the GNU General Public License as published by</a>
+<a name="ln11">the Free Software Foundation version 2 of the License.</a>
+<a name="ln12"> </a>
+<a name="ln13">This program is distributed in the hope that it will be useful,</a>
+<a name="ln14">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln15">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln16">GNU General Public License for more details.</a>
+<a name="ln17">***********************************************************************/</a>
+<a name="ln18">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln24">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln25">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln26"> </a>
+<a name="ln27">#include &quot;inchi_api.h&quot;</a>
+<a name="ln28">#include &lt;sstream&gt;</a>
+<a name="ln29">#include &lt;set&gt;</a>
+<a name="ln30">#include &lt;vector&gt;</a>
+<a name="ln31">#include &lt;iterator&gt;</a>
+<a name="ln32">#include &lt;openbabel/inchiformat.h&gt;</a>
+<a name="ln33">#include &lt;openbabel/stereo/tetrahedral.h&gt;</a>
+<a name="ln34">#include &lt;openbabel/stereo/cistrans.h&gt;</a>
+<a name="ln35">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln36"> </a>
+<a name="ln37">using namespace std;</a>
+<a name="ln38">namespace OpenBabel</a>
+<a name="ln39">{</a>
+<a name="ln40">extern string GetInChI(istream&amp; is);</a>
+<a name="ln41"> </a>
+<a name="ln42">//Make an instance of the format class</a>
+<a name="ln43">InChIFormat theInChIFormat;</a>
+<a name="ln44"> </a>
+<a name="ln45">// The average molecular masses used by InChI are listed in util.c or the InChI Technical Manual Appendix 1</a>
+<a name="ln46">const unsigned int MAX_AVG_MASS = 134;</a>
+<a name="ln47">const unsigned int inchi_avg_mass[MAX_AVG_MASS+1] = {0, 1, 4, 7, 9, 11, 12, 14, 16, 19, 20, 23, 24, 27, 28, 31, 32, 35, 40, 39, 40, 45, 48,</a>
+<a name="ln48">   51, 52, 55, 56, 59, 59, 64, 65, 70, 73, 75, 79, 80, 84, 85, 88, 89, 91, 93, 96, 98, 101, 103, 106, 108, 112, 115, 119, 122, 128,</a>
+<a name="ln49">   127, 131, 133, 137, 139, 140, 141, 144, 145, 150, 152, 157, 159, 163, 165, 167, 169, 173, 175, 178, 181, 184, 186, 190, 192, 195,</a>
+<a name="ln50">   197, 201, 204, 207, 209, 209, 210, 222, 223, 226, 227, 232, 231, 238, 237, 244, 243, 247, 247, 251, 252, 257, 258, 259, 260, 261,</a>
+<a name="ln51">   268, 271, 267, 277, 276, 281, 280, 285};</a>
+<a name="ln52"> </a>
+<a name="ln53">static unsigned int GetInChIAtomicMass(unsigned int atomicnum)</a>
+<a name="ln54">{</a>
+<a name="ln55">  if (atomicnum &lt; MAX_AVG_MASS)</a>
+<a name="ln56">    return inchi_avg_mass[atomicnum]; // the correct value</a>
+<a name="ln57">  else // fallback to our internal values</a>
+<a name="ln58">    return (unsigned int)(OBElements::GetMass(atomicnum) + 0.5);</a>
+<a name="ln59">}</a>
+<a name="ln60"> </a>
+<a name="ln61">/////////////////////////////////////////////////////////////////</a>
+<a name="ln62">bool InChIFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln63">{</a>
+<a name="ln64">  OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln65">  if (pmol == nullptr) return false;</a>
+<a name="ln66">  istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln67"> </a>
+<a name="ln68">  //Extract InChI from input stream even if it is split</a>
+<a name="ln69">  string inchi;</a>
+<a name="ln70">  do</a>
+<a name="ln71">  {</a>
+<a name="ln72">    inchi = GetInChI(ifs);</a>
+<a name="ln73">    if(inchi.empty())</a>
+<a name="ln74">      return false; //eof</a>
+<a name="ln75">  }while(inchi.size()&lt;9); //ignore empty &quot;InChI=&quot; or &quot;InChI=1/&quot;</a>
+<a name="ln76"> </a>
+<a name="ln77">  // Save the original inchi to be used on output,</a>
+<a name="ln78">  // avoiding conversion to and from OBMol</a>
+<a name="ln79">  SaveInchi(pmol, inchi);</a>
+<a name="ln80"> </a>
+<a name="ln81">  //Set up input struct</a>
+<a name="ln82">  inchi_InputINCHI inp;</a>
+<a name="ln83"> </a>
+<a name="ln84">  char* opts= GetInChIOptions(pConv, true);</a>
+<a name="ln85">  inp.szOptions = opts;</a>
+<a name="ln86"> </a>
+<a name="ln87">  char* nonconstinchi = new char[inchi.size()+1];</a>
+<a name="ln88">  inp.szInChI = strcpy(nonconstinchi, inchi.c_str());</a>
+<a name="ln89"> </a>
+<a name="ln90">  inchi_OutputStruct out;</a>
+<a name="ln91">  memset(&amp;out, 0, sizeof(out));</a>
+<a name="ln92"> </a>
+<a name="ln93">  //Call the conversion routine in InChI code</a>
+<a name="ln94">  int ret = GetStructFromINCHI( &amp;inp, &amp;out );</a>
+<a name="ln95">  delete[] nonconstinchi;</a>
+<a name="ln96">  delete[] opts;</a>
+<a name="ln97"> </a>
+<a name="ln98">  if (ret!=inchi_Ret_OKAY)</a>
+<a name="ln99">  {</a>
+<a name="ln100">    string mes = out.szMessage;</a>
+<a name="ln101">    if (!mes.empty()) {</a>
+<a name="ln102">      Trim(mes);</a>
+<a name="ln103">      obErrorLog.ThrowError(&quot;InChI code&quot;, &quot;For &quot; + inchi + &quot;\n  &quot; + mes, obWarning);</a>
+<a name="ln104">    }</a>
+<a name="ln105">    if (ret!=inchi_Ret_WARNING)</a>
+<a name="ln106">    {</a>
+<a name="ln107">      obErrorLog.ThrowError(&quot;InChI code&quot;, &quot;Reading InChI failed&quot;, obError);</a>
+<a name="ln108">      return false;</a>
+<a name="ln109">    }</a>
+<a name="ln110">  }</a>
+<a name="ln111"> </a>
+<a name="ln112">  //Read name if requested e.g InChI=1/CH4/h1H4 methane</a>
+<a name="ln113">  //OR InChI=1/CH4/h1H4 &quot;First alkane&quot;  Quote can be any punct char and</a>
+<a name="ln114">  //uses up to the end of the line if second quote is not found</a>
+<a name="ln115">  if(pConv-&gt;IsOption(&quot;n&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln116">  {</a>
+<a name="ln117">    string name;</a>
+<a name="ln118">    if(getline(ifs, name))</a>
+<a name="ln119">      pmol-&gt;SetTitle(Trim(name));</a>
+<a name="ln120">  }</a>
+<a name="ln121"> </a>
+<a name="ln122">  //Option to add InChI text to title</a>
+<a name="ln123">  if(pConv-&gt;IsOption(&quot;a&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln124">  {</a>
+<a name="ln125">    string title(pmol-&gt;GetTitle());</a>
+<a name="ln126">    title += ' ' + inchi;</a>
+<a name="ln127">    pmol-&gt;SetTitle(title);</a>
+<a name="ln128">  }</a>
+<a name="ln129"> </a>
+<a name="ln130">  //Translate the returned structure into OBMol</a>
+<a name="ln131">  pmol-&gt;SetDimension(0);</a>
+<a name="ln132">  pmol-&gt;BeginModify();</a>
+<a name="ln133">  int i;</a>
+<a name="ln134">  //Make all atoms first because we need pointers to later ones</a>
+<a name="ln135">  for(i=0;i&lt;out.num_atoms;++i)</a>
+<a name="ln136">  {</a>
+<a name="ln137">    pmol-&gt;NewAtom();</a>
+<a name="ln138">  }</a>
+<a name="ln139">  for(i=0;i&lt;out.num_atoms;++i)</a>
+<a name="ln140">  {</a>
+<a name="ln141">    OBAtom* patom = pmol-&gt;GetAtom(i+1); //index starts at 1</a>
+<a name="ln142">    inchi_Atom* piat = &amp;out.atom[i];</a>
+<a name="ln143">    unsigned int atomicnum = OBElements::GetAtomicNum(piat-&gt;elname);</a>
+<a name="ln144">    patom-&gt;SetAtomicNum(atomicnum);</a>
+<a name="ln145">    if(piat-&gt;isotopic_mass)</a>
+<a name="ln146">      patom-&gt;SetIsotope(piat-&gt;isotopic_mass - ISOTOPIC_SHIFT_FLAG + GetInChIAtomicMass(atomicnum));</a>
+<a name="ln147"> </a>
+<a name="ln148">    patom-&gt;SetSpinMultiplicity(piat-&gt;radical);</a>
+<a name="ln149">    patom-&gt;SetFormalCharge(piat-&gt;charge);</a>
+<a name="ln150">//    patom-&gt;SetVector(piat-&gt;x,piat-&gt;y,piat-&gt;z);</a>
+<a name="ln151"> </a>
+<a name="ln152">    int j;</a>
+<a name="ln153">    for(j=0;j&lt;piat-&gt;num_bonds;++j)</a>
+<a name="ln154">    {</a>
+<a name="ln155">      if (i &lt; piat-&gt;neighbor[j]) // Only add the bond in one direction</a>
+<a name="ln156">        pmol-&gt;AddBond(i+1, piat-&gt;neighbor[j]+1, piat-&gt;bond_type[j]);</a>
+<a name="ln157">    }</a>
+<a name="ln158"> </a>
+<a name="ln159">    //Now use the implicit H info provided by InChI code to make explicit H in OBMol,</a>
+<a name="ln160">    //assign spinMultiplicity, then remove the hydrogens to be consistent with old way.</a>
+<a name="ln161">    //Add implicit hydrogen. m=0 is non-istopic H m=1,2,3 are isotope specified</a>
+<a name="ln162">    patom-&gt;SetImplicitHCount(piat-&gt;num_iso_H[0]);</a>
+<a name="ln163">    for (int m=1; m&lt;=3; ++m) {</a>
+<a name="ln164">      if (piat-&gt;num_iso_H[m]) {</a>
+<a name="ln165">        for (int k=0; k&lt;piat-&gt;num_iso_H[m]; ++k) {</a>
+<a name="ln166">          OBAtom* DorT = pmol-&gt;NewAtom();</a>
+<a name="ln167">          DorT-&gt;SetAtomicNum(1);</a>
+<a name="ln168">          DorT-&gt;SetIsotope(m);</a>
+<a name="ln169">          pmol-&gt;AddBond(i+1, pmol-&gt;NumAtoms(), 1);</a>
+<a name="ln170">        }</a>
+<a name="ln171">      }</a>
+<a name="ln172">    }</a>
+<a name="ln173">  }</a>
+<a name="ln174">  // pmol-&gt;AssignSpinMultiplicity(true); //true means no implicit H (TODO - Spin stuff)</a>
+<a name="ln175"> </a>
+<a name="ln176">  //***@todo implicit H isotopes</a>
+<a name="ln177">  //Stereochemistry</a>
+<a name="ln178">  for(i=0;i&lt;out.num_stereo0D;++i)</a>
+<a name="ln179">  {</a>
+<a name="ln180">    inchi_Stereo0D&amp; stereo = out.stereo0D[i];</a>
+<a name="ln181"> </a>
+<a name="ln182">    switch(stereo.type)</a>
+<a name="ln183">    {</a>
+<a name="ln184">    case INCHI_StereoType_DoubleBond:</a>
+<a name="ln185">    {</a>
+<a name="ln186">      OBCisTransStereo::Config *ct = new OBCisTransStereo::Config;</a>
+<a name="ln187"> </a>
+<a name="ln188">      ct-&gt;begin = stereo.neighbor[1];</a>
+<a name="ln189">      ct-&gt;end = stereo.neighbor[2];</a>
+<a name="ln190">      unsigned long start = OBStereo::ImplicitRef;</a>
+<a name="ln191">      unsigned long end = OBStereo::ImplicitRef;</a>
+<a name="ln192">      FOR_NBORS_OF_ATOM(a, pmol-&gt;GetAtom(ct-&gt;begin + 1)) {</a>
+<a name="ln193">        if ( !(a-&gt;GetId() == ct-&gt;end || a-&gt;GetId() == stereo.neighbor[0] ) ) {</a>
+<a name="ln194">          start = a-&gt;GetId();</a>
+<a name="ln195">          break;</a>
+<a name="ln196">        }</a>
+<a name="ln197">      }</a>
+<a name="ln198">      FOR_NBORS_OF_ATOM(b, pmol-&gt;GetAtom(ct-&gt;end + 1)) {</a>
+<a name="ln199">        if ( !(b-&gt;GetId() == ct-&gt;begin || b-&gt;GetId() == stereo.neighbor[3] ) ) {</a>
+<a name="ln200">          end = b-&gt;GetId();</a>
+<a name="ln201">          break;</a>
+<a name="ln202">        }</a>
+<a name="ln203">      }</a>
+<a name="ln204">      ct-&gt;refs = OBStereo::MakeRefs(stereo.neighbor[0], start, stereo.neighbor[3], end);</a>
+<a name="ln205"> </a>
+<a name="ln206">      if(stereo.parity==INCHI_PARITY_EVEN)</a>
+<a name="ln207">        ct-&gt;shape = OBStereo::ShapeU;</a>
+<a name="ln208">      else if(stereo.parity==INCHI_PARITY_ODD)</a>
+<a name="ln209">        ct-&gt;shape = OBStereo::ShapeZ;</a>
+<a name="ln210">      else</a>
+<a name="ln211">        ct-&gt;specified = false;</a>
+<a name="ln212"> </a>
+<a name="ln213">      OBCisTransStereo *obct = new OBCisTransStereo(pmol);</a>
+<a name="ln214">      obct-&gt;SetConfig(*ct);</a>
+<a name="ln215">      pmol-&gt;SetData(obct);</a>
+<a name="ln216"> </a>
+<a name="ln217">      //InChI seems to prefer to define double bond stereo using H atoms.</a>
+<a name="ln218"> </a>
+<a name="ln219">      break;</a>
+<a name="ln220">    }</a>
+<a name="ln221">    case INCHI_StereoType_Tetrahedral:</a>
+<a name="ln222">    {</a>
+<a name="ln223">      OBTetrahedralStereo::Config *ts = new OBTetrahedralStereo::Config;</a>
+<a name="ln224">      ts-&gt;center = stereo.central_atom;</a>
+<a name="ln225">      ts-&gt;from = stereo.neighbor[0];</a>
+<a name="ln226">      if (ts-&gt;from == ts-&gt;center) // Handle the case where there are only three neighbours</a>
+<a name="ln227">        ts-&gt;from = OBStereo::ImplicitRef;</a>
+<a name="ln228">      ts-&gt;refs = OBStereo::MakeRefs(stereo.neighbor[1], stereo.neighbor[2],</a>
+<a name="ln229">                                    stereo.neighbor[3]);</a>
+<a name="ln230"> </a>
+<a name="ln231">      if(stereo.parity==INCHI_PARITY_EVEN)</a>
+<a name="ln232">        ts-&gt;winding = OBStereo::Clockwise;</a>
+<a name="ln233">      else if(stereo.parity==INCHI_PARITY_ODD)</a>
+<a name="ln234">        ts-&gt;winding = OBStereo::AntiClockwise;</a>
+<a name="ln235">      else</a>
+<a name="ln236">        ts-&gt;specified = false;</a>
+<a name="ln237"> </a>
+<a name="ln238">      OBTetrahedralStereo *obts = new OBTetrahedralStereo(pmol);</a>
+<a name="ln239">      obts-&gt;SetConfig(*ts);</a>
+<a name="ln240">      pmol-&gt;SetData(obts);</a>
+<a name="ln241"> </a>
+<a name="ln242">      break;</a>
+<a name="ln243">    }</a>
+<a name="ln244"> </a>
+<a name="ln245">    case INCHI_StereoType_Allene:</a>
+<a name="ln246">    default:</a>
+<a name="ln247">      obErrorLog.ThrowError(&quot;InChI code&quot;, &quot;Unsupported stereo type has been ignored.&quot;, obWarning);</a>
+<a name="ln248">    }</a>
+<a name="ln249">  }</a>
+<a name="ln250"> </a>
+<a name="ln251">  pmol-&gt;DeleteHydrogens(); // Explicit H included for stereo H</a>
+<a name="ln252"> </a>
+<a name="ln253">  pmol-&gt;EndModify();</a>
+<a name="ln254">  pmol-&gt;SetChiralityPerceived();</a>
+<a name="ln255"> </a>
+<a name="ln256">  FreeStructFromINCHI( &amp;out );</a>
+<a name="ln257">  return true;</a>
+<a name="ln258">}</a>
+<a name="ln259"> </a>
+<a name="ln260">int InChIFormat::SkipObjects(int n, OBConversion* pConv)</a>
+<a name="ln261">{</a>
+<a name="ln262">  istream&amp; ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln263">  string inchi;</a>
+<a name="ln264">  while(ifs.good() &amp;&amp; n)</a>
+<a name="ln265">  {</a>
+<a name="ln266">    inchi = GetInChI(ifs);</a>
+<a name="ln267">    if(inchi.size()&gt;=8)//ignore empty &quot;InChI=&quot; or &quot;InChI=1/&quot;</a>
+<a name="ln268">      --n;</a>
+<a name="ln269">  }</a>
+<a name="ln270">  return ifs.good() ? 1 : -1;</a>
+<a name="ln271">}</a>
+<a name="ln272"> </a>
+<a name="ln273">// Convert the atom Ids used by the stereorefs to inchi atom ids</a>
+<a name="ln274">static AT_NUM  OBAtomIdToInChIAtomId(OBMol &amp;mol, OBStereo::Ref atomid)</a>
+<a name="ln275">{</a>
+<a name="ln276">  return (AT_NUM)(mol.GetAtomById(atomid)-&gt;GetIdx() - 1);</a>
+<a name="ln277">}</a>
+<a name="ln278"> </a>
+<a name="ln279">/////////////////////////////////////////////////////////////////</a>
+<a name="ln280">bool InChIFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln281">{</a>
+<a name="ln282">  //Although the OBMol may be altered, it is restored before exit.</a>
+<a name="ln283">  OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln284">  if (pmol == nullptr) return false;</a>
+<a name="ln285">    OBMol&amp; mol = *pmol;</a>
+<a name="ln286"> </a>
+<a name="ln287">  string ostring; //the inchi string</a>
+<a name="ln288">  inchi_Output inout;</a>
+<a name="ln289">  inout.szInChI = nullptr; // We are going to test this value later</a>
+<a name="ln290"> </a>
+<a name="ln291">  stringstream molID;</a>
+<a name="ln292">  if(strlen(mol.GetTitle())==0)</a>
+<a name="ln293">    molID &lt;&lt; '#' &lt;&lt; pConv-&gt;GetOutputIndex() &lt;&lt; ' ';</a>
+<a name="ln294">  else</a>
+<a name="ln295">    molID &lt;&lt; mol.GetTitle() &lt;&lt; ' ';</a>
+<a name="ln296">  if(pConv-&gt;GetOutputIndex()==1)</a>
+<a name="ln297">    firstID=molID.str();</a>
+<a name="ln298"> </a>
+<a name="ln299">  //Use any existing InChI, probably from an InChIformat input,</a>
+<a name="ln300">  //in preference to determining it from the structure.</a>
+<a name="ln301">  //but only if no InChI output option has been specified that would</a>
+<a name="ln302">  //modify a standard InChI</a>
+<a name="ln303">  if (pmol-&gt;HasData(&quot;inchi&quot;) &amp;&amp; pConv-&gt;IsOption(&quot;r&quot;) == nullptr &amp;&amp; pConv-&gt;IsOption(&quot;a&quot;) == nullptr &amp;&amp;</a>
+<a name="ln304">    pConv-&gt;IsOption(&quot;s&quot;) == nullptr &amp;&amp; pConv-&gt;IsOption(&quot;X&quot;) == nullptr &amp;&amp; pConv-&gt;IsOption(&quot;F&quot;) == nullptr &amp;&amp;</a>
+<a name="ln305">    pConv-&gt;IsOption(&quot;M&quot;) == nullptr)</a>
+<a name="ln306">  {</a>
+<a name="ln307">    //All origins for the data are currently acceptable.</a>
+<a name="ln308">    //Possibly this may need to be restricted to data with a local origin.</a>
+<a name="ln309">    ostring = pmol-&gt;GetData(&quot;inchi&quot;)-&gt;GetValue();</a>
+<a name="ln310">  }</a>
+<a name="ln311">  else</a>
+<a name="ln312">  {</a>
+<a name="ln313">    //Determine InChI from the chemical structure</a>
+<a name="ln314">    if(pmol-&gt;NumAtoms()==0) return true; // PR#2864334</a>
+<a name="ln315"> </a>
+<a name="ln316">    inchi_Input inp;</a>
+<a name="ln317">    memset(&amp;inp,0,sizeof(inchi_Input));</a>
+<a name="ln318"> </a>
+<a name="ln319">    // Prepare stereo information for 2D, 3D</a>
+<a name="ln320">    map&lt;OBBond*, OBStereo::BondDirection&gt; updown;</a>
+<a name="ln321">    map&lt;OBBond*, OBStereo::Ref&gt; from;</a>
+<a name="ln322">    map&lt;OBBond*, OBStereo::Ref&gt;::const_iterator from_cit;</a>
+<a name="ln323">    if (mol.GetDimension() == 3 || (mol.GetDimension() == 2 &amp;&amp; pConv-&gt;IsOption(&quot;s&quot;, pConv-&gt;OUTOPTIONS) != nullptr))</a>
+<a name="ln324">      TetStereoToWedgeHash(mol, updown, from);</a>
+<a name="ln325">    set&lt;OBBond*&gt; unspec_ctstereo = GetUnspecifiedCisTrans(mol);</a>
+<a name="ln326"> </a>
+<a name="ln327">    OBAtom* patom;</a>
+<a name="ln328">    vector&lt;inchi_Atom&gt; inchiAtoms(mol.NumAtoms());</a>
+<a name="ln329">    vector&lt;OBNodeBase*&gt;::iterator itr;</a>
+<a name="ln330">    for (patom = mol.BeginAtom(itr);patom;patom = mol.NextAtom(itr))</a>
+<a name="ln331">    {</a>
+<a name="ln332">      //OB atom index starts at 1; inchi atom index starts at 0</a>
+<a name="ln333">      inchi_Atom&amp; iat = inchiAtoms[patom-&gt;GetIdx()-1];</a>
+<a name="ln334">      memset(&amp;iat,0,sizeof(inchi_Atom));</a>
+<a name="ln335"> </a>
+<a name="ln336">      iat.x = patom-&gt;GetX();</a>
+<a name="ln337">      iat.y = patom-&gt;GetY();</a>
+<a name="ln338">      iat.z = patom-&gt;GetZ();</a>
+<a name="ln339"> </a>
+<a name="ln340">      int nbonds = 0;</a>
+<a name="ln341">      vector&lt;OBBond*&gt;::iterator itr;</a>
+<a name="ln342">      OBBond *pbond;</a>
+<a name="ln343">      for (pbond = patom-&gt;BeginBond(itr);pbond;pbond = patom-&gt;NextBond(itr))</a>
+<a name="ln344">      {</a>
+<a name="ln345">        from_cit = from.find(pbond);</a>
+<a name="ln346">        // Do each bond only once. If the bond is a stereobond</a>
+<a name="ln347">        // ensure that the BeginAtom is the 'from' atom.</a>
+<a name="ln348">        if( (from_cit==from.end() &amp;&amp; patom-&gt;GetIdx() != pbond-&gt;GetBeginAtomIdx()) ||</a>
+<a name="ln349">            (from_cit!=from.end() &amp;&amp; from_cit-&gt;second != patom-&gt;GetId()) )</a>
+<a name="ln350">          continue;</a>
+<a name="ln351"> </a>
+<a name="ln352">        iat.neighbor[nbonds]      = pbond-&gt;GetNbrAtomIdx(patom)-1;</a>
+<a name="ln353">        int bo = pbond-&gt;GetBondOrder();</a>
+<a name="ln354">        if(bo==5)</a>
+<a name="ln355">          bo=4;</a>
+<a name="ln356">        iat.bond_type[nbonds]     = bo;</a>
+<a name="ln357"> </a>
+<a name="ln358">        OBStereo::BondDirection stereo = OBStereo::NotStereo;</a>
+<a name="ln359">        if (mol.GetDimension()==2 &amp;&amp; pConv-&gt;IsOption(&quot;s&quot;, pConv-&gt;OUTOPTIONS) == nullptr) {</a>
+<a name="ln360">          if (pbond-&gt;IsWedge())</a>
+<a name="ln361">            stereo = OBStereo::UpBond;</a>
+<a name="ln362">          else if (pbond-&gt;IsHash())</a>
+<a name="ln363">            stereo = OBStereo::DownBond;</a>
+<a name="ln364">          else if (pbond-&gt;IsWedgeOrHash())</a>
+<a name="ln365">            stereo = OBStereo::UnknownDir;</a>
+<a name="ln366">        } </a>
+<a name="ln367">        else if (from_cit!=from.end()) { // It's a stereo bond</a>
+<a name="ln368">          stereo = updown[pbond];</a>
+<a name="ln369">        }</a>
+<a name="ln370"> </a>
+<a name="ln371">        if (mol.GetDimension() != 0) {</a>
+<a name="ln372">          inchi_BondStereo2D bondstereo2D = INCHI_BOND_STEREO_NONE;</a>
+<a name="ln373">          if (stereo != OBStereo::NotStereo) {</a>
+<a name="ln374">            switch (stereo) {</a>
+<a name="ln375">              case OBStereo::UpBond:</a>
+<a name="ln376">                bondstereo2D = INCHI_BOND_STEREO_SINGLE_1UP;</a>
+<a name="ln377">                break;</a>
+<a name="ln378">              case OBStereo::DownBond:</a>
+<a name="ln379">                bondstereo2D = INCHI_BOND_STEREO_SINGLE_1DOWN;</a>
+<a name="ln380">                break;</a>
+<a name="ln381">              case OBStereo::UnknownDir:</a>
+<a name="ln382">                bondstereo2D = INCHI_BOND_STEREO_SINGLE_1EITHER;</a>
+<a name="ln383">                break;</a>
+<a name="ln384">              default:</a>
+<a name="ln385">                ; // INCHI_BOND_STEREO_NONE</a>
+<a name="ln386">            }</a>
+<a name="ln387">          }</a>
+<a name="ln388">          // Is it a double bond with unspecified stereochemistry?</a>
+<a name="ln389">          if (unspec_ctstereo.find(pbond)!=unspec_ctstereo.end())</a>
+<a name="ln390">            bondstereo2D = INCHI_BOND_STEREO_DOUBLE_EITHER;</a>
+<a name="ln391">          iat.bond_stereo[nbonds] = bondstereo2D;</a>
+<a name="ln392">        }</a>
+<a name="ln393">        nbonds++;</a>
+<a name="ln394">      }</a>
+<a name="ln395"> </a>
+<a name="ln396">      strcpy(iat.elname,OBElements::GetSymbol(patom-&gt;GetAtomicNum()));</a>
+<a name="ln397">      iat.num_bonds = nbonds;</a>
+<a name="ln398">      iat.num_iso_H[0] = patom-&gt;GetImplicitHCount();</a>
+<a name="ln399">      if(patom-&gt;GetIsotope())</a>
+<a name="ln400">      {</a>
+<a name="ln401">        iat.isotopic_mass = ISOTOPIC_SHIFT_FLAG +</a>
+<a name="ln402">          patom-&gt;GetIsotope() - GetInChIAtomicMass(patom-&gt;GetAtomicNum());</a>
+<a name="ln403">      }</a>
+<a name="ln404">      else</a>
+<a name="ln405">        iat.isotopic_mass = 0 ;</a>
+<a name="ln406">      iat.radical = patom-&gt;GetSpinMultiplicity();</a>
+<a name="ln407">      //InChI doesn't recognize spin miltiplicity of 4 or 5 (as used in OB for CH and C atom)</a>
+<a name="ln408">      if(iat.radical&gt;=4)</a>
+<a name="ln409">        iat.radical=0;</a>
+<a name="ln410">      iat.charge  = patom-&gt;GetFormalCharge();</a>
+<a name="ln411">    }</a>
+<a name="ln412"> </a>
+<a name="ln413">    inp.atom = &amp;inchiAtoms[0];</a>
+<a name="ln414"> </a>
+<a name="ln415">    vector&lt;inchi_Stereo0D&gt; stereoVec;</a>
+<a name="ln416"> </a>
+<a name="ln417">    if(mol.GetDimension()==0)</a>
+<a name="ln418">    {</a>
+<a name="ln419">      std::vector&lt;OBGenericData*&gt;::iterator data;</a>
+<a name="ln420">      std::vector&lt;OBGenericData*&gt; stereoData = mol.GetAllData(OBGenericDataType::StereoData);</a>
+<a name="ln421">      for (data = stereoData.begin(); data != stereoData.end(); ++data) {</a>
+<a name="ln422">        if (static_cast&lt;OBStereoBase*&gt;(*data)-&gt;GetType() == OBStereo::Tetrahedral) {</a>
+<a name="ln423">          OBTetrahedralStereo *ts = dynamic_cast&lt;OBTetrahedralStereo*&gt;(*data);</a>
+<a name="ln424">          OBTetrahedralStereo::Config config = ts-&gt;GetConfig();</a>
+<a name="ln425"> </a>
+<a name="ln426">          if(config.specified) {</a>
+<a name="ln427">            inchi_Stereo0D stereo;</a>
+<a name="ln428">            stereo.type = INCHI_StereoType_Tetrahedral;</a>
+<a name="ln429">            stereo.central_atom = OBAtomIdToInChIAtomId(mol, config.center);</a>
+<a name="ln430"> </a>
+<a name="ln431">            // count number of implicit refs</a>
+<a name="ln432">            int num_implicit = 0;</a>
+<a name="ln433">            if (config.from == OBStereo::ImplicitRef)</a>
+<a name="ln434">              num_implicit = 1;</a>
+<a name="ln435">            num_implicit += std::count(config.refs.begin(), config.refs.end(), OBStereo::ImplicitRef);</a>
+<a name="ln436"> </a>
+<a name="ln437">            // ignore invalid cases with more than 1 implicit ref</a>
+<a name="ln438">            if (num_implicit &gt; 1)</a>
+<a name="ln439">              continue;</a>
+<a name="ln440"> </a>
+<a name="ln441">            if (num_implicit) {</a>
+<a name="ln442">              config = ts-&gt;GetConfig(OBStereo::ImplicitRef); // Make the 'from' atom the implicit ref</a>
+<a name="ln443">              stereo.neighbor[0] = stereo.central_atom;</a>
+<a name="ln444">            } else</a>
+<a name="ln445">              stereo.neighbor[0] = OBAtomIdToInChIAtomId(mol, config.from);</a>
+<a name="ln446"> </a>
+<a name="ln447">            for(int i=0; i&lt;3; ++i)</a>
+<a name="ln448">              stereo.neighbor[i + 1] = OBAtomIdToInChIAtomId(mol, config.refs[i]);</a>
+<a name="ln449"> </a>
+<a name="ln450">            if (config.winding == OBStereo::Clockwise)</a>
+<a name="ln451">              stereo.parity = INCHI_PARITY_EVEN;</a>
+<a name="ln452">            else</a>
+<a name="ln453">              stereo.parity = INCHI_PARITY_ODD;</a>
+<a name="ln454"> </a>
+<a name="ln455">            stereoVec.push_back(stereo);</a>
+<a name="ln456">          }</a>
+<a name="ln457">        }</a>
+<a name="ln458">      }</a>
+<a name="ln459"> </a>
+<a name="ln460">      //Double bond stereo (still inside 0D section)</a>
+<a name="ln461">      //Currently does not handle cumulenes</a>
+<a name="ln462">      for (data = stereoData.begin(); data != stereoData.end(); ++data) {</a>
+<a name="ln463">        if (static_cast&lt;OBStereoBase*&gt;(*data)-&gt;GetType() == OBStereo::CisTrans) {</a>
+<a name="ln464">          OBCisTransStereo *ts = dynamic_cast&lt;OBCisTransStereo*&gt;(*data);</a>
+<a name="ln465">          OBCisTransStereo::Config config = ts-&gt;GetConfig();</a>
+<a name="ln466"> </a>
+<a name="ln467">          if(config.specified) {</a>
+<a name="ln468">            inchi_Stereo0D stereo;</a>
+<a name="ln469">            stereo.central_atom = NO_ATOM;</a>
+<a name="ln470">            stereo.type = INCHI_StereoType_DoubleBond;</a>
+<a name="ln471">            OBStereo::Refs refs = config.refs;</a>
+<a name="ln472"> </a>
+<a name="ln473">            // ignore invalid cases with 2 implicit refs on one side</a>
+<a name="ln474">            if (refs[0] == OBStereo::ImplicitRef &amp;&amp; refs[1] == OBStereo::ImplicitRef)</a>
+<a name="ln475">              continue;</a>
+<a name="ln476">            if (refs[2] == OBStereo::ImplicitRef &amp;&amp; refs[3] == OBStereo::ImplicitRef)</a>
+<a name="ln477">              continue;</a>
+<a name="ln478"> </a>
+<a name="ln479">            unsigned long start = refs[0];</a>
+<a name="ln480">            if (refs[0]==OBStereo::ImplicitRef)</a>
+<a name="ln481">              start = refs[1];</a>
+<a name="ln482">            unsigned long end = refs[3];</a>
+<a name="ln483">            if (refs[3]==OBStereo::ImplicitRef)</a>
+<a name="ln484">              end = refs[2];</a>
+<a name="ln485"> </a>
+<a name="ln486">            stereo.neighbor[0] = OBAtomIdToInChIAtomId(mol, start);</a>
+<a name="ln487">            stereo.neighbor[1] = OBAtomIdToInChIAtomId(mol, config.begin);</a>
+<a name="ln488">            stereo.neighbor[2] = OBAtomIdToInChIAtomId(mol, config.end);</a>
+<a name="ln489">            stereo.neighbor[3] = OBAtomIdToInChIAtomId(mol, end);</a>
+<a name="ln490"> </a>
+<a name="ln491">            if (ts-&gt;IsTrans(start, end))</a>
+<a name="ln492">              stereo.parity = INCHI_PARITY_EVEN;</a>
+<a name="ln493">            else</a>
+<a name="ln494">              stereo.parity = INCHI_PARITY_ODD;</a>
+<a name="ln495"> </a>
+<a name="ln496">            stereoVec.push_back(stereo);</a>
+<a name="ln497">          }</a>
+<a name="ln498">        }</a>
+<a name="ln499">      }</a>
+<a name="ln500">    }</a>
+<a name="ln501"> </a>
+<a name="ln502">    char* opts = GetInChIOptions(pConv, false);</a>
+<a name="ln503">    inp.szOptions = opts;</a>
+<a name="ln504"> </a>
+<a name="ln505">    inp.num_atoms = mol.NumAtoms();</a>
+<a name="ln506">    inp.num_stereo0D = (AT_NUM) stereoVec.size();</a>
+<a name="ln507">    if(inp.num_stereo0D&gt;0)</a>
+<a name="ln508">      inp.stereo0D = &amp;stereoVec[0];</a>
+<a name="ln509"> </a>
+<a name="ln510">    //inchi_Output inout; now declared in block above</a>
+<a name="ln511">    memset(&amp;inout,0,sizeof(inchi_Output));</a>
+<a name="ln512"> </a>
+<a name="ln513">    int ret = GetINCHI(&amp;inp, &amp;inout);</a>
+<a name="ln514"> </a>
+<a name="ln515">    delete[] opts;</a>
+<a name="ln516">    if(ret!=inchi_Ret_OKAY)</a>
+<a name="ln517">    {</a>
+<a name="ln518">      if(inout.szMessage)</a>
+<a name="ln519">      {</a>
+<a name="ln520">        string mes(inout.szMessage);</a>
+<a name="ln521">        if(pConv-&gt;IsOption(&quot;w&quot;))</a>
+<a name="ln522">        {</a>
+<a name="ln523">          string::size_type pos;</a>
+<a name="ln524">          string targ[4];</a>
+<a name="ln525">          targ[0] = &quot;Omitted undefined stereo&quot;;</a>
+<a name="ln526">          targ[1] = &quot;Charges were rearranged&quot;;</a>
+<a name="ln527">          targ[2] = &quot;Proton(s) added/removed&quot;;</a>
+<a name="ln528">          targ[3] = &quot;Metal was disconnected&quot;;</a>
+<a name="ln529">          for(int i=0;i&lt;4;++i)</a>
+<a name="ln530">          {</a>
+<a name="ln531">            pos = mes.find(targ[i]);</a>
+<a name="ln532">            if(pos!=string::npos)</a>
+<a name="ln533">            {</a>
+<a name="ln534">              mes.erase(pos,targ[i].size());</a>
+<a name="ln535">              if(pos&lt;mes.size() &amp;&amp; mes[pos]==';')</a>
+<a name="ln536">                mes[pos]=' ';</a>
+<a name="ln537">            }</a>
+<a name="ln538">          }</a>
+<a name="ln539">        }</a>
+<a name="ln540">        Trim(mes);</a>
+<a name="ln541">        if(!mes.empty())</a>
+<a name="ln542">          obErrorLog.ThrowError(&quot;InChI code&quot;, molID.str() + ':' + mes, obWarning);</a>
+<a name="ln543">      }</a>
+<a name="ln544"> </a>
+<a name="ln545">      if(ret!=inchi_Ret_WARNING)</a>
+<a name="ln546">      {</a>
+<a name="ln547">        obErrorLog.ThrowError(&quot;InChI code&quot;, &quot;InChI generation failed&quot;, obError);</a>
+<a name="ln548">        FreeStdINCHI(&amp;inout);</a>
+<a name="ln549">        return false;</a>
+<a name="ln550">      }</a>
+<a name="ln551">    }</a>
+<a name="ln552">    ostring = inout.szInChI;</a>
+<a name="ln553">  }</a>
+<a name="ln554"> </a>
+<a name="ln555">  //Truncate the InChI if requested</a>
+<a name="ln556">  const char* truncspec = pConv-&gt;IsOption(&quot;T&quot;);</a>
+<a name="ln557">  if(truncspec)</a>
+<a name="ln558">  {</a>
+<a name="ln559">    string trunc(truncspec);</a>
+<a name="ln560">    EditInchi(ostring, trunc);</a>
+<a name="ln561">  }</a>
+<a name="ln562"> </a>
+<a name="ln563">  if(pConv-&gt;IsOption(&quot;K&quot;)) //Generate InChIKey and add after InChI on same line</a>
+<a name="ln564">  {</a>
+<a name="ln565">    char szINCHIKey[28];</a>
+<a name="ln566">    GetINCHIKeyFromINCHI(ostring.c_str(), 0 ,0, szINCHIKey, nullptr, nullptr);</a>
+<a name="ln567">    ostring = szINCHIKey;</a>
+<a name="ln568">  }</a>
+<a name="ln569"> </a>
+<a name="ln570">  if(pConv-&gt;IsOption(&quot;t&quot;))</a>
+<a name="ln571">  {</a>
+<a name="ln572">    ostring += ' ';</a>
+<a name="ln573">    ostring +=  pmol-&gt;GetTitle();</a>
+<a name="ln574">  }</a>
+<a name="ln575"> </a>
+<a name="ln576">  ostream &amp;ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln577"> </a>
+<a name="ln578">  if(pConv-&gt;IsOption(&quot;U&quot;))</a>
+<a name="ln579">  {</a>
+<a name="ln580">    if(pConv-&gt;GetOutputIndex()==1)</a>
+<a name="ln581">      allInchi.clear();</a>
+<a name="ln582">    //Just add to set and don't output, except at the end</a>
+<a name="ln583">    allInchi.insert(ostring);</a>
+<a name="ln584"> </a>
+<a name="ln585">    if(pConv-&gt;IsLast())</a>
+<a name="ln586">    {</a>
+<a name="ln587">      nSet::iterator itr;</a>
+<a name="ln588">      for(itr=allInchi.begin();itr!=allInchi.end();++itr)</a>
+<a name="ln589">        ofs &lt;&lt; *itr &lt;&lt; endl;</a>
+<a name="ln590">    }</a>
+<a name="ln591">    return true;</a>
+<a name="ln592">  }</a>
+<a name="ln593">  else if(pConv-&gt;IsOption(&quot;u&quot;))</a>
+<a name="ln594">  {</a>
+<a name="ln595">    if(pConv-&gt;GetOutputIndex()==1)</a>
+<a name="ln596">      allInchi.clear();</a>
+<a name="ln597">    if(!allInchi.insert(ostring).second)</a>
+<a name="ln598">      return true; //no output if already in set</a>
+<a name="ln599">  }</a>
+<a name="ln600"> </a>
+<a name="ln601">  ofs &lt;&lt; ostring &lt;&lt; endl;</a>
+<a name="ln602"> </a>
+<a name="ln603">  // Note that inout.szInChI will still be NULL if this is an InChI-&gt;InChIKey conversion</a>
+<a name="ln604">  // and so the following section will not apply.</a>
+<a name="ln605">  if (inout.szInChI != nullptr) {</a>
+<a name="ln606">    if (pConv-&gt;IsOption(&quot;a&quot;))</a>
+<a name="ln607">      ofs &lt;&lt; inout.szAuxInfo &lt;&lt; endl;</a>
+<a name="ln608"> </a>
+<a name="ln609">    if(pConv-&gt;IsOption(&quot;l&quot;))</a>
+<a name="ln610">      //Display InChI log message. With multiple molecules, it appears only once</a>
+<a name="ln611">      obErrorLog.ThrowError(&quot;InChI log&quot;, inout.szLog, obError, onceOnly);</a>
+<a name="ln612"> </a>
+<a name="ln613">    if(pConv-&gt;IsOption(&quot;e&quot;))</a>
+<a name="ln614">    {</a>
+<a name="ln615">      if(pConv-&gt;GetOutputIndex()==1)</a>
+<a name="ln616">        firstInchi = inout.szInChI;</a>
+<a name="ln617">      else</a>
+<a name="ln618">      {</a>
+<a name="ln619">        ofs &lt;&lt; &quot;Molecules &quot; &lt;&lt; firstID &lt;&lt; &quot;and &quot; &lt;&lt; molID.str();</a>
+<a name="ln620">        ofs &lt;&lt; InChIErrorMessage(CompareInchi(firstInchi.c_str(), inout.szInChI)) &lt;&lt; endl;</a>
+<a name="ln621">      }</a>
+<a name="ln622">    }</a>
+<a name="ln623">    FreeStdINCHI(&amp;inout);</a>
+<a name="ln624">  }</a>
+<a name="ln625"> </a>
+<a name="ln626">  return true;</a>
+<a name="ln627">}</a>
+<a name="ln628"> </a>
+<a name="ln629">//////////////////////////////////////////////////////////</a>
+<a name="ln630">char InChIFormat::CompareInchi(const string&amp; Inchi1, const string&amp; Inchi2)</a>
+<a name="ln631">{</a>
+<a name="ln632">  //Returns 0 if identical or an char identifying the layer where they first differed</a>
+<a name="ln633">  string s1(Inchi1), s2(Inchi2);</a>
+<a name="ln634"> </a>
+<a name="ln635">  if(s1.size()&lt;s2.size())</a>
+<a name="ln636">    s1.swap(s2);</a>
+<a name="ln637">  string::size_type pos;</a>
+<a name="ln638">  for(pos=0;pos&lt;s1.size();++pos)</a>
+<a name="ln639">  {</a>
+<a name="ln640">    if(pos==s2.size() || s1[pos]!=s2[pos])</a>
+<a name="ln641">      return s1[s1.rfind('/',pos)+1];</a>
+<a name="ln642">  }</a>
+<a name="ln643">  return 0;</a>
+<a name="ln644"> </a>
+<a name="ln645">/*  //Remove anything after the end of the Inchi</a>
+<a name="ln646">  string::size_type pos;</a>
+<a name="ln647">  pos = s1.find_first_of(&quot; \t\n&quot;);</a>
+<a name="ln648">  if(pos!=string::npos)</a>
+<a name="ln649">    s1.erase(pos);</a>
+<a name="ln650">  pos = s2.find_first_of(&quot; \t\n&quot;);</a>
+<a name="ln651">  if(pos!=string::npos)</a>
+<a name="ln652">    s2.erase(pos);</a>
+<a name="ln653"> </a>
+<a name="ln654">  vector&lt;string&gt; layers1, layers2;</a>
+<a name="ln655">  tokenize(layers1,s1,&quot;/\n&quot;);</a>
+<a name="ln656">  tokenize(layers2,s2,&quot;/\n&quot;);</a>
+<a name="ln657">  unsigned int i;</a>
+<a name="ln658">  if(layers1.size()&lt;layers2.size())</a>
+<a name="ln659">    layers1.swap(layers2); //layers1 is the longest</a>
+<a name="ln660"> </a>
+<a name="ln661">  for(i=1;i&lt;layers2.size();++i)</a>
+<a name="ln662">  {</a>
+<a name="ln663">    if(layers1[i]!=layers2[i])</a>
+<a name="ln664">    {</a>
+<a name="ln665">      char ch = '+';</a>
+<a name="ln666">      if(i&gt;1) //not formula layer</a>
+<a name="ln667">        ch=layers1[i][0];</a>
+<a name="ln668">      return ch;</a>
+<a name="ln669">    }</a>
+<a name="ln670">  }</a>
+<a name="ln671">  if(layers1.size()==layers2.size())</a>
+<a name="ln672">    return 0;</a>
+<a name="ln673">  else</a>
+<a name="ln674">    return layers1[i][0];</a>
+<a name="ln675">*/</a>
+<a name="ln676">}</a>
+<a name="ln677"> </a>
+<a name="ln678">string InChIFormat::InChIErrorMessage(const char ch)</a>
+<a name="ln679">{</a>
+<a name="ln680">  string s;</a>
+<a name="ln681">  switch (ch)</a>
+<a name="ln682">  {</a>
+<a name="ln683">  case 0:</a>
+<a name="ln684">    s = &quot; are identical&quot;;</a>
+<a name="ln685">    break;</a>
+<a name="ln686">  case '+':</a>
+<a name="ln687">    s = &quot; have different formulae&quot;;</a>
+<a name="ln688">    break;</a>
+<a name="ln689">  case 'c':</a>
+<a name="ln690">    s = &quot; have different connection tables&quot;;</a>
+<a name="ln691">    break;</a>
+<a name="ln692">  case 'h':</a>
+<a name="ln693">    s = &quot; have different bond orders, or radical character&quot;;</a>
+<a name="ln694">    break;</a>
+<a name="ln695">  case 'q':</a>
+<a name="ln696">    s = &quot; have different charges&quot;;</a>
+<a name="ln697">    break;</a>
+<a name="ln698">  case 'p':</a>
+<a name="ln699">    s = &quot; have different numbers of attached protons&quot;;</a>
+<a name="ln700">    break;</a>
+<a name="ln701">  case 'b':</a>
+<a name="ln702">    s = &quot; have different double bond stereochemistry&quot;;</a>
+<a name="ln703">    break;</a>
+<a name="ln704">  case 'm':</a>
+<a name="ln705">  case 't':</a>
+<a name="ln706">    s = &quot; have different sp3 stereochemistry&quot;;</a>
+<a name="ln707">    break;</a>
+<a name="ln708">  case 'i':</a>
+<a name="ln709">    s = &quot; have different isotopic composition&quot;;</a>
+<a name="ln710">    break;</a>
+<a name="ln711">  default:</a>
+<a name="ln712">    s = &quot; are different&quot;;</a>
+<a name="ln713">  }</a>
+<a name="ln714">  return s;</a>
+<a name="ln715">}</a>
+<a name="ln716"> </a>
+<a name="ln717">OBAtom* InChIFormat::GetCommonAtom(OBBond* pb1, OBBond* pb2)</a>
+<a name="ln718">{</a>
+<a name="ln719">  OBAtom* pa1 = pb1-&gt;GetBeginAtom();</a>
+<a name="ln720">  if(pa1==pb2-&gt;GetBeginAtom() || pa1==pb2-&gt;GetEndAtom())</a>
+<a name="ln721">    return pa1;</a>
+<a name="ln722">  pa1 = pb1-&gt;GetEndAtom();</a>
+<a name="ln723">  if(pa1==pb2-&gt;GetBeginAtom() || pa1==pb2-&gt;GetEndAtom())</a>
+<a name="ln724">    return pa1;</a>
+<a name="ln725">  return nullptr; //not adjacent bonds</a>
+<a name="ln726">}</a>
+<a name="ln727"> </a>
+<a name="ln728"> </a>
+<a name="ln729">//Returns pointer to InChI options string, which needs to be deleted with delete[]</a>
+<a name="ln730">//If there are no options returns an empty string</a>
+<a name="ln731">char* InChIFormat::GetInChIOptions(OBConversion* pConv, bool Reading)</a>
+<a name="ln732">{</a>
+<a name="ln733">  vector&lt;string&gt; optsvec; //the InChi options</a>
+<a name="ln734">  /* In Standard InChI these are not used</a>
+<a name="ln735">  if(!Reading &amp;&amp; !pConv-&gt;IsOption(&quot;n&quot;))</a>
+<a name="ln736">    //without -xn option, the default is to write using these 'recommended' options</a>
+<a name="ln737">    tokenize(optsvec, &quot;FixedH RecMet SPXYZ SAsXYZ Newps Fb Fnud&quot;);</a>
+<a name="ln738">  */</a>
+<a name="ln739">  char* opts;</a>
+<a name="ln740">  OBConversion::Option_type opttyp = Reading ? OBConversion::INOPTIONS : OBConversion::OUTOPTIONS;</a>
+<a name="ln741">  const char* copts = pConv-&gt;IsOption(&quot;X&quot;, opttyp);</a>
+<a name="ln742">  if(copts)</a>
+<a name="ln743">  {</a>
+<a name="ln744">    string tmp(copts); // GCC doesn't like passing string temporaries to functions</a>
+<a name="ln745">    vector&lt;string&gt; useropts;</a>
+<a name="ln746">    tokenize(useropts, tmp);</a>
+<a name="ln747">    copy(useropts.begin(), useropts.end(), back_inserter(optsvec));</a>
+<a name="ln748">  }</a>
+<a name="ln749"> </a>
+<a name="ln750">  //Add a couple InChI options built in to OB</a>
+<a name="ln751">  if(opttyp==OBConversion::OUTOPTIONS)</a>
+<a name="ln752">  {</a>
+<a name="ln753">    if(pConv-&gt;IsOption(&quot;F&quot;, opttyp))</a>
+<a name="ln754">    {</a>
+<a name="ln755">      string tmp2(&quot;FixedH&quot;);</a>
+<a name="ln756">      optsvec.push_back(tmp2);</a>
+<a name="ln757">    }</a>
+<a name="ln758">    if(pConv-&gt;IsOption(&quot;M&quot;, opttyp))</a>
+<a name="ln759">    {</a>
+<a name="ln760">      string tmp2(&quot;RecMet&quot;);</a>
+<a name="ln761">      optsvec.push_back(tmp2);</a>
+<a name="ln762">    }</a>
+<a name="ln763">  }</a>
+<a name="ln764"> </a>
+<a name="ln765"> </a>
+<a name="ln766">#ifdef WIN32</a>
+<a name="ln767">    string ch(&quot; /&quot;);</a>
+<a name="ln768">#else</a>
+<a name="ln769">    string ch(&quot; -&quot;);</a>
+<a name="ln770">#endif</a>
+<a name="ln771"> </a>
+<a name="ln772">  string sopts;</a>
+<a name="ln773">  for (unsigned int i = 0; i &lt; optsvec.size(); ++i)</a>
+<a name="ln774">    sopts += ch + optsvec[i];</a>
+<a name="ln775">  opts = new char[strlen(sopts.c_str())+1]; //has to be char, not const char</a>
+<a name="ln776">  return strcpy(opts, sopts.c_str());</a>
+<a name="ln777">  opts = new char[1];</a>
+<a name="ln778">  *opts = '\0';</a>
+<a name="ln779">  return opts;</a>
+<a name="ln780">}</a>
+<a name="ln781"> </a>
+<a name="ln782">bool InChIFormat::EditInchi(std::string&amp; inchi, std::string&amp; spec)</a>
+<a name="ln783">{</a>
+<a name="ln784">  std::vector&lt;std::string&gt; vec;</a>
+<a name="ln785">  std::vector&lt;std::string&gt;::iterator itr;</a>
+<a name="ln786">  tokenize(vec, spec, &quot; \t/&quot;);</a>
+<a name="ln787">  for(itr=vec.begin();itr!=vec.end();++itr)</a>
+<a name="ln788">  {</a>
+<a name="ln789">    if(*itr==&quot;formula&quot;)</a>
+<a name="ln790">    {</a>
+<a name="ln791">      std::string::size_type pos = inchi.find('/', inchi.find('/')+1); //2nd /</a>
+<a name="ln792">      if(pos!=string::npos)</a>
+<a name="ln793">        inchi.erase(pos);</a>
+<a name="ln794">    }</a>
+<a name="ln795">    else if(*itr==&quot;connect&quot;)</a>
+<a name="ln796">      RemoveLayer(inchi,&quot;/h&quot;,true);</a>
+<a name="ln797">    else if(*itr==&quot;nochg&quot;)</a>
+<a name="ln798">    {</a>
+<a name="ln799">      RemoveLayer(inchi,&quot;/p&quot;);</a>
+<a name="ln800">      RemoveLayer(inchi,&quot;/q&quot;);</a>
+<a name="ln801">    }</a>
+<a name="ln802">    else if(*itr==&quot;nosp3&quot;)</a>
+<a name="ln803">    {</a>
+<a name="ln804">      RemoveLayer(inchi,&quot;/t&quot;);</a>
+<a name="ln805">      RemoveLayer(inchi,&quot;/m&quot;);</a>
+<a name="ln806">      RemoveLayer(inchi,&quot;/s&quot;);</a>
+<a name="ln807">    }</a>
+<a name="ln808">    else if(*itr==&quot;noEZ&quot;)</a>
+<a name="ln809">      RemoveLayer(inchi,&quot;/b&quot;);</a>
+<a name="ln810">    else if(*itr==&quot;noiso&quot;)</a>
+<a name="ln811">      RemoveLayer(inchi,&quot;/i&quot;);</a>
+<a name="ln812">    else if(*itr==&quot;nostereo&quot;)</a>
+<a name="ln813">    {</a>
+<a name="ln814">      RemoveLayer(inchi,&quot;/t&quot;);</a>
+<a name="ln815">      RemoveLayer(inchi,&quot;/m&quot;);</a>
+<a name="ln816">      RemoveLayer(inchi,&quot;/s&quot;);</a>
+<a name="ln817">      RemoveLayer(inchi,&quot;/b&quot;);</a>
+<a name="ln818">    }</a>
+<a name="ln819">    else if(!(*itr).empty())</a>
+<a name="ln820">    {</a>
+<a name="ln821">      obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln822">      spec + &quot; not recognized as a truncation specification&quot;,obError, onceOnly);</a>
+<a name="ln823">      return false;</a>
+<a name="ln824">    }</a>
+<a name="ln825">  }</a>
+<a name="ln826">  return true;</a>
+<a name="ln827">}</a>
+<a name="ln828"> </a>
+<a name="ln829">void InChIFormat::RemoveLayer (std::string&amp; inchi, const std::string&amp; str, bool all)</a>
+<a name="ln830">{</a>
+<a name="ln831">  std::string::size_type pos = inchi.find(str);</a>
+<a name="ln832">  if(pos!=string::npos)</a>
+<a name="ln833">    inchi.erase(pos, (all ? string::npos : inchi.find('/', pos+1) - pos));</a>
+<a name="ln834">}</a>
+<a name="ln835"> </a>
+<a name="ln836">void InChIFormat::SaveInchi(OBMol* pmol, const std::string&amp; s)</a>
+<a name="ln837">{</a>
+<a name="ln838">  OBPairData* dp = new OBPairData;</a>
+<a name="ln839">  dp-&gt;SetAttribute(&quot;inchi&quot;);</a>
+<a name="ln840">  dp-&gt;SetValue(s);</a>
+<a name="ln841">  dp-&gt;SetOrigin(local);</a>
+<a name="ln842">  pmol-&gt;SetData(dp);</a>
+<a name="ln843">}</a>
+<a name="ln844"> </a>
+<a name="ln845">//************************************************************************</a>
+<a name="ln846">InChICompareFormat theInChICompareFormat;</a>
+<a name="ln847"> </a>
+<a name="ln848">bool InChICompareFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln849">{</a>
+<a name="ln850">  pConv-&gt;AddOption(&quot;e&quot;,OBConversion::OUTOPTIONS);</a>
+<a name="ln851">  pConv-&gt;AddOption(&quot;t&quot;,OBConversion::OUTOPTIONS);</a>
+<a name="ln852">  return theInChIFormat.WriteMolecule(pOb,pConv);</a>
+<a name="ln853">}</a>
+<a name="ln854"> </a>
+<a name="ln855">//************************************************************************</a>
+<a name="ln856">InChIKeyFormat theInChIKeyFormat;</a>
+<a name="ln857"> </a>
+<a name="ln858">bool InChIKeyFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln859">{</a>
+<a name="ln860">  pConv-&gt;AddOption(&quot;K&quot;,OBConversion::OUTOPTIONS);</a>
+<a name="ln861">  return theInChIFormat.WriteMolecule(pOb,pConv);</a>
+<a name="ln862">}</a>
+<a name="ln863"> </a>
+<a name="ln864"> </a>
+<a name="ln865">}//namespace OpenBabel</a>
+<a name="ln866"> </a>
+
+</code></pre>
+<div class="balloon" rel="777"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v779/" target="_blank">V779</a> Unreachable code detected. It is possible that an error is present.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

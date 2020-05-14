@@ -1,0 +1,842 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <title>ring.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">ring.cpp - Deal with rings, find smallest set of smallest rings (SSSR).</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 1998-2001 by OpenEye Scientific Software, Inc.</a>
+<a name="ln5">Some portions Copyright (C) 2001-2006 by Geoffrey R. Hutchison</a>
+<a name="ln6">Some portions Copyright (C) 2012 by NextMove Software</a>
+<a name="ln7"> </a>
+<a name="ln8">This file is part of the Open Babel project.</a>
+<a name="ln9">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln10"> </a>
+<a name="ln11">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln12">it under the terms of the GNU General Public License as published by</a>
+<a name="ln13">the Free Software Foundation version 2 of the License.</a>
+<a name="ln14"> </a>
+<a name="ln15">This program is distributed in the hope that it will be useful,</a>
+<a name="ln16">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln17">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln18">GNU General Public License for more details.</a>
+<a name="ln19">***********************************************************************/</a>
+<a name="ln20"> </a>
+<a name="ln21">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln22"> </a>
+<a name="ln23">#include &lt;openbabel/mol.h&gt; // implements some OBMol methods</a>
+<a name="ln24">#include &lt;openbabel/ring.h&gt;</a>
+<a name="ln25">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln26">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln27">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln28">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln29">#include &lt;openbabel/oberror.h&gt;</a>
+<a name="ln30">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln31"> </a>
+<a name="ln32">using namespace std;</a>
+<a name="ln33"> </a>
+<a name="ln34">namespace OpenBabel</a>
+<a name="ln35">{</a>
+<a name="ln36">  OBRingTyper      ringtyper;</a>
+<a name="ln37"> </a>
+<a name="ln38">  /*! \class OBRing ring.h &lt;openbabel/ring.h&gt;</a>
+<a name="ln39">    \brief Stores information on rings in a molecule from SSSR perception.</a>
+<a name="ln40"> </a>
+<a name="ln41">    Ring information beyond atom and bond membership is usually not</a>
+<a name="ln42">    necessary, but more information can be had about the rings in a</a>
+<a name="ln43">    molecule. The OBRing class is used to store the information from a</a>
+<a name="ln44">    Smallest Set of Smallest Rings (SSSR) perception of a molecule. The</a>
+<a name="ln45">    OBMol member function OBMol::GetSSSR() stores the information it perceives in</a>
+<a name="ln46">    a vector&lt;OBRing*&gt; inside the molecule. Perception is only done once</a>
+<a name="ln47">    for a molecule unless the connection table is modified. The following</a>
+<a name="ln48">    code demonstrates how to extract the SSSR information:</a>
+<a name="ln49"> </a>
+<a name="ln50">    \code</a>
+<a name="ln51">    OBMol mol;</a>
+<a name="ln52"> </a>
+<a name="ln53">    vector&lt;OBRing*&gt; vr;</a>
+<a name="ln54">    vr = mol.GetSSSR();</a>
+<a name="ln55">    \endcode</a>
+<a name="ln56"> </a>
+<a name="ln57">    OBRings store the atom numbers of the atoms in each of the smallest</a>
+<a name="ln58">    set of smallest rings in both a vector&lt;int&gt; and an OBBitVec.</a>
+<a name="ln59">    An example of how to print out the atom numbers present in all SSSR</a>
+<a name="ln60">    rings is show below:</a>
+<a name="ln61"> </a>
+<a name="ln62">    \code</a>
+<a name="ln63">    vector&lt;OBRing*&gt;::iterator i;</a>
+<a name="ln64">    vector&lt;int&gt;::iterator j;</a>
+<a name="ln65">    vector&lt;OBRing*&gt; *rlist = (vector&lt;OBRing*&gt;*)mol.GetData(&quot;RingList&quot;);</a>
+<a name="ln66">    for (i = rlist-&gt;begin();i != rlist-&gt;end();++i)</a>
+<a name="ln67">    {</a>
+<a name="ln68">       for(j = (*i)-&gt;_path.begin(); j != (*i)-&gt;_path.end(); ++j)</a>
+<a name="ln69">          cout &lt;&lt; *j &lt;&lt; ' ';</a>
+<a name="ln70">       cout &lt;&lt; endl;</a>
+<a name="ln71">    }</a>
+<a name="ln72">    \endcode</a>
+<a name="ln73"> </a>
+<a name="ln74">    will produce something like the following output for benzene:</a>
+<a name="ln75"> </a>
+<a name="ln76">    \code</a>
+<a name="ln77">    1 2 3 4 5 6</a>
+<a name="ln78">    \endcode</a>
+<a name="ln79"> </a>
+<a name="ln80">    Ring information is automatically deleted from an OBMol when it goes</a>
+<a name="ln81">    out of scope or the OBMol::Clear() member function is called.</a>
+<a name="ln82"> </a>
+<a name="ln83">    Implements &lt;a href=&quot;http://qsar.sourceforge.net/dicts/blue-obelisk/index.xhtml#findSmallestSetOfSmallestRings&quot;&gt;blue-obelisk:findSmallestSetOfSmallestRings&lt;/a&gt;.</a>
+<a name="ln84">  */</a>
+<a name="ln85"> </a>
+<a name="ln86">  static int DetermineFRJ(OBMol &amp;);</a>
+<a name="ln87">  static void BuildOBRTreeVector(OBAtom*,OBRTree*,vector&lt;OBRTree*&gt;&amp;,OBBitVec&amp;);</a>
+<a name="ln88"> </a>
+<a name="ln89">  void OBMol::FindSSSR()</a>
+<a name="ln90">  {</a>
+<a name="ln91">    if (HasSSSRPerceived())</a>
+<a name="ln92">      return;</a>
+<a name="ln93">    SetSSSRPerceived();</a>
+<a name="ln94">    obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln95">                          &quot;Ran OpenBabel::FindSSSR&quot;, obAuditMsg);</a>
+<a name="ln96"> </a>
+<a name="ln97">    // Delete any old data before we start finding new rings</a>
+<a name="ln98">    // The following procedure is slow</a>
+<a name="ln99">    // So if client code is multi-threaded, we don't want to make them wait</a>
+<a name="ln100">    if (HasData(&quot;SSSR&quot;)) {</a>
+<a name="ln101">      DeleteData(&quot;SSSR&quot;);</a>
+<a name="ln102">    }</a>
+<a name="ln103"> </a>
+<a name="ln104">    OBRing *ring;</a>
+<a name="ln105">    vector&lt;OBRing*&gt;::iterator j;</a>
+<a name="ln106"> </a>
+<a name="ln107">    //get Fr�rejacque taking int account multiple possible spanning graphs</a>
+<a name="ln108">    int frj = DetermineFRJ(*this);</a>
+<a name="ln109">    if (frj)</a>
+<a name="ln110">      {</a>
+<a name="ln111">        vector&lt;OBRing*&gt; vr;</a>
+<a name="ln112">        FindRingAtomsAndBonds();</a>
+<a name="ln113"> </a>
+<a name="ln114">        OBBond *bond;</a>
+<a name="ln115">        vector&lt;OBBond*&gt; cbonds;</a>
+<a name="ln116">        vector&lt;OBBond*&gt;::iterator k;</a>
+<a name="ln117"> </a>
+<a name="ln118">        //restrict search for rings around closure bonds</a>
+<a name="ln119">        for (bond = BeginBond(k);bond;bond = NextBond(k))</a>
+<a name="ln120">          if (bond-&gt;IsClosure())</a>
+<a name="ln121">            cbonds.push_back(bond);</a>
+<a name="ln122"> </a>
+<a name="ln123">        if (!cbonds.empty())</a>
+<a name="ln124">          {</a>
+<a name="ln125">            OBRingSearch rs;</a>
+<a name="ln126">            //search for all rings about closures</a>
+<a name="ln127">            vector&lt;OBBond*&gt;::iterator i;</a>
+<a name="ln128"> </a>
+<a name="ln129">            for (i = cbonds.begin();i != cbonds.end();++i)</a>
+<a name="ln130">              rs.AddRingFromClosure(*this,(OBBond*)*i);</a>
+<a name="ln131"> </a>
+<a name="ln132">            rs.SortRings();</a>
+<a name="ln133">            rs.RemoveRedundant(frj);</a>
+<a name="ln134">            //store the SSSR set</a>
+<a name="ln135"> </a>
+<a name="ln136">            for (j = rs.BeginRings();j != rs.EndRings();++j)</a>
+<a name="ln137">              {</a>
+<a name="ln138">                ring = new OBRing ((*j)-&gt;_path,NumAtoms()+1);</a>
+<a name="ln139">                ring-&gt;SetParent(this);</a>
+<a name="ln140">                vr.push_back(ring);</a>
+<a name="ln141">              }</a>
+<a name="ln142">            //rs.WriteRings();</a>
+<a name="ln143">          }</a>
+<a name="ln144"> </a>
+<a name="ln145">        OBRingData *rd = new OBRingData();</a>
+<a name="ln146">        rd-&gt;SetOrigin(perceived); // to separate from user or file input</a>
+<a name="ln147">        rd-&gt;SetAttribute(&quot;SSSR&quot;);</a>
+<a name="ln148">        rd-&gt;SetData(vr);</a>
+<a name="ln149">        SetData(rd);</a>
+<a name="ln150">      }</a>
+<a name="ln151">  }</a>
+<a name="ln152"> </a>
+<a name="ln153">  std::vector&lt;unsigned int&gt; atomRingToBondRing(OBMol *mol, const std::vector&lt;int&gt; &amp;atoms)</a>
+<a name="ln154">  {</a>
+<a name="ln155">    std::vector&lt;unsigned int&gt; bonds;</a>
+<a name="ln156">    for (unsigned int i = 0; i &lt; atoms.size() - 1; ++i) {</a>
+<a name="ln157">      unsigned int beginIndex = atoms[i];</a>
+<a name="ln158">      unsigned int endIndex = atoms[i+1];</a>
+<a name="ln159">      unsigned int index = mol-&gt;GetBond(beginIndex, endIndex)-&gt;GetIdx();</a>
+<a name="ln160">      bonds.push_back(index);</a>
+<a name="ln161">    }</a>
+<a name="ln162">    bonds.push_back(mol-&gt;GetBond(atoms[0], atoms[atoms.size()-1])-&gt;GetIdx());</a>
+<a name="ln163">    return bonds;</a>
+<a name="ln164">  }</a>
+<a name="ln165"> </a>
+<a name="ln166">  /**</a>
+<a name="ln167">   * This function finds the LSSR containing all relevant cycles. A cycle is</a>
+<a name="ln168">   * relevant if it belongs to at least one minimum cycle basis. Another</a>
+<a name="ln169">   * description is more useful though:</a>
+<a name="ln170">   *</a>
+<a name="ln171">   * A cycle (C) is relevant if:</a>
+<a name="ln172">   * - no smaller cycles C_i, ..., C_k exist such that C = C_1 + ... + C_k</a>
+<a name="ln173">   * - both bonds &amp; atoms are checked</a>
+<a name="ln174">   *</a>
+<a name="ln175">   * This is based on lemma 1 from:</a>
+<a name="ln176">   *</a>
+<a name="ln177">   * P. Vismara, Union of all the minimum cycle bases of a graph, The electronic</a>
+<a name="ln178">   * journal of combinatorics, Vol. 4, 1997</a>
+<a name="ln179">   * http://www.emis.de/journals/EJC/Volume_4/PostScriptfiles/v4i1r9.ps</a>
+<a name="ln180">   */</a>
+<a name="ln181">  void visitRing(OBMol *mol, OBRing *ring, std::vector&lt;OBRing*&gt; &amp;rlist, std::vector&lt;OBRing*&gt; &amp;rignored)</a>
+<a name="ln182">  {</a>
+<a name="ln183">    OBBitVec mask;</a>
+<a name="ln184">    // Make sure mask is the same size as the maximum ring atom/bond index.</a>
+<a name="ln185">    mask.SetBitOn(mol-&gt;NumAtoms());</a>
+<a name="ln186">    mask.SetBitOn(mol-&gt;NumBonds());</a>
+<a name="ln187"> </a>
+<a name="ln188">    //</a>
+<a name="ln189">    // Remove larger rings that cover the same atoms as smaller rings.</a>
+<a name="ln190">    //</a>
+<a name="ln191">    mask.Clear();</a>
+<a name="ln192">    for (unsigned int j = 0; j &lt; rlist.size(); ++j)</a>
+<a name="ln193">      // Here we select only smaller rings.</a>
+<a name="ln194">      if (rlist[j]-&gt;_path.size() &lt; ring-&gt;_path.size())</a>
+<a name="ln195">        mask |= rlist[j]-&gt;_pathset;</a>
+<a name="ln196"> </a>
+<a name="ln197">    mask = mask &amp; ring-&gt;_pathset;</a>
+<a name="ln198"> </a>
+<a name="ln199">    bool containsSmallerAtomRing = (mask == ring-&gt;_pathset) ? true : false;</a>
+<a name="ln200"> </a>
+<a name="ln201">    // Translate ring atom indexes to ring bond indexes.</a>
+<a name="ln202">    std::vector&lt;unsigned int&gt; bonds = atomRingToBondRing(mol, ring-&gt;_path);</a>
+<a name="ln203">    OBBitVec bondset;</a>
+<a name="ln204">    for (unsigned int i = 0; i &lt; bonds.size(); ++i)</a>
+<a name="ln205">      bondset.SetBitOn(bonds[i]);</a>
+<a name="ln206"> </a>
+<a name="ln207">    //</a>
+<a name="ln208">    // Remove larger rings that cover the same bonds as smaller rings.</a>
+<a name="ln209">    //</a>
+<a name="ln210">    mask.Clear();</a>
+<a name="ln211">    for (unsigned int j = 0; j &lt; rlist.size(); ++j) {</a>
+<a name="ln212">      std::vector&lt;unsigned int&gt; otherBonds = atomRingToBondRing(mol, rlist[j]-&gt;_path);</a>
+<a name="ln213">      OBBitVec bs;</a>
+<a name="ln214">      for (unsigned int i = 0; i &lt; otherBonds.size(); ++i)</a>
+<a name="ln215">        bs.SetBitOn(otherBonds[i]);</a>
+<a name="ln216"> </a>
+<a name="ln217">      // Here we select only smaller rings.</a>
+<a name="ln218">      if (otherBonds.size() &lt; bonds.size())</a>
+<a name="ln219">        mask |= bs;</a>
+<a name="ln220">    }</a>
+<a name="ln221"> </a>
+<a name="ln222">    mask = mask &amp; bondset;</a>
+<a name="ln223"> </a>
+<a name="ln224">    bool containsSmallerBondRing = (mask == bondset) ? true : false;</a>
+<a name="ln225"> </a>
+<a name="ln226">    // The ring is part of the LSSR if all it's atoms and bonds are not</a>
+<a name="ln227">    // found in smaller rings.</a>
+<a name="ln228">    if (!containsSmallerAtomRing || !containsSmallerBondRing) {</a>
+<a name="ln229">      rlist.push_back(ring);</a>
+<a name="ln230">    } else {</a>
+<a name="ln231">      rignored.push_back(ring);</a>
+<a name="ln232">    }</a>
+<a name="ln233">  }</a>
+<a name="ln234"> </a>
+<a name="ln235"> </a>
+<a name="ln236">  void OBMol::FindLSSR()</a>
+<a name="ln237">  {</a>
+<a name="ln238">    if (HasLSSRPerceived())</a>
+<a name="ln239">      return;</a>
+<a name="ln240">    SetLSSRPerceived();</a>
+<a name="ln241">    obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln242">                          &quot;Ran OpenBabel::FindLSSR&quot;, obAuditMsg);</a>
+<a name="ln243"> </a>
+<a name="ln244">    // Delete any old data before we start finding new rings</a>
+<a name="ln245">    // The following procedure is slow</a>
+<a name="ln246">    // So if client code is multi-threaded, we don't want to make them wait</a>
+<a name="ln247">    if (HasData(&quot;LSSR&quot;)) {</a>
+<a name="ln248">      DeleteData(&quot;LSSR&quot;);</a>
+<a name="ln249">    }</a>
+<a name="ln250"> </a>
+<a name="ln251">    OBRing *ring;</a>
+<a name="ln252">    vector&lt;OBRing*&gt;::iterator j;</a>
+<a name="ln253"> </a>
+<a name="ln254">    //get frerejaque taking int account multiple possible spanning graphs</a>
+<a name="ln255">    int frj = DetermineFRJ(*this);</a>
+<a name="ln256">    if (frj)</a>
+<a name="ln257">      {</a>
+<a name="ln258">        vector&lt;OBRing*&gt; vr;</a>
+<a name="ln259">        FindRingAtomsAndBonds();</a>
+<a name="ln260"> </a>
+<a name="ln261">        OBBond *bond;</a>
+<a name="ln262">        vector&lt;OBBond*&gt; cbonds;</a>
+<a name="ln263">        vector&lt;OBBond*&gt;::iterator k;</a>
+<a name="ln264"> </a>
+<a name="ln265">        //restrict search for rings around closure bonds</a>
+<a name="ln266">        for (bond = BeginBond(k);bond;bond = NextBond(k))</a>
+<a name="ln267">          if (bond-&gt;IsClosure())</a>
+<a name="ln268">            cbonds.push_back(bond);</a>
+<a name="ln269"> </a>
+<a name="ln270">        if (!cbonds.empty())</a>
+<a name="ln271">          {</a>
+<a name="ln272">            OBRingSearch rs;</a>
+<a name="ln273">            //search for all rings about closures</a>
+<a name="ln274">            vector&lt;OBBond*&gt;::iterator i;</a>
+<a name="ln275"> </a>
+<a name="ln276">            for (i = cbonds.begin();i != cbonds.end();++i)</a>
+<a name="ln277">              rs.AddRingFromClosure(*this,(OBBond*)*i);</a>
+<a name="ln278"> </a>
+<a name="ln279">            rs.SortRings();</a>
+<a name="ln280">            rs.RemoveRedundant(-1); // -1 means LSSR</a>
+<a name="ln281"> </a>
+<a name="ln282">            //store the LSSR set</a>
+<a name="ln283"> </a>
+<a name="ln284">            for (j = rs.BeginRings();j != rs.EndRings();++j)</a>
+<a name="ln285">              {</a>
+<a name="ln286">                ring = new OBRing ((*j)-&gt;_path,NumAtoms()+1);</a>
+<a name="ln287">                ring-&gt;SetParent(this);</a>
+<a name="ln288">                vr.push_back(ring);</a>
+<a name="ln289">              }</a>
+<a name="ln290">            //rs.WriteRings();</a>
+<a name="ln291">          }</a>
+<a name="ln292"> </a>
+<a name="ln293">        OBRingData *rd = new OBRingData();</a>
+<a name="ln294">        rd-&gt;SetOrigin(perceived); // to separate from user or file input</a>
+<a name="ln295">        rd-&gt;SetAttribute(&quot;LSSR&quot;);</a>
+<a name="ln296">        rd-&gt;SetData(vr);</a>
+<a name="ln297">        SetData(rd);</a>
+<a name="ln298">      }</a>
+<a name="ln299">  }</a>
+<a name="ln300"> </a>
+<a name="ln301">  static unsigned int FindRingAtomsAndBonds2(OBMol &amp;mol);</a>
+<a name="ln302"> </a>
+<a name="ln303">  static int DetermineFRJ(OBMol &amp;mol)</a>
+<a name="ln304">  {</a>
+<a name="ln305">    if (!mol.HasClosureBondsPerceived())</a>
+<a name="ln306">      return (int)FindRingAtomsAndBonds2(mol);</a>
+<a name="ln307"> </a>
+<a name="ln308">    int frj = 0;</a>
+<a name="ln309">    OBBond *bond;</a>
+<a name="ln310">    vector&lt;OBBond*&gt;::iterator j;</a>
+<a name="ln311">    for (bond = mol.BeginBond(j);bond;bond = mol.NextBond(j))</a>
+<a name="ln312">      if (bond-&gt;IsClosure()) // bond-&gt;HasFlag(OB_CLOSURE_BOND)?</a>
+<a name="ln313">        frj++;</a>
+<a name="ln314">    return frj;</a>
+<a name="ln315">  }</a>
+<a name="ln316"> </a>
+<a name="ln317">  void OBRingSearch::RemoveRedundant(int frj)</a>
+<a name="ln318">  {</a>
+<a name="ln319">    int i,j;</a>
+<a name="ln320"> </a>
+<a name="ln321">    //remove identical rings</a>
+<a name="ln322">    for (i = _rlist.size()-1;i &gt; 0;i--)</a>
+<a name="ln323">      for (j = i-1;j &gt;= 0;j--)</a>
+<a name="ln324">        if ((_rlist[i])-&gt;_pathset == (_rlist[j])-&gt;_pathset)</a>
+<a name="ln325">          {</a>
+<a name="ln326">            delete _rlist[i];</a>
+<a name="ln327">            _rlist.erase(_rlist.begin()+i);</a>
+<a name="ln328">            break;</a>
+<a name="ln329">          }</a>
+<a name="ln330"> </a>
+<a name="ln331">    if (_rlist.size() == 0)</a>
+<a name="ln332">      return; // nothing to do</a>
+<a name="ln333"> </a>
+<a name="ln334">    // handle LSSR</a>
+<a name="ln335">    if (frj &lt; 0) {</a>
+<a name="ln336">      OBMol *mol = _rlist[0]-&gt;GetParent();</a>
+<a name="ln337">      std::vector&lt;OBRing*&gt; rlist, rignored;</a>
+<a name="ln338">      for (unsigned int i = 0; i &lt; _rlist.size(); ++i) {</a>
+<a name="ln339">        visitRing(mol, _rlist[i], rlist, rignored);</a>
+<a name="ln340">      }</a>
+<a name="ln341">      for (unsigned int i = 0; i &lt; rignored.size(); ++i)</a>
+<a name="ln342">        delete rignored[i];</a>
+<a name="ln343">      _rlist = rlist;</a>
+<a name="ln344">      return;</a>
+<a name="ln345">    }</a>
+<a name="ln346"> </a>
+<a name="ln347">    // exit if we already have frj rings</a>
+<a name="ln348">    if (_rlist.size() == (unsigned)frj)</a>
+<a name="ln349">      return;</a>
+<a name="ln350"> </a>
+<a name="ln351">    //make sure tmp is the same size as the rings</a>
+<a name="ln352">    OBBitVec tmp;</a>
+<a name="ln353">    for (j = 0;j &lt; (signed)_rlist.size();++j)</a>
+<a name="ln354">      tmp = (_rlist[j])-&gt;_pathset;</a>
+<a name="ln355"> </a>
+<a name="ln356">    //remove larger rings that cover the same atoms as smaller rings</a>
+<a name="ln357">    for (i = _rlist.size()-1;i &gt;= 0;i--)</a>
+<a name="ln358">      {</a>
+<a name="ln359">        tmp.Clear();</a>
+<a name="ln360">        for (j = 0;j &lt; (signed)_rlist.size();++j)</a>
+<a name="ln361">          if ((_rlist[j])-&gt;_path.size() &lt;= (_rlist[i])-&gt;_path.size() &amp;&amp; i != j)</a>
+<a name="ln362">            tmp |= (_rlist[j])-&gt;_pathset;</a>
+<a name="ln363"> </a>
+<a name="ln364">        tmp = tmp &amp; (_rlist[i])-&gt;_pathset;</a>
+<a name="ln365"> </a>
+<a name="ln366">        if (tmp == (_rlist[i])-&gt;_pathset)</a>
+<a name="ln367">          {</a>
+<a name="ln368">            delete _rlist[i];</a>
+<a name="ln369">            _rlist.erase(_rlist.begin()+i);</a>
+<a name="ln370">          }</a>
+<a name="ln371"> </a>
+<a name="ln372">        if (_rlist.size() == (unsigned)frj)</a>
+<a name="ln373">          break;</a>
+<a name="ln374">      }</a>
+<a name="ln375">  }</a>
+<a name="ln376"> </a>
+<a name="ln377"> </a>
+<a name="ln378">  void OBRingSearch::AddRingFromClosure(OBMol &amp;mol,OBBond *cbond)</a>
+<a name="ln379">  {</a>
+<a name="ln380">    vector&lt;OBRTree*&gt; t1(mol.NumAtoms()+1, nullptr);</a>
+<a name="ln381">    vector&lt;OBRTree*&gt; t2(mol.NumAtoms()+1, nullptr);</a>
+<a name="ln382">    OBBitVec bv1,bv2;</a>
+<a name="ln383"> </a>
+<a name="ln384">    bv1.SetBitOn(cbond-&gt;GetEndAtomIdx());</a>
+<a name="ln385">    bv2.SetBitOn(cbond-&gt;GetBeginAtomIdx());</a>
+<a name="ln386">    BuildOBRTreeVector(cbond-&gt;GetBeginAtom(), nullptr, t1, bv1);</a>
+<a name="ln387">    BuildOBRTreeVector(cbond-&gt;GetEndAtom(), nullptr, t2, bv2);</a>
+<a name="ln388"> </a>
+<a name="ln389">    bool pathok;</a>
+<a name="ln390">    deque&lt;int&gt; p1,p2;</a>
+<a name="ln391">    vector&lt;OBAtom*&gt; path1,path2;</a>
+<a name="ln392">    vector&lt;OBAtom*&gt;::iterator m,n;</a>
+<a name="ln393">    vector&lt;OBRTree*&gt;::iterator i;</a>
+<a name="ln394"> </a>
+<a name="ln395">    for (i = t1.begin();i != t1.end();++i)</a>
+<a name="ln396">      if (*i)</a>
+<a name="ln397">        {</a>
+<a name="ln398">          path1.clear();</a>
+<a name="ln399">          (*i)-&gt;PathToRoot(path1);</a>
+<a name="ln400"> </a>
+<a name="ln401">          if (t2[(*i)-&gt;GetAtomIdx()])</a>
+<a name="ln402">            {</a>
+<a name="ln403">              pathok = true;</a>
+<a name="ln404">              path2.clear();</a>
+<a name="ln405">              t2[(*i)-&gt;GetAtomIdx()]-&gt;PathToRoot(path2);</a>
+<a name="ln406"> </a>
+<a name="ln407">              p1.clear();</a>
+<a name="ln408">              m = path1.begin();</a>
+<a name="ln409">              if (m != path1.end())</a>
+<a name="ln410">                p1.push_back((*m)-&gt;GetIdx());</a>
+<a name="ln411">              for (m = path1.begin(),++m;m != path1.end();++m)</a>
+<a name="ln412">                {</a>
+<a name="ln413">                  p1.push_back((*m)-&gt;GetIdx());</a>
+<a name="ln414">                  p2.clear();</a>
+<a name="ln415">                  for (n = path2.begin(),++n;n != path2.end();++n)</a>
+<a name="ln416">                    {</a>
+<a name="ln417">                      p2.push_front((*n)-&gt;GetIdx());</a>
+<a name="ln418">                      if (*n == *m)//don't traverse across identical atoms</a>
+<a name="ln419">                        {</a>
+<a name="ln420">                          p2.pop_front();</a>
+<a name="ln421">                          if (p1.size()+p2.size() &gt; 2)</a>
+<a name="ln422">                            SaveUniqueRing(p1,p2);</a>
+<a name="ln423">                          pathok = false;</a>
+<a name="ln424">                          break;</a>
+<a name="ln425">                        }</a>
+<a name="ln426">                      if ((*n)-&gt;IsConnected(*m) &amp;&amp; p1.size()+p2.size() &gt; 2)</a>
+<a name="ln427">                        SaveUniqueRing(p1,p2);</a>
+<a name="ln428">                    }</a>
+<a name="ln429">                  if (!pathok)</a>
+<a name="ln430">                    break;</a>
+<a name="ln431">                }</a>
+<a name="ln432">            }</a>
+<a name="ln433">        }</a>
+<a name="ln434"> </a>
+<a name="ln435">    //clean up OBRTree vectors</a>
+<a name="ln436">    for (i = t1.begin();i != t1.end();++i)</a>
+<a name="ln437">      if (*i)</a>
+<a name="ln438">        delete *i;</a>
+<a name="ln439"> </a>
+<a name="ln440">    for (i = t2.begin();i != t2.end();++i)</a>
+<a name="ln441">      if (*i)</a>
+<a name="ln442">        delete *i;</a>
+<a name="ln443"> </a>
+<a name="ln444">    // set parent for all rings</a>
+<a name="ln445">    for (unsigned int j = 0; j &lt; _rlist.size(); ++j)</a>
+<a name="ln446">      _rlist[j]-&gt;SetParent(&amp;mol);</a>
+<a name="ln447">  }</a>
+<a name="ln448"> </a>
+<a name="ln449">  bool OBRingSearch::SaveUniqueRing(deque&lt;int&gt; &amp;d1,deque&lt;int&gt; &amp;d2)</a>
+<a name="ln450">  {</a>
+<a name="ln451">    vector&lt;int&gt; path;</a>
+<a name="ln452">    OBBitVec bv;</a>
+<a name="ln453">    deque&lt;int&gt;::iterator i;</a>
+<a name="ln454"> </a>
+<a name="ln455">    for (i = d1.begin();i != d1.end();++i)</a>
+<a name="ln456">      {</a>
+<a name="ln457">        bv.SetBitOn(*i);</a>
+<a name="ln458">        path.push_back(*i);</a>
+<a name="ln459">      }</a>
+<a name="ln460"> </a>
+<a name="ln461">    for (i = d2.begin();i != d2.end();++i)</a>
+<a name="ln462">      {</a>
+<a name="ln463">        bv.SetBitOn(*i);</a>
+<a name="ln464">        path.push_back(*i);</a>
+<a name="ln465">      }</a>
+<a name="ln466"> </a>
+<a name="ln467">    vector&lt;OBRing*&gt;::iterator j;</a>
+<a name="ln468">    for (j = _rlist.begin();j != _rlist.end();++j)</a>
+<a name="ln469">      if (bv == (*j)-&gt;_pathset)</a>
+<a name="ln470">        return(false);</a>
+<a name="ln471"> </a>
+<a name="ln472">    OBRing *ring = new OBRing(path, bv);</a>
+<a name="ln473">    _rlist.push_back(ring);</a>
+<a name="ln474"> </a>
+<a name="ln475">    return(true);</a>
+<a name="ln476">  }</a>
+<a name="ln477"> </a>
+<a name="ln478">  //! Destructor -- free all rings created from this search</a>
+<a name="ln479">  OBRingSearch::~OBRingSearch()</a>
+<a name="ln480">  {</a>
+<a name="ln481">    vector&lt;OBRing*&gt;::iterator i;</a>
+<a name="ln482">    for (i = _rlist.begin();i != _rlist.end();++i)</a>
+<a name="ln483">      delete *i;</a>
+<a name="ln484">  }</a>
+<a name="ln485"> </a>
+<a name="ln486">  bool CompareRingSize(const OBRing *a,const OBRing *b)</a>
+<a name="ln487">  {</a>
+<a name="ln488">    return(a-&gt;Size() == b-&gt;Size() ? a-&gt;ring_id &lt; b-&gt;ring_id : a-&gt;Size() &lt; b-&gt;Size()); // ensure stable sort</a>
+<a name="ln489">  }</a>
+<a name="ln490"> </a>
+<a name="ln491">  void OBRingSearch::WriteRings()</a>
+<a name="ln492">  {</a>
+<a name="ln493">    vector&lt;OBRing*&gt;::iterator i;</a>
+<a name="ln494"> </a>
+<a name="ln495">    for (i = _rlist.begin();i != _rlist.end();++i)</a>
+<a name="ln496">      cout &lt;&lt; (*i)-&gt;_pathset &lt;&lt; endl;</a>
+<a name="ln497">  }</a>
+<a name="ln498"> </a>
+<a name="ln499">  /* A recursive O(N) traversal of the molecule */</a>
+<a name="ln500">  static int FindRings(OBAtom *atom, int *avisit, unsigned char *bvisit,</a>
+<a name="ln501">                       unsigned int &amp;frj, int depth)</a>
+<a name="ln502">  {</a>
+<a name="ln503">    OBBond *bond;</a>
+<a name="ln504">    int result = -1;</a>
+<a name="ln505">    vector&lt;OBBond*&gt;::iterator k;</a>
+<a name="ln506">    for(bond = atom-&gt;BeginBond(k);bond;bond=atom-&gt;NextBond(k)) {</a>
+<a name="ln507">      unsigned int bidx = bond-&gt;GetIdx();</a>
+<a name="ln508">      if (bvisit[bidx] == 0) {</a>
+<a name="ln509">        bvisit[bidx] = 1;</a>
+<a name="ln510">        OBAtom *nbor = bond-&gt;GetNbrAtom(atom);</a>
+<a name="ln511">        unsigned int nidx = nbor-&gt;GetIdx();</a>
+<a name="ln512">        int nvisit = avisit[nidx];</a>
+<a name="ln513">        if (nvisit == 0) {</a>
+<a name="ln514">          avisit[nidx] = depth+1;</a>
+<a name="ln515">          nvisit = FindRings(nbor,avisit,bvisit,frj,depth+1);</a>
+<a name="ln516">          if (nvisit &gt; 0) {</a>
+<a name="ln517">            if (nvisit &lt;= depth) {</a>
+<a name="ln518">              bond-&gt;SetInRing();</a>
+<a name="ln519">              if (result &lt; 0 || nvisit &lt; result)</a>
+<a name="ln520">                result = nvisit;</a>
+<a name="ln521">            }</a>
+<a name="ln522">          }</a>
+<a name="ln523">        } else {</a>
+<a name="ln524">          if (result &lt; 0 || nvisit &lt; result)</a>
+<a name="ln525">            result = nvisit;</a>
+<a name="ln526">          bond-&gt;SetClosure();</a>
+<a name="ln527">          bond-&gt;SetInRing();</a>
+<a name="ln528">          frj++;</a>
+<a name="ln529">        }</a>
+<a name="ln530">      }</a>
+<a name="ln531">    }</a>
+<a name="ln532">    if (result &gt; 0 &amp;&amp; result &lt;= depth)</a>
+<a name="ln533">      atom-&gt;SetInRing();</a>
+<a name="ln534">    return result;</a>
+<a name="ln535">  }</a>
+<a name="ln536"> </a>
+<a name="ln537">  static unsigned int FindRingAtomsAndBonds2(OBMol &amp;mol)</a>
+<a name="ln538">  {</a>
+<a name="ln539">    mol.SetRingAtomsAndBondsPerceived(); // mol.SetFlag(OB_RINGFLAGS_MOL);</a>
+<a name="ln540">    mol.SetClosureBondsPerceived();      // mol.SetFlag(OB_CLOSURE_MOL);</a>
+<a name="ln541"> </a>
+<a name="ln542">    FOR_ATOMS_OF_MOL(atom, mol)</a>
+<a name="ln543">      atom-&gt;SetInRing(false);</a>
+<a name="ln544">    FOR_BONDS_OF_MOL(bond, mol) {</a>
+<a name="ln545">      bond-&gt;SetInRing(false);</a>
+<a name="ln546">      bond-&gt;SetClosure(false);</a>
+<a name="ln547">    }</a>
+<a name="ln548"> </a>
+<a name="ln549">    unsigned int bsize = mol.NumBonds()+1;</a>
+<a name="ln550">    unsigned char *bvisit = (unsigned char*)malloc(bsize);</a>
+<a name="ln551">    memset(bvisit,0,bsize);</a>
+<a name="ln552"> </a>
+<a name="ln553">    unsigned int acount = mol.NumAtoms();</a>
+<a name="ln554">    unsigned int asize = (unsigned int)((acount+1)*sizeof(int));</a>
+<a name="ln555">    int *avisit = (int*)malloc(asize);</a>
+<a name="ln556">    memset(avisit,0,asize);</a>
+<a name="ln557"> </a>
+<a name="ln558">    unsigned int frj = 0;</a>
+<a name="ln559">    for(unsigned int i=1; i&lt;=acount; i++ )</a>
+<a name="ln560">      if(avisit[i] == 0) {</a>
+<a name="ln561">        avisit[i] = 1;</a>
+<a name="ln562">        OBAtom *atom = mol.GetAtom(i);</a>
+<a name="ln563">        FindRings(atom,avisit,bvisit,frj,1);</a>
+<a name="ln564">      }</a>
+<a name="ln565">    free(avisit);</a>
+<a name="ln566">    free(bvisit);</a>
+<a name="ln567">    return frj;</a>
+<a name="ln568">  }</a>
+<a name="ln569"> </a>
+<a name="ln570">  void OBMol::FindRingAtomsAndBonds()</a>
+<a name="ln571">  {</a>
+<a name="ln572">    if (HasFlag(OB_RINGFLAGS_MOL))</a>
+<a name="ln573">      return;</a>
+<a name="ln574">    if (obErrorLog.GetOutputLevel() &gt;= obAuditMsg)</a>
+<a name="ln575">      obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln576">                            &quot;Ran OpenBabel::FindRingAtomsAndBonds&quot;, obAuditMsg);</a>
+<a name="ln577">    FindRingAtomsAndBonds2(*this);</a>
+<a name="ln578">  }</a>
+<a name="ln579"> </a>
+<a name="ln580">  bool OBRing::IsAromatic()</a>
+<a name="ln581">  {</a>
+<a name="ln582">    OBMol *mol = _parent;</a>
+<a name="ln583">    vector&lt;int&gt;::iterator i;</a>
+<a name="ln584">    for (i = _path.begin();i != _path.end();++i)</a>
+<a name="ln585">      if (!(mol-&gt;GetAtom(*i))-&gt;IsAromatic())</a>
+<a name="ln586">        return(false);</a>
+<a name="ln587"> </a>
+<a name="ln588">    return(true);</a>
+<a name="ln589">  }</a>
+<a name="ln590"> </a>
+<a name="ln591">  void OBRing::SetType(char *type)</a>
+<a name="ln592">  {</a>
+<a name="ln593">    strncpy(_type,type, sizeof(_type) - 1);</a>
+<a name="ln594">    _type[sizeof(_type) - 1] = '\0';</a>
+<a name="ln595">  }</a>
+<a name="ln596"> </a>
+<a name="ln597">  void OBRing::SetType(std::string &amp;type)</a>
+<a name="ln598">  {</a>
+<a name="ln599">     strncpy(_type,type.c_str(), sizeof(_type) - 1);</a>
+<a name="ln600">    _type[sizeof(_type) - 1] = '\0';</a>
+<a name="ln601">  }</a>
+<a name="ln602"> </a>
+<a name="ln603">  char* OBRing::GetType()</a>
+<a name="ln604">  {</a>
+<a name="ln605">    OBMol *mol = (OBMol*)GetParent();</a>
+<a name="ln606">    if (mol &amp;&amp; !mol-&gt;HasRingTypesPerceived())</a>
+<a name="ln607">      ringtyper.AssignTypes(*((OBMol*)GetParent()));</a>
+<a name="ln608"> </a>
+<a name="ln609">    return(_type);</a>
+<a name="ln610">  }</a>
+<a name="ln611"> </a>
+<a name="ln612">  unsigned int OBRing::GetRootAtom()</a>
+<a name="ln613">  {</a>
+<a name="ln614">    vector&lt;int&gt;::iterator i;</a>
+<a name="ln615">    OBMol *mol = (OBMol*)GetParent();</a>
+<a name="ln616"> </a>
+<a name="ln617">    //if (!IsAromatic())</a>
+<a name="ln618">    //  return 0;</a>
+<a name="ln619"> </a>
+<a name="ln620">    if (Size() == 6)</a>
+<a name="ln621">      for (i = _path.begin();i != _path.end();++i)</a>
+<a name="ln622">        if (mol-&gt;GetAtom(*i)-&gt;GetAtomicNum() != OBElements::Carbon)</a>
+<a name="ln623">	        return (*i);</a>
+<a name="ln624"> </a>
+<a name="ln625">    if (Size() == 5)</a>
+<a name="ln626">      for (i = _path.begin();i != _path.end();++i) {</a>
+<a name="ln627">        OBAtom *atom = mol-&gt;GetAtom(*i);</a>
+<a name="ln628">        switch (atom-&gt;GetAtomicNum()) {</a>
+<a name="ln629">        case OBElements::Sulfur:</a>
+<a name="ln630">          if (atom-&gt;GetExplicitDegree() == 2)</a>
+<a name="ln631">            return (*i);</a>
+<a name="ln632">          break;</a>
+<a name="ln633">        case OBElements::Oxygen:</a>
+<a name="ln634">          if (atom-&gt;GetExplicitDegree() == 2)</a>
+<a name="ln635">            return (*i);</a>
+<a name="ln636">          break;</a>
+<a name="ln637">        case OBElements::Nitrogen:</a>
+<a name="ln638">          if (atom-&gt;GetExplicitValence() == atom-&gt;GetExplicitDegree())</a>
+<a name="ln639">            return (*i);</a>
+<a name="ln640">          break;</a>
+<a name="ln641">        }</a>
+<a name="ln642">      }</a>
+<a name="ln643"> </a>
+<a name="ln644">    return 0;</a>
+<a name="ln645">  }</a>
+<a name="ln646"> </a>
+<a name="ln647">  bool OBRing::IsMember(OBAtom *a)</a>
+<a name="ln648">  {</a>
+<a name="ln649">    return(_pathset.BitIsSet(a-&gt;GetIdx()));</a>
+<a name="ln650">  }</a>
+<a name="ln651"> </a>
+<a name="ln652">  bool OBRing::IsMember(OBBond *b)</a>
+<a name="ln653">  {</a>
+<a name="ln654">    return((_pathset.BitIsSet(b-&gt;GetBeginAtomIdx()))&amp;&amp;(_pathset.BitIsSet(b-&gt;GetEndAtomIdx())));</a>
+<a name="ln655">  }</a>
+<a name="ln656"> </a>
+<a name="ln657">  OBRing::OBRing(vector&lt;int&gt; &amp;path,int size) : _path(path)</a>
+<a name="ln658">  {</a>
+<a name="ln659">    _pathset.FromVecInt(_path);</a>
+<a name="ln660">    _pathset.Resize(size);</a>
+<a name="ln661">    _type[0] = '\0';</a>
+<a name="ln662">  }</a>
+<a name="ln663"> </a>
+<a name="ln664">  /*!</a>
+<a name="ln665">  **\brief OBRing copy constructor</a>
+<a name="ln666">  **\param src reference to original OBRing object (rhs)</a>
+<a name="ln667">  */</a>
+<a name="ln668">  OBRing::OBRing(const OBRing &amp;src)</a>
+<a name="ln669">    //no base class</a>
+<a name="ln670">    : _path(src._path),	_pathset(src._pathset)	//chain to member classes</a>
+<a name="ln671">  {</a>
+<a name="ln672">    //member data</a>
+<a name="ln673">    _parent = src._parent;  //this may not be what you want, but it's a default</a>
+<a name="ln674">    _type[0] = '\0';</a>
+<a name="ln675">  }</a>
+<a name="ln676"> </a>
+<a name="ln677">  /*!</a>
+<a name="ln678">  **\brief OBRing assignment operator</a>
+<a name="ln679">  **\param src reference to original OBRing object (rhs)</a>
+<a name="ln680">  **\return reference to modified OBRing object (lhs)</a>
+<a name="ln681">  */</a>
+<a name="ln682">  OBRing&amp; OBRing::operator =(const OBRing &amp;src)</a>
+<a name="ln683">  {</a>
+<a name="ln684">    //on identity, return</a>
+<a name="ln685">    if(this == &amp;src)</a>
+<a name="ln686">      return(*this);</a>
+<a name="ln687"> </a>
+<a name="ln688">    //no base class</a>
+<a name="ln689"> </a>
+<a name="ln690">    //memeber classes &amp; data</a>
+<a name="ln691">    _path = src._path;</a>
+<a name="ln692">    _pathset = src._pathset;</a>
+<a name="ln693">    _parent = src._parent; //note, this may not be what you want</a>
+<a name="ln694">    _type[0] = '\0';</a>
+<a name="ln695"> </a>
+<a name="ln696">    return(*this);</a>
+<a name="ln697">  }</a>
+<a name="ln698"> </a>
+<a name="ln699">  void BuildOBRTreeVector(OBAtom *atom,OBRTree *prv,vector&lt;OBRTree*&gt; &amp;vt,OBBitVec &amp;bv)</a>
+<a name="ln700">  {</a>
+<a name="ln701">    vt[atom-&gt;GetIdx()] = new OBRTree (atom,prv);</a>
+<a name="ln702"> </a>
+<a name="ln703">    int i;</a>
+<a name="ln704">    OBAtom *nbr;</a>
+<a name="ln705">    OBMol *mol = (OBMol*)atom-&gt;GetParent();</a>
+<a name="ln706">    OBBitVec curr,used,next;</a>
+<a name="ln707">    vector&lt;OBBond*&gt;::iterator j;</a>
+<a name="ln708">    curr |= atom-&gt;GetIdx();</a>
+<a name="ln709">    used = bv|curr;</a>
+<a name="ln710"> </a>
+<a name="ln711">#define OB_RTREE_CUTOFF 20</a>
+<a name="ln712"> </a>
+<a name="ln713">    int level=0;</a>
+<a name="ln714">    for (;;)</a>
+<a name="ln715">      {</a>
+<a name="ln716">        next.Clear();</a>
+<a name="ln717">        for (i = curr.NextBit(0);i != bv.EndBit();i = curr.NextBit(i))</a>
+<a name="ln718">          {</a>
+<a name="ln719">            atom = mol-&gt;GetAtom(i);</a>
+<a name="ln720">            for (nbr = atom-&gt;BeginNbrAtom(j);nbr;nbr = atom-&gt;NextNbrAtom(j))</a>
+<a name="ln721">              if (!used[nbr-&gt;GetIdx()])</a>
+<a name="ln722">                {</a>
+<a name="ln723">                  next |= nbr-&gt;GetIdx();</a>
+<a name="ln724">                  used |= nbr-&gt;GetIdx();</a>
+<a name="ln725">                  vt[nbr-&gt;GetIdx()] = new OBRTree (nbr,vt[atom-&gt;GetIdx()]);</a>
+<a name="ln726">                }</a>
+<a name="ln727">          }</a>
+<a name="ln728"> </a>
+<a name="ln729">        if (next.IsEmpty())</a>
+<a name="ln730">          break;</a>
+<a name="ln731">        curr = next;</a>
+<a name="ln732">        level++;</a>
+<a name="ln733">        if (level &gt; OB_RTREE_CUTOFF)</a>
+<a name="ln734">          break;</a>
+<a name="ln735">      }</a>
+<a name="ln736">#undef OB_RTREE_CUTOFF</a>
+<a name="ln737">  }</a>
+<a name="ln738"> </a>
+<a name="ln739">  OBRTree::OBRTree(OBAtom *atom,OBRTree *prv)</a>
+<a name="ln740">  {</a>
+<a name="ln741">    _atom = atom;</a>
+<a name="ln742">    _prv = prv;</a>
+<a name="ln743">  }</a>
+<a name="ln744"> </a>
+<a name="ln745">  //! The supplied path is built up of OBAtom nodes, with the root atom</a>
+<a name="ln746">  //! the last item in the vector.</a>
+<a name="ln747">  void OBRTree::PathToRoot(vector&lt;OBAtom*&gt; &amp;path)</a>
+<a name="ln748">  {</a>
+<a name="ln749">    path.push_back(_atom);</a>
+<a name="ln750">    if (_prv)</a>
+<a name="ln751">      _prv-&gt;PathToRoot(path);</a>
+<a name="ln752">  }</a>
+<a name="ln753"> </a>
+<a name="ln754">  int OBRTree::GetAtomIdx()</a>
+<a name="ln755">  {</a>
+<a name="ln756">    return(_atom-&gt;GetIdx());</a>
+<a name="ln757">  }</a>
+<a name="ln758"> </a>
+<a name="ln759">  bool OBRing::findCenterAndNormal(vector3 &amp; center, vector3 &amp;norm1, vector3 &amp;norm2)</a>
+<a name="ln760">  {</a>
+<a name="ln761">    OBMol *mol= this-&gt;_parent;</a>
+<a name="ln762">    int j= 0;</a>
+<a name="ln763">    const int nA= this-&gt;_path.size();</a>
+<a name="ln764">    vector3 tmp;</a>
+<a name="ln765"> </a>
+<a name="ln766">    center.Set(0.0,0.0,0.0);</a>
+<a name="ln767">    norm1.Set(0.0,0.0,0.0);</a>
+<a name="ln768">    norm2.Set(0.0,0.0,0.0);</a>
+<a name="ln769">    for (j = 0; j != nA; ++j)</a>
+<a name="ln770">      {</a>
+<a name="ln771">        center += (mol-&gt;GetAtom(_path[j]))-&gt;GetVector();</a>
+<a name="ln772">      }</a>
+<a name="ln773">    center/= double(nA);</a>
+<a name="ln774"> </a>
+<a name="ln775">    for (j = 0; j != nA; ++j)</a>
+<a name="ln776">      {</a>
+<a name="ln777">        vector3 v1= (mol-&gt;GetAtom(_path[j]))-&gt;GetVector() - center;</a>
+<a name="ln778">        vector3 v2= (mol-&gt;GetAtom(_path[j+1==nA?0:j+1]))-&gt;GetVector() - center;</a>
+<a name="ln779">        tmp= cross(v1,v2);</a>
+<a name="ln780">        norm1+= tmp;</a>
+<a name="ln781">      }</a>
+<a name="ln782">    norm1/= double(nA);</a>
+<a name="ln783">    norm1.normalize();</a>
+<a name="ln784">    norm2= norm1;</a>
+<a name="ln785">    norm2 *= -1.0;</a>
+<a name="ln786">    return(true);</a>
+<a name="ln787">  }</a>
+<a name="ln788"> </a>
+<a name="ln789">} // end namespace OpenBabel</a>
+<a name="ln790"> </a>
+<a name="ln791">//! \file ring.cpp</a>
+<a name="ln792">//! \brief Deal with rings, find smallest set of smallest rings (SSSR).</a>
+
+</code></pre>
+<div class="balloon" rel="551"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v575/" target="_blank">V575</a> The potential null pointer is passed into 'memset' function. Inspect the first argument. Check lines: 551, 550.</p></div>
+<div class="balloon" rel="556"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v575/" target="_blank">V575</a> The potential null pointer is passed into 'memset' function. Inspect the first argument. Check lines: 556, 555.</p></div>
+<div class="balloon" rel="630"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 630, 634</p></div>
+<div class="balloon" rel="657"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v730/" target="_blank">V730</a> Not all members of a class are initialized inside the constructor. Consider inspecting: _parent, ring_id.</p></div>
+<div class="balloon" rel="668"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v730/" target="_blank">V730</a> Not all members of a class are initialized inside the constructor. Consider inspecting: ring_id.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

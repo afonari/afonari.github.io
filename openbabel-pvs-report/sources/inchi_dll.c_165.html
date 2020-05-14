@@ -1,0 +1,2716 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>inchi_dll.c</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/*</a>
+<a name="ln2"> * International Chemical Identifier (InChI)</a>
+<a name="ln3"> * Version 1</a>
+<a name="ln4"> * Software version 1.04</a>
+<a name="ln5"> * September 9, 2011</a>
+<a name="ln6"> *</a>
+<a name="ln7"> * The InChI library and programs are free software developed under the</a>
+<a name="ln8"> * auspices of the International Union of Pure and Applied Chemistry (IUPAC).</a>
+<a name="ln9"> * Originally developed at NIST. Modifications and additions by IUPAC </a>
+<a name="ln10"> * and the InChI Trust.</a>
+<a name="ln11"> *</a>
+<a name="ln12"> * IUPAC/InChI-Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln13"> * Software version 1.0.</a>
+<a name="ln14"> * Copyright (C) IUPAC and InChI Trust Limited</a>
+<a name="ln15"> * </a>
+<a name="ln16"> * This library is free software; you can redistribute it and/or modify it under the </a>
+<a name="ln17"> * terms of the IUPAC/InChI Trust Licence for the International Chemical Identifier </a>
+<a name="ln18"> * (InChI) Software version 1.0; either version 1.0 of the License, or </a>
+<a name="ln19"> * (at your option) any later version.</a>
+<a name="ln20"> * </a>
+<a name="ln21"> * This library is distributed in the hope that it will be useful, </a>
+<a name="ln22"> * but WITHOUT ANY WARRANTY; without even the implied warranty of </a>
+<a name="ln23"> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  </a>
+<a name="ln24"> * See the IUPAC/InChI Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln25"> * Software version 1.0 for more details.</a>
+<a name="ln26"> * </a>
+<a name="ln27"> * You should have received a copy of the IUPAC/InChI Trust Licence for the </a>
+<a name="ln28"> * International Chemical Identifier (InChI) Software version 1.0 along with </a>
+<a name="ln29"> * this library; if not, write to:</a>
+<a name="ln30"> * </a>
+<a name="ln31"> * The InChI Trust</a>
+<a name="ln32"> * c/o FIZ CHEMIE Berlin</a>
+<a name="ln33"> * Franklinstrasse 11</a>
+<a name="ln34"> * 10587 Berlin</a>
+<a name="ln35"> * GERMANY</a>
+<a name="ln36"> * </a>
+<a name="ln37"> */</a>
+<a name="ln38"> </a>
+<a name="ln39">#include &quot;mode.h&quot;</a>
+<a name="ln40"> </a>
+<a name="ln41">#include &lt;stdio.h&gt;</a>
+<a name="ln42">#include &lt;stdlib.h&gt;</a>
+<a name="ln43">#include &lt;string.h&gt;</a>
+<a name="ln44">#include &lt;ctype.h&gt;</a>
+<a name="ln45">#include &lt;stdarg.h&gt;</a>
+<a name="ln46">#include &lt;errno.h&gt;</a>
+<a name="ln47">#include &lt;limits.h&gt;</a>
+<a name="ln48">#include &lt;float.h&gt;</a>
+<a name="ln49">#include &lt;math.h&gt;</a>
+<a name="ln50">#include &quot;inpdef.h&quot;</a>
+<a name="ln51">#include &quot;ichi.h&quot;</a>
+<a name="ln52">#include &quot;strutil.h&quot;</a>
+<a name="ln53">#include &quot;util.h&quot;</a>
+<a name="ln54">#include &quot;ichierr.h&quot;</a>
+<a name="ln55">#include &quot;ichimain.h&quot;</a>
+<a name="ln56">#include &quot;extr_ct.h&quot;</a>
+<a name="ln57">#include &quot;ichi_io.h&quot;</a>
+<a name="ln58"> </a>
+<a name="ln59">#include &quot;ichicomp.h&quot;</a>
+<a name="ln60">#include &quot;inchi_api.h&quot;</a>
+<a name="ln61"> </a>
+<a name="ln62"> </a>
+<a name="ln63"> </a>
+<a name="ln64"> </a>
+<a name="ln65"> </a>
+<a name="ln66"> </a>
+<a name="ln67"> </a>
+<a name="ln68"> </a>
+<a name="ln69">/*************************************************************************</a>
+<a name="ln70"> *</a>
+<a name="ln71"> *   Local prototypes</a>
+<a name="ln72"> *</a>
+<a name="ln73"> *************************************************************************/</a>
+<a name="ln74"> </a>
+<a name="ln75"> </a>
+<a name="ln76">int SetAtomProperties( inp_ATOM *at, MOL_COORD *szCoord, inchi_Atom *ati,</a>
+<a name="ln77">                       int a1, int *nDim, char *pStrErr, int *err );</a>
+<a name="ln78">int SetBondProperties( inp_ATOM *at, inchi_Atom *ati, int a1, int j,</a>
+<a name="ln79">                       int nNumAtoms, int *nNumBonds, char *pStrErr, int *err );</a>
+<a name="ln80">int SetAtomAndBondProperties( inp_ATOM *at, inchi_Atom *ati, int a1,</a>
+<a name="ln81">                              int bDoNotAddH, char *pStrErr, int *err );</a>
+<a name="ln82">void SetNumImplicitH(inp_ATOM* at, int num_atoms);</a>
+<a name="ln83">int Extract0DParities(inp_ATOM *at, int nNumAtoms, inchi_Stereo0D *stereo0D,</a>
+<a name="ln84">                       int num_stereo0D, char *pStrErr, int *err, int vABParityUnknown);</a>
+<a name="ln85">int parse_options_string ( char *cmd, const char *argv[], int maxargs );</a>
+<a name="ln86"> </a>
+<a name="ln87">int InpAtom0DToInchiAtom( inp_ATOM *at, int num_atoms, inchi_OutputStruct *outStruct );</a>
+<a name="ln88"> </a>
+<a name="ln89"> </a>
+<a name="ln90">int ExtractOneStructure( STRUCT_DATA *sd, INPUT_PARMS *ip, char *szTitle,</a>
+<a name="ln91">         inchi_Input *inp, </a>
+<a name="ln92">         INCHI_IOSTREAM *log_file, INCHI_IOSTREAM *output_file, INCHI_IOSTREAM *prb_file,</a>
+<a name="ln93">         ORIG_ATOM_DATA *orig_inp_data, long *num_inp, char *pStr, int nStrLen );</a>
+<a name="ln94"> </a>
+<a name="ln95"> </a>
+<a name="ln96">static int GetINCHI1(inchi_Input *inp, inchi_Output *out, int bStdFormat);</a>
+<a name="ln97"> </a>
+<a name="ln98">/*************************************************************************/</a>
+<a name="ln99"> </a>
+<a name="ln100">int bInterrupted = 0;</a>
+<a name="ln101"> </a>
+<a name="ln102">/********************************************************************</a>
+<a name="ln103"> *</a>
+<a name="ln104"> * INCHI API: DEALLOCATE INCHI OUTPUT</a>
+<a name="ln105"> *</a>
+<a name="ln106"> ********************************************************************/</a>
+<a name="ln107"> </a>
+<a name="ln108"> </a>
+<a name="ln109">EXPIMP_TEMPLATE INCHI_API void INCHI_DECL FreeINCHI( inchi_Output *out )</a>
+<a name="ln110">{</a>
+<a name="ln111">    if ( out-&gt;szInChI ) {</a>
+<a name="ln112">        inchi_free( out-&gt;szInChI );</a>
+<a name="ln113">    }</a>
+<a name="ln114">    if ( out-&gt;szLog ) {</a>
+<a name="ln115">        inchi_free( out-&gt;szLog );</a>
+<a name="ln116">    }</a>
+<a name="ln117">    if ( out-&gt;szMessage ) {</a>
+<a name="ln118">        inchi_free( out-&gt;szMessage );</a>
+<a name="ln119">    }</a>
+<a name="ln120">    memset( out, 0, sizeof(*out) );</a>
+<a name="ln121">}</a>
+<a name="ln122"> </a>
+<a name="ln123"> </a>
+<a name="ln124">EXPIMP_TEMPLATE INCHI_API void INCHI_DECL FreeStdINCHI( inchi_Output *out )</a>
+<a name="ln125">{</a>
+<a name="ln126">    FreeINCHI( out );</a>
+<a name="ln127">}</a>
+<a name="ln128"> </a>
+<a name="ln129">EXPIMP_TEMPLATE INCHI_API void INCHI_DECL FreeStructFromStdINCHI( inchi_OutputStruct *out )</a>
+<a name="ln130">{</a>
+<a name="ln131">    FreeStructFromINCHI( out );</a>
+<a name="ln132">}</a>
+<a name="ln133"> </a>
+<a name="ln134"> </a>
+<a name="ln135">/*******************************************************************/</a>
+<a name="ln136">EXPIMP_TEMPLATE INCHI_API void INCHI_DECL FreeStructFromINCHI( inchi_OutputStruct *out )</a>
+<a name="ln137">{</a>
+<a name="ln138">    if ( out-&gt;atom ) {</a>
+<a name="ln139">        inchi_free( out-&gt;atom );</a>
+<a name="ln140">    }</a>
+<a name="ln141">    if ( out-&gt;stereo0D ) {</a>
+<a name="ln142">        inchi_free( out-&gt;stereo0D );</a>
+<a name="ln143">    }</a>
+<a name="ln144">    if ( out-&gt;szLog ) {</a>
+<a name="ln145">        inchi_free( out-&gt;szLog );</a>
+<a name="ln146">    }</a>
+<a name="ln147">    if ( out-&gt;szMessage ) {</a>
+<a name="ln148">        inchi_free( out-&gt;szMessage );</a>
+<a name="ln149">    }</a>
+<a name="ln150">    memset( out, 0, sizeof(*out) );</a>
+<a name="ln151">}</a>
+<a name="ln152">/********************************************************************/</a>
+<a name="ln153">#define INCHI_MAX_NUM_ARG 32</a>
+<a name="ln154">/********************************************************************</a>
+<a name="ln155"> *</a>
+<a name="ln156"> *    INCHI API: MAIN ENTRY POINT</a>
+<a name="ln157"> *</a>
+<a name="ln158"> ********************************************************************/</a>
+<a name="ln159"> </a>
+<a name="ln160">int bLibInchiSemaphore = 0;</a>
+<a name="ln161"> </a>
+<a name="ln162"> </a>
+<a name="ln163">EXPIMP_TEMPLATE INCHI_API int INCHI_DECL GetStdINCHI( inchi_Input *inp, inchi_Output *out )</a>
+<a name="ln164">{</a>
+<a name="ln165">    return GetINCHI1( inp, out, 1 );</a>
+<a name="ln166">}</a>
+<a name="ln167"> </a>
+<a name="ln168"> </a>
+<a name="ln169"> </a>
+<a name="ln170"> </a>
+<a name="ln171">EXPIMP_TEMPLATE INCHI_API int INCHI_DECL GetINCHI( inchi_Input *inp, inchi_Output *out )</a>
+<a name="ln172">{</a>
+<a name="ln173">    return GetINCHI1( inp, out, 0 );</a>
+<a name="ln174">}</a>
+<a name="ln175"> </a>
+<a name="ln176"> </a>
+<a name="ln177">static int GetINCHI1(inchi_Input *inp, inchi_Output *out, int bStdFormat)</a>
+<a name="ln178">{</a>
+<a name="ln179">    STRUCT_DATA struct_data;</a>
+<a name="ln180">    STRUCT_DATA *sd = &amp;struct_data;       </a>
+<a name="ln181">    char szTitle[MAX_SDF_HEADER+MAX_SDF_VALUE+256];</a>
+<a name="ln182"> </a>
+<a name="ln183">    int i;</a>
+<a name="ln184">    long num_inp, num_err;</a>
+<a name="ln185">    char      szSdfDataValue[MAX_SDF_VALUE+1];</a>
+<a name="ln186">    PINChI2     *pINChI[INCHI_NUM];</a>
+<a name="ln187">    PINChI_Aux2 *pINChI_Aux[INCHI_NUM];</a>
+<a name="ln188"> </a>
+<a name="ln189">    unsigned long  ulDisplTime = 0;    /*  infinite, milliseconds */</a>
+<a name="ln190">    unsigned long  ulTotalProcessingTime = 0;</a>
+<a name="ln191"> </a>
+<a name="ln192">    INPUT_PARMS inp_parms;</a>
+<a name="ln193">    INPUT_PARMS *ip = &amp;inp_parms;</a>
+<a name="ln194"> </a>
+<a name="ln195">    ORIG_ATOM_DATA OrigAtData; /* 0=&gt; disconnected, 1=&gt; original */</a>
+<a name="ln196">    ORIG_ATOM_DATA *orig_inp_data = &amp;OrigAtData;</a>
+<a name="ln197">    ORIG_ATOM_DATA PrepAtData[2]; /* 0=&gt; disconnected, 1=&gt; original */</a>
+<a name="ln198">    ORIG_ATOM_DATA *prep_inp_data = PrepAtData;</a>
+<a name="ln199">    int             bReleaseVersion = bRELEASE_VERSION;</a>
+<a name="ln200">    const int nStrLen = 64000;</a>
+<a name="ln201">    char *pStr = NULL;</a>
+<a name="ln202">    int   nRet = 0, nRet1;</a>
+<a name="ln203"> </a>
+<a name="ln204">    STRUCT_FPTRS *pStructPtrs = NULL;</a>
+<a name="ln205"> </a>
+<a name="ln206">#if ( defined(REPEAT_ALL) &amp;&amp; REPEAT_ALL &gt; 0 )</a>
+<a name="ln207">    int  num_repeat = REPEAT_ALL;</a>
+<a name="ln208">#endif</a>
+<a name="ln209"> </a>
+<a name="ln210">    const char *argv[INCHI_MAX_NUM_ARG+1];</a>
+<a name="ln211">    int   argc;</a>
+<a name="ln212">    char *szOptions = NULL;</a>
+<a name="ln213"> </a>
+<a name="ln214">    INCHI_IOSTREAM inchi_file[3], *output_file = inchi_file, *log_file = inchi_file+1;</a>
+<a name="ln215">    INCHI_IOSTREAM prb_file0, *prb_file = &amp;prb_file0;</a>
+<a name="ln216"> </a>
+<a name="ln217"> </a>
+<a name="ln218">    if ( bLibInchiSemaphore ) {  /* does not work properly under sufficient stress */</a>
+<a name="ln219">        return inchi_Ret_BUSY;</a>
+<a name="ln220">    }</a>
+<a name="ln221">    bLibInchiSemaphore = 1;</a>
+<a name="ln222"> </a>
+<a name="ln223">#if( TRACE_MEMORY_LEAKS == 1 )</a>
+<a name="ln224">    _CrtSetDbgFlag(_CRTDBG_CHECK_ALWAYS_DF | _CRTDBG_LEAK_CHECK_DF | _CRTDBG_ALLOC_MEM_DF);</a>
+<a name="ln225">/* for execution outside the VC++ debugger uncomment one of the following two */</a>
+<a name="ln226">#ifdef MY_REPORT_FILE </a>
+<a name="ln227">   _CrtSetReportMode( _CRT_WARN, _CRTDBG_MODE_FILE );</a>
+<a name="ln228">   _CrtSetReportFile( _CRT_WARN, MY_REPORT_FILE );</a>
+<a name="ln229">   _CrtSetReportMode( _CRT_ERROR, _CRTDBG_MODE_FILE );</a>
+<a name="ln230">   _CrtSetReportFile( _CRT_ERROR, MY_REPORT_FILE );</a>
+<a name="ln231">   _CrtSetReportMode( _CRT_ASSERT, _CRTDBG_MODE_FILE );</a>
+<a name="ln232">   _CrtSetReportFile( _CRT_ASSERT, MY_REPORT_FILE );</a>
+<a name="ln233">#else</a>
+<a name="ln234">    _CrtSetReportMode(_CRT_WARN | _CRT_ERROR, _CRTDBG_MODE_DEBUG);</a>
+<a name="ln235">#endif</a>
+<a name="ln236"> </a>
+<a name="ln237">#if ( !defined(__STDC__) || __STDC__ != 1 )</a>
+<a name="ln238">    /* turn on floating point exceptions */</a>
+<a name="ln239">    {</a>
+<a name="ln240">        /* Get the default control word. */</a>
+<a name="ln241">        int cw = _controlfp( 0,0 );</a>
+<a name="ln242"> </a>
+<a name="ln243">        /* Set the exception masks OFF, turn exceptions on. */</a>
+<a name="ln244">        /*cw &amp;=~(EM_OVERFLOW|EM_UNDERFLOW|EM_INEXACT|EM_ZERODIVIDE|EM_DENORMAL);*/</a>
+<a name="ln245">        cw &amp;=~(EM_OVERFLOW|EM_UNDERFLOW|EM_ZERODIVIDE|EM_DENORMAL);</a>
+<a name="ln246"> </a>
+<a name="ln247">        /* Set the control word. */</a>
+<a name="ln248">        _controlfp( cw, MCW_EM );</a>
+<a name="ln249"> </a>
+<a name="ln250">    }</a>
+<a name="ln251">#endif</a>
+<a name="ln252">#endif</a>
+<a name="ln253"> </a>
+<a name="ln254"> </a>
+<a name="ln255"> </a>
+<a name="ln256"> </a>
+<a name="ln257">    szTitle[0] = '\0';</a>
+<a name="ln258"> </a>
+<a name="ln259">#if ( defined(REPEAT_ALL) &amp;&amp; REPEAT_ALL &gt; 0 )</a>
+<a name="ln260">repeat:</a>
+<a name="ln261">    inchi_ios_close(output_file);</a>
+<a name="ln262">    inchi_ios_close(log_file);</a>
+<a name="ln263">    inchi_ios_close(prb_file);</a>
+<a name="ln264">    pStr = NULL;</a>
+<a name="ln265">#endif</a>
+<a name="ln266"> </a>
+<a name="ln267">    /*^^^ Initialize internal for this function output streams as string buffers */</a>
+<a name="ln268">    inchi_ios_init(output_file, INCHI_IOSTREAM_STRING, NULL);</a>
+<a name="ln269">    inchi_ios_init(log_file, INCHI_IOSTREAM_STRING, NULL);</a>
+<a name="ln270">    inchi_ios_init(prb_file, INCHI_IOSTREAM_STRING, NULL);</a>
+<a name="ln271"> </a>
+<a name="ln272"> </a>
+<a name="ln273">    num_inp    = 0;</a>
+<a name="ln274">    num_err    = 0;</a>
+<a name="ln275">    sd-&gt;bUserQuit  = 0;</a>
+<a name="ln276"> </a>
+<a name="ln277">    /* clear original input structure */</a>
+<a name="ln278">    memset( pINChI,     0, sizeof(pINChI    ) );</a>
+<a name="ln279">    memset( pINChI_Aux, 0, sizeof(pINChI_Aux) );</a>
+<a name="ln280">    memset( sd,         0, sizeof(*sd) );</a>
+<a name="ln281">    memset( ip,         0, sizeof(*ip) );</a>
+<a name="ln282">    memset( orig_inp_data     , 0,   sizeof( *orig_inp_data  ) );</a>
+<a name="ln283">    memset( prep_inp_data     , 0, 2*sizeof( *prep_inp_data  ) );</a>
+<a name="ln284">    memset( szSdfDataValue    , 0, sizeof( szSdfDataValue    ) );</a>
+<a name="ln285"> </a>
+<a name="ln286">    if ( !out ) {</a>
+<a name="ln287">        nRet = _IS_ERROR;</a>
+<a name="ln288">        goto exit_function;</a>
+<a name="ln289">    }</a>
+<a name="ln290">    memset( out, 0, sizeof(*out) );</a>
+<a name="ln291"> </a>
+<a name="ln292">    /* options */</a>
+<a name="ln293">    if ( inp &amp;&amp; inp-&gt;szOptions ) {</a>
+<a name="ln294">        szOptions = (char*)inchi_malloc( strlen(inp-&gt;szOptions) + 1 );</a>
+<a name="ln295">        if ( szOptions ) {</a>
+<a name="ln296">            strcpy( szOptions, inp-&gt;szOptions );</a>
+<a name="ln297">            argc = parse_options_string ( szOptions, argv, INCHI_MAX_NUM_ARG );</a>
+<a name="ln298">        } else {</a>
+<a name="ln299">            nRet = _IS_FATAL;</a>
+<a name="ln300">            goto translate_RetVal; /* emergency exit */</a>
+<a name="ln301">        }</a>
+<a name="ln302">    } else {</a>
+<a name="ln303">        argc = 1;</a>
+<a name="ln304">        argv[0] = &quot;&quot;;</a>
+<a name="ln305">        argv[1] = NULL;</a>
+<a name="ln306">    }</a>
+<a name="ln307"> </a>
+<a name="ln308">    if ( (argc == 1</a>
+<a name="ln309">#ifdef TARGET_API_LIB</a>
+<a name="ln310">        &amp;&amp; (!inp || inp-&gt;num_atoms &lt;= 0 || !inp-&gt;atom)</a>
+<a name="ln311">#endif   </a>
+<a name="ln312">        )</a>
+<a name="ln313">        || (argc==2 &amp;&amp; ( argv[1][0]==INCHI_OPTION_PREFX ) &amp;&amp;</a>
+<a name="ln314">        (!strcmp(argv[1]+1, &quot;?&quot;) || !stricmp(argv[1]+1, &quot;help&quot;) )) ) {</a>
+<a name="ln315">        HelpCommandLineParms(log_file);</a>
+<a name="ln316">        out-&gt;szLog = log_file-&gt;s.pStr;</a>
+<a name="ln317">        memset( log_file, 0, sizeof(*log_file) );</a>
+<a name="ln318">        nRet = _IS_EOF;</a>
+<a name="ln319">        goto translate_RetVal;</a>
+<a name="ln320">    }</a>
+<a name="ln321"> </a>
+<a name="ln322">    nRet1 = ReadCommandLineParms( argc, argv, ip, szSdfDataValue, &amp;ulDisplTime, bReleaseVersion, log_file );</a>
+<a name="ln323">    if ( szOptions ) {</a>
+<a name="ln324">        inchi_free( szOptions );</a>
+<a name="ln325">        szOptions = NULL;</a>
+<a name="ln326">    }</a>
+<a name="ln327">    /* INChI DLL specific */</a>
+<a name="ln328">    ip-&gt;bNoStructLabels = 1;</a>
+<a name="ln329"> </a>
+<a name="ln330">    if ( 0 &gt; nRet1 ) {</a>
+<a name="ln331">        nRet = _IS_FATAL;</a>
+<a name="ln332">        goto exit_function;</a>
+<a name="ln333">    }</a>
+<a name="ln334">    if ( ip-&gt;bNoStructLabels ) {</a>
+<a name="ln335">        ip-&gt;pSdfLabel = NULL;</a>
+<a name="ln336">        ip-&gt;pSdfValue = NULL;</a>
+<a name="ln337">    } else</a>
+<a name="ln338">    if ( ip-&gt;nInputType == INPUT_INCHI_XML || ip-&gt;nInputType == INPUT_INCHI_PLAIN  || ip-&gt;nInputType == INPUT_CMLFILE ) {</a>
+<a name="ln339">        /* the input may contain both the header and the label of the structure */</a>
+<a name="ln340">        if ( !ip-&gt;pSdfLabel ) </a>
+<a name="ln341">            ip-&gt;pSdfLabel  = ip-&gt;szSdfDataHeader;</a>
+<a name="ln342">        if ( !ip-&gt;pSdfValue )</a>
+<a name="ln343">            ip-&gt;pSdfValue  = szSdfDataValue;</a>
+<a name="ln344">    }</a>
+<a name="ln345"> </a>
+<a name="ln346">    /* Ensure standardness */</a>
+<a name="ln347">    if ( bStdFormat )</a>
+<a name="ln348">    {</a>
+<a name="ln349">        if ( ip-&gt;bINChIOutputOptions &amp; INCHI_OUT_SAVEOPT )</a>
+<a name="ln350">        {</a>
+<a name="ln351">            ip-&gt;bINChIOutputOptions &amp;= ~INCHI_OUT_SAVEOPT;</a>
+<a name="ln352">        }</a>
+<a name="ln353">        if ( 0 != ( ip-&gt;bTautFlags &amp; TG_FLAG_RECONNECT_COORD) )</a>
+<a name="ln354">        {</a>
+<a name="ln355">            ip-&gt;bTautFlags &amp;= ~TG_FLAG_RECONNECT_COORD;</a>
+<a name="ln356">        }</a>
+<a name="ln357">        if ( 0 != (ip-&gt;nMode &amp; REQ_MODE_BASIC) )</a>
+<a name="ln358">        {</a>
+<a name="ln359">            ip-&gt;nMode &amp;= ~REQ_MODE_BASIC;</a>
+<a name="ln360">        }</a>
+<a name="ln361">        if ( 0 != ( ip-&gt;nMode &amp; REQ_MODE_RELATIVE_STEREO) ) </a>
+<a name="ln362">        {</a>
+<a name="ln363">            ip-&gt;nMode &amp;= ~(REQ_MODE_RACEMIC_STEREO | REQ_MODE_RELATIVE_STEREO | REQ_MODE_CHIR_FLG_STEREO);</a>
+<a name="ln364">        }</a>
+<a name="ln365">        if ( 0 != ( ip-&gt;nMode &amp; REQ_MODE_RACEMIC_STEREO) ) </a>
+<a name="ln366">        {</a>
+<a name="ln367">            ip-&gt;nMode &amp;= ~(REQ_MODE_RACEMIC_STEREO | REQ_MODE_RELATIVE_STEREO | REQ_MODE_CHIR_FLG_STEREO);</a>
+<a name="ln368">        }</a>
+<a name="ln369">        if ( 0 != ( ip-&gt;nMode &amp; REQ_MODE_CHIR_FLG_STEREO) ) </a>
+<a name="ln370">        {</a>
+<a name="ln371">            ip-&gt;nMode &amp;= ~(REQ_MODE_RACEMIC_STEREO | REQ_MODE_RELATIVE_STEREO | REQ_MODE_CHIR_FLG_STEREO);</a>
+<a name="ln372">        }</a>
+<a name="ln373">        if ( 0 != ( ip-&gt;nMode &amp; REQ_MODE_DIFF_UU_STEREO) ) </a>
+<a name="ln374">        {</a>
+<a name="ln375">            ip-&gt;nMode &amp;= ~REQ_MODE_DIFF_UU_STEREO;</a>
+<a name="ln376">        }</a>
+<a name="ln377">        if ( 0 == (ip-&gt;nMode &amp; (REQ_MODE_SB_IGN_ALL_UU | REQ_MODE_SC_IGN_ALL_UU))  ) </a>
+<a name="ln378">        {</a>
+<a name="ln379">            ip-&gt;nMode |= REQ_MODE_SB_IGN_ALL_UU;</a>
+<a name="ln380">            ip-&gt;nMode |= REQ_MODE_SC_IGN_ALL_UU;</a>
+<a name="ln381">        }	</a>
+<a name="ln382">        if ( 0 != (ip-&gt;bTautFlags &amp; TG_FLAG_KETO_ENOL_TAUT) )</a>
+<a name="ln383">        {</a>
+<a name="ln384">            ip-&gt;bTautFlags  &amp;= ~TG_FLAG_KETO_ENOL_TAUT;</a>
+<a name="ln385">        }</a>
+<a name="ln386">        if ( 0 != (ip-&gt;bTautFlags &amp; TG_FLAG_1_5_TAUT) )</a>
+<a name="ln387">        {</a>
+<a name="ln388">            ip-&gt;bTautFlags  &amp;= ~TG_FLAG_1_5_TAUT;</a>
+<a name="ln389">        }</a>
+<a name="ln390">        /* And anyway... */</a>
+<a name="ln391">        ip-&gt;bINChIOutputOptions |= INCHI_OUT_STDINCHI;</a>
+<a name="ln392">        ip-&gt;bINChIOutputOptions &amp;= ~INCHI_OUT_SAVEOPT;</a>
+<a name="ln393">    }</a>
+<a name="ln394">    /* */</a>
+<a name="ln395"> </a>
+<a name="ln396"> </a>
+<a name="ln397">    PrintInputParms( log_file, ip );</a>
+<a name="ln398">    if ( !(pStr = (char*)inchi_malloc(nStrLen))) {</a>
+<a name="ln399">        inchi_ios_eprint( log_file, &quot;Cannot allocate output buffer. Terminating\n&quot;);</a>
+<a name="ln400">        goto exit_function;</a>
+<a name="ln401">    }</a>
+<a name="ln402">    pStr[0] = '\0';</a>
+<a name="ln403"> </a>
+<a name="ln404"> </a>
+<a name="ln405"> </a>
+<a name="ln406">    /**********************************************************************************************/</a>
+<a name="ln407">    /*  Main cycle */</a>
+<a name="ln408">    /*  read input structures and create their INChI */</a>
+<a name="ln409">    ulTotalProcessingTime = 0;</a>
+<a name="ln410"> </a>
+<a name="ln411">    if ( pStructPtrs ) {</a>
+<a name="ln412">        memset ( pStructPtrs, 0, sizeof(pStructPtrs[0]) );</a>
+<a name="ln413">    }</a>
+<a name="ln414"> </a>
+<a name="ln415">    /* === possible improvement: convert inp to orig_inp_data ==== */</a>
+<a name="ln416">    if ( !sd-&gt;bUserQuit &amp;&amp; !bInterrupted )</a>
+<a name="ln417">    {</a>
+<a name="ln418">        if ( ip-&gt;last_struct_number &amp;&amp; num_inp &gt;= ip-&gt;last_struct_number ) {</a>
+<a name="ln419">            nRet = _IS_EOF; /*  simulate end of file */</a>
+<a name="ln420">            goto exit_function;</a>
+<a name="ln421">        }</a>
+<a name="ln422"> </a>
+<a name="ln423">        nRet = ExtractOneStructure( sd, ip, szTitle, inp, log_file, output_file, prb_file,</a>
+<a name="ln424">                                orig_inp_data, &amp;num_inp, pStr, nStrLen );</a>
+<a name="ln425"> </a>
+<a name="ln426">        if ( pStructPtrs ) {</a>
+<a name="ln427">            pStructPtrs-&gt;cur_fptr ++;</a>
+<a name="ln428">        }</a>
+<a name="ln429"> </a>
+<a name="ln430">#ifndef TARGET_API_LIB</a>
+<a name="ln431">        if ( sd-&gt;bUserQuit ) {</a>
+<a name="ln432">            break;</a>
+<a name="ln433">        }</a>
+<a name="ln434">#endif</a>
+<a name="ln435">        switch ( nRet ) {</a>
+<a name="ln436">        case _IS_FATAL:</a>
+<a name="ln437">            num_err ++;</a>
+<a name="ln438">            goto exit_function;</a>
+<a name="ln439">        case _IS_EOF:</a>
+<a name="ln440">            goto exit_function;</a>
+<a name="ln441">        case _IS_ERROR:</a>
+<a name="ln442">            num_err ++;</a>
+<a name="ln443">            goto exit_function;</a>
+<a name="ln444">#ifndef TARGET_API_LIB</a>
+<a name="ln445">        case _IS_SKIP:</a>
+<a name="ln446">            continue;</a>
+<a name="ln447">#endif</a>
+<a name="ln448">        }</a>
+<a name="ln449"> </a>
+<a name="ln450">        /* create INChI for each connected component of the structure and optionally display them */</a>
+<a name="ln451">        /* output INChI for the whole structure */</a>
+<a name="ln452">        nRet1 = ProcessOneStructure( sd, ip, szTitle, pINChI, pINChI_Aux,</a>
+<a name="ln453">                                     NULL, /* inp_file is not necessary as all input is already saved in 'ip' */</a>
+<a name="ln454">                                     log_file, output_file, prb_file,</a>
+<a name="ln455">                                     orig_inp_data, prep_inp_data,</a>
+<a name="ln456">                                     num_inp, pStr, nStrLen,</a>
+<a name="ln457">                                     0 /* save_opt_bits */);</a>
+<a name="ln458"> </a>
+<a name="ln459">        /*  free INChI memory */</a>
+<a name="ln460">        FreeAllINChIArrays( pINChI, pINChI_Aux, sd-&gt;num_components );</a>
+<a name="ln461">        </a>
+<a name="ln462">        /* free structure data */</a>
+<a name="ln463">        FreeOrigAtData( orig_inp_data );</a>
+<a name="ln464">        FreeOrigAtData( prep_inp_data );</a>
+<a name="ln465">        FreeOrigAtData( prep_inp_data+1 );</a>
+<a name="ln466"> </a>
+<a name="ln467">        ulTotalProcessingTime += sd-&gt;ulStructTime;</a>
+<a name="ln468">        nRet = inchi_max(nRet, nRet1);</a>
+<a name="ln469">        switch ( nRet ) {</a>
+<a name="ln470">        case _IS_FATAL:</a>
+<a name="ln471">            /* num_err ++; */</a>
+<a name="ln472">            goto exit_function;</a>
+<a name="ln473">        case _IS_ERROR:</a>
+<a name="ln474">            ; /* num_err ++; */</a>
+<a name="ln475">#ifndef TARGET_API_LIB</a>
+<a name="ln476">            continue;</a>
+<a name="ln477">#endif</a>
+<a name="ln478">        }</a>
+<a name="ln479">    }</a>
+<a name="ln480"> </a>
+<a name="ln481">exit_function:</a>
+<a name="ln482">    if ( (ip-&gt;bINChIOutputOptions &amp; INCHI_OUT_XML) &amp;&amp; sd-&gt;bXmlStructStarted &gt; 0 ) {</a>
+<a name="ln483">        if ( !OutputINChIXmlStructEndTag( output_file, pStr, nStrLen, 1 ) ) {</a>
+<a name="ln484">            inchi_ios_eprint( log_file, &quot;Cannot create end xml tag for structure #%d.%s%s%s%s Terminating.\n&quot;, num_inp, SDF_LBL_VAL(ip-&gt;pSdfLabel,ip-&gt;pSdfValue) );</a>
+<a name="ln485">            sd-&gt;bXmlStructStarted = -1; /*  do not repeat same message */</a>
+<a name="ln486">        }</a>
+<a name="ln487">    }</a>
+<a name="ln488"> </a>
+<a name="ln489"> </a>
+<a name="ln490">    if ( (ip-&gt;bINChIOutputOptions &amp; INCHI_OUT_XML) &amp;&amp; ip-&gt;bXmlStarted ) {</a>
+<a name="ln491">        OutputINChIXmlRootEndTag( output_file );</a>
+<a name="ln492">        ip-&gt;bXmlStarted = 0;</a>
+<a name="ln493">    }</a>
+<a name="ln494"> </a>
+<a name="ln495">    </a>
+<a name="ln496">    /* avoid memory leaks in case of fatal error */</a>
+<a name="ln497">    if ( pStructPtrs &amp;&amp; pStructPtrs-&gt;fptr ) {</a>
+<a name="ln498">        inchi_free( pStructPtrs-&gt;fptr );</a>
+<a name="ln499">    }</a>
+<a name="ln500"> </a>
+<a name="ln501">    /*  free INChI memory */</a>
+<a name="ln502">    FreeAllINChIArrays( pINChI, pINChI_Aux, sd-&gt;num_components );</a>
+<a name="ln503">    /* free structure data */</a>
+<a name="ln504">    FreeOrigAtData( orig_inp_data );</a>
+<a name="ln505">    FreeOrigAtData( prep_inp_data );</a>
+<a name="ln506">    FreeOrigAtData( prep_inp_data+1 );</a>
+<a name="ln507"> </a>
+<a name="ln508">#if( ADD_CMLPP == 1 )</a>
+<a name="ln509">        /* BILLY 8/6/04 */</a>
+<a name="ln510">        /* free CML memory */</a>
+<a name="ln511">        FreeCml ();</a>
+<a name="ln512">        FreeCmlDoc( 1 );</a>
+<a name="ln513">#endif</a>
+<a name="ln514"> </a>
+<a name="ln515">    if ( pStr ) {</a>
+<a name="ln516">        inchi_free( pStr );</a>
+<a name="ln517">    }</a>
+<a name="ln518"> </a>
+<a name="ln519">    for ( i = 0; i &lt; MAX_NUM_PATHS; i ++ ) {</a>
+<a name="ln520">        if ( ip-&gt;path[i] ) {</a>
+<a name="ln521">            inchi_free( (char*) ip-&gt;path[i] ); /*  cast deliberately discards 'const' qualifier */</a>
+<a name="ln522">            ip-&gt;path[i] = NULL;</a>
+<a name="ln523">        }</a>
+<a name="ln524">    }</a>
+<a name="ln525"> </a>
+<a name="ln526">    SetBitFree( );</a>
+<a name="ln527"> </a>
+<a name="ln528"> </a>
+<a name="ln529">#if ( defined(REPEAT_ALL) &amp;&amp; REPEAT_ALL &gt; 0 )</a>
+<a name="ln530">    if ( num_repeat-- &gt; 0 ) {</a>
+<a name="ln531">        goto repeat;</a>
+<a name="ln532">    }</a>
+<a name="ln533">#endif</a>
+<a name="ln534"> </a>
+<a name="ln535"> </a>
+<a name="ln536">    /* output */</a>
+<a name="ln537">    if ( sd-&gt;pStrErrStruct[0] ) {</a>
+<a name="ln538">        if ( out &amp;&amp; (out-&gt;szMessage = (char *)inchi_malloc( strlen(sd-&gt;pStrErrStruct) + 1 )) ) {</a>
+<a name="ln539">            strcpy( out-&gt;szMessage, sd-&gt;pStrErrStruct );</a>
+<a name="ln540">        }</a>
+<a name="ln541">    }</a>
+<a name="ln542">    if ( output_file-&gt;s.pStr &amp;&amp; output_file-&gt;s.nUsedLength &gt; 0 &amp;&amp; out ) {</a>
+<a name="ln543">        char *p;</a>
+<a name="ln544">        out-&gt;szInChI   = output_file-&gt;s.pStr;</a>
+<a name="ln545">        out-&gt;szAuxInfo = NULL;</a>
+<a name="ln546">        if ( !(INCHI_OUT_SDFILE_ONLY &amp; ip-&gt;bINChIOutputOptions ) ) /* do not remove last LF from SDF output - 2008-12-23 DT */</a>
+<a name="ln547">        for ( p = strchr(out-&gt;szInChI, '\n'); p; p = strchr(p+1, '\n') ) {</a>
+<a name="ln548">            if ( !memcmp( p, &quot;\nAuxInfo&quot;, 8 ) ) {</a>
+<a name="ln549">                *p = '\0';            /* remove LF after INChI */</a>
+<a name="ln550">                out-&gt;szAuxInfo = p+1; /* save pointer to AuxInfo */</a>
+<a name="ln551">            } else</a>
+<a name="ln552">            if ( out-&gt;szAuxInfo || !p[1]) {   /* remove LF after aux info or from the last char */</a>
+<a name="ln553">                *p = '\0';</a>
+<a name="ln554">                break;</a>
+<a name="ln555">            }</a>
+<a name="ln556">        }</a>
+<a name="ln557">       output_file-&gt;s.pStr = NULL;</a>
+<a name="ln558">    }</a>
+<a name="ln559"> </a>
+<a name="ln560"> </a>
+<a name="ln561">    if ( log_file-&gt;s.pStr &amp;&amp; log_file-&gt;s.nUsedLength &gt; 0 ) {</a>
+<a name="ln562">        while ( log_file-&gt;s.nUsedLength &amp;&amp; '\n' == log_file-&gt;s.pStr[log_file-&gt;s.nUsedLength-1] ) {</a>
+<a name="ln563">            log_file-&gt;s.pStr[-- log_file-&gt;s.nUsedLength]  = '\0'; /* remove last LF */</a>
+<a name="ln564">        }</a>
+<a name="ln565">        if ( out ) {</a>
+<a name="ln566">            out-&gt;szLog = log_file-&gt;s.pStr;</a>
+<a name="ln567">            log_file-&gt;s.pStr = NULL;</a>
+<a name="ln568">        }</a>
+<a name="ln569">    }</a>
+<a name="ln570"> </a>
+<a name="ln571">    </a>
+<a name="ln572">    </a>
+<a name="ln573">translate_RetVal:</a>
+<a name="ln574"> </a>
+<a name="ln575">    /* Close inernal I/O streams */</a>
+<a name="ln576">    inchi_ios_close(log_file);</a>
+<a name="ln577">    inchi_ios_close(output_file);</a>
+<a name="ln578">    inchi_ios_close(prb_file);</a>
+<a name="ln579">    </a>
+<a name="ln580">    switch (nRet) { </a>
+<a name="ln581">    case _IS_SKIP   : nRet = inchi_Ret_SKIP   ; break; /* not used in INChI dll */</a>
+<a name="ln582">    case _IS_EOF    : nRet = inchi_Ret_EOF    ; break; /* no structural data has been provided */</a>
+<a name="ln583">    case _IS_OKAY   : nRet = inchi_Ret_OKAY   ; break; /* Success; break; no errors or warnings */</a>
+<a name="ln584">    case _IS_WARNING: nRet = inchi_Ret_WARNING; break; /* Success; break; warning(s) issued */</a>
+<a name="ln585">    case _IS_ERROR  : nRet = inchi_Ret_ERROR  ; break; /* Error: no INChI has been created */</a>
+<a name="ln586">    case _IS_FATAL  : nRet = inchi_Ret_FATAL  ; break; /* Severe error: no INChI has been created (typically; break; memory allocation failed) */</a>
+<a name="ln587">    case _IS_UNKNOWN:</a>
+<a name="ln588">    default         : nRet = inchi_Ret_UNKNOWN; break; /* Unlnown program error */</a>
+<a name="ln589">    }</a>
+<a name="ln590">    bLibInchiSemaphore = 0;</a>
+<a name="ln591"> </a>
+<a name="ln592">    return nRet;</a>
+<a name="ln593">}</a>
+<a name="ln594"> </a>
+<a name="ln595"> </a>
+<a name="ln596">/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^</a>
+<a name="ln597">Check if the string represents valid InChI/standard InChI.          </a>
+<a name="ln598">Input:</a>
+<a name="ln599">        szINCHI     source InChI</a>
+<a name="ln600">        strict      if 0, just quickly check for proper layout (prefix, version, etc.)</a>
+<a name="ln601">                    The result may not be strict.</a>
+<a name="ln602">                    If not 0, try to perform InChI2InChI conversion and </a>
+<a name="ln603">                    returns success if a resulting InChI string exactly match source.</a>
+<a name="ln604">                    The result may be 'false alarm' due to imperfect algorithm of</a>
+<a name="ln605">                    conversion.</a>
+<a name="ln606">Returns:</a>
+<a name="ln607">        success/errors codes</a>
+<a name="ln608"> </a>
+<a name="ln609">*/</a>
+<a name="ln610">EXPIMP_TEMPLATE INCHI_API int INCHI_DECL CheckINCHI(const char *szINCHI, const int strict)</a>
+<a name="ln611">{</a>
+<a name="ln612">int ret=INCHI_VALID_NON_STANDARD;</a>
+<a name="ln613">int ret_i2i;</a>
+<a name="ln614">inchi_InputINCHI    inchi_inp;</a>
+<a name="ln615">inchi_Output        inchi_out;</a>
+<a name="ln616">size_t slen, pos_slash1=0;</a>
+<a name="ln617">char *str = NULL;</a>
+<a name="ln618">size_t i;</a>
+<a name="ln619">size_t slen0;</a>
+<a name="ln620">char pp;</a>
+<a name="ln621"> </a>
+<a name="ln622">    /* .. non-empty */</a>
+<a name="ln623">    if (szINCHI==NULL)</a>
+<a name="ln624">        return INCHI_INVALID_PREFIX;</a>
+<a name="ln625">    </a>
+<a name="ln626">    slen = strlen(szINCHI);</a>
+<a name="ln627">    </a>
+<a name="ln628">    /* .. has valid prefix */</a>
+<a name="ln629">    if (slen&lt;LEN_INCHI_STRING_PREFIX+3)                         </a>
+<a name="ln630">        return INCHI_INVALID_PREFIX;    </a>
+<a name="ln631">    if (memcmp(szINCHI,INCHI_STRING_PREFIX,LEN_INCHI_STRING_PREFIX))    </a>
+<a name="ln632">        return INCHI_INVALID_PREFIX;</a>
+<a name="ln633"> </a>
+<a name="ln634">    /* .. has InChI version 1 */</a>
+<a name="ln635">    /* if (!isdigit(szINCHI[LEN_INCHI_STRING_PREFIX]) )  */</a>
+<a name="ln636">    if ( szINCHI[LEN_INCHI_STRING_PREFIX] != '1' )  </a>
+<a name="ln637">        return INCHI_INVALID_VERSION;</a>
+<a name="ln638"> </a>
+<a name="ln639">    /* .. optionally has a 'standard' flag character */</a>
+<a name="ln640">    pos_slash1 = LEN_INCHI_STRING_PREFIX+1;</a>
+<a name="ln641">    if (szINCHI[pos_slash1]=='S')            </a>
+<a name="ln642">    {</a>
+<a name="ln643">        /* Standard InChI ==&gt; standard InChIKey */</a>
+<a name="ln644">        ret = INCHI_VALID_STANDARD;</a>
+<a name="ln645">        pos_slash1++;</a>
+<a name="ln646">    }</a>
+<a name="ln647"> </a>
+<a name="ln648">    /* .. has trailing slash in the right place */</a>
+<a name="ln649">    if (szINCHI[pos_slash1]!='/')            </a>
+<a name="ln650">        return INCHI_INVALID_LAYOUT;</a>
+<a name="ln651"> </a>
+<a name="ln652">    /* .. the rest of source string contains valid literals */</a>
+<a name="ln653">#if 0</a>
+<a name="ln654">    if (!isalnum(szINCHI[pos_slash1+1] ) &amp;&amp;</a>
+<a name="ln655">       ( szINCHI[pos_slash1+1]!='/' )     ) </a>
+<a name="ln656">        return INCHI_INVALID_LAYOUT;    </a>
+<a name="ln657">#endif</a>
+<a name="ln658">    </a>
+<a name="ln659">    /* Treat possible SaveOpt letters  */</a>
+<a name="ln660">    slen0 = slen;</a>
+<a name="ln661">    if ( (szINCHI[slen-3]=='\\') &amp;&amp;</a>
+<a name="ln662">         (szINCHI[slen-2] &gt;= 'A') &amp;&amp; (szINCHI[slen-2] &lt;='Z') &amp;&amp;</a>
+<a name="ln663">         (szINCHI[slen-1] &gt;= 'A') &amp;&amp; (szINCHI[slen-1] &lt;='Z')		 </a>
+<a name="ln664">        )</a>
+<a name="ln665">        slen0 = slen -3;</a>
+<a name="ln666"> </a>
+<a name="ln667">    for (i=pos_slash1+1; i&lt;slen0; i++)</a>
+<a name="ln668">    {</a>
+<a name="ln669">        pp = szINCHI[i];</a>
+<a name="ln670">        if (pp &gt;= 'A' &amp;&amp; pp &lt;='Z')   continue; </a>
+<a name="ln671">        if (pp &gt;= 'a' &amp;&amp; pp &lt;='z')   continue; </a>
+<a name="ln672">        if (pp &gt;= '0' &amp;&amp; pp &lt;='9')   continue;             </a>
+<a name="ln673">        switch ( pp ) </a>
+<a name="ln674">        { </a>
+<a name="ln675">            case '(': case ')': </a>
+<a name="ln676">            case '*': case '+': </a>
+<a name="ln677">            case ',': case '-': </a>
+<a name="ln678">            case '.': case '/': </a>
+<a name="ln679">            case ';': case '=': </a>
+<a name="ln680">            case '?': case '@': continue;             </a>
+<a name="ln681">            </a>
+<a name="ln682">            default:            break; </a>
+<a name="ln683">        }</a>
+<a name="ln684">        return INCHI_INVALID_LAYOUT;</a>
+<a name="ln685">    } </a>
+<a name="ln686"> </a>
+<a name="ln687">    if ( strict )</a>
+<a name="ln688">    {</a>
+<a name="ln689">        char opts[]=&quot;?FixedH ?RecMet ?SUU ?SLUUD&quot;;</a>
+<a name="ln690">        extract_inchi_substring(&amp;str, szINCHI, slen);</a>
+<a name="ln691">        if (NULL==str)</a>
+<a name="ln692">        {</a>
+<a name="ln693">            ret = INCHI_FAIL_I2I;</a>
+<a name="ln694">            goto fin; </a>
+<a name="ln695">        }</a>
+<a name="ln696"> </a>
+<a name="ln697">        inchi_inp.szInChI = str;</a>
+<a name="ln698">        opts[0] = opts[8] = opts[16] = opts[21] = INCHI_OPTION_PREFX;</a>
+<a name="ln699">        inchi_inp.szOptions  = opts;</a>
+<a name="ln700"> </a>
+<a name="ln701">        ret_i2i = GetINCHIfromINCHI(&amp;inchi_inp, &amp;inchi_out);</a>
+<a name="ln702">        </a>
+<a name="ln703">        if ( ((ret_i2i!=inchi_Ret_OKAY) &amp;&amp; (ret_i2i!=inchi_Ret_WARNING)) || !inchi_out.szInChI )</a>
+<a name="ln704">        {</a>
+<a name="ln705">            ret = INCHI_FAIL_I2I;</a>
+<a name="ln706">        }</a>
+<a name="ln707">        else</a>
+<a name="ln708">        {</a>
+<a name="ln709">            if (strcmp(inchi_inp.szInChI, inchi_out.szInChI))</a>
+<a name="ln710">            {</a>
+<a name="ln711">                ret = INCHI_FAIL_I2I;</a>
+<a name="ln712">            }</a>
+<a name="ln713">        }</a>
+<a name="ln714">    }</a>
+<a name="ln715"> </a>
+<a name="ln716">fin:if ( strict )</a>
+<a name="ln717">    {</a>
+<a name="ln718">        if (NULL!=str)      </a>
+<a name="ln719">            inchi_free(str);</a>
+<a name="ln720">    }</a>
+<a name="ln721">    return ret;</a>
+<a name="ln722">}</a>
+<a name="ln723"> </a>
+<a name="ln724"> </a>
+<a name="ln725"> </a>
+<a name="ln726">/*************************************************************************/</a>
+<a name="ln727">/******************************** from readmol.c *************************/</a>
+<a name="ln728">/*************************************************************************/</a>
+<a name="ln729">int AddMOLfileError( char *pStrErr, const char *szMsg )</a>
+<a name="ln730">{</a>
+<a name="ln731">    if ( pStrErr &amp;&amp; szMsg &amp;&amp; szMsg[0] ) {</a>
+<a name="ln732">        int lenStrErr = strlen( pStrErr );</a>
+<a name="ln733">        int lenMsg    = strlen( szMsg );</a>
+<a name="ln734">        char *p = strstr( pStrErr, szMsg );</a>
+<a name="ln735">        if ( p &amp;&amp; (p==pStrErr || (*(p-1) == ' ' &amp;&amp; (*(p-2) == ';' || *(p-2) == ':' ))) &amp;&amp;</a>
+<a name="ln736">                  (p+lenMsg == pStrErr+lenStrErr || </a>
+<a name="ln737">                  (p[lenMsg] == ';' &amp;&amp; p[lenMsg+1] == ' ') ||</a>
+<a name="ln738">                  (p[lenMsg-1]==':' &amp;&amp; p[lenMsg]==' ')) ) {</a>
+<a name="ln739">            return 1; /*  reject duplicates */</a>
+<a name="ln740">        }</a>
+<a name="ln741">        if ( lenStrErr + lenMsg + 2*(lenStrErr &gt; 0) &lt; STR_ERR_LEN ) {</a>
+<a name="ln742">            /*  enough room to add */</a>
+<a name="ln743">            if (lenStrErr &gt; 0) {</a>
+<a name="ln744">                if ( pStrErr[lenStrErr-1] != ':' ) {</a>
+<a name="ln745">                    strcat( pStrErr, &quot;;&quot; );</a>
+<a name="ln746">                }</a>
+<a name="ln747">                strcat( pStrErr, &quot; &quot; );</a>
+<a name="ln748">            }</a>
+<a name="ln749">            strcat( pStrErr, szMsg );</a>
+<a name="ln750">            return 1;</a>
+<a name="ln751">        }</a>
+<a name="ln752">        /*  no room */</a>
+<a name="ln753">        if ( strstr( pStrErr, &quot;...&quot; ) ) {</a>
+<a name="ln754">            return 0; /*  no room mark has already been set */</a>
+<a name="ln755">        }</a>
+<a name="ln756">        if ( lenStrErr + 3 &lt; STR_ERR_LEN ) {</a>
+<a name="ln757">            strcat( pStrErr, &quot;...&quot; );</a>
+<a name="ln758">        }</a>
+<a name="ln759">    }</a>
+<a name="ln760">    return 0;</a>
+<a name="ln761">}</a>
+<a name="ln762">/****************************************************************/</a>
+<a name="ln763">int CopyMOLfile(FILE *inp_file, long fPtrStart, long fPtrEnd, </a>
+<a name="ln764">                FILE *prb_file,</a>
+<a name="ln765">                long lNumb)</a>
+<a name="ln766">{</a>
+<a name="ln767">    return 0; /* dummy */</a>
+<a name="ln768">}</a>
+<a name="ln769">/****************************************************************/</a>
+<a name="ln770">/************************** from mol2atom.c *********************/</a>
+<a name="ln771">/****************************************************************/</a>
+<a name="ln772">void SetNumImplicitH(inp_ATOM* at, int num_atoms)</a>
+<a name="ln773">{</a>
+<a name="ln774">    int bNonMetal;</a>
+<a name="ln775">    int a1/*, n1*/;</a>
+<a name="ln776"> </a>
+<a name="ln777">    /* special valences */</a>
+<a name="ln778">    for ( bNonMetal = 0; bNonMetal &lt; 2; bNonMetal ++ ) {</a>
+<a name="ln779">        for ( a1 = 0; a1 &lt; num_atoms; a1 ++ ) {</a>
+<a name="ln780">            int bHasMetalNeighbor /*, j*/;</a>
+<a name="ln781">            if ( bNonMetal != is_el_a_metal( at[a1].el_number ) ) {</a>
+<a name="ln782">                continue; /* first process all metals, after that all non-metals */</a>
+<a name="ln783">            }</a>
+<a name="ln784"> </a>
+<a name="ln785">            bHasMetalNeighbor = 0;</a>
+<a name="ln786">            /***********************************************************************</a>
+<a name="ln787">             *  Set number of hydrogen atoms</a>
+<a name="ln788">             */</a>
+<a name="ln789">            at[a1].num_H = get_num_H( at[a1].elname, at[a1].num_H, at[a1].num_iso_H,</a>
+<a name="ln790">                                    at[a1].charge, at[a1].radical,</a>
+<a name="ln791">                                    at[a1].chem_bonds_valence,</a>
+<a name="ln792">                                    0, /* instead of valence entered by the user: it does not exist here*/</a>
+<a name="ln793">                                    (at[a1].at_type &amp; 1)  /* bAliased */,</a>
+<a name="ln794">                                    !(at[a1].at_type &amp; 2) /* bDoNotAddH */,</a>
+<a name="ln795">                                    bHasMetalNeighbor );</a>
+<a name="ln796">            at[a1].at_type = 0;</a>
+<a name="ln797">        }</a>
+<a name="ln798">    }</a>
+<a name="ln799">}</a>
+<a name="ln800"> </a>
+<a name="ln801">/******************************************************************************************************/</a>
+<a name="ln802">void FreeInpAtom( inp_ATOM **at )</a>
+<a name="ln803">{</a>
+<a name="ln804">    if ( at &amp;&amp; *at ) {</a>
+<a name="ln805">        inchi_free( *at );</a>
+<a name="ln806">        *at = NULL;</a>
+<a name="ln807">    }</a>
+<a name="ln808">}</a>
+<a name="ln809">/******************************************************************************************************/</a>
+<a name="ln810">inp_ATOM *CreateInpAtom( int num_atoms )</a>
+<a name="ln811">{</a>
+<a name="ln812">    /*</a>
+<a name="ln813">    void *p = inchi_calloc(num_atoms, sizeof(inp_ATOM) );</a>
+<a name="ln814">    if ( p == (void*)0x009143A8 ) {</a>
+<a name="ln815">        int stop = 1;</a>
+<a name="ln816">    }</a>
+<a name="ln817">    return (inp_ATOM* )p;</a>
+<a name="ln818">    */</a>
+<a name="ln819">   return (inp_ATOM* ) inchi_calloc(num_atoms, sizeof(inp_ATOM) );</a>
+<a name="ln820">}</a>
+<a name="ln821">/******************************************************************************************************/</a>
+<a name="ln822">void FreeInpAtomData( INP_ATOM_DATA *inp_at_data )</a>
+<a name="ln823">{</a>
+<a name="ln824">    if ( inp_at_data ) {</a>
+<a name="ln825">        if ( inp_at_data-&gt;at ) {</a>
+<a name="ln826">            FreeInpAtom( &amp;inp_at_data-&gt;at );</a>
+<a name="ln827">        }</a>
+<a name="ln828">        if ( inp_at_data-&gt;at_fixed_bonds ) {</a>
+<a name="ln829">            FreeInpAtom( &amp;inp_at_data-&gt;at_fixed_bonds );</a>
+<a name="ln830">        }</a>
+<a name="ln831">        memset( inp_at_data, 0, sizeof(*inp_at_data) );</a>
+<a name="ln832">    }</a>
+<a name="ln833">}</a>
+<a name="ln834">/******************************************************************************************************/</a>
+<a name="ln835">int CreateInpAtomData( INP_ATOM_DATA *inp_at_data, int num_atoms, int create_at_fixed_bonds )</a>
+<a name="ln836">{</a>
+<a name="ln837">    FreeInpAtomData( inp_at_data );</a>
+<a name="ln838">    if ( (inp_at_data-&gt;at = CreateInpAtom( num_atoms )) &amp;&amp;</a>
+<a name="ln839">         (!create_at_fixed_bonds || (inp_at_data-&gt;at_fixed_bonds = CreateInpAtom( num_atoms) ) ) ) {</a>
+<a name="ln840">        inp_at_data-&gt;num_at = num_atoms;</a>
+<a name="ln841">        return 1;</a>
+<a name="ln842">    }</a>
+<a name="ln843">    FreeInpAtomData( inp_at_data );</a>
+<a name="ln844">    return 0;</a>
+<a name="ln845">}</a>
+<a name="ln846">/******************************************************************************************************/</a>
+<a name="ln847">void FreeCompAtomData( COMP_ATOM_DATA *inp_at_data )</a>
+<a name="ln848">{</a>
+<a name="ln849">    FreeInpAtom( &amp;inp_at_data-&gt;at );</a>
+<a name="ln850">    if ( inp_at_data-&gt;nOffsetAtAndH )</a>
+<a name="ln851">        inchi_free( inp_at_data-&gt;nOffsetAtAndH );</a>
+<a name="ln852">    memset( inp_at_data, 0, sizeof(*inp_at_data) );</a>
+<a name="ln853">}</a>
+<a name="ln854">/******************************************************************************************************/</a>
+<a name="ln855">#if( TEST_RENUMB_ATOMS == 1 )  /*  { */</a>
+<a name="ln856">/******************************************************************************************************/</a>
+<a name="ln857">int CopyInpAtomData( INP_ATOM_DATA *dest_inp_at_data, INP_ATOM_DATA *src_inp_at_data )</a>
+<a name="ln858">{</a>
+<a name="ln859">    int ret = 1;</a>
+<a name="ln860">    if ( !dest_inp_at_data-&gt;at  || dest_inp_at_data-&gt;num_at != src_inp_at_data-&gt;num_at ) {</a>
+<a name="ln861">        ret = CreateInpAtomData( dest_inp_at_data, src_inp_at_data-&gt;num_at, (NULL != src_inp_at_data-&gt;at_fixed_bonds) );</a>
+<a name="ln862">    } else {</a>
+<a name="ln863">        inp_ATOM *at  = dest_inp_at_data-&gt;at;  /*  save ptr to already allocated memory */</a>
+<a name="ln864">        inp_ATOM *at2 = dest_inp_at_data-&gt;at_fixed_bonds;</a>
+<a name="ln865">        *dest_inp_at_data = *src_inp_at_data; /*  copy all other (scalar) data */</a>
+<a name="ln866">        dest_inp_at_data-&gt;at = at;            /*  restore ptr to already allocated memory */</a>
+<a name="ln867">        dest_inp_at_data-&gt;at_fixed_bonds = at2;</a>
+<a name="ln868">    }</a>
+<a name="ln869">    if ( ret ) {</a>
+<a name="ln870">        memcpy( dest_inp_at_data-&gt;at, src_inp_at_data-&gt;at,</a>
+<a name="ln871">                src_inp_at_data-&gt;num_at*sizeof(dest_inp_at_data-&gt;at[0]) );</a>
+<a name="ln872">        if ( dest_inp_at_data-&gt;at_fixed_bonds &amp;&amp; src_inp_at_data-&gt;at_fixed_bonds ) {</a>
+<a name="ln873">            memcpy( dest_inp_at_data-&gt;at_fixed_bonds, src_inp_at_data-&gt;at_fixed_bonds,</a>
+<a name="ln874">                src_inp_at_data-&gt;num_at*sizeof(dest_inp_at_data-&gt;at_fixed_bonds[0]) );</a>
+<a name="ln875">        }</a>
+<a name="ln876">    }</a>
+<a name="ln877">    return ret;</a>
+<a name="ln878">}</a>
+<a name="ln879">/******************************************************************************************************/</a>
+<a name="ln880">void RenumbInpAtomData( INP_ATOM_DATA *dest_inp_at_data, INP_ATOM_DATA *src_inp_at_data, AT_RANK *new_ord )</a>
+<a name="ln881">{</a>
+<a name="ln882">    int j, n, m, val;</a>
+<a name="ln883">#if( TEST_RENUMB_NEIGH == 1 )</a>
+<a name="ln884">    int i, k;</a>
+<a name="ln885">#endif</a>
+<a name="ln886">    int       num_atoms = src_inp_at_data-&gt;num_at;</a>
+<a name="ln887">    inp_ATOM *dest_at   = dest_inp_at_data-&gt;at;</a>
+<a name="ln888">    for ( n = 0; n &lt; num_atoms; n ++ ) {</a>
+<a name="ln889">        m = new_ord[n];</a>
+<a name="ln890">        dest_at[m] = src_inp_at_data-&gt;at[n];</a>
+<a name="ln891">        dest_at[m].orig_compt_at_numb = (AT_NUMB)(m+1);  /*  new ordering number within the component */</a>
+<a name="ln892">        val = dest_at[m].valence;</a>
+<a name="ln893">        for ( j = 0; j &lt; val; j ++ ) {</a>
+<a name="ln894">            dest_at[m].neighbor[j] = new_ord[dest_at[m].neighbor[j]];</a>
+<a name="ln895">        }</a>
+<a name="ln896">#if( TEST_RENUMB_NEIGH == 1 )</a>
+<a name="ln897">        for ( i = 0; i &lt; 3*val; i ++ ) {</a>
+<a name="ln898">            j = (rand() * val) / (RAND_MAX+1);</a>
+<a name="ln899">            k = (rand() * val) / (RAND_MAX+1);</a>
+<a name="ln900">            if ( j &gt;= val || k &gt;= val || j == k ) {</a>
+<a name="ln901">                continue;</a>
+<a name="ln902">            }</a>
+<a name="ln903">            inchi_swap( (char*)&amp;dest_at[m].neighbor[j],    (char*)&amp;dest_at[m].neighbor[k],    sizeof(dest_at[0].neighbor[0]) );</a>
+<a name="ln904">            inchi_swap( (char*)&amp;dest_at[m].bond_stereo[j], (char*)&amp;dest_at[m].bond_stereo[k], sizeof(dest_at[0].bond_stereo[0]) );</a>
+<a name="ln905">            inchi_swap( (char*)&amp;dest_at[m].bond_type[j],   (char*)&amp;dest_at[m].bond_type[k],   sizeof(dest_at[0].bond_type[0]) );</a>
+<a name="ln906">            /* adjust stereo bond links */</a>
+<a name="ln907">            if ( dest_at[m].sb_parity[0] ) {</a>
+<a name="ln908">                int a;</a>
+<a name="ln909">                for ( a = 0; a &lt; MAX_NUM_STEREO_BONDS &amp;&amp; dest_at[m].sb_parity[a]; a ++ ) {</a>
+<a name="ln910">                    </a>
+<a name="ln911">                    if ( k == (int)dest_at[m].sb_ord[a] ) {</a>
+<a name="ln912">                        dest_at[m].sb_ord[a] = j;</a>
+<a name="ln913">                    } else</a>
+<a name="ln914">                    if ( j == (int)dest_at[m].sb_ord[a] ) {</a>
+<a name="ln915">                        dest_at[m].sb_ord[a] = k;</a>
+<a name="ln916">                    }</a>
+<a name="ln917"> </a>
+<a name="ln918">                    if ( k == (int)dest_at[m].sn_ord[a] ) {</a>
+<a name="ln919">                        dest_at[m].sn_ord[a] = j;</a>
+<a name="ln920">                    } else</a>
+<a name="ln921">                    if ( j == (int)dest_at[m].sn_ord[a] ) {</a>
+<a name="ln922">                        dest_at[m].sn_ord[a] = k;</a>
+<a name="ln923">                    }</a>
+<a name="ln924">                }</a>
+<a name="ln925">            }</a>
+<a name="ln926">        }</a>
+<a name="ln927">#endif</a>
+<a name="ln928">    }</a>
+<a name="ln929"> </a>
+<a name="ln930">}</a>
+<a name="ln931">/******************************************************************************************************/</a>
+<a name="ln932">void MakeNewOrd( int num_atoms, AT_RANK *new_ord )</a>
+<a name="ln933">{</a>
+<a name="ln934">    int i, j, k;</a>
+<a name="ln935">    for ( i = 0; i &lt; 3*num_atoms; i ++ ) {</a>
+<a name="ln936">        j = (rand() * num_atoms) / (RAND_MAX+1);</a>
+<a name="ln937">        k = (rand() * num_atoms) / (RAND_MAX+1);</a>
+<a name="ln938">        if ( j &gt;= num_atoms || k &gt;= num_atoms || j == k ) {</a>
+<a name="ln939">            continue;</a>
+<a name="ln940">        }</a>
+<a name="ln941">        inchi_swap( (char*)&amp;new_ord[j], (char*)&amp;new_ord[k], sizeof(new_ord[0]) );</a>
+<a name="ln942">    }</a>
+<a name="ln943">}</a>
+<a name="ln944">#endif /*  } TEST_RENUMB_ATOMS == 1  */</a>
+<a name="ln945">/**********************************************************************************/</a>
+<a name="ln946">void FreeOrigAtData( ORIG_ATOM_DATA *orig_at_data )</a>
+<a name="ln947">{</a>
+<a name="ln948">    if ( !orig_at_data )</a>
+<a name="ln949">        return;</a>
+<a name="ln950">    FreeInpAtom( &amp;orig_at_data-&gt;at );</a>
+<a name="ln951">    if ( NULL != orig_at_data-&gt;nCurAtLen ) {</a>
+<a name="ln952">        inchi_free( orig_at_data-&gt;nCurAtLen );</a>
+<a name="ln953">    }</a>
+<a name="ln954">    if ( NULL != orig_at_data-&gt;nOldCompNumber ) {</a>
+<a name="ln955">        inchi_free( orig_at_data-&gt;nOldCompNumber );</a>
+<a name="ln956">    }</a>
+<a name="ln957">    if ( NULL != orig_at_data-&gt;szCoord ) {</a>
+<a name="ln958">        inchi_free( orig_at_data-&gt;szCoord );</a>
+<a name="ln959">    }</a>
+<a name="ln960">    if ( NULL != orig_at_data-&gt;nEquLabels ) {</a>
+<a name="ln961">        inchi_free( orig_at_data-&gt;nEquLabels );</a>
+<a name="ln962">    }</a>
+<a name="ln963">    if ( NULL != orig_at_data-&gt;nSortedOrder ) {</a>
+<a name="ln964">        inchi_free( orig_at_data-&gt;nSortedOrder );</a>
+<a name="ln965">    }</a>
+<a name="ln966">    memset( orig_at_data, 0, sizeof(*orig_at_data) );</a>
+<a name="ln967">}</a>
+<a name="ln968">/********************************************************************/</a>
+<a name="ln969"> </a>
+<a name="ln970">#define REPEAT_ALL  0</a>
+<a name="ln971">/********************************************************************/</a>
+<a name="ln972">int parse_options_string ( char *cmd, const char *argv[], int maxargs )</a>
+<a name="ln973">{</a>
+<a name="ln974">    char    *p;</a>
+<a name="ln975">    char    *pArgCurChar;</a>
+<a name="ln976">    int      bInsideQuotes;</a>
+<a name="ln977">    int      bCopyCharToArg;</a>
+<a name="ln978">    int      nNumBackSlashes;</a>
+<a name="ln979">    int      i;</a>
+<a name="ln980"> </a>
+<a name="ln981">    i = 0;</a>
+<a name="ln982">    argv[i++] = &quot;&quot;; /* zeroth argument is not used */</a>
+<a name="ln983">    p = cmd;</a>
+<a name="ln984">    bInsideQuotes = 0;</a>
+<a name="ln985"> </a>
+<a name="ln986">    /* arguments, one by one */</a>
+<a name="ln987">    while( i &lt; maxargs-1 ) {</a>
+<a name="ln988">        /* bypass spaces */</a>
+<a name="ln989">        while ( *p == ' ' || *p == '\t' )</a>
+<a name="ln990">            p ++;</a>
+<a name="ln991">        if ( !*p )</a>
+<a name="ln992">            break;</a>
+<a name="ln993">        /* scan an argument */</a>
+<a name="ln994">        argv[i++] = pArgCurChar = p;     /* store preliminary ptr to arg */</a>
+<a name="ln995">        while ( 1 ) {</a>
+<a name="ln996">            bCopyCharToArg = 1;</a>
+<a name="ln997">            nNumBackSlashes = 0;</a>
+<a name="ln998">            while (*p == '\\') {</a>
+<a name="ln999">                ++p;</a>
+<a name="ln1000">                ++nNumBackSlashes;</a>
+<a name="ln1001">            }</a>
+<a name="ln1002">            /* each pair of backslashes =&gt; one backslash; one more backslash =&gt; literal quote */</a>
+<a name="ln1003">            if ( *p == '\&quot;' ) {</a>
+<a name="ln1004">                /* one &quot; found */</a>
+<a name="ln1005">                if ( nNumBackSlashes % 2 == 0 ) {</a>
+<a name="ln1006">                    if (bInsideQuotes) {</a>
+<a name="ln1007">                        if (*(p+1) == '\&quot;') {</a>
+<a name="ln1008">                            p++;</a>
+<a name="ln1009">                        } else {</a>
+<a name="ln1010">                            bCopyCharToArg = 0;</a>
+<a name="ln1011">                        }</a>
+<a name="ln1012">                    } else {</a>
+<a name="ln1013">                        bCopyCharToArg = 0;</a>
+<a name="ln1014">                    }</a>
+<a name="ln1015">                    bInsideQuotes = !bInsideQuotes;</a>
+<a name="ln1016">                }</a>
+<a name="ln1017">                nNumBackSlashes /= 2;          /* divide nNumBackSlashes by two */</a>
+<a name="ln1018">            }</a>
+<a name="ln1019">            while (nNumBackSlashes--) {</a>
+<a name="ln1020">                *pArgCurChar++ = '\\';</a>
+<a name="ln1021">            }</a>
+<a name="ln1022">            if (!*p) {</a>
+<a name="ln1023">                break;</a>
+<a name="ln1024">            }</a>
+<a name="ln1025">            if (!bInsideQuotes &amp;&amp; (*p == ' ' || *p == '\t')) {</a>
+<a name="ln1026">                p ++; </a>
+<a name="ln1027">                /* move to the next char because this char may become</a>
+<a name="ln1028">                 * zero due to  *pArgCurChar++ = '\0'; line below */</a>
+<a name="ln1029">                break;</a>
+<a name="ln1030">            }</a>
+<a name="ln1031">            if (bCopyCharToArg) {</a>
+<a name="ln1032">                *pArgCurChar++ = *p;</a>
+<a name="ln1033">            }</a>
+<a name="ln1034">            ++p;</a>
+<a name="ln1035">        }</a>
+<a name="ln1036">        *pArgCurChar++ = '\0';  /* argument zero termination */</a>
+<a name="ln1037">    }</a>
+<a name="ln1038">    /* The last argument is NULL */</a>
+<a name="ln1039">    argv[i] = NULL;</a>
+<a name="ln1040">    return i;</a>
+<a name="ln1041">}</a>
+<a name="ln1042">/*****************************************************************/</a>
+<a name="ln1043">#define MIN_BOND_LENGTH   (1.0e-6)</a>
+<a name="ln1044">int SetAtomProperties( inp_ATOM *at, MOL_COORD *szCoord, inchi_Atom *ati, int a1, int *nDim, char *pStrErr, int *err )</a>
+<a name="ln1045">{        </a>
+<a name="ln1046">    S_CHAR      cRadical;</a>
+<a name="ln1047">    /* element, check later */</a>
+<a name="ln1048"> </a>
+<a name="ln1049">    strcpy( at[a1].elname, ati[a1].elname );</a>
+<a name="ln1050"> </a>
+<a name="ln1051">    /* charge */</a>
+<a name="ln1052"> </a>
+<a name="ln1053">    at[a1].charge = ati[a1].charge;</a>
+<a name="ln1054"> </a>
+<a name="ln1055">    /* radical */</a>
+<a name="ln1056"> </a>
+<a name="ln1057">    switch ( ati[a1].radical ) {</a>
+<a name="ln1058">    case   INCHI_RADICAL_NONE:</a>
+<a name="ln1059">        cRadical = 0;</a>
+<a name="ln1060">        break;</a>
+<a name="ln1061">    case   INCHI_RADICAL_SINGLET:</a>
+<a name="ln1062">#if( SINGLET_IS_TRIPLET == 1) /* 'singlet' means two electrons make a lone pair instead of 2 bonds*/</a>
+<a name="ln1063">                              /* its effect on valence is same as the effect of a triplet */</a>
+<a name="ln1064">        cRadical = RADICAL_TRIPLET;</a>
+<a name="ln1065">#else</a>
+<a name="ln1066">        cRadical = RADICAL_SINGLET;</a>
+<a name="ln1067">#endif</a>
+<a name="ln1068">        break;</a>
+<a name="ln1069">    case   INCHI_RADICAL_DOUBLET:</a>
+<a name="ln1070">        cRadical = RADICAL_DOUBLET;</a>
+<a name="ln1071">        break;</a>
+<a name="ln1072">    case   INCHI_RADICAL_TRIPLET:</a>
+<a name="ln1073">        cRadical = RADICAL_TRIPLET;</a>
+<a name="ln1074">        break;</a>
+<a name="ln1075">    default:</a>
+<a name="ln1076">        {</a>
+<a name="ln1077">            char szRadicalType[16];</a>
+<a name="ln1078">            int nRad = ati[a1].radical;</a>
+<a name="ln1079">            while ( nRad &gt; RADICAL_TRIPLET ) {</a>
+<a name="ln1080">                nRad -= 2;</a>
+<a name="ln1081">            }</a>
+<a name="ln1082">            sprintf( szRadicalType, &quot;%d-&gt;%d&quot;, ati[a1].radical, nRad );</a>
+<a name="ln1083">            MOLFILE_ERR_SET (*err, 0, &quot;Radical center type replaced:&quot;);</a>
+<a name="ln1084">            MOLFILE_ERR_SET (*err, 0, szRadicalType);</a>
+<a name="ln1085">            cRadical = nRad;</a>
+<a name="ln1086">            if ( nRad &lt; 0 ) {</a>
+<a name="ln1087">                *err |= 8; /*  Unrecognized Radical replaced with non-radical */</a>
+<a name="ln1088">            }</a>
+<a name="ln1089">        }</a>
+<a name="ln1090">        break;</a>
+<a name="ln1091">    }</a>
+<a name="ln1092">    at[a1].radical = cRadical;</a>
+<a name="ln1093"> </a>
+<a name="ln1094">    /* coordinates */</a>
+<a name="ln1095">    at[a1].x = ati[a1].x;</a>
+<a name="ln1096">    at[a1].y = ati[a1].y;</a>
+<a name="ln1097">    at[a1].z = ati[a1].z;</a>
+<a name="ln1098"> </a>
+<a name="ln1099">    if ( szCoord ) {</a>
+<a name="ln1100">        /* store text coordinates */</a>
+<a name="ln1101">        char str[32];</a>
+<a name="ln1102">        MOL_COORD * coord_p = szCoord + a1;</a>
+<a name="ln1103">        WriteCoord( str, ati[a1].x );</a>
+<a name="ln1104">        memcpy( *coord_p, str, 10 );</a>
+<a name="ln1105">        WriteCoord( str, ati[a1].y );</a>
+<a name="ln1106">        memcpy( *coord_p+10, str, 10 );</a>
+<a name="ln1107">        WriteCoord( str, ati[a1].z );</a>
+<a name="ln1108">        memcpy( *coord_p+20, str, 10 );</a>
+<a name="ln1109">    }</a>
+<a name="ln1110"> </a>
+<a name="ln1111">    if ( MIN_BOND_LENGTH &lt; fabs(ati[a1].x) || MIN_BOND_LENGTH &lt; fabs(ati[a1].y) || MIN_BOND_LENGTH &lt; fabs(ati[a1].z) ) {</a>
+<a name="ln1112">        if ( MIN_BOND_LENGTH &lt; fabs(ati[a1].z) ) {</a>
+<a name="ln1113">            *nDim |= 3;</a>
+<a name="ln1114">        } else {</a>
+<a name="ln1115">            *nDim |= 2;</a>
+<a name="ln1116">        }</a>
+<a name="ln1117">    }</a>
+<a name="ln1118"> </a>
+<a name="ln1119">    /* orig. at. number */</a>
+<a name="ln1120">    at[a1].orig_at_number = a1+1;</a>
+<a name="ln1121">    return 0;</a>
+<a name="ln1122">#undef MIN_BOND_LENGTH</a>
+<a name="ln1123">}</a>
+<a name="ln1124">/*********************************************************************/</a>
+<a name="ln1125">int SetBondProperties( inp_ATOM *at, inchi_Atom *ati, int a1, int j,</a>
+<a name="ln1126">                       int nNumAtoms, int *nNumBonds, char *pStrErr, int *err )</a>
+<a name="ln1127">{ </a>
+<a name="ln1128">    int a2;</a>
+<a name="ln1129">    S_CHAR     cBondType, cStereoType1, cStereoType2;</a>
+<a name="ln1130">    AT_NUMB   *p1, *p2;</a>
+<a name="ln1131">    int        n1, n2;</a>
+<a name="ln1132"> </a>
+<a name="ln1133">    /* bond type */</a>
+<a name="ln1134">    switch( ati[a1].bond_type[j] ) {</a>
+<a name="ln1135">    case INCHI_BOND_TYPE_SINGLE:</a>
+<a name="ln1136">        cBondType = BOND_TYPE_SINGLE;</a>
+<a name="ln1137">        break;</a>
+<a name="ln1138">    case INCHI_BOND_TYPE_DOUBLE:</a>
+<a name="ln1139">        cBondType = BOND_TYPE_DOUBLE;</a>
+<a name="ln1140">        break;</a>
+<a name="ln1141">    case INCHI_BOND_TYPE_TRIPLE:</a>
+<a name="ln1142">        cBondType = BOND_TYPE_TRIPLE;</a>
+<a name="ln1143">        break;</a>
+<a name="ln1144">    case INCHI_BOND_TYPE_ALTERN:</a>
+<a name="ln1145">        cBondType = BOND_TYPE_ALTERN;</a>
+<a name="ln1146">        break;</a>
+<a name="ln1147">    default:</a>
+<a name="ln1148">        {</a>
+<a name="ln1149">        char szBondType[16];</a>
+<a name="ln1150">        sprintf( szBondType, &quot;%d&quot;, ati[a1].bond_type[j] );</a>
+<a name="ln1151">        MOLFILE_ERR_SET (*err, 0, &quot;Unrecognized bond type:&quot;);</a>
+<a name="ln1152">        MOLFILE_ERR_SET (*err, 0, szBondType);</a>
+<a name="ln1153">        *err |= 8; /*  Unrecognized Bond type replaced with single bond */</a>
+<a name="ln1154">        cBondType = BOND_TYPE_SINGLE;</a>
+<a name="ln1155">        }</a>
+<a name="ln1156">        break;</a>
+<a name="ln1157">    }</a>
+<a name="ln1158"> </a>
+<a name="ln1159">    /* 2D stereo */</a>
+<a name="ln1160"> </a>
+<a name="ln1161">    switch( ati[a1].bond_stereo[j] ) {</a>
+<a name="ln1162">    /* stereocenter-related; positive: the sharp end points to this atom  */</a>
+<a name="ln1163">    case   INCHI_BOND_STEREO_NONE:</a>
+<a name="ln1164">        cStereoType1 = 0;</a>
+<a name="ln1165">        cStereoType2 = 0;</a>
+<a name="ln1166">        break;</a>
+<a name="ln1167">    case   INCHI_BOND_STEREO_SINGLE_1UP:</a>
+<a name="ln1168">        cStereoType1 =  STEREO_SNGL_UP;</a>
+<a name="ln1169">        cStereoType2 = -STEREO_SNGL_UP;</a>
+<a name="ln1170">        break;</a>
+<a name="ln1171">    case   INCHI_BOND_STEREO_SINGLE_1EITHER:</a>
+<a name="ln1172">        cStereoType1 =  STEREO_SNGL_EITHER;</a>
+<a name="ln1173">        cStereoType2 = -STEREO_SNGL_EITHER;</a>
+<a name="ln1174">        break;</a>
+<a name="ln1175">    case   INCHI_BOND_STEREO_SINGLE_1DOWN:</a>
+<a name="ln1176">        cStereoType1 =  STEREO_SNGL_DOWN;</a>
+<a name="ln1177">        cStereoType2 = -STEREO_SNGL_DOWN;</a>
+<a name="ln1178">        break;</a>
+<a name="ln1179">    /* stereocenter-related; negative: the sharp end points to the opposite atom  */</a>
+<a name="ln1180">    case   INCHI_BOND_STEREO_SINGLE_2UP:</a>
+<a name="ln1181">        cStereoType1 = -STEREO_SNGL_UP;</a>
+<a name="ln1182">        cStereoType2 =  STEREO_SNGL_UP;</a>
+<a name="ln1183">        break;</a>
+<a name="ln1184">    case   INCHI_BOND_STEREO_SINGLE_2EITHER:</a>
+<a name="ln1185">        cStereoType1 = -STEREO_SNGL_EITHER;</a>
+<a name="ln1186">        cStereoType2 =  STEREO_SNGL_EITHER;</a>
+<a name="ln1187">        break;</a>
+<a name="ln1188">    case   INCHI_BOND_STEREO_SINGLE_2DOWN:</a>
+<a name="ln1189">        cStereoType1 = -STEREO_SNGL_DOWN;</a>
+<a name="ln1190">        cStereoType2 =  STEREO_SNGL_DOWN;</a>
+<a name="ln1191">        break;</a>
+<a name="ln1192">    /* stereobond-related */</a>
+<a name="ln1193">    case   INCHI_BOND_STEREO_DOUBLE_EITHER:</a>
+<a name="ln1194">    case  -INCHI_BOND_STEREO_DOUBLE_EITHER:</a>
+<a name="ln1195">        cStereoType1 = STEREO_DBLE_EITHER;</a>
+<a name="ln1196">        cStereoType2 = STEREO_DBLE_EITHER;</a>
+<a name="ln1197">        break;</a>
+<a name="ln1198">    default:</a>
+<a name="ln1199">        {</a>
+<a name="ln1200">        char szBondType[16];</a>
+<a name="ln1201">        sprintf( szBondType, &quot;%d&quot;, ati[a1].bond_stereo[j] );</a>
+<a name="ln1202">        MOLFILE_ERR_SET (*err, 0, &quot;Unrecognized bond stereo:&quot;);</a>
+<a name="ln1203">        MOLFILE_ERR_SET (*err, 0, szBondType);</a>
+<a name="ln1204">        *err |= 8; /*  Unrecognized Bond stereo replaced with non-stereo bond */</a>
+<a name="ln1205">        cStereoType1 = 0;</a>
+<a name="ln1206">        cStereoType2 = 0;</a>
+<a name="ln1207">        }</a>
+<a name="ln1208">        break;</a>
+<a name="ln1209">    }</a>
+<a name="ln1210"> </a>
+<a name="ln1211">    /* neighbor */</a>
+<a name="ln1212"> </a>
+<a name="ln1213">    if ( ati[a1].neighbor[j] &lt; 0 || ati[a1].neighbor[j] &gt;= nNumAtoms ) {</a>
+<a name="ln1214">        *err |= 1; /*  bond for impossible atom number(s); ignored */</a>
+<a name="ln1215">        MOLFILE_ERR_SET (*err, 0, &quot;Bond to nonexistent atom&quot;);</a>
+<a name="ln1216">        goto err_exit;</a>
+<a name="ln1217">    }</a>
+<a name="ln1218">    a2 = (AT_NUMB) ati[a1].neighbor[j];</a>
+<a name="ln1219">    if ( a2 == a1 ) {</a>
+<a name="ln1220">        *err |= 1; /*  bond for impossible atom number(s); ignored */</a>
+<a name="ln1221">        MOLFILE_ERR_SET (*err, 0, &quot;Atom has a bond to itself&quot;);</a>
+<a name="ln1222">        goto err_exit;</a>
+<a name="ln1223">    }</a>
+<a name="ln1224"> </a>
+<a name="ln1225">    /* consistency check; locate the bond in the opposite atom */</a>
+<a name="ln1226"> </a>
+<a name="ln1227">    p1 = is_in_the_list( at[a1].neighbor, (AT_NUMB)a2, at[a1].valence );</a>
+<a name="ln1228">    p2 = is_in_the_list( at[a2].neighbor, (AT_NUMB)a1, at[a2].valence );</a>
+<a name="ln1229">    if ( p1 &amp;&amp; p2 ) {</a>
+<a name="ln1230">        n1 = (p1 - at[a1].neighbor);</a>
+<a name="ln1231">        n2 = (p2 - at[a2].neighbor);</a>
+<a name="ln1232">        if ( (n1+1 &lt; at[a1].valence &amp;&amp; is_in_the_list( at[a1].neighbor+n1+1, (AT_NUMB)a2, at[a1].valence-n1-1 )) ||</a>
+<a name="ln1233">             (n2+1 &lt; at[a2].valence &amp;&amp; is_in_the_list( at[a2].neighbor+n2+1, (AT_NUMB)a1, at[a2].valence-n2-1 )) ) {</a>
+<a name="ln1234">            MOLFILE_ERR_SET (*err, 0, &quot;Multiple bonds between two atoms&quot;);</a>
+<a name="ln1235">            *err |= 2; /*  multiple bonds between atoms */</a>
+<a name="ln1236">        } else</a>
+<a name="ln1237">        if ( n1 &lt; at[a1].valence &amp;&amp; n2 &lt; at[a2].valence &amp;&amp;</a>
+<a name="ln1238">             cBondType == at[a2].bond_type[n2] &amp;&amp;</a>
+<a name="ln1239">             cBondType == at[a1].bond_type[n1] &amp;&amp;</a>
+<a name="ln1240">             cStereoType1 == at[a1].bond_stereo[n1] &amp;&amp;</a>
+<a name="ln1241">             cStereoType2 == at[a2].bond_stereo[n2] ) {</a>
+<a name="ln1242">            /*MOLFILE_ERR_SET (*err, 0, &quot;Duplicated bond(s) between two atoms&quot;);*/</a>
+<a name="ln1243">        } else {</a>
+<a name="ln1244">            MOLFILE_ERR_SET (*err, 0, &quot;Multiple bonds between two atoms&quot;);</a>
+<a name="ln1245">            *err |= 2; /*  multiple bonds between atoms */</a>
+<a name="ln1246">        }</a>
+<a name="ln1247">    } else</a>
+<a name="ln1248">    if ( (p1 || p2) &amp;&amp; (p1 || at[a1].valence &lt; MAXVAL) &amp;&amp; (p2 || at[a2].valence &lt; MAXVAL) ) {</a>
+<a name="ln1249">        n1 = p1? (p1 - at[a1].neighbor) : at[a1].valence ++;</a>
+<a name="ln1250">        n2 = p2? (p2 - at[a2].neighbor) : at[a2].valence ++;</a>
+<a name="ln1251">        /* the bond is present in one atom only: possibly program error */</a>
+<a name="ln1252">        if ( (p1 &amp;&amp; (cBondType != at[a1].bond_type[n1] || at[a1].bond_stereo[n1] != cStereoType1)) ||</a>
+<a name="ln1253">             (p2 &amp;&amp; (cBondType != at[a2].bond_type[n2] || at[a2].bond_stereo[n2] != cStereoType2)) ) {</a>
+<a name="ln1254">            MOLFILE_ERR_SET (*err, 0, &quot;Multiple bonds between two atoms&quot;);</a>
+<a name="ln1255">            *err |= 2; /*  multiple bonds between atoms */</a>
+<a name="ln1256">        } else {</a>
+<a name="ln1257">            MOLFILE_ERR_SET (*err, 0, &quot;Duplicated bond(s) between two atoms&quot;);</a>
+<a name="ln1258">            /* warning */</a>
+<a name="ln1259">        }</a>
+<a name="ln1260">    } else</a>
+<a name="ln1261">    if ( !p1 &amp;&amp; !p2 &amp;&amp; at[a1].valence &lt; MAXVAL &amp;&amp; at[a2].valence &lt; MAXVAL ) {</a>
+<a name="ln1262">        n1 = at[a1].valence ++;</a>
+<a name="ln1263">        n2 = at[a2].valence ++;</a>
+<a name="ln1264">        (*nNumBonds) ++;</a>
+<a name="ln1265">    } else {</a>
+<a name="ln1266">        char szMsg[64];</a>
+<a name="ln1267">        *err |= 4; /*  too large number of bonds. Some bonds ignored. */</a>
+<a name="ln1268">        sprintf( szMsg, &quot;Atom '%s' has more than %d bonds&quot;,</a>
+<a name="ln1269">                        at[a1].valence&gt;= MAXVAL? at[a1].elname:at[a2].elname, MAXVAL );</a>
+<a name="ln1270">        MOLFILE_ERR_SET (*err, 0, szMsg);</a>
+<a name="ln1271">        goto err_exit;</a>
+<a name="ln1272">    }</a>
+<a name="ln1273">    </a>
+<a name="ln1274">    /* store the connection */</a>
+<a name="ln1275"> </a>
+<a name="ln1276">    /* bond type */</a>
+<a name="ln1277">    at[a1].bond_type[n1] =</a>
+<a name="ln1278">    at[a2].bond_type[n2] = cBondType;</a>
+<a name="ln1279">    /* connection */</a>
+<a name="ln1280">    at[a1].neighbor[n1] = (AT_NUMB)a2;</a>
+<a name="ln1281">    at[a2].neighbor[n2] = (AT_NUMB)a1;</a>
+<a name="ln1282">    /* stereo */</a>
+<a name="ln1283">    at[a1].bond_stereo[n1] =  cStereoType1; /*  &gt;0: the wedge (pointed) end is at this atom */</a>
+<a name="ln1284">    at[a2].bond_stereo[n2] =  cStereoType2; /*  &lt;0: the wedge (pointed) end is at the opposite atom */</a>
+<a name="ln1285">    return 0;</a>
+<a name="ln1286">err_exit:</a>
+<a name="ln1287">    return 1;</a>
+<a name="ln1288">}</a>
+<a name="ln1289">/******************************************************************/</a>
+<a name="ln1290">int SetAtomAndBondProperties( inp_ATOM *at, inchi_Atom *ati, int a1,</a>
+<a name="ln1291">                              int bDoNotAddH, char *pStrErr, int *err )</a>
+<a name="ln1292">{</a>
+<a name="ln1293">    int valence, chem_valence, num_alt_bonds, j, n1;</a>
+<a name="ln1294">    int nRadical, nCharge;</a>
+<a name="ln1295">    static int el_number_H = 0;</a>
+<a name="ln1296">    </a>
+<a name="ln1297">    if ( !el_number_H ) {</a>
+<a name="ln1298">        el_number_H = get_periodic_table_number( &quot;H&quot; );</a>
+<a name="ln1299">    }</a>
+<a name="ln1300"> </a>
+<a name="ln1301">    nRadical = nCharge = 0;</a>
+<a name="ln1302">    valence = at[a1].valence;</a>
+<a name="ln1303">    chem_valence = num_alt_bonds = 0;</a>
+<a name="ln1304">    for ( j = 0; j &lt; valence; j ++ ) {</a>
+<a name="ln1305">        if ( at[a1].bond_type[j] &lt;= BOND_TYPE_TRIPLE ) {</a>
+<a name="ln1306">            chem_valence += at[a1].bond_type[j];</a>
+<a name="ln1307">        } else {</a>
+<a name="ln1308">            num_alt_bonds ++;</a>
+<a name="ln1309">        }</a>
+<a name="ln1310">    }</a>
+<a name="ln1311">    switch( num_alt_bonds ) {</a>
+<a name="ln1312">    case 0:</a>
+<a name="ln1313">        break;</a>
+<a name="ln1314">    case 2:</a>
+<a name="ln1315">        chem_valence += 3; /* -C= */</a>
+<a name="ln1316">        break;</a>
+<a name="ln1317">    case 3:</a>
+<a name="ln1318">        chem_valence += 4;  /* &gt;C= */</a>
+<a name="ln1319">        break;</a>
+<a name="ln1320">    default:</a>
+<a name="ln1321">        {</a>
+<a name="ln1322">        char szMsg[64];</a>
+<a name="ln1323">        *err |= 8; /*  wrong number of alt. bonds */</a>
+<a name="ln1324">        sprintf( szMsg, &quot;Atom '%s' has %d alternating bonds&quot;,</a>
+<a name="ln1325">                        at[a1].elname, num_alt_bonds );</a>
+<a name="ln1326">        MOLFILE_ERR_SET (*err, 0, szMsg);</a>
+<a name="ln1327">        }</a>
+<a name="ln1328">        break;</a>
+<a name="ln1329">    }</a>
+<a name="ln1330">    at[a1].chem_bonds_valence = chem_valence;</a>
+<a name="ln1331"> </a>
+<a name="ln1332">    /* aliased hydrogen atoms */</a>
+<a name="ln1333">    if ( ERR_ELEM == (n1 = get_periodic_table_number( at[a1].elname ) ) ) {</a>
+<a name="ln1334">        /*  Case when elname contains more than 1 element: extract number of H if possible */</a>
+<a name="ln1335">        if ( extract_ChargeRadical( at[a1].elname, &amp;nRadical, &amp;nCharge ) ) {</a>
+<a name="ln1336">            if ( (nRadical &amp;&amp; at[a1].radical &amp;&amp; nRadical != at[a1].radical) ||</a>
+<a name="ln1337">                 (nCharge  &amp;&amp; at[a1].charge  &amp;&amp; nCharge  != at[a1].charge) ) {</a>
+<a name="ln1338">                MOLFILE_ERR_SET (*err, 0, &quot;Ignored charge/radical redefinition:&quot;);</a>
+<a name="ln1339">                MOLFILE_ERR_SET (*err, 0, ati[a1].elname);</a>
+<a name="ln1340">            } else {</a>
+<a name="ln1341">                if ( nRadical )</a>
+<a name="ln1342">                    at[a1].radical = nRadical;</a>
+<a name="ln1343">                if ( nCharge )</a>
+<a name="ln1344">                    at[a1].charge  = nCharge;</a>
+<a name="ln1345">            }</a>
+<a name="ln1346">        }</a>
+<a name="ln1347">        at[a1].num_H = extract_H_atoms( at[a1].elname, at[a1].num_iso_H );</a>
+<a name="ln1348">        if ( !at[a1].elname[0] &amp;&amp; NUMH(at, a1) ) {</a>
+<a name="ln1349">            /* alias contains only H. Added 2004-07-21, fixed 2004-07-22</a>
+<a name="ln1350">             * move the heaviest isotope to the &quot;central atom&quot;</a>
+<a name="ln1351">             * Note: this must be consistent with H-H treatment in remove_terminal_HDT()</a>
+<a name="ln1352">             */</a>
+<a name="ln1353">            strcpy( at[a1].elname, &quot;H&quot; );</a>
+<a name="ln1354">            if ( NUM_ISO_H(at,a1) ) {</a>
+<a name="ln1355">                for ( j = NUM_H_ISOTOPES-1; 0 &lt;= j; j -- ) {</a>
+<a name="ln1356">                    if ( at[a1].num_iso_H[j] ) {</a>
+<a name="ln1357">                        at[a1].num_iso_H[j] --;</a>
+<a name="ln1358">                        at[a1].iso_atw_diff = 1 + j;</a>
+<a name="ln1359">                        break;</a>
+<a name="ln1360">                    }</a>
+<a name="ln1361">                }</a>
+<a name="ln1362">            } else {</a>
+<a name="ln1363">                at[a1].num_H --;</a>
+<a name="ln1364">            }</a>
+<a name="ln1365">        }</a>
+<a name="ln1366">        if ( ERR_ELEM == (n1 = get_periodic_table_number( at[a1].elname ) ) ) {</a>
+<a name="ln1367">            n1 = 0;</a>
+<a name="ln1368">        }</a>
+<a name="ln1369">        if ( n1 ) {</a>
+<a name="ln1370">            at[a1].at_type |= 1; /* &quot;Aliased&quot; atom: data in the element name */</a>
+<a name="ln1371">            MOLFILE_ERR_SET (*err, 0, &quot;Parsed compound atom(s):&quot;);</a>
+<a name="ln1372">            MOLFILE_ERR_SET (*err, 0, ati[a1].elname);</a>
+<a name="ln1373">        }</a>
+<a name="ln1374">    }</a>
+<a name="ln1375"> </a>
+<a name="ln1376">    at[a1].el_number = (U_CHAR) n1;</a>
+<a name="ln1377">    if ( !n1 ) {</a>
+<a name="ln1378">        *err |= 64; /*  Unrecognized aromatic bond(s) replaced with single */</a>
+<a name="ln1379">        MOLFILE_ERR_SET (*err, 0, &quot;Unknown element(s):&quot;);</a>
+<a name="ln1380">        MOLFILE_ERR_SET (*err, 0, at[a1].elname);</a>
+<a name="ln1381">    } else</a>
+<a name="ln1382">    /* replace explicit D or T with isotopic H (added 2003-06-02) */</a>
+<a name="ln1383">    if ( el_number_H == n1 &amp;&amp; !at[a1].iso_atw_diff ) {</a>
+<a name="ln1384">        switch( at[a1].elname[0] ) {</a>
+<a name="ln1385">        case 'D':</a>
+<a name="ln1386">            at[a1].iso_atw_diff = 2;</a>
+<a name="ln1387">            mystrncpy( at[a1].elname, &quot;H&quot;, sizeof(at-&gt;elname) );</a>
+<a name="ln1388">            break;</a>
+<a name="ln1389">        case 'T':</a>
+<a name="ln1390">            at[a1].iso_atw_diff = 3;</a>
+<a name="ln1391">            mystrncpy( at[a1].elname, &quot;H&quot;, sizeof(at-&gt;elname) );</a>
+<a name="ln1392">            break;</a>
+<a name="ln1393">        case 'H':</a>
+<a name="ln1394">            if ( 1 &lt;= ati[a1].isotopic_mass ) {</a>
+<a name="ln1395">                AT_NUM iso_atw_diff;</a>
+<a name="ln1396">                if ( ISOTOPIC_SHIFT_FLAG - ISOTOPIC_SHIFT_MAX &lt;=  ati[a1].isotopic_mass &amp;&amp;</a>
+<a name="ln1397">                     ISOTOPIC_SHIFT_FLAG + ISOTOPIC_SHIFT_MAX &gt;=  ati[a1].isotopic_mass ) {</a>
+<a name="ln1398">                    /* ati[a1].isotopic_mass is isotopic iso_atw_diff + ISOTOPIC_SHIFT_FLAG */</a>
+<a name="ln1399">                    iso_atw_diff = ati[a1].isotopic_mass - ISOTOPIC_SHIFT_FLAG;</a>
+<a name="ln1400">                } else {</a>
+<a name="ln1401">                    /* ati[a1].isotopic_mass is isotopic mass */</a>
+<a name="ln1402">                    iso_atw_diff = get_atw_from_elnum( (int) at[a1].el_number );</a>
+<a name="ln1403">                    iso_atw_diff = ati[a1].isotopic_mass - iso_atw_diff;</a>
+<a name="ln1404">                }</a>
+<a name="ln1405">                if ( iso_atw_diff &gt;= 0 )</a>
+<a name="ln1406">                    iso_atw_diff ++;</a>
+<a name="ln1407">                /* reproduce Bug04: allowed non-terminal H heavier than T */</a>
+<a name="ln1408">                if ( 1 &lt;= iso_atw_diff &amp;&amp;</a>
+<a name="ln1409">                     (at[a1].valence != 1 || iso_atw_diff &lt;= NUM_H_ISOTOPES) ) {</a>
+<a name="ln1410">                    at[a1].iso_atw_diff = (S_CHAR)iso_atw_diff;</a>
+<a name="ln1411">                }</a>
+<a name="ln1412">            }</a>
+<a name="ln1413">        }</a>
+<a name="ln1414">    } else</a>
+<a name="ln1415">    /* isotopic shift */</a>
+<a name="ln1416">    if ( ati[a1].isotopic_mass ) {</a>
+<a name="ln1417">        AT_NUM iso_atw_diff;</a>
+<a name="ln1418">        if ( ISOTOPIC_SHIFT_FLAG - ISOTOPIC_SHIFT_MAX &lt;=  ati[a1].isotopic_mass &amp;&amp;</a>
+<a name="ln1419">             ISOTOPIC_SHIFT_FLAG + ISOTOPIC_SHIFT_MAX &gt;=  ati[a1].isotopic_mass ) {</a>
+<a name="ln1420">            /* ati[a1].isotopic_mass is isotopic iso_atw_diff + ISOTOPIC_SHIFT_FLAG */</a>
+<a name="ln1421">            iso_atw_diff = ati[a1].isotopic_mass - ISOTOPIC_SHIFT_FLAG;</a>
+<a name="ln1422">        } else {</a>
+<a name="ln1423">            /* ati[a1].isotopic_mass is isotopic mass */</a>
+<a name="ln1424">            iso_atw_diff = get_atw_from_elnum( (int) at[a1].el_number );</a>
+<a name="ln1425">            iso_atw_diff = ati[a1].isotopic_mass - iso_atw_diff;</a>
+<a name="ln1426">        }</a>
+<a name="ln1427">        if ( iso_atw_diff &gt;= 0 )</a>
+<a name="ln1428">            iso_atw_diff ++;</a>
+<a name="ln1429">        at[a1].iso_atw_diff = (S_CHAR)iso_atw_diff;</a>
+<a name="ln1430">    }</a>
+<a name="ln1431"> </a>
+<a name="ln1432">    /* add implicit hydrogen atoms flag */</a>
+<a name="ln1433"> </a>
+<a name="ln1434">    if ( ati[a1].num_iso_H[0] == -1 ) {</a>
+<a name="ln1435">        if ( !bDoNotAddH ) {</a>
+<a name="ln1436">            at[a1].at_type |= 2; /* user requested to add H */</a>
+<a name="ln1437">        }</a>
+<a name="ln1438">    } else {</a>
+<a name="ln1439">        at[a1].num_H = ati[a1].num_iso_H[0];</a>
+<a name="ln1440">    }</a>
+<a name="ln1441">    for ( j = 0; j &lt; NUM_H_ISOTOPES; j ++ ) {</a>
+<a name="ln1442">        at[a1].num_iso_H[j] = ati[a1].num_iso_H[j+1];</a>
+<a name="ln1443">    }</a>
+<a name="ln1444">    if ( num_alt_bonds ) {</a>
+<a name="ln1445">        /* atom has aromatic bonds AND the chemical valence is not known */</a>
+<a name="ln1446">        int num_H = NUMH(at, a1);</a>
+<a name="ln1447">        int chem_valence_alt = at[a1].chem_bonds_valence + num_H;</a>
+<a name="ln1448">        int bUnusualValenceArom = </a>
+<a name="ln1449">            detect_unusual_el_valence( (int)at[a1].el_number, at[a1].charge,</a>
+<a name="ln1450">                                        at[a1].radical, chem_valence_alt,</a>
+<a name="ln1451">                                        num_H, at[a1].valence );</a>
+<a name="ln1452">        int bUnusualValenceNoArom = </a>
+<a name="ln1453">            detect_unusual_el_valence( (int)at[a1].el_number, at[a1].charge,</a>
+<a name="ln1454">                                        at[a1].radical, chem_valence_alt-1,</a>
+<a name="ln1455">                                        num_H, at[a1].valence );</a>
+<a name="ln1456">        if ( bUnusualValenceArom &amp;&amp; !bUnusualValenceNoArom &amp;&amp; 0 == nBondsValToMetal( at, a1) ) {</a>
+<a name="ln1457">            /* typically NH in 5-member aromatic ring */</a>
+<a name="ln1458">            at[a1].chem_bonds_valence --;</a>
+<a name="ln1459">        }</a>
+<a name="ln1460">    }</a>
+<a name="ln1461"> </a>
+<a name="ln1462">    return 0;</a>
+<a name="ln1463">}</a>
+<a name="ln1464">/****************************************************************************************/</a>
+<a name="ln1465">int InpAtom0DToInchiAtom( inp_ATOM *at, int num_atoms, inchi_OutputStruct *outStruct )</a>
+<a name="ln1466">{</a>
+<a name="ln1467">    int num_stereo_centers, num_stereo_bonds, num_stereo0D, i, m, m1, m2, n, ret=0;</a>
+<a name="ln1468">    /* count stereobonds, allenes. cumulenes. and stereoatoms */</a>
+<a name="ln1469">    num_stereo_centers = num_stereo_bonds = ret = 0;</a>
+<a name="ln1470">    </a>
+<a name="ln1471">    outStruct-&gt;atom = NULL;</a>
+<a name="ln1472">    outStruct-&gt;num_atoms = 0;</a>
+<a name="ln1473">    outStruct-&gt;stereo0D = NULL;</a>
+<a name="ln1474">    outStruct-&gt;num_stereo0D = 0;</a>
+<a name="ln1475"> </a>
+<a name="ln1476">    for ( i = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln1477">        if ( at[i].p_parity ) {</a>
+<a name="ln1478">            /* stereocenter */</a>
+<a name="ln1479">            num_stereo_centers ++;</a>
+<a name="ln1480">        } else {</a>
+<a name="ln1481">            for ( m = 0; m &lt; MAX_NUM_STEREO_BONDS &amp;&amp; at[i].sb_parity[m]; m ++ )</a>
+<a name="ln1482">                ;</a>
+<a name="ln1483">            num_stereo_bonds += m;</a>
+<a name="ln1484">        }</a>
+<a name="ln1485">    }</a>
+<a name="ln1486">    num_stereo_bonds /= 2;</a>
+<a name="ln1487">    num_stereo0D = num_stereo_bonds + num_stereo_centers;</a>
+<a name="ln1488"> </a>
+<a name="ln1489">    if ( num_atoms &gt; 0 ) {</a>
+<a name="ln1490">        outStruct-&gt;atom = (inchi_Atom *)inchi_calloc( num_atoms, sizeof( outStruct-&gt;atom[0] ) );</a>
+<a name="ln1491">    }</a>
+<a name="ln1492">    outStruct-&gt;num_atoms = num_atoms;</a>
+<a name="ln1493">    if ( num_stereo0D &gt; 0 ) {</a>
+<a name="ln1494">        outStruct-&gt;stereo0D = (inchi_Stereo0D *)inchi_calloc( num_stereo0D, sizeof(outStruct-&gt;stereo0D[0]));</a>
+<a name="ln1495">    }</a>
+<a name="ln1496">    if ( (num_atoms &amp;&amp; !outStruct-&gt;atom) || (num_stereo0D &gt; 0 &amp;&amp; !outStruct-&gt;stereo0D) ) {</a>
+<a name="ln1497">        /* allocation failed */</a>
+<a name="ln1498">        ret = -1;</a>
+<a name="ln1499">        goto exit_function;</a>
+<a name="ln1500">    }</a>
+<a name="ln1501"> </a>
+<a name="ln1502">    /* copy atom properties */</a>
+<a name="ln1503">    for ( i = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln1504">        outStruct-&gt;atom[i].num_bonds = at[i].valence;</a>
+<a name="ln1505">        for ( m = 0; m &lt; at[i].valence; m ++ ) {</a>
+<a name="ln1506">            outStruct-&gt;atom[i].bond_type[m] = at[i].bond_type[m];</a>
+<a name="ln1507">            outStruct-&gt;atom[i].neighbor[m]  = at[i].neighbor[m];</a>
+<a name="ln1508">        }</a>
+<a name="ln1509">        outStruct-&gt;atom[i].charge = at[i].charge;</a>
+<a name="ln1510">        memcpy( outStruct-&gt;atom[i].elname, at[i].elname, ATOM_EL_LEN );</a>
+<a name="ln1511">        if ( at[i].iso_atw_diff ) {</a>
+<a name="ln1512">            outStruct-&gt;atom[i].isotopic_mass = ISOTOPIC_SHIFT_FLAG + (at[i].iso_atw_diff &gt; 0? at[i].iso_atw_diff-1 : at[i].iso_atw_diff);</a>
+<a name="ln1513">        }</a>
+<a name="ln1514">        outStruct-&gt;atom[i].num_iso_H[0] = at[i].num_H;</a>
+<a name="ln1515">        for ( m = 0; m &lt; NUM_H_ISOTOPES; m ++ ) {</a>
+<a name="ln1516">            outStruct-&gt;atom[i].num_iso_H[m+1] = at[i].num_iso_H[m];</a>
+<a name="ln1517">        }</a>
+<a name="ln1518">        outStruct-&gt;atom[i].radical = at[i].radical;</a>
+<a name="ln1519">    }</a>
+<a name="ln1520">    /* stereo */</a>
+<a name="ln1521">    for ( i = n = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln1522">        if ( at[i].p_parity ) {</a>
+<a name="ln1523">            if ( n &lt; num_stereo0D ) {</a>
+<a name="ln1524">                outStruct-&gt;stereo0D[n].central_atom = i;</a>
+<a name="ln1525">                outStruct-&gt;stereo0D[n].parity       = at[i].p_parity;</a>
+<a name="ln1526">                outStruct-&gt;stereo0D[n].type         = INCHI_StereoType_Tetrahedral;</a>
+<a name="ln1527">                for ( m = 0; m &lt; MAX_NUM_STEREO_ATOM_NEIGH; m ++ ) {</a>
+<a name="ln1528">                    outStruct-&gt;stereo0D[n].neighbor[m] = at[i].p_orig_at_num[m] - 1;</a>
+<a name="ln1529">                }</a>
+<a name="ln1530">                n ++;</a>
+<a name="ln1531">            } else {</a>
+<a name="ln1532">                ret |= 1;</a>
+<a name="ln1533">                break;</a>
+<a name="ln1534">            }</a>
+<a name="ln1535">        } else {</a>
+<a name="ln1536">            for ( m1 = 0; m1 &lt; MAX_NUM_STEREO_BONDS &amp;&amp; at[i].sb_parity[m1]; m1 ++ ) {</a>
+<a name="ln1537">                </a>
+<a name="ln1538">                /* find the opposite atom at the other end of double bond, allene, or cumulene */</a>
+<a name="ln1539">                int chain[12], len = 0, nxt_neigh, nxt, cur;</a>
+<a name="ln1540">                cur = chain[len++] = i;</a>
+<a name="ln1541">                nxt_neigh = at[cur].sb_ord[m1];</a>
+<a name="ln1542">                </a>
+<a name="ln1543">                do {</a>
+<a name="ln1544">                    /* add next atom */</a>
+<a name="ln1545">                    chain[len ++] = nxt = at[cur].neighbor[nxt_neigh];</a>
+<a name="ln1546">                    nxt_neigh = (at[nxt].neighbor[0] == cur);</a>
+<a name="ln1547">                    cur = nxt;</a>
+<a name="ln1548">                    /* find nxt_neigh */</a>
+<a name="ln1549">                } while ( !at[cur].sb_parity[0] &amp;&amp; len &lt; 12 &amp;&amp; at[cur].valence == 2 );</a>
+<a name="ln1550"> </a>
+<a name="ln1551">                if ( at[cur].sb_parity[0] &amp;&amp; len &lt;= 4 &amp;&amp; i &lt; cur /* count bonds only one time */ ) {</a>
+<a name="ln1552">                    /* double bond, cumulene, or allene has been found */</a>
+<a name="ln1553">                    for ( m2 = 0; m2 &lt; MAX_NUM_STEREO_BONDS &amp;&amp; at[cur].sb_parity[m2]; m2 ++ ) {</a>
+<a name="ln1554">                        if ( chain[len-2] == at[cur].neighbor[(int)at[cur].sb_ord[m2]] ) {</a>
+<a name="ln1555">                            if ( n &lt; num_stereo0D ) {</a>
+<a name="ln1556">                                int parity1 = at[i].sb_parity[m1];</a>
+<a name="ln1557">                                int parity2 = at[cur].sb_parity[m2];</a>
+<a name="ln1558">                                int parity;</a>
+<a name="ln1559">                                if ( (INCHI_PARITY_ODD == parity1 || INCHI_PARITY_EVEN == parity1) &amp;&amp;</a>
+<a name="ln1560">                                    (INCHI_PARITY_ODD == parity2 || INCHI_PARITY_EVEN == parity2) ) {</a>
+<a name="ln1561">                                    /* well-defined parity */</a>
+<a name="ln1562">                                    parity = (parity1==parity2)? INCHI_PARITY_EVEN : INCHI_PARITY_ODD;</a>
+<a name="ln1563">                                } else {</a>
+<a name="ln1564">                                    parity = inchi_max(parity1, parity2);</a>
+<a name="ln1565">                                }</a>
+<a name="ln1566">                                outStruct-&gt;stereo0D[n].central_atom = (len==3)? chain[1] : NO_ATOM;</a>
+<a name="ln1567">                                outStruct-&gt;stereo0D[n].parity       = parity;</a>
+<a name="ln1568">                                outStruct-&gt;stereo0D[n].type         = len == 3? INCHI_StereoType_Allene : INCHI_StereoType_DoubleBond;</a>
+<a name="ln1569">                                outStruct-&gt;stereo0D[n].neighbor[0]  = at[i].sn_orig_at_num[m1]-1;</a>
+<a name="ln1570">                                outStruct-&gt;stereo0D[n].neighbor[1]  = i;</a>
+<a name="ln1571">                                outStruct-&gt;stereo0D[n].neighbor[2]  = cur;</a>
+<a name="ln1572">                                outStruct-&gt;stereo0D[n].neighbor[3]  = at[cur].sn_orig_at_num[m2] - 1;</a>
+<a name="ln1573">                                n ++;</a>
+<a name="ln1574">                            } else {</a>
+<a name="ln1575">                                ret |= 1;</a>
+<a name="ln1576">                            }</a>
+<a name="ln1577">                            break;</a>
+<a name="ln1578">                        }</a>
+<a name="ln1579">                    }</a>
+<a name="ln1580">                }</a>
+<a name="ln1581">            }</a>
+<a name="ln1582">        }</a>
+<a name="ln1583">    }</a>
+<a name="ln1584">    outStruct-&gt;num_stereo0D = n;</a>
+<a name="ln1585">exit_function:</a>
+<a name="ln1586">    if ( ret &lt; 0 ) {</a>
+<a name="ln1587">        if ( outStruct-&gt;atom ) inchi_free( outStruct-&gt;atom );</a>
+<a name="ln1588">        if ( outStruct-&gt;stereo0D ) inchi_free( outStruct-&gt;stereo0D );</a>
+<a name="ln1589">        outStruct-&gt;atom = NULL;</a>
+<a name="ln1590">        outStruct-&gt;stereo0D = NULL;</a>
+<a name="ln1591">        outStruct-&gt;num_atoms = 0;</a>
+<a name="ln1592">        outStruct-&gt;num_stereo0D = 0;</a>
+<a name="ln1593">    }</a>
+<a name="ln1594">    return ret;</a>
+<a name="ln1595">}</a>
+<a name="ln1596">/****************************************************************************************/</a>
+<a name="ln1597">int ExtractOneStructure( STRUCT_DATA *sd, INPUT_PARMS *ip, char *szTitle,</a>
+<a name="ln1598">         inchi_Input *inp, </a>
+<a name="ln1599">         INCHI_IOSTREAM *log_file, INCHI_IOSTREAM *output_file, INCHI_IOSTREAM *prb_file,</a>
+<a name="ln1600">         ORIG_ATOM_DATA *orig_inp_data, long *num_inp,</a>
+<a name="ln1601">         char *pStr, int nStrLen )</a>
+<a name="ln1602">{</a>
+<a name="ln1603">    int         *err           = &amp;sd-&gt;nStructReadError;</a>
+<a name="ln1604">    char        *pStrErr       = sd-&gt;pStrErrStruct;</a>
+<a name="ln1605">    inp_ATOM    *at            = NULL;</a>
+<a name="ln1606">    MOL_COORD   *szCoord       = NULL; </a>
+<a name="ln1607">    inchi_Atom  *ati           = NULL;  </a>
+<a name="ln1608">    int       nNumAtoms = 0;</a>
+<a name="ln1609">    int       a1, j, valence, nDim, nNumBonds, nRet = 0;</a>
+<a name="ln1610"> </a>
+<a name="ln1611">    /* vABParityUnknown holds actual value of an internal constant signifying       */</a>
+<a name="ln1612">    /* unknown parity: either the same as for undefined parity (default==standard)  */</a>
+<a name="ln1613">    /*  or a specific one (non-std; requested by SLUUD switch).                     */</a>
+<a name="ln1614">    int vABParityUnknown = AB_PARITY_UNDF;</a>
+<a name="ln1615">    if ( 0 != ( ip-&gt;nMode &amp; REQ_MODE_DIFF_UU_STEREO) ) </a>
+<a name="ln1616">    {</a>
+<a name="ln1617">        /* Make labels for unknown and undefined stereo different */</a>
+<a name="ln1618">        vABParityUnknown = AB_PARITY_UNKN;</a>
+<a name="ln1619">    }</a>
+<a name="ln1620"> </a>
+<a name="ln1621">    /********************************************************</a>
+<a name="ln1622">     *</a>
+<a name="ln1623">     *   Extract the structure</a>
+<a name="ln1624">     *</a>
+<a name="ln1625">     ********************************************************/</a>
+<a name="ln1626"> </a>
+<a name="ln1627">    FreeOrigAtData( orig_inp_data );</a>
+<a name="ln1628">    nDim      = 0;</a>
+<a name="ln1629">    nNumBonds = 0;</a>
+<a name="ln1630"> </a>
+<a name="ln1631">    if ( !inp || (nNumAtoms = inp-&gt;num_atoms) &lt;= 0 || !(ati = inp-&gt;atom) ) {</a>
+<a name="ln1632">        MOLFILE_ERR_SET (*err, 0, &quot;Empty structure&quot;);</a>
+<a name="ln1633">        *err = 98;</a>
+<a name="ln1634">        goto err_exit;</a>
+<a name="ln1635">    }</a>
+<a name="ln1636">    if ( nNumAtoms &gt;= MAX_ATOMS ) {</a>
+<a name="ln1637">        MOLFILE_ERR_SET (*err, 0, &quot;Too many atoms&quot;);</a>
+<a name="ln1638">        *err = 70;</a>
+<a name="ln1639">        orig_inp_data-&gt;num_inp_atoms = -1;</a>
+<a name="ln1640">        goto err_exit;</a>
+<a name="ln1641">    }</a>
+<a name="ln1642"> </a>
+<a name="ln1643">    at      = (inp_ATOM  *) inchi_calloc( nNumAtoms, sizeof(at[0]) );</a>
+<a name="ln1644">    szCoord = (MOL_COORD *) inchi_calloc (inchi_max(nNumAtoms, 1), sizeof (MOL_COORD));</a>
+<a name="ln1645"> </a>
+<a name="ln1646">    if ( !at || !szCoord ) {</a>
+<a name="ln1647">        MOLFILE_ERR_SET (*err, 0, &quot;Out of RAM&quot;);</a>
+<a name="ln1648">        *err = -1;</a>
+<a name="ln1649">        goto err_exit;</a>
+<a name="ln1650">    }</a>
+<a name="ln1651"> </a>
+<a name="ln1652"> </a>
+<a name="ln1653">    /********************************************************</a>
+<a name="ln1654">     *</a>
+<a name="ln1655">     *   Extract typical for Molfile structural data</a>
+<a name="ln1656">     *</a>
+<a name="ln1657">     ********************************************************/</a>
+<a name="ln1658">    /* extract atoms and bonds */</a>
+<a name="ln1659">    for ( a1 = 0; a1 &lt; nNumAtoms; a1 ++ ) {</a>
+<a name="ln1660">        /* extract atoms */</a>
+<a name="ln1661">        SetAtomProperties( at, szCoord, ati, a1, &amp;nDim, pStrErr, err );</a>
+<a name="ln1662">        if ( *err ) {</a>
+<a name="ln1663">            goto err_exit;</a>
+<a name="ln1664">        }</a>
+<a name="ln1665">        /* extract connections */</a>
+<a name="ln1666">        valence = ati[a1].num_bonds;</a>
+<a name="ln1667">        for ( j = 0; j &lt; valence; j ++ ) {</a>
+<a name="ln1668">            SetBondProperties( at, ati, a1, j, nNumAtoms, &amp;nNumBonds, pStrErr, err );</a>
+<a name="ln1669">        }</a>
+<a name="ln1670">        if ( *err ) {</a>
+<a name="ln1671">            goto err_exit;</a>
+<a name="ln1672">        }</a>
+<a name="ln1673">    }</a>
+<a name="ln1674"> </a>
+<a name="ln1675">    orig_inp_data-&gt;num_inp_atoms = nNumAtoms;</a>
+<a name="ln1676">    orig_inp_data-&gt;num_inp_bonds = nNumBonds;</a>
+<a name="ln1677">    orig_inp_data-&gt;num_dimensions = nDim;</a>
+<a name="ln1678"> </a>
+<a name="ln1679">    /* extract elements, chemical valences, implicit H, isotopic shifts */</a>
+<a name="ln1680">    for ( a1 = 0; a1 &lt; nNumAtoms; a1 ++ ) {</a>
+<a name="ln1681">        /* set temp flags in at[a1].at_type (1: data in atom name; 2: request to add H) */</a>
+<a name="ln1682">        SetAtomAndBondProperties( at, ati, a1, ip-&gt;bDoNotAddH, pStrErr, err );</a>
+<a name="ln1683">        if ( *err ) {</a>
+<a name="ln1684">            goto err_exit;</a>
+<a name="ln1685">        }</a>
+<a name="ln1686">    }</a>
+<a name="ln1687">    /* clear temp flags in at[].at_type; add implicit H */</a>
+<a name="ln1688">    SetNumImplicitH( at, nNumAtoms );</a>
+<a name="ln1689">    if ( *err ) {</a>
+<a name="ln1690">        goto err_exit;</a>
+<a name="ln1691">    }</a>
+<a name="ln1692">            </a>
+<a name="ln1693">    /********************************************************</a>
+<a name="ln1694">     *</a>
+<a name="ln1695">     *   Extract the 0D parities (typical for CML)</a>
+<a name="ln1696">     *</a>
+<a name="ln1697">     ********************************************************/</a>
+<a name="ln1698">    Extract0DParities(at, nNumAtoms, inp-&gt;stereo0D, inp-&gt;num_stereo0D, </a>
+<a name="ln1699">                       pStrErr, err, vABParityUnknown);</a>
+<a name="ln1700"> </a>
+<a name="ln1701">    if ( *err ) {</a>
+<a name="ln1702">        goto err_exit;</a>
+<a name="ln1703">    }</a>
+<a name="ln1704">    orig_inp_data-&gt;at             = at;          at     = NULL;</a>
+<a name="ln1705">    orig_inp_data-&gt;num_dimensions = nDim;</a>
+<a name="ln1706">    orig_inp_data-&gt;num_inp_atoms  = nNumAtoms;</a>
+<a name="ln1707">    orig_inp_data-&gt;num_inp_bonds  = nNumBonds;</a>
+<a name="ln1708">    orig_inp_data-&gt;szCoord        = szCoord;     szCoord = NULL;</a>
+<a name="ln1709"> </a>
+<a name="ln1710">    /* chiral flag */</a>
+<a name="ln1711">    /* *****************************************************************************</a>
+<a name="ln1712">     * Chiral flags are set in: </a>
+<a name="ln1713">     * - RunICHI.c #1610 -- ReadTheStructure()     -- cInChI, wInChI</a>
+<a name="ln1714">     * - e_IchiMain.c #273 -- main()               -- C example of calling InChI dll  </a>
+<a name="ln1715">     * - inchi_dll.c  #1662 -- ExtractOneStructure -- InChI dll code (here)</a>
+<a name="ln1716">     *******************************************************************************/   </a>
+<a name="ln1717">    if ( (ip-&gt;nMode &amp; REQ_MODE_CHIR_FLG_STEREO) &amp;&amp; (ip-&gt;nMode &amp; REQ_MODE_STEREO) ) {</a>
+<a name="ln1718">        if ( ip-&gt;bChiralFlag &amp; FLAG_SET_INP_AT_CHIRAL ) {</a>
+<a name="ln1719">            /* absolute stereo */</a>
+<a name="ln1720">            ip-&gt;nMode &amp;= ~(REQ_MODE_RELATIVE_STEREO | REQ_MODE_RACEMIC_STEREO);</a>
+<a name="ln1721">            sd-&gt;bChiralFlag &amp;= ~FLAG_INP_AT_NONCHIRAL;</a>
+<a name="ln1722">            sd-&gt;bChiralFlag |= FLAG_INP_AT_CHIRAL; /* write AuxInfo as chiral */</a>
+<a name="ln1723">        } else</a>
+<a name="ln1724">        /*if ( ip-&gt;bChiralFlag &amp; FLAG_SET_INP_AT_NONCHIRAL )*/ {</a>
+<a name="ln1725">            /* relative stereo */</a>
+<a name="ln1726">            ip-&gt;nMode &amp;= ~(REQ_MODE_RACEMIC_STEREO);</a>
+<a name="ln1727">            ip-&gt;nMode |=   REQ_MODE_RELATIVE_STEREO;</a>
+<a name="ln1728">            sd-&gt;bChiralFlag &amp;= ~FLAG_INP_AT_CHIRAL;</a>
+<a name="ln1729">            sd-&gt;bChiralFlag |= FLAG_INP_AT_NONCHIRAL; /* write AuxInfo as non-chiral */</a>
+<a name="ln1730">        }</a>
+<a name="ln1731">    } else</a>
+<a name="ln1732">    if ( ip-&gt;bChiralFlag &amp; FLAG_SET_INP_AT_CHIRAL ) {</a>
+<a name="ln1733">        sd-&gt;bChiralFlag &amp;= ~FLAG_INP_AT_NONCHIRAL;</a>
+<a name="ln1734">        sd-&gt;bChiralFlag |= FLAG_INP_AT_CHIRAL; /* write AuxInfo as chiral */</a>
+<a name="ln1735">    } else</a>
+<a name="ln1736">    if ( ip-&gt;bChiralFlag &amp; FLAG_SET_INP_AT_NONCHIRAL ) {</a>
+<a name="ln1737">        sd-&gt;bChiralFlag &amp;= ~FLAG_INP_AT_CHIRAL;</a>
+<a name="ln1738">        sd-&gt;bChiralFlag |= FLAG_INP_AT_NONCHIRAL; /* write AuxInfo as non-chiral */</a>
+<a name="ln1739">    }</a>
+<a name="ln1740"> </a>
+<a name="ln1741">    *num_inp += 1;</a>
+<a name="ln1742"> </a>
+<a name="ln1743">err_exit:</a>
+<a name="ln1744"> </a>
+<a name="ln1745">    if ( at )</a>
+<a name="ln1746">        inchi_free( at );</a>
+<a name="ln1747">    if ( szCoord )</a>
+<a name="ln1748">        inchi_free( szCoord );</a>
+<a name="ln1749"> </a>
+<a name="ln1750">    nRet = TreatReadTheStructureErrors( sd, ip, LOG_MASK_NO_WARN, NULL, log_file, output_file, prb_file,</a>
+<a name="ln1751">                                                orig_inp_data, num_inp, pStr, nStrLen );</a>
+<a name="ln1752"> </a>
+<a name="ln1753">    return nRet;</a>
+<a name="ln1754"> </a>
+<a name="ln1755">}</a>
+<a name="ln1756">/********************************************************/</a>
+<a name="ln1757">int INCHI_DECL GetStringLength( char *p )</a>
+<a name="ln1758">{</a>
+<a name="ln1759">    if ( p ) {</a>
+<a name="ln1760">        return strlen(p);</a>
+<a name="ln1761">    } else {</a>
+<a name="ln1762">        return 0;</a>
+<a name="ln1763">    }</a>
+<a name="ln1764">}</a>
+<a name="ln1765">#define MAX_MSG_LEN 512</a>
+<a name="ln1766"> </a>
+<a name="ln1767"> </a>
+<a name="ln1768"> </a>
+<a name="ln1769">/* GetINCHIfromINCHI does same as -InChI2InChI option: converts InChI into InChI for validation purposes */</a>
+<a name="ln1770">/* It may also be used to filter out specific layers. For instance, /Snon would remove stereochemical layer */</a>
+<a name="ln1771">/* Omitting /FixedH and/or /RecMet would remove Fixed-H or Reconnected layers */</a>
+<a name="ln1772">/* To keep all InChI layers use options string &quot;/FixedH /RecMet&quot;; option /InChI2InChI is not needed */</a>
+<a name="ln1773">/* inchi_InputINCHI is created by the user; strings in inchi_Output are allocated and deallocated by InChI */</a>
+<a name="ln1774">/* inchi_Output does not need to be initilized out to zeroes; see FreeINCHI() on how to deallocate it */</a>
+<a name="ln1775">/*************************************************************/</a>
+<a name="ln1776">int INCHI_DECL GetINCHIfromINCHI( inchi_InputINCHI *inpInChI, inchi_Output *out )</a>
+<a name="ln1777">{</a>
+<a name="ln1778">    STRUCT_DATA struct_data;</a>
+<a name="ln1779">    STRUCT_DATA *sd = &amp;struct_data;    </a>
+<a name="ln1780">    </a>
+<a name="ln1781">    static char szMainOption[] = &quot; ?InChI2InChI&quot;;</a>
+<a name="ln1782"> </a>
+<a name="ln1783">    int i;</a>
+<a name="ln1784">    char      szSdfDataValue[MAX_SDF_VALUE+1];</a>
+<a name="ln1785">    unsigned long  ulDisplTime = 0;    /*  infinite, milliseconds */</a>
+<a name="ln1786"> </a>
+<a name="ln1787">    INPUT_PARMS inp_parms;</a>
+<a name="ln1788">    INPUT_PARMS *ip = &amp;inp_parms;</a>
+<a name="ln1789"> </a>
+<a name="ln1790">    int             bReleaseVersion = bRELEASE_VERSION;</a>
+<a name="ln1791">    int   nRet = 0, nRet1;</a>
+<a name="ln1792"> </a>
+<a name="ln1793">#if ( defined(REPEAT_ALL) &amp;&amp; REPEAT_ALL &gt; 0 )</a>
+<a name="ln1794">    int  num_repeat = REPEAT_ALL;</a>
+<a name="ln1795">#endif</a>
+<a name="ln1796"> </a>
+<a name="ln1797">    const char *argv[INCHI_MAX_NUM_ARG+1];</a>
+<a name="ln1798">    int   argc;</a>
+<a name="ln1799">    char *szOptions = NULL;</a>
+<a name="ln1800"> </a>
+<a name="ln1801">    INCHI_IOSTREAM inchi_file[3], *output_file = inchi_file, *log_file = inchi_file+1, *input_file = inchi_file+2;</a>
+<a name="ln1802"> </a>
+<a name="ln1803"> </a>
+<a name="ln1804"> </a>
+<a name="ln1805"> </a>
+<a name="ln1806">    if ( bLibInchiSemaphore ) {  /* does not work properly under sufficient stress */</a>
+<a name="ln1807">        return inchi_Ret_BUSY;</a>
+<a name="ln1808">    }</a>
+<a name="ln1809">    bLibInchiSemaphore = 1;</a>
+<a name="ln1810"> </a>
+<a name="ln1811">#if( TRACE_MEMORY_LEAKS == 1 )</a>
+<a name="ln1812">    _CrtSetDbgFlag(_CRTDBG_CHECK_ALWAYS_DF | _CRTDBG_LEAK_CHECK_DF | _CRTDBG_ALLOC_MEM_DF);</a>
+<a name="ln1813">/* for execution outside the VC++ debugger uncomment one of the following two */</a>
+<a name="ln1814">#ifdef MY_REPORT_FILE </a>
+<a name="ln1815">   _CrtSetReportMode( _CRT_WARN, _CRTDBG_MODE_FILE );</a>
+<a name="ln1816">   _CrtSetReportFile( _CRT_WARN, MY_REPORT_FILE );</a>
+<a name="ln1817">   _CrtSetReportMode( _CRT_ERROR, _CRTDBG_MODE_FILE );</a>
+<a name="ln1818">   _CrtSetReportFile( _CRT_ERROR, MY_REPORT_FILE );</a>
+<a name="ln1819">   _CrtSetReportMode( _CRT_ASSERT, _CRTDBG_MODE_FILE );</a>
+<a name="ln1820">   _CrtSetReportFile( _CRT_ASSERT, MY_REPORT_FILE );</a>
+<a name="ln1821">#else</a>
+<a name="ln1822">    _CrtSetReportMode(_CRT_WARN | _CRT_ERROR, _CRTDBG_MODE_DEBUG);</a>
+<a name="ln1823">#endif</a>
+<a name="ln1824">    </a>
+<a name="ln1825">    /* turn on floating point exceptions */</a>
+<a name="ln1826">#if ( !defined(__STDC__) || __STDC__ != 1 )</a>
+<a name="ln1827">    {</a>
+<a name="ln1828">        /* Get the default control word. */</a>
+<a name="ln1829">        int cw = _controlfp( 0,0 );</a>
+<a name="ln1830"> </a>
+<a name="ln1831">        /* Set the exception masks OFF, turn exceptions on. */</a>
+<a name="ln1832">        /*cw &amp;=~(EM_OVERFLOW|EM_UNDERFLOW|EM_INEXACT|EM_ZERODIVIDE|EM_DENORMAL);*/</a>
+<a name="ln1833">        cw &amp;=~(EM_OVERFLOW|EM_UNDERFLOW|EM_ZERODIVIDE|EM_DENORMAL);</a>
+<a name="ln1834"> </a>
+<a name="ln1835">        /* Set the control word. */</a>
+<a name="ln1836">        _controlfp( cw, MCW_EM );</a>
+<a name="ln1837"> </a>
+<a name="ln1838">    }</a>
+<a name="ln1839">#endif</a>
+<a name="ln1840">#endif</a>
+<a name="ln1841"> </a>
+<a name="ln1842"> </a>
+<a name="ln1843"> </a>
+<a name="ln1844">    memset( out, 0, sizeof(*out) );   </a>
+<a name="ln1845">#if ( defined(REPEAT_ALL) &amp;&amp; REPEAT_ALL &gt; 0 )</a>
+<a name="ln1846">repeat:</a>
+<a name="ln1847">    FreeINCHI( out );</a>
+<a name="ln1848">    inchi_ios_close(output_file);</a>
+<a name="ln1849">    inchi_ios_close(log_file);</a>
+<a name="ln1850">    inchi_ios_reset(input_file);  /* do not close input_file - its string buffer may point to inpInChI-&gt;szInChI */</a>
+<a name="ln1851">#endif</a>
+<a name="ln1852"> </a>
+<a name="ln1853">    /*^^^ Initialize internal for this function I/O streams as string buffers */</a>
+<a name="ln1854">    inchi_ios_init(input_file, INCHI_IOSTREAM_STRING, NULL);</a>
+<a name="ln1855">    inchi_ios_init(output_file, INCHI_IOSTREAM_STRING, NULL);</a>
+<a name="ln1856">    inchi_ios_init(log_file, INCHI_IOSTREAM_STRING, NULL);</a>
+<a name="ln1857"> </a>
+<a name="ln1858"> </a>
+<a name="ln1859">    sd-&gt;bUserQuit  = 0;</a>
+<a name="ln1860"> </a>
+<a name="ln1861">    /* clear original input structure */</a>
+<a name="ln1862">    /*^^^ memset( inchi_file, 0, sizeof(inchi_file) ); */</a>
+<a name="ln1863">    memset( sd,         0, sizeof(*sd) );</a>
+<a name="ln1864">    memset( ip,         0, sizeof(*ip) );</a>
+<a name="ln1865">    memset( szSdfDataValue    , 0, sizeof( szSdfDataValue    ) );</a>
+<a name="ln1866">    szMainOption[1] = INCHI_OPTION_PREFX;</a>
+<a name="ln1867"> </a>
+<a name="ln1868">    if ( !inpInChI ) {</a>
+<a name="ln1869">        nRet = _IS_ERROR;</a>
+<a name="ln1870">        goto exit_function;</a>
+<a name="ln1871">    }</a>
+<a name="ln1872"> </a>
+<a name="ln1873">    /* options */</a>
+<a name="ln1874">    if ( inpInChI ) {</a>
+<a name="ln1875">        int opt_len = (inpInChI-&gt;szOptions? strlen(inpInChI-&gt;szOptions) : 0) + sizeof(szMainOption) + 1;</a>
+<a name="ln1876">        szOptions = (char*)inchi_calloc( opt_len+1, sizeof(szOptions[0]) );</a>
+<a name="ln1877">        if ( szOptions ) {</a>
+<a name="ln1878">            if ( inpInChI-&gt;szOptions ) {</a>
+<a name="ln1879">                strcpy( szOptions, inpInChI-&gt;szOptions );</a>
+<a name="ln1880">            }</a>
+<a name="ln1881">            strcat( szOptions, szMainOption );</a>
+<a name="ln1882">            argc = parse_options_string ( szOptions, argv, INCHI_MAX_NUM_ARG );</a>
+<a name="ln1883">        } else {</a>
+<a name="ln1884">            nRet = _IS_FATAL;</a>
+<a name="ln1885">            goto translate_RetVal; /* emergency exit */</a>
+<a name="ln1886">        }</a>
+<a name="ln1887">    } else {</a>
+<a name="ln1888">        argc = 1;</a>
+<a name="ln1889">        argv[0] = &quot;&quot;;</a>
+<a name="ln1890">        argv[1] = NULL;</a>
+<a name="ln1891">    }</a>
+<a name="ln1892"> </a>
+<a name="ln1893">    if ( (argc == 1</a>
+<a name="ln1894">#ifdef TARGET_API_LIB</a>
+<a name="ln1895">        &amp;&amp; (!inpInChI || !inpInChI-&gt;szInChI)</a>
+<a name="ln1896">#endif   </a>
+<a name="ln1897">        )</a>
+<a name="ln1898">        || (argc==2 &amp;&amp; ( argv[1][0]==INCHI_OPTION_PREFX ) &amp;&amp;</a>
+<a name="ln1899">        (!strcmp(argv[1]+1, &quot;?&quot;) || !stricmp(argv[1]+1, &quot;help&quot;) )) ) {</a>
+<a name="ln1900">        HelpCommandLineParms(log_file);</a>
+<a name="ln1901">        out-&gt;szLog = log_file-&gt;s.pStr;</a>
+<a name="ln1902">        memset( log_file, 0, sizeof(*log_file) );</a>
+<a name="ln1903">        nRet = _IS_EOF;</a>
+<a name="ln1904">        goto translate_RetVal;</a>
+<a name="ln1905">    }</a>
+<a name="ln1906"> </a>
+<a name="ln1907">    nRet1 = ReadCommandLineParms( argc, argv, ip, szSdfDataValue, &amp;ulDisplTime, bReleaseVersion, log_file );</a>
+<a name="ln1908">    if ( szOptions ) {</a>
+<a name="ln1909">        /* argv pointed to strings in szOptions */</a>
+<a name="ln1910">        inchi_free( szOptions );</a>
+<a name="ln1911">        szOptions = NULL;</a>
+<a name="ln1912">    }</a>
+<a name="ln1913">    /* INChI DLL specific */</a>
+<a name="ln1914">    ip-&gt;bNoStructLabels = 1;</a>
+<a name="ln1915"> </a>
+<a name="ln1916">    if ( 0 &gt; nRet1 ) {</a>
+<a name="ln1917">        goto exit_function;</a>
+<a name="ln1918">    }</a>
+<a name="ln1919">    if ( ip-&gt;bNoStructLabels ) {</a>
+<a name="ln1920">        ip-&gt;pSdfLabel = NULL;</a>
+<a name="ln1921">        ip-&gt;pSdfValue = NULL;</a>
+<a name="ln1922">    } else</a>
+<a name="ln1923">    if ( ip-&gt;nInputType == INPUT_INCHI_XML || ip-&gt;nInputType == INPUT_INCHI_PLAIN  ||</a>
+<a name="ln1924">         ip-&gt;nInputType == INPUT_CMLFILE || ip-&gt;nInputType == INPUT_INCHI ) {</a>
+<a name="ln1925">        /* the input may contain both the header and the label of the structure */</a>
+<a name="ln1926">        if ( !ip-&gt;pSdfLabel ) </a>
+<a name="ln1927">            ip-&gt;pSdfLabel  = ip-&gt;szSdfDataHeader;</a>
+<a name="ln1928">        if ( !ip-&gt;pSdfValue )</a>
+<a name="ln1929">            ip-&gt;pSdfValue  = szSdfDataValue;</a>
+<a name="ln1930">    }</a>
+<a name="ln1931">    if ( ip-&gt;nInputType &amp;&amp; ip-&gt;nInputType != INPUT_INCHI ) {</a>
+<a name="ln1932">        inchi_ios_eprint( log_file, &quot;Input type set to INPUT_INCHI\n&quot; );</a>
+<a name="ln1933">        ip-&gt;nInputType = INPUT_INCHI;</a>
+<a name="ln1934">    }</a>
+<a name="ln1935"> </a>
+<a name="ln1936">    PrintInputParms( log_file, ip );</a>
+<a name="ln1937">    /*********************************/</a>
+<a name="ln1938">    /* InChI -&gt; Structure conversion */</a>
+<a name="ln1939">    /*********************************/</a>
+<a name="ln1940"> </a>
+<a name="ln1941">    /* input_file simulation */</a>
+<a name="ln1942">    input_file-&gt;s.pStr = inpInChI-&gt;szInChI;</a>
+<a name="ln1943">    input_file-&gt;s.nUsedLength = strlen(input_file-&gt;s.pStr)+1;</a>
+<a name="ln1944">    input_file-&gt;s.nAllocatedLength = input_file-&gt;s.nUsedLength;</a>
+<a name="ln1945">    input_file-&gt;s.nPtr = 0;</a>
+<a name="ln1946"> </a>
+<a name="ln1947">    /* buffer for the message */</a>
+<a name="ln1948">    out-&gt;szMessage = (char *)inchi_calloc( MAX_MSG_LEN, sizeof(out-&gt;szMessage[0]));</a>
+<a name="ln1949">    if ( !out-&gt;szMessage ) {</a>
+<a name="ln1950">         inchi_ios_eprint( log_file, &quot;Cannot allocate output message buffer.\n&quot;);</a>
+<a name="ln1951">        nRet = -1;</a>
+<a name="ln1952">    } else {</a>
+<a name="ln1953">        nRet = ReadWriteInChI( input_file, output_file, log_file,</a>
+<a name="ln1954">                               ip,  sd, NULL,  NULL, out-&gt;szMessage, MAX_MSG_LEN, NULL /*out-&gt;WarningFlags*/ );</a>
+<a name="ln1955">    }</a>
+<a name="ln1956">    </a>
+<a name="ln1957">    if ( nRet &gt;= 0 &amp;&amp; output_file-&gt;s.pStr ) </a>
+<a name="ln1958">    {</a>
+<a name="ln1959">        /* success */</a>
+<a name="ln1960">        char *p;</a>
+<a name="ln1961">        out-&gt;szInChI = output_file-&gt;s.pStr;</a>
+<a name="ln1962">        out-&gt;szAuxInfo = NULL;</a>
+<a name="ln1963">        for ( p = strchr(out-&gt;szInChI, '\n'); p; p = strchr(p+1, '\n') ) {</a>
+<a name="ln1964">            if ( !memcmp( p, &quot;\nAuxInfo&quot;, 8 ) ) {</a>
+<a name="ln1965">                *p = '\0';            /* remove LF after INChI */</a>
+<a name="ln1966">                out-&gt;szAuxInfo = p+1; /* save pointer to AuxInfo */</a>
+<a name="ln1967">            } else</a>
+<a name="ln1968">            if ( out-&gt;szAuxInfo || !p[1]) {   /* remove LF after aux info or from the last char */</a>
+<a name="ln1969">                *p = '\0';</a>
+<a name="ln1970">                break;</a>
+<a name="ln1971">            }</a>
+<a name="ln1972">        }</a>
+<a name="ln1973">        output_file-&gt;s.pStr = NULL;</a>
+<a name="ln1974">    }</a>
+<a name="ln1975">    /*</a>
+<a name="ln1976">    out-&gt;szLog = log_file-&gt;pStr;</a>
+<a name="ln1977">    log_file-&gt;pStr   = NULL;</a>
+<a name="ln1978">    */</a>
+<a name="ln1979"> </a>
+<a name="ln1980">exit_function:;</a>
+<a name="ln1981"> </a>
+<a name="ln1982">#if( ADD_CMLPP == 1 )</a>
+<a name="ln1983">        /* BILLY 8/6/04 */</a>
+<a name="ln1984">        /* free CML memory */</a>
+<a name="ln1985">        FreeCml ();</a>
+<a name="ln1986">        FreeCmlDoc( 1 );</a>
+<a name="ln1987">#endif</a>
+<a name="ln1988"> </a>
+<a name="ln1989"> </a>
+<a name="ln1990"> </a>
+<a name="ln1991">    for ( i = 0; i &lt; MAX_NUM_PATHS; i ++ ) {</a>
+<a name="ln1992">        if ( ip-&gt;path[i] ) {</a>
+<a name="ln1993">            inchi_free( (char*) ip-&gt;path[i] ); /*  cast deliberately discards 'const' qualifier */</a>
+<a name="ln1994">            ip-&gt;path[i] = NULL;</a>
+<a name="ln1995">        }</a>
+<a name="ln1996">    }</a>
+<a name="ln1997"> </a>
+<a name="ln1998">    SetBitFree( );</a>
+<a name="ln1999"> </a>
+<a name="ln2000"> </a>
+<a name="ln2001">#if ( defined(REPEAT_ALL) &amp;&amp; REPEAT_ALL &gt; 0 )</a>
+<a name="ln2002">    if ( num_repeat-- &gt; 0 ) {</a>
+<a name="ln2003">        goto repeat;</a>
+<a name="ln2004">    }</a>
+<a name="ln2005">#endif</a>
+<a name="ln2006"> </a>
+<a name="ln2007"> </a>
+<a name="ln2008">#ifdef TARGET_API_LIB</a>
+<a name="ln2009">    /* output */</a>
+<a name="ln2010"> </a>
+<a name="ln2011">    if ( log_file-&gt;s.pStr &amp;&amp; log_file-&gt;s.nUsedLength &gt; 0 ) {</a>
+<a name="ln2012">        while ( log_file-&gt;s.nUsedLength &amp;&amp; '\n' == log_file-&gt;s.pStr[log_file-&gt;s.nUsedLength-1] ) {</a>
+<a name="ln2013">            log_file-&gt;s.pStr[-- log_file-&gt;s.nUsedLength]  = '\0'; /* remove last LF */</a>
+<a name="ln2014">        }</a>
+<a name="ln2015">        if ( out ) {</a>
+<a name="ln2016">            out-&gt;szLog = log_file-&gt;s.pStr;</a>
+<a name="ln2017">            log_file-&gt;s.pStr = NULL;</a>
+<a name="ln2018">        }</a>
+<a name="ln2019">    }</a>
+<a name="ln2020"> </a>
+<a name="ln2021"> </a>
+<a name="ln2022">#endif</a>
+<a name="ln2023"> </a>
+<a name="ln2024">    </a>
+<a name="ln2025">translate_RetVal:</a>
+<a name="ln2026"> </a>
+<a name="ln2027">    /* Close internal output streams */</a>
+<a name="ln2028">    inchi_ios_close(output_file);</a>
+<a name="ln2029">    inchi_ios_close(log_file);</a>
+<a name="ln2030">    inchi_ios_reset(input_file);  /* do not close input_file - its string buffer may point to inpInChI-&gt;szInChI */</a>
+<a name="ln2031"> </a>
+<a name="ln2032"> </a>
+<a name="ln2033">    switch (nRet) { </a>
+<a name="ln2034">    case -3         : nRet = inchi_Ret_ERROR  ; break; /* Error: no Structure has been created */</a>
+<a name="ln2035">    case -2         : nRet = inchi_Ret_ERROR  ; break; /* Error: no Structure has been created */</a>
+<a name="ln2036">    case -1         : nRet = inchi_Ret_FATAL  ; break; /* Severe error: no Structure has been created (typically; break; memory allocation failed) */</a>
+<a name="ln2037">    default         :</a>
+<a name="ln2038">        /*</a>
+<a name="ln2039">        if ( !outStruct-&gt;atom || !outStruct-&gt;num_atoms ) {</a>
+<a name="ln2040">            nRet = inchi_Ret_EOF;</a>
+<a name="ln2041">        } else {</a>
+<a name="ln2042">            int m,n,t=0;</a>
+<a name="ln2043">            for ( m=0; m &lt; 2; m ++ ) {</a>
+<a name="ln2044">                for ( n=0; n &lt; 2; n ++ ) {</a>
+<a name="ln2045">                    if ( outStruct-&gt;WarningFlags[m][n] ) {</a>
+<a name="ln2046">                        t ++;</a>
+<a name="ln2047">                    }</a>
+<a name="ln2048">                }</a>
+<a name="ln2049">            }</a>
+<a name="ln2050">            nRet = t? inchi_Ret_WARNING : inchi_Ret_OKAY;</a>
+<a name="ln2051">        }</a>
+<a name="ln2052">        */</a>
+<a name="ln2053">        break;</a>
+<a name="ln2054">    }</a>
+<a name="ln2055"> </a>
+<a name="ln2056">    bLibInchiSemaphore = 0;</a>
+<a name="ln2057">    return nRet;</a>
+<a name="ln2058">}</a>
+<a name="ln2059"> </a>
+<a name="ln2060"> </a>
+<a name="ln2061">EXPIMP_TEMPLATE INCHI_API int INCHI_DECL GetStructFromStdINCHI( inchi_InputINCHI *inpInChI, inchi_OutputStruct *outStruct )</a>
+<a name="ln2062">{</a>
+<a name="ln2063">    if ( ( inpInChI ) &amp;&amp; </a>
+<a name="ln2064">         ( inpInChI-&gt;szInChI ) &amp;&amp;</a>
+<a name="ln2065">         ( strlen(inpInChI-&gt;szInChI) &gt;= LEN_INCHI_STRING_PREFIX+3 ) &amp;&amp;</a>
+<a name="ln2066">         ( inpInChI-&gt;szInChI[LEN_INCHI_STRING_PREFIX+1] == 'S' ) </a>
+<a name="ln2067">       ) </a>
+<a name="ln2068">        /* brief check indicated valid std input (more checks in GetStructFromINCHI) */</a>
+<a name="ln2069">        return GetStructFromINCHI( inpInChI, outStruct );</a>
+<a name="ln2070">    else</a>
+<a name="ln2071">        /* non-std or just invalid input */</a>
+<a name="ln2072">        return inchi_Ret_ERROR;</a>
+<a name="ln2073">}</a>
+<a name="ln2074"> </a>
+<a name="ln2075"> </a>
+<a name="ln2076"> </a>
+<a name="ln2077">/*************************************************************/</a>
+<a name="ln2078">EXPIMP_TEMPLATE INCHI_API int INCHI_DECL GetStructFromINCHI( inchi_InputINCHI *inpInChI, inchi_OutputStruct *outStruct )</a>
+<a name="ln2079">{</a>
+<a name="ln2080">    STRUCT_DATA struct_data;</a>
+<a name="ln2081">    STRUCT_DATA *sd = &amp;struct_data;</a>
+<a name="ln2082">    </a>
+<a name="ln2083"> </a>
+<a name="ln2084">    INCHI_IOSTREAM inchi_file[3];</a>
+<a name="ln2085">    INCHI_IOSTREAM *output_file = inchi_file, *log_file = inchi_file+1, *input_file = inchi_file+2;</a>
+<a name="ln2086">    </a>
+<a name="ln2087"> </a>
+<a name="ln2088">    static char szMainOption[] = &quot; ?InChI2Struct&quot;;</a>
+<a name="ln2089"> </a>
+<a name="ln2090"> </a>
+<a name="ln2091">    int i;</a>
+<a name="ln2092">    char      szSdfDataValue[MAX_SDF_VALUE+1];</a>
+<a name="ln2093">    unsigned long  ulDisplTime = 0;    /*  infinite, milliseconds */</a>
+<a name="ln2094"> </a>
+<a name="ln2095">    INPUT_PARMS inp_parms;</a>
+<a name="ln2096">    INPUT_PARMS *ip = &amp;inp_parms;</a>
+<a name="ln2097"> </a>
+<a name="ln2098">    int             bReleaseVersion = bRELEASE_VERSION;</a>
+<a name="ln2099">    int   nRet = 0, nRet1;</a>
+<a name="ln2100">    int bStdFormat          = 0;</a>
+<a name="ln2101"> </a>
+<a name="ln2102">    /* conversion result */</a>
+<a name="ln2103">    inp_ATOM *at=NULL;</a>
+<a name="ln2104">    int num_at = 0;</a>
+<a name="ln2105"> </a>
+<a name="ln2106">#if ( defined(REPEAT_ALL) &amp;&amp; REPEAT_ALL &gt; 0 )</a>
+<a name="ln2107">    int  num_repeat = REPEAT_ALL;</a>
+<a name="ln2108">#endif</a>
+<a name="ln2109"> </a>
+<a name="ln2110">    const char *argv[INCHI_MAX_NUM_ARG+1];</a>
+<a name="ln2111">    int   argc;</a>
+<a name="ln2112">    char *szOptions = NULL;</a>
+<a name="ln2113"> </a>
+<a name="ln2114">    if ( bLibInchiSemaphore ) {  /* does not work properly under sufficient stress */</a>
+<a name="ln2115">        return inchi_Ret_BUSY;</a>
+<a name="ln2116">    }</a>
+<a name="ln2117">#if 0</a>
+<a name="ln2118">    /* moved to after call to CheckINCHI - Marc 2010 */</a>
+<a name="ln2119">    bLibInchiSemaphore = 1;</a>
+<a name="ln2120">#endif</a>
+<a name="ln2121"> </a>
+<a name="ln2122">#if( TRACE_MEMORY_LEAKS == 1 )</a>
+<a name="ln2123">    _CrtSetDbgFlag(_CRTDBG_CHECK_ALWAYS_DF | _CRTDBG_LEAK_CHECK_DF | _CRTDBG_ALLOC_MEM_DF);</a>
+<a name="ln2124">/* for execution outside the VC++ debugger uncomment one of the following two */</a>
+<a name="ln2125">#ifdef MY_REPORT_FILE </a>
+<a name="ln2126">   _CrtSetReportMode( _CRT_WARN, _CRTDBG_MODE_FILE );</a>
+<a name="ln2127">   _CrtSetReportFile( _CRT_WARN, MY_REPORT_FILE );</a>
+<a name="ln2128">   _CrtSetReportMode( _CRT_ERROR, _CRTDBG_MODE_FILE );</a>
+<a name="ln2129">   _CrtSetReportFile( _CRT_ERROR, MY_REPORT_FILE );</a>
+<a name="ln2130">   _CrtSetReportMode( _CRT_ASSERT, _CRTDBG_MODE_FILE );</a>
+<a name="ln2131">   _CrtSetReportFile( _CRT_ASSERT, MY_REPORT_FILE );</a>
+<a name="ln2132">#else</a>
+<a name="ln2133">    _CrtSetReportMode(_CRT_WARN | _CRT_ERROR, _CRTDBG_MODE_DEBUG);</a>
+<a name="ln2134">#endif</a>
+<a name="ln2135">    </a>
+<a name="ln2136">    /* turn on floating point exceptions */</a>
+<a name="ln2137">#if ( !defined(__STDC__) || __STDC__ != 1 )    </a>
+<a name="ln2138">    {</a>
+<a name="ln2139">        /* Get the default control word. */</a>
+<a name="ln2140">        int cw = _controlfp( 0,0 );</a>
+<a name="ln2141"> </a>
+<a name="ln2142">        /* Set the exception masks OFF, turn exceptions on. */</a>
+<a name="ln2143">        /*cw &amp;=~(EM_OVERFLOW|EM_UNDERFLOW|EM_INEXACT|EM_ZERODIVIDE|EM_DENORMAL);*/</a>
+<a name="ln2144">        cw &amp;=~(EM_OVERFLOW|EM_UNDERFLOW|EM_ZERODIVIDE|EM_DENORMAL);</a>
+<a name="ln2145"> </a>
+<a name="ln2146">        /* Set the control word. */</a>
+<a name="ln2147">        _controlfp( cw, MCW_EM );</a>
+<a name="ln2148"> </a>
+<a name="ln2149">    }</a>
+<a name="ln2150">#endif</a>
+<a name="ln2151">#endif</a>
+<a name="ln2152"> </a>
+<a name="ln2153">    memset( outStruct, 0, sizeof(*outStruct) );</a>
+<a name="ln2154"> </a>
+<a name="ln2155">#if ( defined(REPEAT_ALL) &amp;&amp; REPEAT_ALL &gt; 0 )</a>
+<a name="ln2156">repeat:</a>
+<a name="ln2157">    FreeStructFromINCHI( &amp;outStruct );</a>
+<a name="ln2158">    inchi_ios_reset(input_file);  /* do not close input_file - its string buffer may point to inpInChI-&gt;szInChI */</a>
+<a name="ln2159">    inchi_ios_close(output_file);</a>
+<a name="ln2160">    inchi_ios_close(log_file);</a>
+<a name="ln2161">#endif</a>
+<a name="ln2162"> </a>
+<a name="ln2163">    sd-&gt;bUserQuit  = 0;</a>
+<a name="ln2164"> </a>
+<a name="ln2165"> </a>
+<a name="ln2166"> </a>
+<a name="ln2167">    /*^^^ Initialize internal for this function I/O streams as string buffers */</a>
+<a name="ln2168">    inchi_ios_init(input_file, INCHI_IOSTREAM_STRING, NULL);</a>
+<a name="ln2169">    inchi_ios_init(output_file, INCHI_IOSTREAM_STRING, NULL);</a>
+<a name="ln2170">    inchi_ios_init(log_file, INCHI_IOSTREAM_STRING, NULL);</a>
+<a name="ln2171"> </a>
+<a name="ln2172"> </a>
+<a name="ln2173">    /* clear original input structure */</a>
+<a name="ln2174"> </a>
+<a name="ln2175">    memset( sd,         0, sizeof(*sd) );</a>
+<a name="ln2176">    memset( ip,         0, sizeof(*ip) );</a>
+<a name="ln2177">    memset( szSdfDataValue    , 0, sizeof( szSdfDataValue    ) );</a>
+<a name="ln2178">    szMainOption[1] = INCHI_OPTION_PREFX;</a>
+<a name="ln2179"> </a>
+<a name="ln2180">    if ( !inpInChI ) </a>
+<a name="ln2181">    {</a>
+<a name="ln2182">        nRet = _IS_ERROR;</a>
+<a name="ln2183">        goto exit_function;</a>
+<a name="ln2184">    }</a>
+<a name="ln2185"> </a>
+<a name="ln2186">    /* options */</a>
+<a name="ln2187">    if ( inpInChI /*&amp;&amp; inpInChI-&gt;szOptions*/ ) {  /* fix bug discovered by Burt Leland 2008-12-23 */</a>
+<a name="ln2188">        int opt_len = (inpInChI-&gt;szOptions? strlen(inpInChI-&gt;szOptions) : 0) + sizeof(szMainOption) + 1;</a>
+<a name="ln2189">        szOptions = (char*)inchi_calloc( opt_len+1, sizeof(szOptions[0]) );</a>
+<a name="ln2190">        if ( szOptions ) {</a>
+<a name="ln2191">            if ( inpInChI-&gt;szOptions ) /* fix bug discovered by Burt Leland 2008-12-23 */</a>
+<a name="ln2192">                strcpy( szOptions, inpInChI-&gt;szOptions );</a>
+<a name="ln2193">            strcat( szOptions, szMainOption );</a>
+<a name="ln2194">            argc = parse_options_string ( szOptions, argv, INCHI_MAX_NUM_ARG );</a>
+<a name="ln2195">        } else {</a>
+<a name="ln2196">            nRet = _IS_FATAL;</a>
+<a name="ln2197">            goto translate_RetVal; /* emergency exit */</a>
+<a name="ln2198">        }</a>
+<a name="ln2199">    } else {</a>
+<a name="ln2200">        argc = 1;</a>
+<a name="ln2201">        argv[0] = &quot;&quot;;</a>
+<a name="ln2202">        argv[1] = NULL;</a>
+<a name="ln2203">    }</a>
+<a name="ln2204"> </a>
+<a name="ln2205">    if ( (argc == 1</a>
+<a name="ln2206">#ifdef TARGET_API_LIB</a>
+<a name="ln2207">        &amp;&amp; (!inpInChI || !inpInChI-&gt;szInChI)</a>
+<a name="ln2208">#endif   </a>
+<a name="ln2209">        )</a>
+<a name="ln2210">        || (argc==2 &amp;&amp; ( argv[1][0]==INCHI_OPTION_PREFX ) &amp;&amp;</a>
+<a name="ln2211">        (!strcmp(argv[1]+1, &quot;?&quot;) || !stricmp(argv[1]+1, &quot;help&quot;) )) ) {</a>
+<a name="ln2212">        HelpCommandLineParms(log_file);</a>
+<a name="ln2213">        outStruct-&gt;szLog = log_file-&gt;s.pStr;</a>
+<a name="ln2214">        nRet = _IS_EOF;</a>
+<a name="ln2215">        goto translate_RetVal;</a>
+<a name="ln2216">    }</a>
+<a name="ln2217"> </a>
+<a name="ln2218">    nRet1 = ReadCommandLineParms( argc, argv, ip, szSdfDataValue, &amp;ulDisplTime, bReleaseVersion, log_file );</a>
+<a name="ln2219">    if ( szOptions ) {</a>
+<a name="ln2220">        /* argv pointed to strings in szOptions */</a>
+<a name="ln2221">        inchi_free( szOptions );</a>
+<a name="ln2222">        szOptions = NULL;</a>
+<a name="ln2223">    }</a>
+<a name="ln2224">    /* INChI DLL specific */</a>
+<a name="ln2225">    ip-&gt;bNoStructLabels = 1;</a>
+<a name="ln2226"> </a>
+<a name="ln2227">    if ( 0 &gt; nRet1 ) {</a>
+<a name="ln2228">        goto exit_function;</a>
+<a name="ln2229">    }</a>
+<a name="ln2230">    if ( ip-&gt;bNoStructLabels ) {</a>
+<a name="ln2231">        ip-&gt;pSdfLabel = NULL;</a>
+<a name="ln2232">        ip-&gt;pSdfValue = NULL;</a>
+<a name="ln2233">    } else</a>
+<a name="ln2234">    if ( ip-&gt;nInputType == INPUT_INCHI_XML || ip-&gt;nInputType == INPUT_INCHI_PLAIN  ||</a>
+<a name="ln2235">         ip-&gt;nInputType == INPUT_CMLFILE || ip-&gt;nInputType == INPUT_INCHI ) {</a>
+<a name="ln2236">        /* the input may contain both the header and the label of the structure */</a>
+<a name="ln2237">        if ( !ip-&gt;pSdfLabel ) </a>
+<a name="ln2238">            ip-&gt;pSdfLabel  = ip-&gt;szSdfDataHeader;</a>
+<a name="ln2239">        if ( !ip-&gt;pSdfValue )</a>
+<a name="ln2240">            ip-&gt;pSdfValue  = szSdfDataValue;</a>
+<a name="ln2241">    }</a>
+<a name="ln2242">    if ( ip-&gt;nInputType &amp;&amp; ip-&gt;nInputType != INPUT_INCHI ) {</a>
+<a name="ln2243">        inchi_ios_eprint( log_file, &quot;Input type set to INPUT_INCHI\n&quot; );</a>
+<a name="ln2244">        ip-&gt;nInputType = INPUT_INCHI;</a>
+<a name="ln2245">    }</a>
+<a name="ln2246"> </a>
+<a name="ln2247">    if ( !inpInChI-&gt;szInChI ) </a>
+<a name="ln2248">    {</a>
+<a name="ln2249">        nRet = _IS_ERROR;</a>
+<a name="ln2250">        goto exit_function;</a>
+<a name="ln2251">    }</a>
+<a name="ln2252">    else</a>
+<a name="ln2253">    {</a>
+<a name="ln2254">        const int strict=0; /* do not use strict mode, it may be too alarmous */</a>
+<a name="ln2255">        nRet = CheckINCHI(inpInChI-&gt;szInChI, strict);</a>
+<a name="ln2256">        if (nRet == INCHI_VALID_STANDARD)</a>
+<a name="ln2257">        {</a>
+<a name="ln2258">            bStdFormat = 1;</a>
+<a name="ln2259">        }</a>
+<a name="ln2260">        else if (nRet == INCHI_VALID_NON_STANDARD)</a>
+<a name="ln2261">        {</a>
+<a name="ln2262">            ;</a>
+<a name="ln2263">        }</a>
+<a name="ln2264">        else</a>
+<a name="ln2265">        {</a>
+<a name="ln2266">            nRet = _IS_ERROR;</a>
+<a name="ln2267">            goto exit_function;</a>
+<a name="ln2268">        }</a>
+<a name="ln2269">    }</a>
+<a name="ln2270"> </a>
+<a name="ln2271"> </a>
+<a name="ln2272">    if ( bLibInchiSemaphore ) {  /* does not work properly under sufficient stress */</a>
+<a name="ln2273">        return inchi_Ret_BUSY;</a>
+<a name="ln2274">    }</a>
+<a name="ln2275">    bLibInchiSemaphore = 1;</a>
+<a name="ln2276"> </a>
+<a name="ln2277"> </a>
+<a name="ln2278">    PrintInputParms( log_file, ip );</a>
+<a name="ln2279">    /*********************************/</a>
+<a name="ln2280">    /* InChI -&gt; Structure conversion */</a>
+<a name="ln2281">    /*********************************/</a>
+<a name="ln2282"> </a>
+<a name="ln2283">    /* input_file simulation */</a>
+<a name="ln2284">    input_file-&gt;s.pStr = inpInChI-&gt;szInChI;</a>
+<a name="ln2285">    input_file-&gt;s.nUsedLength = strlen(input_file-&gt;s.pStr)+1;</a>
+<a name="ln2286">    input_file-&gt;s.nAllocatedLength = input_file-&gt;s.nUsedLength;</a>
+<a name="ln2287">    input_file-&gt;s.nPtr = 0;</a>
+<a name="ln2288">    /* buffer for the message */</a>
+<a name="ln2289">    outStruct-&gt;szMessage = (char *)inchi_calloc( MAX_MSG_LEN, sizeof(outStruct-&gt;szMessage[0]));</a>
+<a name="ln2290">    if ( !outStruct-&gt;szMessage ) {</a>
+<a name="ln2291">         inchi_ios_eprint( log_file, &quot;Cannot allocate output message buffer.\n&quot;);</a>
+<a name="ln2292">        nRet = -1;</a>
+<a name="ln2293">    } else {</a>
+<a name="ln2294">        nRet = ReadWriteInChI( input_file, output_file, log_file,</a>
+<a name="ln2295">                               ip,  sd, &amp;at,  &amp;num_at, outStruct-&gt;szMessage, MAX_MSG_LEN, outStruct-&gt;WarningFlags );</a>
+<a name="ln2296">    }</a>
+<a name="ln2297">    if ( nRet &gt;= 0 &amp;&amp; at &amp;&amp; num_at ) {</a>
+<a name="ln2298">        /* success */</a>
+<a name="ln2299">        nRet = InpAtom0DToInchiAtom( at, num_at, outStruct );</a>
+<a name="ln2300">        if ( at ) {</a>
+<a name="ln2301">            inchi_free( at );</a>
+<a name="ln2302">            at = NULL;</a>
+<a name="ln2303">        }</a>
+<a name="ln2304">        if ( nRet &lt; 0 ) {</a>
+<a name="ln2305">            inchi_ios_eprint( log_file, &quot;Final structure conversion failed\n&quot; );</a>
+<a name="ln2306">        }</a>
+<a name="ln2307">    }</a>
+<a name="ln2308">    outStruct-&gt;szLog = log_file-&gt;s.pStr;</a>
+<a name="ln2309"> </a>
+<a name="ln2310"> </a>
+<a name="ln2311">exit_function:;</a>
+<a name="ln2312"> </a>
+<a name="ln2313">#if( ADD_CMLPP == 1 )</a>
+<a name="ln2314">        /* BILLY 8/6/04 */</a>
+<a name="ln2315">        /* free CML memory */</a>
+<a name="ln2316">        FreeCml ();</a>
+<a name="ln2317">        FreeCmlDoc( 1 );</a>
+<a name="ln2318">#endif</a>
+<a name="ln2319"> </a>
+<a name="ln2320"> </a>
+<a name="ln2321"> </a>
+<a name="ln2322">    for ( i = 0; i &lt; MAX_NUM_PATHS; i ++ ) {</a>
+<a name="ln2323">        if ( ip-&gt;path[i] ) {</a>
+<a name="ln2324">            inchi_free( (char*) ip-&gt;path[i] ); /*  cast deliberately discards 'const' qualifier */</a>
+<a name="ln2325">            ip-&gt;path[i] = NULL;</a>
+<a name="ln2326">        }</a>
+<a name="ln2327">    }</a>
+<a name="ln2328"> </a>
+<a name="ln2329">    SetBitFree( );</a>
+<a name="ln2330"> </a>
+<a name="ln2331"> </a>
+<a name="ln2332">#if ( defined(REPEAT_ALL) &amp;&amp; REPEAT_ALL &gt; 0 )</a>
+<a name="ln2333">    if ( num_repeat-- &gt; 0 ) {</a>
+<a name="ln2334">        goto repeat;</a>
+<a name="ln2335">    }</a>
+<a name="ln2336">#endif</a>
+<a name="ln2337"> </a>
+<a name="ln2338"> </a>
+<a name="ln2339">#ifdef TARGET_API_LIB</a>
+<a name="ln2340">    /* output */</a>
+<a name="ln2341"> </a>
+<a name="ln2342">    if ( log_file-&gt;s.pStr &amp;&amp; log_file-&gt;s.nUsedLength &gt; 0 ) {</a>
+<a name="ln2343">        while ( log_file-&gt;s.nUsedLength &amp;&amp; '\n' == log_file-&gt;s.pStr[log_file-&gt;s.nUsedLength-1] ) {</a>
+<a name="ln2344">            log_file-&gt;s.pStr[-- log_file-&gt;s.nUsedLength]  = '\0'; /* remove last LF */</a>
+<a name="ln2345">        }</a>
+<a name="ln2346">        if ( outStruct ) {</a>
+<a name="ln2347">            outStruct-&gt;szLog = log_file-&gt;s.pStr;</a>
+<a name="ln2348">            log_file-&gt;s.pStr = NULL;</a>
+<a name="ln2349">        }</a>
+<a name="ln2350">    }</a>
+<a name="ln2351">#endif</a>
+<a name="ln2352">    </a>
+<a name="ln2353">translate_RetVal:</a>
+<a name="ln2354"> </a>
+<a name="ln2355">    /* Close internal I/O streams */</a>
+<a name="ln2356">    inchi_ios_reset(input_file);  /* do not close input_file - its string buffer may point to inpInChI-&gt;szInChI */</a>
+<a name="ln2357">    inchi_ios_close(output_file);</a>
+<a name="ln2358">    inchi_ios_close(log_file);</a>
+<a name="ln2359"> </a>
+<a name="ln2360">    switch (nRet) { </a>
+<a name="ln2361">    case -3         : nRet = inchi_Ret_ERROR  ; break; /* Error: no Structure has been created */</a>
+<a name="ln2362">    case -2         : nRet = inchi_Ret_ERROR  ; break; /* Error: no Structure has been created */</a>
+<a name="ln2363">    case -1         : nRet = inchi_Ret_FATAL  ; break; /* Severe error: no Structure has been created (typically; break; memory allocation failed) */</a>
+<a name="ln2364">    default         :</a>
+<a name="ln2365">        if ( !outStruct-&gt;atom || !outStruct-&gt;num_atoms ) {</a>
+<a name="ln2366">            nRet = inchi_Ret_EOF;</a>
+<a name="ln2367">        } else {</a>
+<a name="ln2368">            int m,n,t=0;</a>
+<a name="ln2369">            for ( m=0; m &lt; 2; m ++ ) {</a>
+<a name="ln2370">                for ( n=0; n &lt; 2; n ++ ) {</a>
+<a name="ln2371">                    if ( outStruct-&gt;WarningFlags[m][n] ) {</a>
+<a name="ln2372">                        t ++;</a>
+<a name="ln2373">                    }</a>
+<a name="ln2374">                }</a>
+<a name="ln2375">            }</a>
+<a name="ln2376">            nRet = t? inchi_Ret_WARNING : inchi_Ret_OKAY;</a>
+<a name="ln2377">        }</a>
+<a name="ln2378">            break;</a>
+<a name="ln2379">    }</a>
+<a name="ln2380"> </a>
+<a name="ln2381">    bLibInchiSemaphore = 0;</a>
+<a name="ln2382">    return nRet;</a>
+<a name="ln2383">}</a>
+<a name="ln2384"> </a>
+<a name="ln2385">/********************************************************************/</a>
+<a name="ln2386"> </a>
+<a name="ln2387">#if( defined( _WIN32 ) &amp;&amp; defined( _MSC_VER ) &amp;&amp; _MSC_VER &gt;= 800 &amp;&amp; defined(_USRDLL) &amp;&amp; defined(BUILD_LINK_AS_DLL) )</a>
+<a name="ln2388">    /* Win32 &amp; MS VC ++, compile and link as a DLL */</a>
+<a name="ln2389">/*********************************************************/</a>
+<a name="ln2390">/*   C calling conventions export from Win32 dll         */</a>
+<a name="ln2391">/*********************************************************/</a>
+<a name="ln2392">/* prototypes */</a>
+<a name="ln2393">#ifndef COMPILE_ALL_CPP</a>
+<a name="ln2394">#ifdef __cplusplus</a>
+<a name="ln2395">extern &quot;C&quot; {</a>
+<a name="ln2396">#endif</a>
+<a name="ln2397">#endif</a>
+<a name="ln2398"> </a>
+<a name="ln2399">int cdecl_GetINCHI( inchi_Input *inp, inchi_Output *out );</a>
+<a name="ln2400">int cdecl_GetStdINCHI( inchi_Input *inp, inchi_Output *out );</a>
+<a name="ln2401">void cdecl_FreeINCHI( inchi_Output *out );</a>
+<a name="ln2402">void cdecl_FreeStdINCHI( inchi_Output *out );</a>
+<a name="ln2403">int  cdecl_GetStringLength( char *p );</a>
+<a name="ln2404">int  cdecl_Get_inchi_Input_FromAuxInfo( char *szInchiAuxInfo, </a>
+<a name="ln2405">                                       int bDoNotAddH, int bDiffUnkUndfStereo,</a>
+<a name="ln2406">                                       InchiInpData *pInchiInp );</a>
+<a name="ln2407">int  cdecl_Get_std_inchi_Input_FromAuxInfo( char *szInchiAuxInfo, </a>
+<a name="ln2408">                                           int bDoNotAddH,</a>
+<a name="ln2409">                                           InchiInpData *pInchiInp );</a>
+<a name="ln2410">void cdecl_Free_inchi_Input( inchi_Input *pInp );</a>
+<a name="ln2411">void cdecl_Free_std_inchi_Input( inchi_Input *pInp );</a>
+<a name="ln2412">int cdecl_GetStructFromINCHI( inchi_InputINCHI *inpInChI, inchi_OutputStruct *outStruct );</a>
+<a name="ln2413">int cdecl_GetStructFromStdINCHI( inchi_InputINCHI *inpInChI, inchi_OutputStruct *outStruct );</a>
+<a name="ln2414">int cdecl_GetINCHIfromINCHI( inchi_InputINCHI *inpInChI, inchi_Output *out );</a>
+<a name="ln2415">void cdecl_FreeStructFromINCHI( inchi_OutputStruct *outStruct );</a>
+<a name="ln2416">void cdecl_FreeStructFromStdINCHI( inchi_OutputStruct *outStruct );</a>
+<a name="ln2417">int cdecl_CheckINCHI(const char *szINCHI, const int strict);</a>
+<a name="ln2418">#ifndef COMPILE_ALL_CPP</a>
+<a name="ln2419">#ifdef __cplusplus</a>
+<a name="ln2420">}</a>
+<a name="ln2421">#endif</a>
+<a name="ln2422">#endif</a>
+<a name="ln2423"> </a>
+<a name="ln2424">/* implementation */</a>
+<a name="ln2425">/* libinchi.def provides export without cdecl_ prefixes */</a>
+<a name="ln2426"> </a>
+<a name="ln2427">/********************************************************/</a>
+<a name="ln2428">int cdecl_GetINCHI( inchi_Input *inp, inchi_Output *out )</a>
+<a name="ln2429">{</a>
+<a name="ln2430">    return GetINCHI( inp, out );</a>
+<a name="ln2431">}</a>
+<a name="ln2432">/********************************************************/</a>
+<a name="ln2433">int cdecl_GetStdINCHI( inchi_Input *inp, inchi_Output *out )</a>
+<a name="ln2434">{</a>
+<a name="ln2435">    return GetStdINCHI( inp, out );</a>
+<a name="ln2436">}</a>
+<a name="ln2437">/********************************************************/</a>
+<a name="ln2438">void cdecl_FreeINCHI( inchi_Output *out )</a>
+<a name="ln2439">{</a>
+<a name="ln2440">    FreeINCHI( out );</a>
+<a name="ln2441">}</a>
+<a name="ln2442">/********************************************************/</a>
+<a name="ln2443">void cdecl_FreeStdINCHI( inchi_Output *out )</a>
+<a name="ln2444">{</a>
+<a name="ln2445">    FreeStdINCHI( out );</a>
+<a name="ln2446">}</a>
+<a name="ln2447">/********************************************************/</a>
+<a name="ln2448">int cdecl_GetStringLength( char *p )</a>
+<a name="ln2449">{</a>
+<a name="ln2450">    return GetStringLength( p );</a>
+<a name="ln2451">}</a>
+<a name="ln2452">/********************************************************/</a>
+<a name="ln2453">int cdecl_Get_inchi_Input_FromAuxInfo( char *szInchiAuxInfo, </a>
+<a name="ln2454">                                      int bDoNotAddH, int bDiffUnkUndfStereo,</a>
+<a name="ln2455">                                      InchiInpData *pInchiInp )</a>
+<a name="ln2456">{</a>
+<a name="ln2457">    return Get_inchi_Input_FromAuxInfo( szInchiAuxInfo, bDoNotAddH, bDiffUnkUndfStereo,</a>
+<a name="ln2458">                                        pInchiInp );</a>
+<a name="ln2459">}</a>
+<a name="ln2460">/********************************************************/</a>
+<a name="ln2461">/********************************************************/</a>
+<a name="ln2462">int cdecl_Get_std_inchi_Input_FromAuxInfo( char *szInchiAuxInfo, </a>
+<a name="ln2463">                                          int bDoNotAddH,</a>
+<a name="ln2464">                                          InchiInpData *pInchiInp )</a>
+<a name="ln2465">{</a>
+<a name="ln2466">    return Get_std_inchi_Input_FromAuxInfo( szInchiAuxInfo, bDoNotAddH, pInchiInp );</a>
+<a name="ln2467">}</a>
+<a name="ln2468">/********************************************************/</a>
+<a name="ln2469">void cdecl_Free_std_inchi_Input( inchi_Input *pInp )</a>
+<a name="ln2470">{</a>
+<a name="ln2471">    Free_std_inchi_Input( pInp );</a>
+<a name="ln2472">}</a>
+<a name="ln2473">/********************************************************/</a>
+<a name="ln2474">void cdecl_Free_inchi_Input( inchi_Input *pInp )</a>
+<a name="ln2475">{</a>
+<a name="ln2476">    Free_inchi_Input( pInp );</a>
+<a name="ln2477">}</a>
+<a name="ln2478">/********************************************************/</a>
+<a name="ln2479">int cdecl_GetStructFromINCHI( inchi_InputINCHI *inpInChI, inchi_OutputStruct *outStruct )</a>
+<a name="ln2480">{</a>
+<a name="ln2481">    return GetStructFromINCHI( inpInChI, outStruct );</a>
+<a name="ln2482">}</a>
+<a name="ln2483">/********************************************************//********************************************************/</a>
+<a name="ln2484">int cdecl_GetStructFromStdINCHI( inchi_InputINCHI *inpInChI, inchi_OutputStruct *outStruct )</a>
+<a name="ln2485">{</a>
+<a name="ln2486">    return GetStructFromStdINCHI( inpInChI, outStruct );</a>
+<a name="ln2487">}</a>
+<a name="ln2488">/********************************************************/</a>
+<a name="ln2489">void cdecl_FreeStructFromINCHI( inchi_OutputStruct *outStruct )</a>
+<a name="ln2490">{</a>
+<a name="ln2491">    FreeStructFromINCHI( outStruct );</a>
+<a name="ln2492">}</a>
+<a name="ln2493">/********************************************************/</a>
+<a name="ln2494">int cdecl_GetINCHIfromINCHI( inchi_InputINCHI *inpInChI, inchi_Output *out )</a>
+<a name="ln2495">{</a>
+<a name="ln2496">    return GetINCHIfromINCHI( inpInChI, out );</a>
+<a name="ln2497">}</a>
+<a name="ln2498">/********************************************************/</a>
+<a name="ln2499">void cdecl_FreeStructFromStdINCHI( inchi_OutputStruct *outStruct )</a>
+<a name="ln2500">{</a>
+<a name="ln2501">    FreeStructFromStdINCHI( outStruct );</a>
+<a name="ln2502">}</a>
+<a name="ln2503">/********************************************************/</a>
+<a name="ln2504">int cdecl_CheckINCHI(const char *szINCHI, const int strict)</a>
+<a name="ln2505">{</a>
+<a name="ln2506">    return CheckINCHI( szINCHI, strict );</a>
+<a name="ln2507">}</a>
+<a name="ln2508">#endif</a>
+<a name="ln2509"> </a>
+<a name="ln2510">#if( defined(__GNUC__) &amp;&amp; __GNUC__ &gt;= 3 &amp;&amp; defined(__MINGW32__) &amp;&amp; defined(_WIN32) )</a>
+<a name="ln2511">#include &lt;windows.h&gt;</a>
+<a name="ln2512">/*********************************************************/</a>
+<a name="ln2513">/*   Pacal calling conventions export from Win32 dll     */</a>
+<a name="ln2514">/*********************************************************/</a>
+<a name="ln2515">#ifndef COMPILE_ALL_CPP</a>
+<a name="ln2516">#ifdef __cplusplus</a>
+<a name="ln2517">extern &quot;C&quot; {</a>
+<a name="ln2518">#endif</a>
+<a name="ln2519">#endif</a>
+<a name="ln2520">/* prototypes */</a>
+<a name="ln2521"> </a>
+<a name="ln2522">int  PASCAL pasc_GetINCHI( inchi_Input *inp, inchi_Output *out );</a>
+<a name="ln2523">int  PASCAL pasc_GetStdINCHI( inchi_Input *inp, inchi_Output *out );</a>
+<a name="ln2524">void PASCAL pasc_FreeINCHI( inchi_Output *out );</a>
+<a name="ln2525">void PASCAL pasc_FreeStdINCHI( inchi_Output *out );</a>
+<a name="ln2526">int  PASCAL pasc_GetStringLength( char *p );</a>
+<a name="ln2527">int  PASCAL pasc_Get_std_inchi_Input_FromAuxInfo( char *szInchiAuxInfo, </a>
+<a name="ln2528">                                                  int bDoNotAddH, </a>
+<a name="ln2529">                                                  InchiInpData *pInchiInp );</a>
+<a name="ln2530">int  PASCAL pasc_Get_inchi_Input_FromAuxInfo( char *szInchiAuxInfo, </a>
+<a name="ln2531">                                                  int bDoNotAddH, </a>
+<a name="ln2532">                                                  int bDiffUnkUndfStereo,</a>
+<a name="ln2533">                                                  InchiInpData *pInchiInp );</a>
+<a name="ln2534">void PASCAL pasc_Free_inchi_Input( inchi_Input *pInp );</a>
+<a name="ln2535">void PASCAL pasc_Free_std_inchi_Input( inchi_Input *pInp );</a>
+<a name="ln2536">void PASCAL pasc_FreeStructFromINCHI( inchi_OutputStruct *out );</a>
+<a name="ln2537">void PASCAL pasc_FreeStructFromStdINCHI( inchi_OutputStruct *out );</a>
+<a name="ln2538">int PASCAL pasc_GetStructFromINCHI( inchi_InputINCHI *inp, inchi_OutputStruct *out );</a>
+<a name="ln2539">int PASCAL pasc_GetStructFromStdINCHI( inchi_InputINCHI *inp, inchi_OutputStruct *out );</a>
+<a name="ln2540">int PASCAL pasc_CheckINCHI(const char *szINCHI, const int strict);</a>
+<a name="ln2541"> </a>
+<a name="ln2542">#ifndef COMPILE_ALL_CPP</a>
+<a name="ln2543">#ifdef __cplusplus</a>
+<a name="ln2544">}</a>
+<a name="ln2545">#endif</a>
+<a name="ln2546">#endif</a>
+<a name="ln2547"> </a>
+<a name="ln2548">/* implementation */</a>
+<a name="ln2549">/* libinchi.def provides export without PASCAL pasc_ prefixes */</a>
+<a name="ln2550">/********************************************************/</a>
+<a name="ln2551">int PASCAL pasc_GetINCHI( inchi_Input *inp, inchi_Output *out )</a>
+<a name="ln2552">{</a>
+<a name="ln2553">    return GetINCHI( inp, out );</a>
+<a name="ln2554">}</a>
+<a name="ln2555">/********************************************************/</a>
+<a name="ln2556">int PASCAL pasc_GetStdINCHI( inchi_Input *inp, inchi_Output *out )</a>
+<a name="ln2557">{</a>
+<a name="ln2558">    return GetStdINCHI( inp, out );</a>
+<a name="ln2559">}</a>
+<a name="ln2560">/********************************************************/</a>
+<a name="ln2561">void PASCAL pasc_FreeINCHI( inchi_Output *out )</a>
+<a name="ln2562">{</a>
+<a name="ln2563">    FreeINCHI( out );</a>
+<a name="ln2564">}</a>
+<a name="ln2565">/********************************************************/</a>
+<a name="ln2566">void PASCAL pasc_FreeStdINCHI( inchi_Output *out )</a>
+<a name="ln2567">{</a>
+<a name="ln2568">    FreeStdINCHI( out );</a>
+<a name="ln2569">}</a>
+<a name="ln2570">/********************************************************/</a>
+<a name="ln2571">int PASCAL pasc_GetStringLength( char *p )</a>
+<a name="ln2572">{</a>
+<a name="ln2573">    return GetStringLength( p );</a>
+<a name="ln2574">}</a>
+<a name="ln2575">/********************************************************/</a>
+<a name="ln2576">int PASCAL pasc_Get_inchi_Input_FromAuxInfo( char *szInchiAuxInfo, </a>
+<a name="ln2577">                                                int bDoNotAddH, </a>
+<a name="ln2578">                                                int bDiffUnkUndfStereo,</a>
+<a name="ln2579">                                                InchiInpData *pInchiInp )</a>
+<a name="ln2580">{</a>
+<a name="ln2581">    return Get_inchi_Input_FromAuxInfo( szInchiAuxInfo, bDoNotAddH, </a>
+<a name="ln2582">                                            bDiffUnkUndfStereo, pInchiInp );</a>
+<a name="ln2583">}</a>
+<a name="ln2584">/********************************************************/</a>
+<a name="ln2585">int PASCAL pasc_Get_std_inchi_Input_FromAuxInfo( char *szInchiAuxInfo, </a>
+<a name="ln2586">                                                int bDoNotAddH, </a>
+<a name="ln2587">                                                InchiInpData *pInchiInp )</a>
+<a name="ln2588">{</a>
+<a name="ln2589">    return Get_std_inchi_Input_FromAuxInfo( szInchiAuxInfo, bDoNotAddH, pInchiInp );</a>
+<a name="ln2590">}</a>
+<a name="ln2591">/********************************************************/</a>
+<a name="ln2592">void PASCAL pasc_Free_inchi_Input( inchi_Input *pInp )</a>
+<a name="ln2593">{</a>
+<a name="ln2594">    Free_inchi_Input( pInp );</a>
+<a name="ln2595">}</a>
+<a name="ln2596">/********************************************************/</a>
+<a name="ln2597">void PASCAL pasc_Free_std_inchi_Input( inchi_Input *pInp )</a>
+<a name="ln2598">{</a>
+<a name="ln2599">    Free_std_inchi_Input( pInp );</a>
+<a name="ln2600">}</a>
+<a name="ln2601">/********************************************************/</a>
+<a name="ln2602">void PASCAL pasc_FreeStructFromINCHI( inchi_OutputStruct *out )</a>
+<a name="ln2603">{</a>
+<a name="ln2604">    FreeStructFromINCHI( out );</a>
+<a name="ln2605">}</a>
+<a name="ln2606">/********************************************************/</a>
+<a name="ln2607">void PASCAL pasc_FreeStructFromStdINCHI( inchi_OutputStruct *out )</a>
+<a name="ln2608">{</a>
+<a name="ln2609">    FreeStructFromStdINCHI( out );</a>
+<a name="ln2610">}</a>
+<a name="ln2611">/********************************************************//********************************************************/</a>
+<a name="ln2612">int PASCAL pasc_GetStructFromINCHI( inchi_InputINCHI *inp, inchi_OutputStruct *out )</a>
+<a name="ln2613">{</a>
+<a name="ln2614">    return GetStructFromINCHI( inp, out );</a>
+<a name="ln2615">}</a>
+<a name="ln2616">/********************************************************//********************************************************/</a>
+<a name="ln2617">int PASCAL pasc_GetStructFromStdINCHI( inchi_InputINCHI *inp, inchi_OutputStruct *out )</a>
+<a name="ln2618">{</a>
+<a name="ln2619">    return GetStructFromStdINCHI( inp, out );</a>
+<a name="ln2620">}</a>
+<a name="ln2621">/********************************************************/</a>
+<a name="ln2622">int PASCAL pasc_CheckINCHI(const char *szINCHI, const int strict)</a>
+<a name="ln2623">{</a>
+<a name="ln2624">    return CheckINCHI( szINCHI, strict );</a>
+<a name="ln2625">}</a>
+<a name="ln2626"> </a>
+<a name="ln2627">#endif </a>
+<a name="ln2628"> </a>
+<a name="ln2629"> </a>
+
+</code></pre>
+<div class="balloon" rel="317"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v512/" target="_blank">V512</a> A call of the 'memset' function will lead to underflow of the buffer 'log_file'.</p></div>
+<div class="balloon" rel="334"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'ip->bNoStructLabels' is always true.</p></div>
+<div class="balloon" rel="411"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'pStructPtrs' is always false.</p></div>
+<div class="balloon" rel="426"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'pStructPtrs' is always false.</p></div>
+<div class="balloon" rel="437"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 437, 442</p></div>
+<div class="balloon" rel="497"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always false: pStructPtrs.</p></div>
+<div class="balloon" rel="521"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'ip->path[i]' is always true.</p></div>
+<div class="balloon" rel="542"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v619/" target="_blank">V619</a> The array 'output_file' is being utilized as a pointer to single object.</p></div>
+<div class="balloon" rel="544"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v619/" target="_blank">V619</a> The array 'output_file' is being utilized as a pointer to single object.</p></div>
+<div class="balloon" rel="557"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v619/" target="_blank">V619</a> The array 'output_file' is being utilized as a pointer to single object.</p></div>
+<div class="balloon" rel="581"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'nRet' variable was assigned the same value.</p></div>
+<div class="balloon" rel="582"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'nRet' variable was assigned the same value.</p></div>
+<div class="balloon" rel="584"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'nRet' variable was assigned the same value.</p></div>
+<div class="balloon" rel="585"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'nRet' variable was assigned the same value.</p></div>
+<div class="balloon" rel="586"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'nRet' variable was assigned the same value.</p></div>
+<div class="balloon" rel="699"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v507/" target="_blank">V507</a> Pointer to local array 'opts' is stored outside the scope of this array. Such a pointer will become invalid.</p></div>
+<div class="balloon" rel="1104"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v512/" target="_blank">V512</a> A call of the 'memcpy' function will lead to underflow of the buffer '* coord_p'.</p></div>
+<div class="balloon" rel="1104"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v512/" target="_blank">V512</a> A call of the 'memcpy' function will lead to underflow of the buffer 'str'.</p></div>
+<div class="balloon" rel="1106"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v512/" target="_blank">V512</a> A call of the 'memcpy' function will lead to underflow of the buffer 'str'.</p></div>
+<div class="balloon" rel="1108"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v512/" target="_blank">V512</a> A call of the 'memcpy' function will lead to underflow of the buffer 'str'.</p></div>
+<div class="balloon" rel="1551"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v781/" target="_blank">V781</a> The value of the 'cur' index is checked after it was used. Perhaps there is a mistake in program logic.</p></div>
+<div class="balloon" rel="1587"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'outStruct->atom' is always true.</p></div>
+<div class="balloon" rel="1588"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'outStruct->stereo0D' is always true.</p></div>
+<div class="balloon" rel="1636"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'nNumAtoms >= 65534' is always false.</p></div>
+<div class="balloon" rel="1705"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'orig_inp_data->num_dimensions' variable was assigned the same value.</p></div>
+<div class="balloon" rel="1706"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'orig_inp_data->num_inp_atoms' variable was assigned the same value.</p></div>
+<div class="balloon" rel="1707"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'orig_inp_data->num_inp_bonds' variable was assigned the same value.</p></div>
+<div class="balloon" rel="1874"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'inpInChI' is always true.</p></div>
+<div class="balloon" rel="1895"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always false: !inpInChI.</p></div>
+<div class="balloon" rel="1902"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v512/" target="_blank">V512</a> A call of the 'memset' function will lead to underflow of the buffer 'log_file'.</p></div>
+<div class="balloon" rel="1908"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'szOptions' is always true.</p></div>
+<div class="balloon" rel="1919"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'ip->bNoStructLabels' is always true.</p></div>
+<div class="balloon" rel="1957"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v619/" target="_blank">V619</a> The array 'output_file' is being utilized as a pointer to single object.</p></div>
+<div class="balloon" rel="1961"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v619/" target="_blank">V619</a> The array 'output_file' is being utilized as a pointer to single object.</p></div>
+<div class="balloon" rel="1973"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v619/" target="_blank">V619</a> The array 'output_file' is being utilized as a pointer to single object.</p></div>
+<div class="balloon" rel="1993"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'ip->path[i]' is always true.</p></div>
+<div class="balloon" rel="2187"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'inpInChI' is always true.</p></div>
+<div class="balloon" rel="2207"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always false: !inpInChI.</p></div>
+<div class="balloon" rel="2219"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'szOptions' is always true.</p></div>
+<div class="balloon" rel="2230"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'ip->bNoStructLabels' is always true.</p></div>
+<div class="balloon" rel="2300"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'at' is always true.</p></div>
+<div class="balloon" rel="2324"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'ip->path[i]' is always true.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

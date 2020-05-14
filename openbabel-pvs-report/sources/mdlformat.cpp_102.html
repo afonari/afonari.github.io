@@ -1,0 +1,2085 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <title>mdlformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Copyright (C) 1998-2001 by OpenEye Scientific Software, Inc.</a>
+<a name="ln3">Some portions Copyright (C) 2001-2006 by Geoffrey Hutchison</a>
+<a name="ln4">Portions Copyright (C) 2004-2006 by Chris Morley</a>
+<a name="ln5">Portions Copyright (C) 2013 by NextMove Software</a>
+<a name="ln6"> </a>
+<a name="ln7">This file is part of the Open Babel project.</a>
+<a name="ln8">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln11">it under the terms of the GNU General Public License as published by</a>
+<a name="ln12">the Free Software Foundation version 2 of the License.</a>
+<a name="ln13"> </a>
+<a name="ln14">This program is distributed in the hope that it will be useful,</a>
+<a name="ln15">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln16">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln17">GNU General Public License for more details.</a>
+<a name="ln18">***********************************************************************/</a>
+<a name="ln19">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln20"> </a>
+<a name="ln21">#ifdef _WIN32</a>
+<a name="ln22">#pragma warning (disable : 4786)</a>
+<a name="ln23">#endif</a>
+<a name="ln24"> </a>
+<a name="ln25">#include &lt;ctime&gt;</a>
+<a name="ln26">#include &lt;vector&gt;</a>
+<a name="ln27">#include &lt;iomanip&gt;</a>
+<a name="ln28">#include &lt;map&gt;</a>
+<a name="ln29">#include &lt;algorithm&gt;</a>
+<a name="ln30">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln31">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln32">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln33">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln34">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln35">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln36">#include &lt;openbabel/stereo/stereo.h&gt;</a>
+<a name="ln37">#include &lt;openbabel/stereo/cistrans.h&gt;</a>
+<a name="ln38">#include &lt;openbabel/stereo/tetrahedral.h&gt;</a>
+<a name="ln39">#include &lt;openbabel/alias.h&gt;</a>
+<a name="ln40">#include &lt;openbabel/tokenst.h&gt;</a>
+<a name="ln41">#include &lt;openbabel/kekulize.h&gt;</a>
+<a name="ln42"> </a>
+<a name="ln43">#include &quot;mdlvalence.h&quot;</a>
+<a name="ln44"> </a>
+<a name="ln45">using namespace std;</a>
+<a name="ln46">namespace OpenBabel</a>
+<a name="ln47">{</a>
+<a name="ln48"> </a>
+<a name="ln49">  //MDLFormat is a base class which is never instantiated.</a>
+<a name="ln50">  //MOLFormat and SDFormat are derived from it and have their own constructors.</a>
+<a name="ln51">  //SDFormat has its own WriteMolecule which sets the &quot;sd&quot; option.</a>
+<a name="ln52"> </a>
+<a name="ln53">  class MDLFormat : public OBMoleculeFormat</a>
+<a name="ln54">  {</a>
+<a name="ln55">    public:</a>
+<a name="ln56">      virtual const char* Description()</a>
+<a name="ln57">      {</a>
+<a name="ln58">        return &quot;MDL MOL format\n&quot;</a>
+<a name="ln59">               &quot;Reads and writes V2000 and V3000 versions\n\n&quot;</a>
+<a name="ln60"> </a>
+<a name="ln61">               &quot;Open Babel supports an extension to the MOL file standard\n&quot;</a>
+<a name="ln62">               &quot;that allows cis/trans and tetrahedral stereochemistry to be\n&quot;</a>
+<a name="ln63">               &quot;stored in 0D MOL files. The tetrahedral stereochemistry is\n&quot;</a>
+<a name="ln64">               &quot;stored as the atom parity, while the cis/trans stereochemistry\n&quot;</a>
+<a name="ln65">               &quot;is stored using Up and Down bonds similar to how it is\n&quot;</a>
+<a name="ln66">               &quot;represented in a SMILES string. Use the ``S`` option\n&quot;</a>
+<a name="ln67">               &quot;when reading or writing if you want to avoid storing\n&quot;</a>
+<a name="ln68">               &quot;or interpreting stereochemistry in 0D MOL files.\n\n&quot;</a>
+<a name="ln69"> </a>
+<a name="ln70">               &quot;Read Options, e.g. -as\n&quot;</a>
+<a name="ln71">               &quot; s  determine chirality from atom parity flags\n&quot;</a>
+<a name="ln72">               &quot;       The default setting for 2D and 3D is to ignore atom parity and\n&quot;</a>
+<a name="ln73">               &quot;       work out the chirality based on the bond\n&quot;</a>
+<a name="ln74">               &quot;       stereochemistry (2D) or coordinates (3D).\n&quot;</a>
+<a name="ln75">               &quot;       For 0D the default is already to determine the chirality\n&quot;</a>
+<a name="ln76">               &quot;       from the atom parity.\n&quot;</a>
+<a name="ln77">               &quot; S  do not read stereochemistry from 0D MOL files\n&quot;</a>
+<a name="ln78">               &quot;       Open Babel supports reading and writing cis/trans\n&quot;</a>
+<a name="ln79">               &quot;       and tetrahedral stereochemistry to 0D MOL files.\n&quot;</a>
+<a name="ln80">               &quot;       This is an extension to the standard which you can\n&quot;</a>
+<a name="ln81">               &quot;       turn off using this option.\n&quot;</a>
+<a name="ln82">               &quot; T  read title only\n&quot;</a>
+<a name="ln83">               &quot; P  read title and properties only\n&quot;</a>
+<a name="ln84">               &quot;       When filtering an sdf file on title or properties\n&quot;</a>
+<a name="ln85">               &quot;       only, avoid lengthy chemical interpretation by\n&quot;</a>
+<a name="ln86">               &quot;       using the ``T`` or ``P`` option together with the\n&quot;</a>
+<a name="ln87">               &quot;       :ref:`copy format &lt;Copy_raw_text&gt;`.\n\n&quot;</a>
+<a name="ln88"> </a>
+<a name="ln89">               &quot;Write Options, e.g. -x3\n&quot;</a>
+<a name="ln90">               &quot; 3  output V3000 not V2000 (used for &gt;999 atoms/bonds) \n&quot;</a>
+<a name="ln91">               &quot; a  write atomclass if available\n&quot;</a>
+<a name="ln92">               &quot; m  write no properties\n&quot;</a>
+<a name="ln93">               &quot; w  use wedge and hash bonds from input (2D only)\n&quot;</a>
+<a name="ln94">               &quot; v  always specify the valence in the valence field\n&quot;</a>
+<a name="ln95">               &quot;      The default behavior is to only specify the valence if it\n&quot;</a>
+<a name="ln96">               &quot;      is not consistent with the MDL valence model.\n&quot;</a>
+<a name="ln97">               &quot;      So, for CH4 we don't specify it, but we do for CH3.\n&quot;</a>
+<a name="ln98">               &quot;      This option may be useful to preserve the correct number of\n&quot;</a>
+<a name="ln99">               &quot;      implicit hydrogens if a downstream tool does not correctly\n&quot;</a>
+<a name="ln100">               &quot;      implement the MDL valence model (but does honor the valence\n&quot;</a>
+<a name="ln101">               &quot;      field).\n&quot;</a>
+<a name="ln102">               &quot; S  do not store cis/trans stereochemistry in 0D MOL files\n&quot;</a>
+<a name="ln103">               &quot; A  output in Alias form, e.g. Ph, if present\n&quot;</a>
+<a name="ln104">               &quot; E  add an ASCII depiction of the molecule as a property\n&quot;</a>
+<a name="ln105">               &quot; H  use HYD extension (always on if mol contains zero-order bonds)\n\n&quot;;</a>
+<a name="ln106">      }</a>
+<a name="ln107"> </a>
+<a name="ln108">      virtual const char* SpecificationURL()</a>
+<a name="ln109">      {</a>
+<a name="ln110">        return &quot;https://www.3dsbiovia.com/products/collaborative-science/biovia-draw/ctfile-no-fee.html&quot;;</a>
+<a name="ln111">      }</a>
+<a name="ln112"> </a>
+<a name="ln113">      virtual const char* GetMIMEType()</a>
+<a name="ln114">      {</a>
+<a name="ln115">        return &quot;chemical/x-mdl-molfile&quot;;</a>
+<a name="ln116">      }</a>
+<a name="ln117"> </a>
+<a name="ln118">      virtual unsigned int Flags() { return DEFAULTFORMAT | ZEROATOMSOK; }</a>
+<a name="ln119">      virtual const char* TargetClassDescription() { return OBMol::ClassDescription(); }</a>
+<a name="ln120"> </a>
+<a name="ln121">      virtual int SkipObjects(int n, OBConversion* pConv)</a>
+<a name="ln122">      {</a>
+<a name="ln123">        if (n == 0)</a>
+<a name="ln124">          n++;</a>
+<a name="ln125">        istream&amp; ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln126">        do {</a>
+<a name="ln127">         ignore(ifs, &quot;$$$$\n&quot;);</a>
+<a name="ln128">        } while(ifs &amp;&amp; --n);</a>
+<a name="ln129">        return ifs.good() ? 1 : -1;</a>
+<a name="ln130">      }</a>
+<a name="ln131"> </a>
+<a name="ln132">      ////////////////////////////////////////////////////</a>
+<a name="ln133">      /// The &quot;API&quot; interface functions</a>
+<a name="ln134">      virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln135">      virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln136"> </a>
+<a name="ln137">      ////////////////////////////////////////////////////</a>
+<a name="ln138">      //V3000 routines</a>
+<a name="ln139">    private:</a>
+<a name="ln140">      bool ReadV3000Block(istream&amp; ifs, OBMol&amp; mol, OBConversion* pConv,bool DoMany);</a>
+<a name="ln141">      bool ReadV3000Line(istream&amp; ifs, vector&lt;string&gt;&amp; vs);</a>
+<a name="ln142">      bool ReadAtomBlock(istream&amp; ifs,OBMol&amp; mol, OBConversion* pConv);</a>
+<a name="ln143">      bool ReadBondBlock(istream&amp; ifs,OBMol&amp; mol, OBConversion* pConv);</a>
+<a name="ln144">      bool ReadRGroupBlock(istream&amp; ifs,OBMol&amp; mol, OBConversion* pConv);</a>
+<a name="ln145">      bool ReadUnimplementedBlock(istream&amp; ifs,OBMol&amp; mol, OBConversion* pConv, string&amp; blockname);</a>
+<a name="ln146">      bool WriteV3000(ostream&amp; ofs,OBMol&amp; mol, OBConversion* pConv);</a>
+<a name="ln147">      bool ReadPropertyLines(istream&amp; ifs, OBMol&amp; mol);</a>
+<a name="ln148">      bool TestForAlias(const string&amp; symbol, OBAtom* at, vector&lt;pair&lt;AliasData*,OBAtom*&gt; &gt;&amp; aliases);</a>
+<a name="ln149"> </a>
+<a name="ln150">    private:</a>
+<a name="ln151">      enum Parity {</a>
+<a name="ln152">        NotStereo, Clockwise, AntiClockwise, Unknown</a>
+<a name="ln153">      };</a>
+<a name="ln154">      typedef map&lt;unsigned int, unsigned int&gt; HYDMap;</a>
+<a name="ln155">      bool  HasProperties;</a>
+<a name="ln156">      string GetTimeDate();</a>
+<a name="ln157">      void GetUpDown(OBMol&amp; mol, map&lt;OBBond*, OBStereo::BondDirection&gt; &amp;updown, set&lt;OBBond*&gt; &amp;stereodbl);</a>
+<a name="ln158">      void GetParity(OBMol&amp; mol, map&lt;OBAtom*, Parity&gt; &amp;parity);</a>
+<a name="ln159">      void TetStereoFromParity(OBMol&amp; mol, vector&lt;MDLFormat::Parity&gt; &amp;parity, bool deleteExisting=false);</a>
+<a name="ln160">      void CisTransFromUpDown(OBMol *mol, std::map&lt;OBBond*, OBStereo::BondDirection&gt; *updown);</a>
+<a name="ln161">      int ReadIntField(const char *s);</a>
+<a name="ln162">      unsigned int ReadUIntField(const char *s);</a>
+<a name="ln163">     // Helper for 2.3 -- is this atom a metal</a>
+<a name="ln164">      bool IsMetal(OBAtom *atom);// Temporary for 2.3.1 (because of binary compatibility)</a>
+<a name="ln165">      map&lt;int,int&gt; indexmap; //relates index in file to index in OBMol</a>
+<a name="ln166">      vector&lt;string&gt; vs;</a>
+<a name="ln167">  };</a>
+<a name="ln168"> </a>
+<a name="ln169">  //**************************************</a>
+<a name="ln170">  class MOLFormat : public MDLFormat</a>
+<a name="ln171">  {</a>
+<a name="ln172">    public:</a>
+<a name="ln173">      //Register this format type ID</a>
+<a name="ln174">      MOLFormat()</a>
+<a name="ln175">      {</a>
+<a name="ln176">        OBConversion::RegisterFormat(&quot;mol&quot;,this, &quot;chemical/x-mdl-molfile&quot;);</a>
+<a name="ln177">        OBConversion::RegisterFormat(&quot;mdl&quot;,this, &quot;chemical/x-mdl-molfile&quot;);</a>
+<a name="ln178">        OBConversion::RegisterOptionParam(&quot;2&quot;, this);</a>
+<a name="ln179">        OBConversion::RegisterOptionParam(&quot;3&quot;, this);</a>
+<a name="ln180">      }</a>
+<a name="ln181">  };</a>
+<a name="ln182"> </a>
+<a name="ln183">  //Make an instance of the format class</a>
+<a name="ln184">  MOLFormat theMOLFormat;</a>
+<a name="ln185"> </a>
+<a name="ln186">  //*************************************</a>
+<a name="ln187">  class SDFormat : public MDLFormat</a>
+<a name="ln188">  {</a>
+<a name="ln189">    public:</a>
+<a name="ln190">      SDFormat()</a>
+<a name="ln191">      {</a>
+<a name="ln192">        OBConversion::RegisterFormat(&quot;sd&quot;,this, &quot;chemical/x-mdl-sdfile&quot;);</a>
+<a name="ln193">        OBConversion::RegisterFormat(&quot;sdf&quot;,this, &quot;chemical/x-mdl-sdfile&quot;);</a>
+<a name="ln194">      }</a>
+<a name="ln195"> </a>
+<a name="ln196">      virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln197">      {</a>
+<a name="ln198">        //The sd option ensures that a $$$$ is written at the end of the file</a>
+<a name="ln199">        pConv-&gt;AddOption(&quot;sd&quot;, OBConversion::OUTOPTIONS);</a>
+<a name="ln200">        return MDLFormat::WriteMolecule(pOb, pConv);</a>
+<a name="ln201">      }</a>
+<a name="ln202">  };</a>
+<a name="ln203"> </a>
+<a name="ln204">  //Make an instance of the format class</a>
+<a name="ln205">  SDFormat theSDFormat;</a>
+<a name="ln206"> </a>
+<a name="ln207">  // Helper for 2.3 -- is this atom a metal</a>
+<a name="ln208">  bool MDLFormat::IsMetal(OBAtom *atom)</a>
+<a name="ln209">  {</a>
+<a name="ln210">    const unsigned NMETALS = 78;</a>
+<a name="ln211">    const int metals[NMETALS] = {</a>
+<a name="ln212">    3,4,11,12,13,19,20,21,22,23,24,25,26,27,28,29,</a>
+<a name="ln213">    30,31,37,38,39,40,41,42,43,44,45,46,47,48,49,50,55,56,57,58,59,60,61,62,63,</a>
+<a name="ln214">    64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,87,88,89,90,91,</a>
+<a name="ln215">    92,93,94,95,96,97,98,99,100,101,102,103};</a>
+<a name="ln216">    return std::find(metals, metals+78, atom-&gt;GetAtomicNum())!=metals+78;</a>
+<a name="ln217">  }</a>
+<a name="ln218"> </a>
+<a name="ln219">  static void SetAtomicNumAndIsotope(OBAtom *patom, const char* symbol)</a>
+<a name="ln220">  {</a>
+<a name="ln221">    const char* p = symbol;</a>
+<a name="ln222">    switch (p[0]) {</a>
+<a name="ln223">    case 'D':</a>
+<a name="ln224">      if (p[1] == '\0') {</a>
+<a name="ln225">        patom-&gt;SetIsotope(2);</a>
+<a name="ln226">        patom-&gt;SetAtomicNum(1);</a>
+<a name="ln227">        return;</a>
+<a name="ln228">      }</a>
+<a name="ln229">      break;</a>
+<a name="ln230">    case 'T':</a>
+<a name="ln231">      if (p[1] == '\0') {</a>
+<a name="ln232">        patom-&gt;SetIsotope(3);</a>
+<a name="ln233">        patom-&gt;SetAtomicNum(1);</a>
+<a name="ln234">        return;</a>
+<a name="ln235">      }</a>
+<a name="ln236">      break;</a>
+<a name="ln237">    }</a>
+<a name="ln238">    patom-&gt;SetAtomicNum(OBElements::GetAtomicNum(symbol));</a>
+<a name="ln239">  }</a>
+<a name="ln240"> </a>
+<a name="ln241">  /////////////////////////////////////////////////////////////////</a>
+<a name="ln242">  bool MDLFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln243">  {</a>
+<a name="ln244">    OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln245"> </a>
+<a name="ln246">    //Define some references so we can use the old parameter names</a>
+<a name="ln247">    istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln248">    OBMol &amp;mol = *pmol;</a>
+<a name="ln249">    bool setDimension = false; // did we extract the 'dimensional code' from line 2?</a>
+<a name="ln250">    stringstream errorMsg;</a>
+<a name="ln251">    string clearError; // empty string to clear the warning buffer</a>
+<a name="ln252"> </a>
+<a name="ln253">    int i, natoms, nbonds;</a>
+<a name="ln254">    //char buffer[BUFF_SIZE];</a>
+<a name="ln255">    string comment;</a>
+<a name="ln256">    string r1, r2;</a>
+<a name="ln257">    map&lt;OBBond*, OBStereo::BondDirection&gt; updown;</a>
+<a name="ln258">    vector&lt;Parity&gt; parities;</a>
+<a name="ln259">    vector&lt;pair&lt;AliasData*,OBAtom*&gt; &gt; aliases;</a>
+<a name="ln260">    HYDMap hydMap;</a>
+<a name="ln261">    bool foundHYD = false, foundZCH = false, foundZBO = false;</a>
+<a name="ln262"> </a>
+<a name="ln263">    // Attempting to read past the end of the file -- don't bother</a>
+<a name="ln264">    if ( !ifs.good() || ifs.peek() == EOF )</a>
+<a name="ln265">      return false;</a>
+<a name="ln266"> </a>
+<a name="ln267">    std::string line;</a>
+<a name="ln268">    //</a>
+<a name="ln269">    // The Header Block</a>
+<a name="ln270">    //</a>
+<a name="ln271"> </a>
+<a name="ln272">    // line1: molecule name</a>
+<a name="ln273">    if (!std::getline(ifs, line)) {</a>
+<a name="ln274">      errorMsg &lt;&lt; &quot;WARNING: Problems reading a MDL file\n&quot;;</a>
+<a name="ln275">      errorMsg &lt;&lt; &quot;Cannot read title line\n&quot;;</a>
+<a name="ln276">      obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() , obWarning);</a>
+<a name="ln277">      return(false);</a>
+<a name="ln278">    }</a>
+<a name="ln279"> </a>
+<a name="ln280">    //Do not interpret a single (usually blank) line at end of file as</a>
+<a name="ln281">    //another molecule giving an unnecessary error message.</a>
+<a name="ln282">    if ( !ifs.good() || ifs.peek() == EOF )</a>
+<a name="ln283">      return false;</a>
+<a name="ln284"> </a>
+<a name="ln285">    mol.SetTitle(line);</a>
+<a name="ln286"> </a>
+<a name="ln287">    if(pConv-&gt;IsOption(&quot;T&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln288">    {</a>
+<a name="ln289">      //Read title only</a>
+<a name="ln290">      SkipObjects(0, pConv);</a>
+<a name="ln291">      return true;</a>
+<a name="ln292">    }</a>
+<a name="ln293"> </a>
+<a name="ln294">    if(pConv-&gt;IsOption(&quot;P&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln295">    {</a>
+<a name="ln296">      //Read Title and Property lines only</a>
+<a name="ln297">      ignore(ifs, &quot;M  END&quot;);</a>
+<a name="ln298">      ifs.ignore(100,'\n');</a>
+<a name="ln299">      ReadPropertyLines(ifs, mol);//also reads $$$$</a>
+<a name="ln300">      return true;</a>
+<a name="ln301">    }</a>
+<a name="ln302"> </a>
+<a name="ln303">    // line 2: IIPPPPPPPPMMDDYYHHmmddSSssssssssssEEEEEEEEEEEERRRRRR</a>
+<a name="ln304">    //</a>
+<a name="ln305">    //          0...1    I = user's initials</a>
+<a name="ln306">    //          2...9    P = program name</a>
+<a name="ln307">    //         10..19    M/D/Y,H:m = date/time</a>
+<a name="ln308">    //         20..21    d = dimensional code</a>
+<a name="ln309">    //         22..23    S = scaling factor</a>
+<a name="ln310">    //         24..33    s = scaling facter (double format 10.5)</a>
+<a name="ln311">    //         34..45    E = energy</a>
+<a name="ln312">    //         46..51    R = internal registry number</a>
+<a name="ln313">    if (!std::getline(ifs, line)) {</a>
+<a name="ln314">      errorMsg &lt;&lt; &quot;WARNING: Problems reading a MDL file\n&quot;;</a>
+<a name="ln315">      errorMsg &lt;&lt; &quot;Cannot read creator/dimension line line\n&quot;;</a>
+<a name="ln316">      obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() , obWarning);</a>
+<a name="ln317">      return false;</a>
+<a name="ln318">    }</a>
+<a name="ln319"> </a>
+<a name="ln320">    if (line.size() &gt; 21) {</a>
+<a name="ln321">      string dim = line.substr(20, 2);</a>
+<a name="ln322">      if (dim == &quot;3D&quot;) {</a>
+<a name="ln323">        mol.SetDimension(3);</a>
+<a name="ln324">        setDimension = true;</a>
+<a name="ln325">      } else</a>
+<a name="ln326">      if (dim == &quot;2D&quot;) {</a>
+<a name="ln327">        mol.SetDimension(2);</a>
+<a name="ln328">        setDimension = true;</a>
+<a name="ln329">      } else</a>
+<a name="ln330">      if (dim == &quot;0D&quot;) {</a>
+<a name="ln331">        mol.SetDimension(0);</a>
+<a name="ln332">        setDimension = true;</a>
+<a name="ln333">      }</a>
+<a name="ln334">    }</a>
+<a name="ln335"> </a>
+<a name="ln336">    // line 3: comment line</a>
+<a name="ln337">    if (!std::getline(ifs, line)) {</a>
+<a name="ln338">      errorMsg &lt;&lt; &quot;WARNING: Problems reading a MDL file\n&quot;;</a>
+<a name="ln339">      errorMsg &lt;&lt; &quot;Cannot read comment line\n&quot;;</a>
+<a name="ln340">      obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() , obWarning);</a>
+<a name="ln341">      return false;</a>
+<a name="ln342">    }</a>
+<a name="ln343"> </a>
+<a name="ln344">    if (!line.empty())</a>
+<a name="ln345">      comment = line;</a>
+<a name="ln346"> </a>
+<a name="ln347">    //</a>
+<a name="ln348">    // Connection Table (Ctab)</a>
+<a name="ln349">    //</a>
+<a name="ln350"> </a>
+<a name="ln351">    // line 1: counts line</a>
+<a name="ln352">    if (!std::getline(ifs, line)) {</a>
+<a name="ln353">      errorMsg &lt;&lt; &quot;WARNING: Problems reading a MDL file\n&quot;;</a>
+<a name="ln354">      errorMsg &lt;&lt; &quot;Cannot read atom and bond count\n&quot;;</a>
+<a name="ln355">      errorMsg &lt;&lt; &quot;File ended prematurely\n&quot;;</a>
+<a name="ln356">      obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() , obWarning);</a>
+<a name="ln357">      return false;</a>
+<a name="ln358">    }</a>
+<a name="ln359">    if (line.size() &lt; 6) { // error from Joe Bedell, Sigma-Aldrich</a>
+<a name="ln360">      errorMsg &lt;&lt; &quot;WARNING: Problems reading a MDL file\n&quot;;</a>
+<a name="ln361">      errorMsg &lt;&lt; &quot;Cannot read atom and bond count\n&quot;;</a>
+<a name="ln362">      errorMsg &lt;&lt; &quot;Expected standard 6 character atom and bond count\n&quot;;</a>
+<a name="ln363">      obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() , obWarning);</a>
+<a name="ln364">      return(false);</a>
+<a name="ln365">    }</a>
+<a name="ln366"> </a>
+<a name="ln367">    natoms = ReadUIntField((line.substr(0, 3)).c_str());</a>
+<a name="ln368">    nbonds = ReadUIntField((line.substr(3, 3)).c_str());</a>
+<a name="ln369"> </a>
+<a name="ln370">    // Store the Chiral Flag</a>
+<a name="ln371">    if (line.size() &gt;= 15) {</a>
+<a name="ln372">      unsigned int chiralFlagVal = ReadUIntField((line.substr(12, 3)).c_str());</a>
+<a name="ln373">      if (chiralFlagVal &gt; 1)</a>
+<a name="ln374">        {</a>
+<a name="ln375">          errorMsg &lt;&lt; &quot;WARNING: The Chiral Flag should be either 0 or 1. The value of &quot;</a>
+<a name="ln376">                   &lt;&lt; chiralFlagVal &lt;&lt; &quot; will be ignored.\n&quot;;</a>
+<a name="ln377">          obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() , obWarning);</a>
+<a name="ln378">        }</a>
+<a name="ln379">      else</a>
+<a name="ln380">        {</a>
+<a name="ln381">          OBPairData *chiralFlag = new OBPairData();</a>
+<a name="ln382">          chiralFlag-&gt;SetAttribute(&quot;MOL Chiral Flag&quot;);</a>
+<a name="ln383">          chiralFlag-&gt;SetOrigin(local);</a>
+<a name="ln384">          std::stringstream convert;</a>
+<a name="ln385">          convert &lt;&lt; chiralFlagVal;</a>
+<a name="ln386">          chiralFlag-&gt;SetValue(convert.str()); // 1 (&quot;Absolute Chirality&quot;), 0 (&quot;Relative Chirality&quot;)</a>
+<a name="ln387">          mol.SetData(chiralFlag);</a>
+<a name="ln388">        }</a>
+<a name="ln389">    }</a>
+<a name="ln390"> </a>
+<a name="ln391">    if(ReadUIntField((line.substr(6, 3)).c_str())&gt;0)</a>
+<a name="ln392">      obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln393">        &quot;WARNING: Problems reading the Count line of an MDL file\n&quot;</a>
+<a name="ln394">        &quot;There may be erroneous addition spaces or\n&quot;</a>
+<a name="ln395">        &quot;the file may contains Atom Lists, which are ignored\n&quot;,</a>
+<a name="ln396">        obWarning);</a>
+<a name="ln397"> </a>
+<a name="ln398">    std::map&lt;OBAtom*, int&gt; specified_valence;</a>
+<a name="ln399">    mol.BeginModify();</a>
+<a name="ln400">    if(line.find(&quot;V3000&quot;) != string::npos) {</a>
+<a name="ln401">      // V3000</a>
+<a name="ln402">      indexmap.clear();</a>
+<a name="ln403">      if(!ReadV3000Block(ifs, mol, pConv, false))</a>
+<a name="ln404">        return false;</a>
+<a name="ln405">      //ifs.getline(buffer,BUFF_SIZE); //M END line</a>
+<a name="ln406">    } else {</a>
+<a name="ln407">      // V2000</a>
+<a name="ln408">      mol.ReserveAtoms(natoms);</a>
+<a name="ln409">      double x,y,z;</a>
+<a name="ln410">      string symbol;</a>
+<a name="ln411">      //</a>
+<a name="ln412">      // Atom Block</a>
+<a name="ln413">      //</a>
+<a name="ln414">      int massdiff, charge, stereo;</a>
+<a name="ln415">      vector&lt;int&gt; massDiffs, charges;</a>
+<a name="ln416">      Parity parity;</a>
+<a name="ln417">      for (i = 0; i &lt; natoms; ++i) {</a>
+<a name="ln418">        if (!std::getline(ifs, line)) {</a>
+<a name="ln419">          errorMsg &lt;&lt; &quot;WARNING: Problems reading a MDL file\n&quot;;</a>
+<a name="ln420">          errorMsg &lt;&lt; &quot;Not enough atoms to match atom count (&quot; &lt;&lt; natoms &lt;&lt; &quot;) in counts line\n&quot;;</a>
+<a name="ln421">          obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() , obWarning);</a>
+<a name="ln422">          return false;</a>
+<a name="ln423">        }</a>
+<a name="ln424"> </a>
+<a name="ln425">        // xxxxx.xxxxyyyyy.yyyyzzzzz.zzzz aaaddcccssshhhbbbvvvHHHrrriiimmmnnneee</a>
+<a name="ln426">        //</a>
+<a name="ln427">        // 0...30   x y z = atom coordinates</a>
+<a name="ln428">        // 31..33   aaa = atom symbol</a>
+<a name="ln429">        // 34..35   dd = mass difference: -3, -2, -1, 0, 1, 2, 3, 4 ('M  ISO' lines take precedence)</a>
+<a name="ln430">        // 36..38   ccc = charge  ('M  CHG' and 'M  RAD' lines take precedence)</a>
+<a name="ln431">        // 39..41   sss = atom stereo parity (ignored)</a>
+<a name="ln432">        //          ... = query/reaction related</a>
+<a name="ln433">        // 48..50   vvv = valence (0 means use implicit valence, while 15 means valence of 0)</a>
+<a name="ln434">        massdiff = charge = 0;</a>
+<a name="ln435">        parity = NotStereo;</a>
+<a name="ln436">        if (line.size() &lt; 34) {</a>
+<a name="ln437">          errorMsg &lt;&lt; &quot;WARNING: Problems reading a MDL file\n&quot;;</a>
+<a name="ln438">          errorMsg &lt;&lt; &quot;Missing data following atom specification in atom block\n&quot;;</a>
+<a name="ln439">          obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() , obWarning);</a>
+<a name="ln440">          return false;</a>
+<a name="ln441">        }</a>
+<a name="ln442"> </a>
+<a name="ln443">        //Need to have atom in molecule while adding data</a>
+<a name="ln444">        OBAtom* patom = mol.NewAtom();</a>
+<a name="ln445"> </a>
+<a name="ln446">        // coordinates</a>
+<a name="ln447">        x = atof(line.substr(0, 10).c_str());</a>
+<a name="ln448">        y = atof(line.substr(10, 10).c_str());</a>
+<a name="ln449">        z = atof(line.substr(20, 10).c_str());</a>
+<a name="ln450">        patom-&gt;SetVector(x, y, z);</a>
+<a name="ln451">        // symbol &amp; isotope</a>
+<a name="ln452">        symbol = line.substr(31, 3);</a>
+<a name="ln453">        // cout &lt;&lt; &quot; atom: &quot; &lt;&lt; symbol &lt;&lt; endl;</a>
+<a name="ln454">        Trim(symbol);</a>
+<a name="ln455">        if(symbol[0]!='R' || TestForAlias(symbol, patom, aliases))</a>
+<a name="ln456">        {</a>
+<a name="ln457">          SetAtomicNumAndIsotope(patom, symbol.c_str());</a>
+<a name="ln458">        }</a>
+<a name="ln459">        // mass difference</a>
+<a name="ln460">        if (line.size() &gt;= 35) {</a>
+<a name="ln461">          massdiff = ReadIntField(line.substr(34, 2).c_str());</a>
+<a name="ln462">          if (massdiff &lt; -3 || massdiff &gt; 4) {</a>
+<a name="ln463">            obErrorLog.ThrowError(__FUNCTION__, &quot;Invalid value for mass difference. It should be between -3 and 4.\n&quot; + line, obWarning);</a>
+<a name="ln464">            massdiff = 0;</a>
+<a name="ln465">          } else if (massdiff != 0 &amp;&amp; patom-&gt;GetIsotope() != 0) {</a>
+<a name="ln466">            obErrorLog.ThrowError(__FUNCTION__, &quot;Ignoring mass difference field for explicit hydrogen isotope.\n&quot; + line, obWarning);</a>
+<a name="ln467">            massdiff = 0;</a>
+<a name="ln468">          }</a>
+<a name="ln469">        }</a>
+<a name="ln470">        massDiffs.push_back(massdiff);</a>
+<a name="ln471">        // charge</a>
+<a name="ln472">        if (line.size() &gt;= 38)</a>
+<a name="ln473">          charge = ReadIntField(line.substr(36, 3).c_str());</a>
+<a name="ln474">        charges.push_back(charge);</a>
+<a name="ln475">        // stereo parity</a>
+<a name="ln476">        if (line.size() &gt;= 41) {</a>
+<a name="ln477">          stereo = ReadUIntField(line.substr(39, 3).c_str());</a>
+<a name="ln478">          switch (stereo) {</a>
+<a name="ln479">            case 1:</a>
+<a name="ln480">              parity = Clockwise;</a>
+<a name="ln481">              break;</a>
+<a name="ln482">            case 2:</a>
+<a name="ln483">              parity = AntiClockwise;</a>
+<a name="ln484">              break;</a>
+<a name="ln485">            case 3:</a>
+<a name="ln486">              parity = Unknown;</a>
+<a name="ln487">              break;</a>
+<a name="ln488">            default:</a>
+<a name="ln489">              parity = NotStereo;</a>
+<a name="ln490">              break;</a>
+<a name="ln491">          }</a>
+<a name="ln492">        }</a>
+<a name="ln493">        parities.push_back(parity);</a>
+<a name="ln494"> </a>
+<a name="ln495">        // valence</a>
+<a name="ln496">        if (line.size() &gt;= 50) {</a>
+<a name="ln497">          int valence = ReadIntField(line.substr(48, 3).c_str());</a>
+<a name="ln498">          if (valence != 0)</a>
+<a name="ln499">            specified_valence[patom] = valence == 15 ? 0 : valence;</a>
+<a name="ln500">        }</a>
+<a name="ln501"> </a>
+<a name="ln502">        if (line.size() &gt;= 62) {</a>
+<a name="ln503">          int aclass = ReadIntField(line.substr(60, 3).c_str());</a>
+<a name="ln504">          if (aclass != 0) {</a>
+<a name="ln505">            OBPairInteger *pac = new OBPairInteger();</a>
+<a name="ln506">            pac-&gt;SetAttribute(&quot;Atom Class&quot;);</a>
+<a name="ln507">            pac-&gt;SetValue(aclass);</a>
+<a name="ln508">            pac-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln509">            patom-&gt;SetData(pac);</a>
+<a name="ln510">          }</a>
+<a name="ln511">        }</a>
+<a name="ln512"> </a>
+<a name="ln513">//        if (!mol.AddAtom(atom))</a>
+<a name="ln514">//          return false;</a>
+<a name="ln515">//        atom.Clear();</a>
+<a name="ln516">      }</a>
+<a name="ln517"> </a>
+<a name="ln518">      //</a>
+<a name="ln519">      // Bond Block</a>
+<a name="ln520">      //</a>
+<a name="ln521">      stereo = 0;</a>
+<a name="ln522">      bool needs_kekulization = false; // Have we have found an aromatic bond?</a>
+<a name="ln523">      unsigned int begin, end, order, flag;</a>
+<a name="ln524">      for (i = 0;i &lt; nbonds; ++i) {</a>
+<a name="ln525">        flag = 0;</a>
+<a name="ln526">        if (!std::getline(ifs, line)) {</a>
+<a name="ln527">          errorMsg &lt;&lt; &quot;WARNING: Problems reading a MDL file\n&quot;;</a>
+<a name="ln528">          errorMsg &lt;&lt; &quot;Not enough bonds to match bond count (&quot; &lt;&lt; nbonds &lt;&lt; &quot;) in counts line\n&quot;;</a>
+<a name="ln529">          obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() , obWarning);</a>
+<a name="ln530">          return false;</a>
+<a name="ln531">        }</a>
+<a name="ln532">        begin = end = order = 0;</a>
+<a name="ln533">        // 111222tttsssxxxrrrccc</a>
+<a name="ln534">        //</a>
+<a name="ln535">        // 111 = first atom number</a>
+<a name="ln536">        // 222 = second atom number</a>
+<a name="ln537">        // ttt = bond type (1-3, 4 = aromatic, 4-8 = query)</a>
+<a name="ln538">        // sss = bond stereo (for a double bond 3 indicates unspecified stereochem,</a>
+<a name="ln539">        //                    for a single bond 1 is Hash, 6 Wedge, 4 is unspecified)</a>
+<a name="ln540">        // ... = query/topology</a>
+<a name="ln541">        if (line.size() &gt;= 9) {</a>
+<a name="ln542">          begin = ReadUIntField(line.substr(0, 3).c_str());</a>
+<a name="ln543">          end   = ReadUIntField(line.substr(3, 3).c_str());</a>
+<a name="ln544">          order = ReadUIntField((line.substr(6, 3)).c_str());</a>
+<a name="ln545">          if (order == 4) {</a>
+<a name="ln546">            flag |= OBBond::Aromatic;</a>
+<a name="ln547">            order = 1;</a>
+<a name="ln548">            needs_kekulization = true;</a>
+<a name="ln549">          }</a>
+<a name="ln550">        }</a>
+<a name="ln551">        if (begin == 0 || end == 0 || order == 0 || begin &gt; mol.NumAtoms() || end &gt; mol.NumAtoms()) {</a>
+<a name="ln552">          errorMsg &lt;&lt; &quot;WARNING: Problems reading a MDL file\n&quot;;</a>
+<a name="ln553">          errorMsg &lt;&lt; line &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln554">          errorMsg &lt;&lt; &quot;Invalid bond specification, atom numbers or bond order are wrong;\n&quot;;</a>
+<a name="ln555">          errorMsg &lt;&lt; &quot;each should be in a field of three characters.\n&quot;;</a>
+<a name="ln556">          obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() , obWarning);</a>
+<a name="ln557">          return false;</a>
+<a name="ln558">        }</a>
+<a name="ln559">        if (line.size() &gt;= 12) {  //handle wedge/hash data</a>
+<a name="ln560">          stereo = ReadUIntField((line.substr(9, 3)).c_str());</a>
+<a name="ln561">          if (stereo) {</a>
+<a name="ln562">            switch (stereo) {</a>
+<a name="ln563">              case 1:</a>
+<a name="ln564">                // single bond: wedge</a>
+<a name="ln565">                flag |= OBBond::Wedge;</a>
+<a name="ln566">                break;</a>
+<a name="ln567">              case 3:</a>
+<a name="ln568">                // double bond: either cis or trans</a>
+<a name="ln569">                flag |= OBBond::CisOrTrans;</a>
+<a name="ln570">              case 4:</a>
+<a name="ln571">                // single bond: either wedge or hash (unspecified)</a>
+<a name="ln572">                flag |= OBBond::WedgeOrHash;</a>
+<a name="ln573">                break;</a>
+<a name="ln574">              case 6:</a>
+<a name="ln575">                // single bond: hash</a>
+<a name="ln576">                flag |= OBBond::Hash;</a>
+<a name="ln577">                break;</a>
+<a name="ln578">              default:</a>
+<a name="ln579">                // single bonds: not stereo</a>
+<a name="ln580">                // double bonds: use x,y,z coordinates</a>
+<a name="ln581">                break;</a>
+<a name="ln582">            }</a>
+<a name="ln583">          }</a>
+<a name="ln584">        }</a>
+<a name="ln585"> </a>
+<a name="ln586">        if (!mol.AddBond(begin,end,order,flag)) {</a>
+<a name="ln587">          errorMsg &lt;&lt; &quot;WARNING: Problems reading a MDL file\n&quot;;</a>
+<a name="ln588">          errorMsg &lt;&lt; &quot;Invalid bond specification\n&quot;;</a>
+<a name="ln589">          obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() , obWarning);</a>
+<a name="ln590">          return false;</a>
+<a name="ln591">        }</a>
+<a name="ln592">      }</a>
+<a name="ln593"> </a>
+<a name="ln594">      // Kekulization is necessary if an aromatic bond is present</a>
+<a name="ln595">      if (needs_kekulization) {</a>
+<a name="ln596">        mol.SetAromaticPerceived();</a>
+<a name="ln597">        // First of all, set the atoms at the ends of the aromatic bonds to also</a>
+<a name="ln598">        // be aromatic. This information is required for OBKekulize.</a>
+<a name="ln599">        FOR_BONDS_OF_MOL(bond, mol) {</a>
+<a name="ln600">          if (bond-&gt;IsAromatic()) {</a>
+<a name="ln601">            bond-&gt;GetBeginAtom()-&gt;SetAromatic();</a>
+<a name="ln602">            bond-&gt;GetEndAtom()-&gt;SetAromatic();</a>
+<a name="ln603">          }</a>
+<a name="ln604">        }</a>
+<a name="ln605">        bool ok = OBKekulize(&amp;mol);</a>
+<a name="ln606">        if (!ok) {</a>
+<a name="ln607">          stringstream errorMsg;</a>
+<a name="ln608">          errorMsg &lt;&lt; &quot;Failed to kekulize aromatic bonds in MOL file&quot;;</a>
+<a name="ln609">          std::string title = mol.GetTitle();</a>
+<a name="ln610">          if (!title.empty())</a>
+<a name="ln611">            errorMsg &lt;&lt; &quot; (title is &quot; &lt;&lt; title &lt;&lt; &quot;)&quot;;</a>
+<a name="ln612">          errorMsg &lt;&lt; endl;</a>
+<a name="ln613">          obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obWarning);</a>
+<a name="ln614">          // return false; Should we return false for a kekulization failure?</a>
+<a name="ln615">        }</a>
+<a name="ln616">        mol.SetAromaticPerceived(false);</a>
+<a name="ln617">      }</a>
+<a name="ln618"> </a>
+<a name="ln619">      //</a>
+<a name="ln620">      // Properties Block</a>
+<a name="ln621">      //</a>
+<a name="ln622">      bool foundISO = false, foundCHG = false;</a>
+<a name="ln623">      while (std::getline(ifs, line)) {</a>
+<a name="ln624">        if (line.substr(0, 4) == &quot;$$$$&quot;)</a>
+<a name="ln625">          return true;</a>
+<a name="ln626">        if (line.substr(0, 6) == &quot;M  END&quot;)</a>
+<a name="ln627">          break;</a>
+<a name="ln628">        if (line.substr(0, 6) == &quot;S  SKP&quot;) {</a>
+<a name="ln629">          int i = ReadUIntField((line.substr(6, line.size() - 6)).c_str());</a>
+<a name="ln630">          for(; i &gt; 0; --i)</a>
+<a name="ln631">            if (ifs.good()) // check for EOL, suggested by Dalke</a>
+<a name="ln632">              std::getline(ifs, line);</a>
+<a name="ln633">        }</a>
+<a name="ln634"> </a>
+<a name="ln635">        if (line.substr(0, 3) == &quot;A  &quot; &amp;&amp; line.size() &gt; 3) { //alias</a>
+<a name="ln636">          int atomnum = ReadUIntField((line.substr(2, line.size() - 2)).c_str());</a>
+<a name="ln637">          //MDL documentation just has alias text here( x... ). A single line is assumed,</a>
+<a name="ln638">          //and the alias is ignored if the line starts with ? or * or is blank .</a>
+<a name="ln639">          std::getline(ifs, line);</a>
+<a name="ln640">          if(!line.empty() &amp;&amp; line.at(0) != '?' &amp;&amp; line.at(0) != '*') {</a>
+<a name="ln641">            AliasData* ad = new AliasData();</a>
+<a name="ln642">            ad-&gt;SetAlias(line);</a>
+<a name="ln643">            ad-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln644">            OBAtom* at = mol.GetAtom(atomnum);</a>
+<a name="ln645">            if (at) { // dkoes - only expand wild cards</a>
+<a name="ln646">              at-&gt;SetData(ad);</a>
+<a name="ln647">              //at-&gt;SetAtomicNum(0); Now leave element as found</a>
+<a name="ln648">              //The alias has now been added as a dummy atom with a AliasData object.</a>
+<a name="ln649">              //Delay the chemical interpretation until the rest of the molecule has been built</a>
+<a name="ln650">              //dkoes - only expand alias if referenced atom is wild card</a>
+<a name="ln651">              //this is necessary since this field is used to store atom names (at least in the PDB)              </a>
+<a name="ln652">              if(at-&gt;GetAtomicNum() == 0)</a>
+<a name="ln653">                aliases.push_back(make_pair(ad, at));</a>
+<a name="ln654">            }</a>
+<a name="ln655">          }</a>
+<a name="ln656">          continue;</a>
+<a name="ln657">        }</a>
+<a name="ln658"> </a>
+<a name="ln659">        if ((line.substr(0, 6) != &quot;M  CHG&quot;) &amp;&amp; (line.substr(0, 6) != &quot;M  RAD&quot;) &amp;&amp;</a>
+<a name="ln660">            (line.substr(0, 6) != &quot;M  ISO&quot;) &amp;&amp; (line.substr(0, 6) != &quot;M  ZCH&quot;) &amp;&amp;</a>
+<a name="ln661">            (line.substr(0, 6) != &quot;M  HYD&quot;) &amp;&amp; (line.substr(0, 6) != &quot;M  ZBO&quot;) &amp;&amp;</a>
+<a name="ln662">            (line.substr(0, 6) != &quot;M  RGP&quot;))</a>
+<a name="ln663">          continue;</a>
+<a name="ln664">        unsigned int n = 0;</a>
+<a name="ln665">        if (line.size() &gt;= 9)</a>
+<a name="ln666">          n = ReadUIntField((line.substr(6, 3)).c_str()); //entries on this line</a>
+<a name="ln667">        if (n &lt;= 0 || n &gt; 99 || 6+n*8 &gt; line.size()) { //catch ill-formed line</a>
+<a name="ln668">          obErrorLog.ThrowError(__FUNCTION__, &quot;Error in line: Invalid number following 'M  CHG', 'M  ISO' or 'M  RAD' specification (must be an integer in range 1 to 8)\n&quot; + line, obError);</a>
+<a name="ln669">          return false;</a>
+<a name="ln670">        }</a>
+<a name="ln671">        if (n &gt; 8) {</a>
+<a name="ln672">          obErrorLog.ThrowError(__FUNCTION__, &quot;Invalid line: too many items, only 8 items are allowed:\n&quot; + line, obWarning);</a>
+<a name="ln673">        }</a>
+<a name="ln674">        int pos = 10;</a>
+<a name="ln675">        for (; n &gt; 0; n--, pos += 8) {</a>
+<a name="ln676">          int number = ReadUIntField((line.substr(pos,3)).c_str());</a>
+<a name="ln677">          int value = ReadUIntField((line.substr(pos+4,3)).c_str());</a>
+<a name="ln678">          if (line.substr(3, 3) == &quot;ZBO&quot;) {</a>
+<a name="ln679">            OBBond *bo;</a>
+<a name="ln680">            if (number == 0 || (bo = mol.GetBond(number-1)) == nullptr) {</a>
+<a name="ln681">              obErrorLog.ThrowError(__FUNCTION__, &quot;Error in line:\n&quot; + line, obError);</a>
+<a name="ln682">              return false;</a>
+<a name="ln683">            }</a>
+<a name="ln684">            bo-&gt;SetBondOrder(value);</a>
+<a name="ln685">            foundZBO = true;</a>
+<a name="ln686">          } else {</a>
+<a name="ln687">            OBAtom *at;</a>
+<a name="ln688">            if (number == 0 || (at = mol.GetAtom(number)) == nullptr) {</a>
+<a name="ln689">              obErrorLog.ThrowError(__FUNCTION__, &quot;Error in line:\n&quot; + line, obError);</a>
+<a name="ln690">              return false;</a>
+<a name="ln691">            }</a>
+<a name="ln692">            if (line.substr(3, 3) == &quot;RAD&quot;) {</a>
+<a name="ln693">              at-&gt;SetSpinMultiplicity(value);</a>
+<a name="ln694">              foundCHG = true;</a>
+<a name="ln695">            } else if (line.substr(3, 3) == &quot;CHG&quot;) {</a>
+<a name="ln696">              // TODO: CHG should appear before ZCH, but should we check just in case?</a>
+<a name="ln697">              at-&gt;SetFormalCharge(value);</a>
+<a name="ln698">              foundCHG = true;</a>
+<a name="ln699">            } else if (line.substr(3, 3) == &quot;ISO&quot;) {</a>
+<a name="ln700">              if (value)</a>
+<a name="ln701">                at-&gt;SetIsotope(value);</a>
+<a name="ln702">              foundISO = true;</a>
+<a name="ln703">            } else if (line.substr(3, 3) == &quot;ZCH&quot;) {</a>
+<a name="ln704">              // ZCH contains corrections to CHG, including zero values for atoms that</a>
+<a name="ln705">              // were set as charged in CHG and should now have zero charge</a>
+<a name="ln706">              at-&gt;SetFormalCharge(value);</a>
+<a name="ln707">              foundZCH = true;</a>
+<a name="ln708">            } else if (line.substr(3, 3) == &quot;HYD&quot;) {</a>
+<a name="ln709">              // Save HYD counts to hydMap, and use to set implicit valence later on</a>
+<a name="ln710">              hydMap[number] = value;</a>
+<a name="ln711">              foundHYD = true;</a>
+<a name="ln712">            } else if (line.substr(3, 3) == &quot;RGP&quot;) {</a>
+<a name="ln713">              // Numbered R groups were already added to AliasData as R#. Now we</a>
+<a name="ln714">              // need to correct these to R1, etc.</a>
+<a name="ln715">              if (!at-&gt;HasData(AliasDataType))</a>
+<a name="ln716">                obErrorLog.ThrowError(__FUNCTION__, &quot;Invalid line: M RGP must only refer to pseudoatoms\n&quot; + line, obWarning);</a>
+<a name="ln717">              else {</a>
+<a name="ln718">                AliasData* ad = static_cast&lt;AliasData*&gt;(at-&gt;GetData(AliasDataType));</a>
+<a name="ln719">                char buffer[6];</a>
+<a name="ln720">                snprintf(buffer, 6, &quot;R%d&quot;, value);</a>
+<a name="ln721">                ad-&gt;SetAlias(buffer);</a>
+<a name="ln722">              }</a>
+<a name="ln723">            }</a>
+<a name="ln724">          }</a>
+<a name="ln725">        }</a>
+<a name="ln726">        // Lines setting several other properties are not implemented</a>
+<a name="ln727">      }</a>
+<a name="ln728"> </a>
+<a name="ln729">      // if no 'M  ISO' properties are found, use the mass differences from the atom block</a>
+<a name="ln730">      if (!foundISO)</a>
+<a name="ln731">        FOR_ATOMS_OF_MOL (a, mol) {</a>
+<a name="ln732">          int massDifference = massDiffs.at(a-&gt;GetIndex());</a>
+<a name="ln733">          if (massDifference)</a>
+<a name="ln734">            a-&gt;SetIsotope((int)(OBElements::GetMass(a-&gt;GetAtomicNum()) + massDifference + 0.5));</a>
+<a name="ln735">        }</a>
+<a name="ln736"> </a>
+<a name="ln737">      // If no CHG, RAD, ZBO, ZCH or HYD properties are found, use the charges from the atom block</a>
+<a name="ln738">      if (!foundCHG &amp;&amp; !foundZCH &amp;&amp; !foundZBO &amp;&amp; !foundHYD)</a>
+<a name="ln739">        FOR_ATOMS_OF_MOL (a, mol) {</a>
+<a name="ln740">          charge = charges.at(a-&gt;GetIndex());</a>
+<a name="ln741">          switch (charge) {</a>
+<a name="ln742">            case 0: break;</a>
+<a name="ln743">            case 3: a-&gt;SetFormalCharge(1); break;</a>
+<a name="ln744">            case 2: a-&gt;SetFormalCharge(2); break;</a>
+<a name="ln745">            case 1: a-&gt;SetFormalCharge(3); break;</a>
+<a name="ln746">            case 5: a-&gt;SetFormalCharge(-1); break;</a>
+<a name="ln747">            case 6: a-&gt;SetFormalCharge(-2); break;</a>
+<a name="ln748">            case 7: a-&gt;SetFormalCharge(-3); break;</a>
+<a name="ln749">          }</a>
+<a name="ln750">        }</a>
+<a name="ln751">    }</a>
+<a name="ln752"> </a>
+<a name="ln753">    // Set up the updown map we are going to use to derive stereo info</a>
+<a name="ln754">    FOR_BONDS_OF_MOL(bond, mol) {</a>
+<a name="ln755">      OBStereo::BondDirection bd = OBStereo::NotStereo;;</a>
+<a name="ln756">      unsigned int flag = bond-&gt;GetFlags();</a>
+<a name="ln757">      if (flag &amp; OBBond::Wedge)</a>
+<a name="ln758">        bd = OBStereo::UpBond;</a>
+<a name="ln759">      if (flag &amp; OBBond::Hash)</a>
+<a name="ln760">        bd = OBStereo::DownBond;</a>
+<a name="ln761">      if (flag &amp; OBBond::WedgeOrHash)</a>
+<a name="ln762">        bd = OBStereo::UnknownDir;</a>
+<a name="ln763">      if (flag &amp; OBBond::CisOrTrans &amp;&amp; bond-&gt;GetBondOrder()==2)</a>
+<a name="ln764">        bd = OBStereo::UnknownDir;</a>
+<a name="ln765">      if (bd != OBStereo::NotStereo)</a>
+<a name="ln766">        updown[&amp;*bond] = bd;</a>
+<a name="ln767">    }</a>
+<a name="ln768"> </a>
+<a name="ln769">    // Apply the MDL valence model (or ZBO valence model if ZBO/ZCH/HYD are present)</a>
+<a name="ln770">    FOR_ATOMS_OF_MOL(atom, mol) {</a>
+<a name="ln771">      unsigned int elem = atom-&gt;GetAtomicNum();</a>
+<a name="ln772">      int charge = atom-&gt;GetFormalCharge();</a>
+<a name="ln773">      OBBondIterator i;</a>
+<a name="ln774">      unsigned int count = 0;</a>
+<a name="ln775">      unsigned int expval = 0;</a>
+<a name="ln776">      for (OBBond* bond = atom-&gt;BeginBond(i); bond; bond = atom-&gt;NextBond(i)) {</a>
+<a name="ln777">        expval += bond-&gt;GetBondOrder();</a>
+<a name="ln778">        count++;</a>
+<a name="ln779">      }</a>
+<a name="ln780">      if (foundZBO || foundZCH || foundHYD) { // TODO: Fix this</a>
+<a name="ln781">        // Use HYD count to SetImplicitValence if present, otherwise HYDValence model</a>
+<a name="ln782">        HYDMap::const_iterator hyd = hydMap.find(atom-&gt;GetIdx());</a>
+<a name="ln783">        if (hyd == hydMap.end()) {</a>
+<a name="ln784">          unsigned int impval = HYDValence(elem, charge, expval);</a>
+<a name="ln785">          int nimpval = impval - expval;</a>
+<a name="ln786">          atom-&gt;SetImplicitHCount(nimpval &gt; 0 ? nimpval : 0);</a>
+<a name="ln787">        } else {</a>
+<a name="ln788">          atom-&gt;SetImplicitHCount(hyd-&gt;second); // TODO: I have no idea</a>
+<a name="ln789">        }</a>
+<a name="ln790">      } else {</a>
+<a name="ln791">        // By testing with Symyx Draw (Accelrys Draw 4.0), if the</a>
+<a name="ln792">        // valence field is specified then the M RAD is ignored for</a>
+<a name="ln793">        // the purposes of setting hydrogen count.</a>
+<a name="ln794">        // So, if the valence field was specified use that, otherwise</a>
+<a name="ln795">        // use the implicit valence adjusted by any M RAD.</a>
+<a name="ln796">        std::map&lt;OBAtom*, int&gt;::const_iterator mit = specified_valence.find(&amp;*atom);</a>
+<a name="ln797">        unsigned int impval;</a>
+<a name="ln798">        if (mit != specified_valence.end()) {</a>
+<a name="ln799">          impval = mit-&gt;second;</a>
+<a name="ln800">          if (impval &lt; expval) {</a>
+<a name="ln801">            errorMsg &lt;&lt; &quot;WARNING: Problem interpreting the valence field of an atom\n&quot;</a>
+<a name="ln802">              &quot;The valence field specifies a valence &quot; &lt;&lt; impval &lt;&lt; &quot; that is\n&quot;</a>
+<a name="ln803">              &quot;less than the observed explicit valence &quot; &lt;&lt; expval &lt;&lt; &quot;.\n&quot;;</a>
+<a name="ln804">            obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obWarning);</a>
+<a name="ln805">          }</a>
+<a name="ln806">        }</a>
+<a name="ln807">        else {</a>
+<a name="ln808">          impval = MDLValence(elem, charge, expval);</a>
+<a name="ln809">          // adjust for M RAD</a>
+<a name="ln810">          int mult = atom-&gt;GetSpinMultiplicity();</a>
+<a name="ln811">          int delta;</a>
+<a name="ln812">          switch (mult) {</a>
+<a name="ln813">          case 0:</a>
+<a name="ln814">            delta = 0; break;</a>
+<a name="ln815">          case 1: case 3: //carbene</a>
+<a name="ln816">            delta = 2; break;</a>
+<a name="ln817">          case 2: //radical</a>
+<a name="ln818">            delta = 1; break;</a>
+<a name="ln819">          default: // &gt;= 4, CH, Catom</a>
+<a name="ln820">            delta = mult - 1;</a>
+<a name="ln821">          }</a>
+<a name="ln822">          impval -= delta;</a>
+<a name="ln823">        }</a>
+<a name="ln824">        int numH = impval - expval;</a>
+<a name="ln825">        atom-&gt;SetImplicitHCount(numH &gt; 0 ? numH : 0);</a>
+<a name="ln826">      }</a>
+<a name="ln827">    }</a>
+<a name="ln828"> </a>
+<a name="ln829">    //alias expansion may need to look at coordinate array, so call</a>
+<a name="ln830">    //endmodify to set mol-&gt;_c</a>
+<a name="ln831">    mol.EndModify();</a>
+<a name="ln832"> </a>
+<a name="ln833">    //Expand aliases (implicit hydrogens already set on these as read from SMILES)</a>
+<a name="ln834">    for (vector&lt;pair&lt;AliasData*, OBAtom*&gt; &gt;::iterator iter = aliases.begin(); iter != aliases.end(); ++iter)</a>
+<a name="ln835">    {</a>
+<a name="ln836">      AliasData* ad = (*iter).first;</a>
+<a name="ln837">      unsigned atomnum = (*iter).second-&gt;GetIdx();</a>
+<a name="ln838">      ad-&gt;Expand(mol, atomnum); //Make chemically meaningful, if possible.</a>
+<a name="ln839">    }</a>
+<a name="ln840"> </a>
+<a name="ln841">    if (comment.length()) {</a>
+<a name="ln842">      OBCommentData *cd = new OBCommentData;</a>
+<a name="ln843">      cd-&gt;SetData(comment);</a>
+<a name="ln844">      cd-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln845">      mol.SetData(cd);</a>
+<a name="ln846">    }</a>
+<a name="ln847"> </a>
+<a name="ln848">    //Get property lines</a>
+<a name="ln849">    if(!ReadPropertyLines(ifs, mol)) {</a>
+<a name="ln850">      //Has read the first line of the next reaction in RXN format</a>
+<a name="ln851">      pConv-&gt;AddOption(&quot;$RXNread&quot;);</a>
+<a name="ln852">      return true;</a>
+<a name="ln853">    }</a>
+<a name="ln854"> </a>
+<a name="ln855">    if (mol.Has3D()) {</a>
+<a name="ln856">      if (!setDimension)</a>
+<a name="ln857">        mol.SetDimension(3);</a>
+<a name="ln858">      // use 3D coordinates to determine stereochemistry</a>
+<a name="ln859">      StereoFrom3D(&amp;mol);</a>
+<a name="ln860">      OpenBabel::OBStereoFacade facade(&amp;mol);</a>
+<a name="ln861"> </a>
+<a name="ln862">      if (pConv-&gt;IsOption(&quot;s&quot;, OBConversion::INOPTIONS)) { // Use the parities for tet stereo instead</a>
+<a name="ln863">        TetStereoFromParity(mol, parities, true); // True means &quot;delete existing TetStereo first&quot;</a>
+<a name="ln864">      } else {</a>
+<a name="ln865">        // Set stereo to unspecified for atom stereo parity 3 (1 &amp; 2 determined from 3D coords)</a>
+<a name="ln866">        for (std::size_t i = 0; i &lt; parities.size(); ++i) {</a>
+<a name="ln867">          if (parities[i] != Unknown)</a>
+<a name="ln868">            continue;</a>
+<a name="ln869">          unsigned long atomId = mol.GetAtom(i+1)-&gt;GetId();</a>
+<a name="ln870">          OBTetrahedralStereo *ts = facade.GetTetrahedralStereo(atomId);</a>
+<a name="ln871">          if (!ts)</a>
+<a name="ln872">            continue;</a>
+<a name="ln873">          OBTetrahedralStereo::Config config = ts-&gt;GetConfig();</a>
+<a name="ln874">          config.specified = false;</a>
+<a name="ln875">          ts-&gt;SetConfig(config);</a>
+<a name="ln876">        }</a>
+<a name="ln877">      }</a>
+<a name="ln878"> </a>
+<a name="ln879">      // For unspecified cis/trans stereos, set their Configs to unspecified</a>
+<a name="ln880">      // This should really be done in CisTransFrom3D like in CisTransFrom2D but can't change the API now :-/</a>
+<a name="ln881">      map&lt;OBBond*, OBStereo::BondDirection&gt;::const_iterator bd_it;</a>
+<a name="ln882">      for(bd_it=updown.begin(); bd_it!=updown.end(); ++bd_it) {</a>
+<a name="ln883">        OBBond* bond = bd_it-&gt;first;</a>
+<a name="ln884">        if (bond-&gt;GetBondOrder()!=2 || bd_it-&gt;second != OBStereo::UnknownDir)</a>
+<a name="ln885">          continue; // Only continue for those double bonds with UnknownDir</a>
+<a name="ln886">        OBCisTransStereo* ct = facade.GetCisTransStereo(bond-&gt;GetId());</a>
+<a name="ln887">        if (ct) {</a>
+<a name="ln888">          OBCisTransStereo::Config config = ct-&gt;GetConfig();</a>
+<a name="ln889">          config.specified = false;</a>
+<a name="ln890">          ct-&gt;SetConfig(config);</a>
+<a name="ln891">        }</a>
+<a name="ln892">      }</a>
+<a name="ln893">    } else</a>
+<a name="ln894">    if (mol.Has2D()) {</a>
+<a name="ln895">      if (!setDimension)</a>
+<a name="ln896">        mol.SetDimension(2);</a>
+<a name="ln897">      // use 2D coordinates + hash/wedge to determine stereochemistry</a>
+<a name="ln898">      StereoFrom2D(&amp;mol, &amp;updown);</a>
+<a name="ln899">      if (pConv-&gt;IsOption(&quot;s&quot;, OBConversion::INOPTIONS)) { // Use the parities for tet stereo instead</a>
+<a name="ln900">        TetStereoFromParity(mol, parities, true); // True means &quot;delete existing TetStereo first&quot;</a>
+<a name="ln901">      }</a>
+<a name="ln902">    } else { // 0D</a>
+<a name="ln903">      if (!setDimension)</a>
+<a name="ln904">        mol.SetDimension(0);</a>
+<a name="ln905">      // Atom parities from the MOL file will be used to create tetrahedral stereochemistry</a>
+<a name="ln906">      // unless you specified the S option (but not s).</a>
+<a name="ln907">      if (pConv-&gt;IsOption(&quot;s&quot;, OBConversion::INOPTIONS) || pConv-&gt;IsOption(&quot;S&quot;, OBConversion::INOPTIONS) == nullptr)</a>
+<a name="ln908">        TetStereoFromParity(mol, parities);</a>
+<a name="ln909">      StereoFrom0D(&amp;mol);</a>
+<a name="ln910">      if (pConv-&gt;IsOption(&quot;S&quot;, OBConversion::INOPTIONS) == nullptr)</a>
+<a name="ln911">        CisTransFromUpDown(&amp;mol, &amp;updown);</a>
+<a name="ln912">    }</a>
+<a name="ln913"> </a>
+<a name="ln914">    return true;</a>
+<a name="ln915">  }</a>
+<a name="ln916"> </a>
+<a name="ln917">  static void GenerateAsciiDepiction(OBMol* pmol)</a>
+<a name="ln918">  {</a>
+<a name="ln919">    OBConversion obconv;</a>
+<a name="ln920">    bool ok = obconv.SetOutFormat(&quot;ascii&quot;);</a>
+<a name="ln921">    if (!ok)</a>
+<a name="ln922">      return;</a>
+<a name="ln923">    obconv.AddOption(&quot;w&quot;, obconv.OUTOPTIONS, &quot;78&quot;);</a>
+<a name="ln924">    obconv.AddOption(&quot;a&quot;, obconv.OUTOPTIONS, &quot;2.0&quot;);</a>
+<a name="ln925">    std::string ascii = obconv.WriteString(pmol);</a>
+<a name="ln926"> </a>
+<a name="ln927">    // Add a &quot;.&quot; as prefix to each line as otherwise OB</a>
+<a name="ln928">    // will strip leading spaces on reading</a>
+<a name="ln929">    std::string mod = &quot;.&quot;;</a>
+<a name="ln930">    const char* p = ascii.c_str();</a>
+<a name="ln931">    unsigned int lastNonBlank = 0;</a>
+<a name="ln932">    while (*p) {</a>
+<a name="ln933">      mod += *p++;</a>
+<a name="ln934">      if (*p) {</a>
+<a name="ln935">        if (*p != ' ' &amp;&amp; *p != '\n')</a>
+<a name="ln936">          lastNonBlank = mod.size(); // We will trim up to the last non-blank</a>
+<a name="ln937">        if (*(p - 1) == '\n')</a>
+<a name="ln938">          mod += '.';</a>
+<a name="ln939">      }</a>
+<a name="ln940">    }</a>
+<a name="ln941"> </a>
+<a name="ln942">    OBPairData* pd;</a>
+<a name="ln943">    if (pmol-&gt;HasData(&quot;ASCII depiction&quot;))</a>
+<a name="ln944">      pd = (OBPairData*)pmol-&gt;GetData(&quot;ASCII depiction&quot;);</a>
+<a name="ln945">    else {</a>
+<a name="ln946">      pd = new OBPairData();</a>
+<a name="ln947">      pmol-&gt;SetData(pd);</a>
+<a name="ln948">      pd-&gt;SetAttribute(&quot;ASCII depiction&quot;);</a>
+<a name="ln949">    }</a>
+<a name="ln950">    pd-&gt;SetValue(mod.substr(0, lastNonBlank+1));</a>
+<a name="ln951"> </a>
+<a name="ln952">  }</a>
+<a name="ln953"> </a>
+<a name="ln954">  // If this atom should be considered an RGroup Alias this function</a>
+<a name="ln955">  // returns 0 or a positive integer, but -1 otherwise</a>
+<a name="ln956">  static int GetNumberedRGroup(OBMol* pmol, OBAtom* atom)</a>
+<a name="ln957">  {</a>
+<a name="ln958">    if (atom-&gt;GetAtomicNum() == 0) { // Must be a pseudoatom</a>
+<a name="ln959">      if(atom-&gt;HasData(AliasDataType)) {</a>
+<a name="ln960">        // must have an alias Rn or Rnn</a>
+<a name="ln961">        AliasData* ad = static_cast&lt;AliasData*&gt;(atom-&gt;GetData(AliasDataType));</a>
+<a name="ln962">        if(!ad-&gt;IsExpanded()) { //do nothing with an expanded alias</a>
+<a name="ln963">          std::string alias = ad-&gt;GetAlias();</a>
+<a name="ln964">          const char* p = alias.c_str();</a>
+<a name="ln965">          // Rn or Rnn</a>
+<a name="ln966">          if (p[0]=='R' &amp;&amp; (isdigit(p[1]) &amp;&amp; (p[2]=='\0' || (isdigit(p[2]) &amp;&amp; p[3]=='\0'))))</a>
+<a name="ln967">            return atoi(p+1);</a>
+<a name="ln968">        }</a>
+<a name="ln969">      }</a>
+<a name="ln970">      else {</a>
+<a name="ln971">        //Atoms with no AliasData, but 0 atomicnum and atomclass==n are given an alias Rn</a>
+<a name="ln972">        OBGenericData *data = atom-&gt;GetData(&quot;Atom Class&quot;);</a>
+<a name="ln973">        if (data) {</a>
+<a name="ln974">          OBPairInteger* acdata = dynamic_cast&lt;OBPairInteger*&gt;(data); // Could replace with C-style cast if willing to live dangerously</a>
+<a name="ln975">          if (acdata) {</a>
+<a name="ln976">            int ac = acdata-&gt;GetGenericValue();</a>
+<a name="ln977">            if (ac &gt;= 0) // Allow 0, why not?</a>
+<a name="ln978">              return ac;</a>
+<a name="ln979">          }</a>
+<a name="ln980">        }</a>
+<a name="ln981">      }</a>
+<a name="ln982">    }</a>
+<a name="ln983">    return -1;</a>
+<a name="ln984">  }</a>
+<a name="ln985"> </a>
+<a name="ln986">  // Return the element symbol, unless it's a pseudoatom</a>
+<a name="ln987">  // in which case return * or R# if it can be identified as an R Group</a>
+<a name="ln988">  static const char* AtomSymbol(OBMol* pmol, OBAtom* atom)</a>
+<a name="ln989">  {</a>
+<a name="ln990">    if (atom-&gt;GetAtomicNum())</a>
+<a name="ln991">      return OBElements::GetSymbol(atom-&gt;GetAtomicNum());</a>
+<a name="ln992">    return (GetNumberedRGroup(pmol, atom) == -1) ? &quot;* &quot; : &quot;R#&quot;;</a>
+<a name="ln993">  }</a>
+<a name="ln994"> </a>
+<a name="ln995">  static bool OldIsChiral(OBMol &amp;mol)</a>
+<a name="ln996">  {</a>
+<a name="ln997">    FOR_ATOMS_OF_MOL(atom, mol) {</a>
+<a name="ln998">      if ((atom-&gt;GetAtomicNum() == OBElements::Carbon || atom-&gt;GetAtomicNum() == OBElements::Nitrogen)</a>
+<a name="ln999">          &amp;&amp; atom-&gt;GetHvyDegree() &gt; 2</a>
+<a name="ln1000">          &amp;&amp; atom-&gt;IsChiral())</a>
+<a name="ln1001">        return true;</a>
+<a name="ln1002">    }</a>
+<a name="ln1003"> </a>
+<a name="ln1004">    return false;</a>
+<a name="ln1005">  }</a>
+<a name="ln1006"> </a>
+<a name="ln1007">  static bool GetChiralFlagFromGenericData(OBMol &amp;mol)</a>
+<a name="ln1008">  {</a>
+<a name="ln1009">    OBGenericData*  gd = mol.GetData(&quot;MOL Chiral Flag&quot;);</a>
+<a name="ln1010">    if (gd)</a>
+<a name="ln1011">    {</a>
+<a name="ln1012">      int iflag = atoi(((OBPairData*)gd)-&gt;GetValue().c_str());</a>
+<a name="ln1013">      if (iflag == 0)</a>
+<a name="ln1014">       return false;</a>
+<a name="ln1015">      else if (iflag == 1)</a>
+<a name="ln1016">        return true;</a>
+<a name="ln1017">      else</a>
+<a name="ln1018">      {</a>
+<a name="ln1019">        stringstream errorMsg;</a>
+<a name="ln1020">        errorMsg &lt;&lt; &quot;WARNING: The Chiral Flag should be either 0 or 1. The value of &quot;</a>
+<a name="ln1021">          &lt;&lt; iflag &lt;&lt; &quot; will be ignored.\n&quot;;</a>
+<a name="ln1022">        obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obWarning);</a>
+<a name="ln1023">      }</a>
+<a name="ln1024">    }</a>
+<a name="ln1025"> </a>
+<a name="ln1026">    return OldIsChiral(mol); // TODO: Remove this in favor of the following code</a>
+<a name="ln1027"> </a>
+<a name="ln1028">    // Return true if and only if it has a specified tet stereocenter</a>
+<a name="ln1029">    std::vector&lt;OBGenericData *&gt; stereoData = mol.GetAllData(OBGenericDataType::StereoData);</a>
+<a name="ln1030">    std::vector&lt;OBGenericData*&gt;::iterator data;</a>
+<a name="ln1031">    for (data = stereoData.begin(); data != stereoData.end(); ++data) {</a>
+<a name="ln1032">      OBStereo::Type type = ((OBStereoBase*)*data)-&gt;GetType();</a>
+<a name="ln1033">      if (type != OBStereo::Tetrahedral) continue;</a>
+<a name="ln1034">      OBTetrahedralStereo *ts = dynamic_cast&lt;OBTetrahedralStereo*&gt;(*data);</a>
+<a name="ln1035">      if (ts-&gt;GetConfig().specified)</a>
+<a name="ln1036">        return true;</a>
+<a name="ln1037">    }</a>
+<a name="ln1038">    return false;</a>
+<a name="ln1039">  }</a>
+<a name="ln1040"> </a>
+<a name="ln1041">  /////////////////////////////////////////////////////////////////</a>
+<a name="ln1042">  bool MDLFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln1043">  {</a>
+<a name="ln1044">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln1045"> </a>
+<a name="ln1046">    //Define some references so we can use the old parameter names</a>
+<a name="ln1047">    ostream &amp;ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln1048">    OBMol &amp;mol = *pmol;</a>
+<a name="ln1049"> </a>
+<a name="ln1050">    // Recommend using --gen2D or --gen3D</a>
+<a name="ln1051">    if (mol.GetDimension()==0)</a>
+<a name="ln1052">    {</a>
+<a name="ln1053">      if (pConv-&gt;IsOption(&quot;S&quot;, OBConversion::OUTOPTIONS))</a>
+<a name="ln1054">        obErrorLog.ThrowError(__FUNCTION__, &quot;No 2D or 3D coordinates exist. Any stereochemical information will&quot;</a>
+<a name="ln1055">                   &quot; be lost. To generate 2D or 3D coordinates use --gen2D or --gen3D.&quot;, obWarning, onceOnly);</a>
+<a name="ln1056">      else</a>
+<a name="ln1057">        obErrorLog.ThrowError(__FUNCTION__, &quot;No 2D or 3D coordinates exist. Stereochemical information will&quot;</a>
+<a name="ln1058">                   &quot; be stored using an Open Babel extension. To generate 2D or 3D coordinates instead use --gen2D or --gen3D.&quot;, obWarning, onceOnly);</a>
+<a name="ln1059">    }</a>
+<a name="ln1060"> </a>
+<a name="ln1061">    bool alwaysSpecifyValence = pConv-&gt;IsOption(&quot;v&quot;);</a>
+<a name="ln1062">    bool writeAtomClass = pConv-&gt;IsOption(&quot;a&quot;);</a>
+<a name="ln1063"> </a>
+<a name="ln1064"> </a>
+<a name="ln1065">    // Make a copy of mol (origmol) then ConvertZeroBonds() in mol</a>
+<a name="ln1066">    // TODO: Do we need to worry about modifying mol? (It happens anyway in Kekulize etc?)</a>
+<a name="ln1067">    // If so, instead make mol the copy: OBMol &amp;origmol = *pmol; OBMol mol = origmol;</a>
+<a name="ln1068">    // However there is information loss in the copy, so may cause issues</a>
+<a name="ln1069">    OBMol origmol = mol;</a>
+<a name="ln1070">    bool foundZBO = mol.ConvertZeroBonds();</a>
+<a name="ln1071"> </a>
+<a name="ln1072">    PerceiveStereo(&amp;mol);</a>
+<a name="ln1073"> </a>
+<a name="ln1074">    if (pConv-&gt;GetOutputIndex()==1)</a>
+<a name="ln1075">      HasProperties = false;</a>
+<a name="ln1076"> </a>
+<a name="ln1077">    //</a>
+<a name="ln1078">    // Header Block</a>
+<a name="ln1079">    //</a>
+<a name="ln1080"> </a>
+<a name="ln1081">    string dimension(&quot;2D&quot;);</a>
+<a name="ln1082">    if(mol.GetDimension()==3)</a>
+<a name="ln1083">      dimension = &quot;3D&quot;;</a>
+<a name="ln1084"> </a>
+<a name="ln1085">    if(pConv-&gt;IsOption(&quot;A&quot;))</a>
+<a name="ln1086">      AliasData::RevertToAliasForm(mol);</a>
+<a name="ln1087"> </a>
+<a name="ln1088">    // line 1: molecule name</a>
+<a name="ln1089">    ofs &lt;&lt; mol.GetTitle() &lt;&lt;  endl;</a>
+<a name="ln1090"> </a>
+<a name="ln1091">    // line 2: Program name, date/time, dimensions code</a>
+<a name="ln1092">    ofs &lt;&lt; &quot; OpenBabel&quot; &lt;&lt; GetTimeDate() &lt;&lt;  dimension &lt;&lt; endl; //line2</a>
+<a name="ln1093"> </a>
+<a name="ln1094">    // line 3: comment</a>
+<a name="ln1095">    if (mol.HasData(OBGenericDataType::CommentData)) {</a>
+<a name="ln1096">      OBCommentData *cd = (OBCommentData*)mol.GetData(OBGenericDataType::CommentData);</a>
+<a name="ln1097">      string comment = cd-&gt;GetData();</a>
+<a name="ln1098">      if(comment.size()&gt;80)</a>
+<a name="ln1099">        comment.erase(80); //truncate to 80 chars</a>
+<a name="ln1100">      ofs &lt;&lt; comment;</a>
+<a name="ln1101">    }</a>
+<a name="ln1102">    ofs &lt;&lt; endl;</a>
+<a name="ln1103"> </a>
+<a name="ln1104">    //</a>
+<a name="ln1105">    // Atom Block</a>
+<a name="ln1106">    //</a>
+<a name="ln1107"> </a>
+<a name="ln1108">    if(pConv-&gt;IsOption(&quot;3&quot;) || mol.NumAtoms() &gt; 999 || mol.NumBonds() &gt; 999) {</a>
+<a name="ln1109">      if (!WriteV3000(ofs, mol, pConv))</a>
+<a name="ln1110">        return false;</a>
+<a name="ln1111">    } else {</a>
+<a name="ln1112">      //The rest of the function is the same as the original</a>
+<a name="ln1113">      char buff[BUFF_SIZE];</a>
+<a name="ln1114"> </a>
+<a name="ln1115">      if (mol.NumAtoms() &gt; 999 || mol.NumBonds() &gt; 999) { // Three digits!</a>
+<a name="ln1116">        stringstream errorMsg;</a>
+<a name="ln1117">        errorMsg &lt;&lt; &quot;MDL Molfile conversion failed: Molecule is too large to convert.&quot; &lt;&lt; endl;</a>
+<a name="ln1118">        errorMsg &lt;&lt; &quot;  File format (v2000) is limited to 999 atoms or bonds.&quot; &lt;&lt; endl;</a>
+<a name="ln1119">        errorMsg &lt;&lt; &quot;  Molecule size: &quot; &lt;&lt; mol.NumAtoms() &lt;&lt; &quot; atoms &quot;;</a>
+<a name="ln1120">        errorMsg &lt;&lt; &quot;and &quot; &lt;&lt; mol.NumBonds() &lt;&lt; &quot; bonds.&quot; &lt;&lt; endl;</a>
+<a name="ln1121">        obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obWarning);</a>
+<a name="ln1122">        return false;</a>
+<a name="ln1123">      }</a>
+<a name="ln1124"> </a>
+<a name="ln1125">      // Find which double bonds have unspecified chirality</a>
+<a name="ln1126">      set&lt;OBBond*&gt; unspec_ctstereo = GetUnspecifiedCisTrans(mol);</a>
+<a name="ln1127"> </a>
+<a name="ln1128">      // Calculate parity of atoms and up/down bond for chiral centers (see Appendix A of ctfile.pdf)</a>
+<a name="ln1129">      // For 2D, if pConv-&gt;IsOption(&quot;w&quot;, pConv-&gt;OUTOPTIONS)), then the IsWedge/IsHash bond</a>
+<a name="ln1130">      // designations are used instead of calculating them. For 3D it is always calculated. For 0D never.</a>
+<a name="ln1131">      map&lt;OBBond*, OBStereo::BondDirection&gt; updown;</a>
+<a name="ln1132">      map&lt;OBAtom*, Parity&gt; parity;</a>
+<a name="ln1133">      map&lt;OBBond*, OBStereo::Ref&gt; from;</a>
+<a name="ln1134">      map&lt;OBBond*, OBStereo::Ref&gt;::const_iterator from_cit;</a>
+<a name="ln1135">      GetParity(mol, parity);</a>
+<a name="ln1136">      if (mol.GetDimension() == 3 || (mol.GetDimension()==2 &amp;&amp; !pConv-&gt;IsOption(&quot;w&quot;, pConv-&gt;OUTOPTIONS)))</a>
+<a name="ln1137">        TetStereoToWedgeHash(mol, updown, from);</a>
+<a name="ln1138"> </a>
+<a name="ln1139">      // Calculate up/downness of cis/trans bonds for 0D</a>
+<a name="ln1140">      set&lt;OBBond*&gt; stereodbl;</a>
+<a name="ln1141">      if (mol.GetDimension() == 0 &amp;&amp; !pConv-&gt;IsOption(&quot;S&quot;, OBConversion::OUTOPTIONS))</a>
+<a name="ln1142">        GetUpDown(mol, updown, stereodbl);</a>
+<a name="ln1143"> </a>
+<a name="ln1144"> </a>
+<a name="ln1145">      // The counts line:</a>
+<a name="ln1146">      // aaabbblllfffcccsssxxxrrrpppiiimmmvvvvvv</a>
+<a name="ln1147">      //</a>
+<a name="ln1148">      // aaa = number of atoms</a>
+<a name="ln1149">      // bbb = number of bonds</a>
+<a name="ln1150">      // lll = number of atom lists (query)</a>
+<a name="ln1151">      // ccc = chiral flag</a>
+<a name="ln1152">      // ... = obsolete</a>
+<a name="ln1153">      // mmm = no longer supported (default=999)</a>
+<a name="ln1154">      //                         aaabbblllfffcccsssxxxrrrpppiiimmmvvvvvv</a>
+<a name="ln1155">      bool chiralFlag = GetChiralFlagFromGenericData(mol);</a>
+<a name="ln1156"> </a>
+<a name="ln1157">      snprintf(buff, BUFF_SIZE, &quot;%3d%3d  0  0%3d  0  0  0  0  0999 V2000\n&quot;,</a>
+<a name="ln1158">               mol.NumAtoms(), mol.NumBonds(), chiralFlag);</a>
+<a name="ln1159">      ofs &lt;&lt; buff;</a>
+<a name="ln1160"> </a>
+<a name="ln1161">      OBAtom *atom;</a>
+<a name="ln1162">      vector&lt;OBAtom*&gt;::iterator i;</a>
+<a name="ln1163">      unsigned int aclass = 0;</a>
+<a name="ln1164">      int charge = 0;</a>
+<a name="ln1165">      for (atom = mol.BeginAtom(i); atom; atom = mol.NextAtom(i)) {</a>
+<a name="ln1166">        // convert charge</a>
+<a name="ln1167">        switch (atom-&gt;GetFormalCharge()) {</a>
+<a name="ln1168">          case 1: charge = 3; break;</a>
+<a name="ln1169">          case 2: charge = 2; break;</a>
+<a name="ln1170">          case 3: charge = 1; break;</a>
+<a name="ln1171">          case -1: charge = 5; break;</a>
+<a name="ln1172">          case -2: charge = 6; break;</a>
+<a name="ln1173">          case -3: charge = 7; break;</a>
+<a name="ln1174">          default: charge = 0; break;</a>
+<a name="ln1175">        }</a>
+<a name="ln1176">        Parity stereo = NotStereo;</a>
+<a name="ln1177">        if (parity.find(atom) != parity.end())</a>
+<a name="ln1178">          stereo = parity[atom];</a>
+<a name="ln1179"> </a>
+<a name="ln1180">        </a>
+<a name="ln1181">        int expval = atom-&gt;GetExplicitValence();</a>
+<a name="ln1182">        int impval = MDLValence(atom-&gt;GetAtomicNum(), atom-&gt;GetFormalCharge(), expval);</a>
+<a name="ln1183">        int actual_impval = expval + atom-&gt;GetImplicitHCount();</a>
+<a name="ln1184">        int valence;</a>
+<a name="ln1185">        int spin = atom-&gt;GetSpinMultiplicity(); // the spin condition below is used for &quot;M  RAD&quot;</a>
+<a name="ln1186">        if (!alwaysSpecifyValence &amp;&amp; actual_impval == impval &amp;&amp; (spin == 0 || spin &gt;= 4))</a>
+<a name="ln1187">          valence = 0;</a>
+<a name="ln1188">        else</a>
+<a name="ln1189">          valence = actual_impval == 0 ? 15 : actual_impval;</a>
+<a name="ln1190"> </a>
+<a name="ln1191">        aclass = 0;</a>
+<a name="ln1192">        if (writeAtomClass) {</a>
+<a name="ln1193">          OBGenericData *data = atom-&gt;GetData(&quot;Atom Class&quot;);</a>
+<a name="ln1194">          if (data) {</a>
+<a name="ln1195">            OBPairInteger* acdata = dynamic_cast&lt;OBPairInteger*&gt;(data); // Could replace with C-style cast if willing to live dangerously</a>
+<a name="ln1196">            if (acdata) {</a>
+<a name="ln1197">              int ac = acdata-&gt;GetGenericValue();</a>
+<a name="ln1198">              if (ac &gt; 0) {</a>
+<a name="ln1199">                aclass = (unsigned int)ac;</a>
+<a name="ln1200">              }</a>
+<a name="ln1201">            }</a>
+<a name="ln1202">          }</a>
+<a name="ln1203">        }</a>
+<a name="ln1204"> </a>
+<a name="ln1205">        snprintf(buff, BUFF_SIZE, &quot;%10.4f%10.4f%10.4f %-3s%2d%3d%3d%3d%3d%3d%3d%3d%3d%3d%3d%3d&quot;,</a>
+<a name="ln1206">          atom-&gt;GetX(), atom-&gt;GetY(), atom-&gt;GetZ(),</a>
+<a name="ln1207">          AtomSymbol(pmol, atom),</a>
+<a name="ln1208">          0,charge,stereo,0,0,valence,0,0,0,aclass,0,0);</a>
+<a name="ln1209">        ofs &lt;&lt; buff &lt;&lt; endl;</a>
+<a name="ln1210">      }</a>
+<a name="ln1211"> </a>
+<a name="ln1212">      OBAtom *nbr;</a>
+<a name="ln1213">      OBBond *bond;</a>
+<a name="ln1214">      vector&lt;OBBond*&gt;::iterator j;</a>
+<a name="ln1215">      int bondline = 0;</a>
+<a name="ln1216">      vector&lt;int&gt; zbos;</a>
+<a name="ln1217">      for (atom = mol.BeginAtom(i);atom;atom = mol.NextAtom(i)) {</a>
+<a name="ln1218">        for (nbr = atom-&gt;BeginNbrAtom(j);nbr;nbr = atom-&gt;NextNbrAtom(j)) {</a>
+<a name="ln1219">          bond = (OBBond*) *j;</a>
+<a name="ln1220">          from_cit = from.find(bond);</a>
+<a name="ln1221">          // If the bond has *calculated* stereodirectionality, ensure that the start point</a>
+<a name="ln1222">          // is at the 'from' atom. Otherwise, just ensure that the start atom</a>
+<a name="ln1223">          // is the 'begin atom' of the bond (so that stereodirectionality that was</a>
+<a name="ln1224">          // read in [rather than calculated] will be correct).</a>
+<a name="ln1225">          if ( (from_cit==from.end() &amp;&amp; atom-&gt;GetIdx()==bond-&gt;GetBeginAtomIdx()) ||</a>
+<a name="ln1226">               (from_cit!=from.end() &amp;&amp; from_cit-&gt;second == atom-&gt;GetId()) ) {</a>
+<a name="ln1227">            int stereo = 0;</a>
+<a name="ln1228">            if(mol.GetDimension() == 2 &amp;&amp; pConv-&gt;IsOption(&quot;w&quot;, pConv-&gt;OUTOPTIONS) != nullptr) {</a>
+<a name="ln1229">                if (bond-&gt;IsWedge())</a>
+<a name="ln1230">                  stereo = 1;</a>
+<a name="ln1231">                else if (bond-&gt;IsHash())</a>
+<a name="ln1232">                  stereo = 6;</a>
+<a name="ln1233">                else if (bond-&gt;IsWedgeOrHash())</a>
+<a name="ln1234">                  stereo = 4;</a>
+<a name="ln1235">              }</a>
+<a name="ln1236"> </a>
+<a name="ln1237">            // For unspecified Cis/Trans double bonds, set the stereo to 3...</a>
+<a name="ln1238">            if (unspec_ctstereo.find(bond) != unspec_ctstereo.end())</a>
+<a name="ln1239">              stereo = 3;</a>
+<a name="ln1240">            // For 3D (and 2D if &quot;w&quot; output option), set the stereo of the chiral centers.</a>
+<a name="ln1241">            if (updown.find(bond) != updown.end())</a>
+<a name="ln1242">              stereo = updown[bond];</a>
+<a name="ln1243"> </a>
+<a name="ln1244">            ofs &lt;&lt; setw(3) &lt;&lt; atom-&gt;GetIdx(); // begin atom number</a>
+<a name="ln1245">            ofs &lt;&lt; setw(3) &lt;&lt; nbr-&gt;GetIdx(); // end atom number</a>
+<a name="ln1246">            ofs &lt;&lt; setw(3) &lt;&lt; bond-&gt;GetBondOrder(); // bond type</a>
+<a name="ln1247">            ofs &lt;&lt; setw(3) &lt;&lt; stereo; // bond stereo</a>
+<a name="ln1248">            ofs &lt;&lt; &quot;  0  0  0&quot; &lt;&lt; endl;</a>
+<a name="ln1249"> </a>
+<a name="ln1250">            // Add position in bond list to zbos for zero-order bonds</a>
+<a name="ln1251">            bondline++;</a>
+<a name="ln1252">            if (foundZBO) {</a>
+<a name="ln1253">                OBBond *origbond = origmol.GetBond(bond-&gt;GetIdx());</a>
+<a name="ln1254">                if (origbond-&gt;GetBondOrder() == 0) {</a>
+<a name="ln1255">                  zbos.push_back(bondline);</a>
+<a name="ln1256">                }</a>
+<a name="ln1257">              }</a>
+<a name="ln1258">          }</a>
+<a name="ln1259">        }</a>
+<a name="ln1260">      }</a>
+<a name="ln1261"> </a>
+<a name="ln1262">      vector&lt;OBAtom*&gt; rads, isos, chgs;</a>
+<a name="ln1263">      vector&lt;OBAtom*&gt;::iterator itr;</a>
+<a name="ln1264">      vector&lt;pair&lt;int,int&gt; &gt; zchs, hyds;</a>
+<a name="ln1265">      vector&lt;pair&lt;int,int&gt; &gt;::iterator zitr;</a>
+<a name="ln1266">      vector&lt;pair&lt;int, int&gt; &gt; numberedRGroups;</a>
+<a name="ln1267">      for (atom = mol.BeginAtom(i);atom;atom = mol.NextAtom(i)) {</a>
+<a name="ln1268">        if(atom-&gt;GetSpinMultiplicity()&gt;0 &amp;&amp; atom-&gt;GetSpinMultiplicity()&lt;4)</a>
+<a name="ln1269">          rads.push_back(atom);</a>
+<a name="ln1270">        if(atom-&gt;GetIsotope())</a>
+<a name="ln1271">          isos.push_back(atom);</a>
+<a name="ln1272">        if(atom-&gt;GetFormalCharge())</a>
+<a name="ln1273">          chgs.push_back(atom);</a>
+<a name="ln1274"> </a>
+<a name="ln1275">        OBAtom *origatom = origmol.GetAtom(atom-&gt;GetIdx());</a>
+<a name="ln1276">        // Get charge differences for ZCH, and hydrogen counts for HYD</a>
+<a name="ln1277">        if (foundZBO || pConv-&gt;IsOption(&quot;H&quot;, pConv-&gt;OUTOPTIONS)) {</a>
+<a name="ln1278">          if (foundZBO &amp;&amp; origatom-&gt;GetFormalCharge() != atom-&gt;GetFormalCharge()) {</a>
+<a name="ln1279">            zchs.push_back(make_pair(origatom-&gt;GetIdx(), origatom-&gt;GetFormalCharge()));</a>
+<a name="ln1280">          }</a>
+<a name="ln1281">          int hcount = atom-&gt;ExplicitHydrogenCount() + atom-&gt;GetImplicitHCount();</a>
+<a name="ln1282">          int autohcount = HYDValence(origatom-&gt;GetAtomicNum(), origatom-&gt;GetFormalCharge(), origatom-&gt;GetExplicitValence())</a>
+<a name="ln1283">                             - origatom-&gt;GetExplicitValence() + atom-&gt;ExplicitHydrogenCount();</a>
+<a name="ln1284">          if (hcount != autohcount) {</a>
+<a name="ln1285">            hyds.push_back(make_pair(origatom-&gt;GetIdx(), atom-&gt;GetImplicitHCount()));</a>
+<a name="ln1286">          }</a>
+<a name="ln1287">        }</a>
+<a name="ln1288"> </a>
+<a name="ln1289">        // A numbered R group is a special case of an alias and is handled differently</a>
+<a name="ln1290">        int rgroupIdx = GetNumberedRGroup(pmol, atom);</a>
+<a name="ln1291">        if (rgroupIdx == -1) {</a>
+<a name="ln1292">          if (atom-&gt;HasData(AliasDataType)) {</a>
+<a name="ln1293">            AliasData* ad = static_cast&lt;AliasData*&gt;(atom-&gt;GetData(AliasDataType));</a>
+<a name="ln1294">            if(!ad-&gt;IsExpanded()) //do nothing with an expanded alias</a>
+<a name="ln1295">              ofs &lt;&lt; &quot;A  &quot; &lt;&lt; setw(3) &lt;&lt; right &lt;&lt; atom-&gt;GetIdx() &lt;&lt; '\n' &lt;&lt; ad-&gt;GetAlias() &lt;&lt; endl;</a>
+<a name="ln1296">          }</a>
+<a name="ln1297">        }</a>
+<a name="ln1298">        else {</a>
+<a name="ln1299">          numberedRGroups.push_back(make_pair(atom-&gt;GetIdx(), rgroupIdx));</a>
+<a name="ln1300">        }</a>
+<a name="ln1301">      }</a>
+<a name="ln1302"> </a>
+<a name="ln1303">      if (rads.size()) {</a>
+<a name="ln1304">        int counter = 0;</a>
+<a name="ln1305">        for(itr=rads.begin();itr!=rads.end();++itr, counter++) {</a>
+<a name="ln1306">          if (counter % 8 == 0) {</a>
+<a name="ln1307">            if (counter &gt; 0) ofs &lt;&lt; endl;</a>
+<a name="ln1308">            ofs &lt;&lt; &quot;M  RAD&quot; &lt;&lt; setw(3) &lt;&lt; min(static_cast&lt;unsigned long int&gt;(rads.size() - counter), static_cast&lt;unsigned long int&gt;(8));</a>
+<a name="ln1309">          }</a>
+<a name="ln1310">          ofs &lt;&lt; setw(4) &lt;&lt; (*itr)-&gt;GetIdx() &lt;&lt; setw(4) &lt;&lt; (*itr)-&gt;GetSpinMultiplicity();</a>
+<a name="ln1311">        }</a>
+<a name="ln1312">        ofs &lt;&lt; endl;</a>
+<a name="ln1313">      }</a>
+<a name="ln1314">      if(isos.size()) {</a>
+<a name="ln1315">        int counter = 0;</a>
+<a name="ln1316">        for(itr=isos.begin();itr!=isos.end();++itr, counter++) {</a>
+<a name="ln1317">          if (counter % 8 == 0) {</a>
+<a name="ln1318">            if (counter &gt; 0) ofs &lt;&lt; endl;</a>
+<a name="ln1319">            ofs &lt;&lt; &quot;M  ISO&quot; &lt;&lt; setw(3) &lt;&lt; min(static_cast&lt;unsigned long int&gt;(isos.size() - counter), static_cast&lt;unsigned long int&gt;(8));</a>
+<a name="ln1320">          }</a>
+<a name="ln1321">          ofs &lt;&lt; setw(4) &lt;&lt; (*itr)-&gt;GetIdx() &lt;&lt; setw(4) &lt;&lt; (*itr)-&gt;GetIsotope();</a>
+<a name="ln1322">        }</a>
+<a name="ln1323">        ofs &lt;&lt; endl;</a>
+<a name="ln1324">      }</a>
+<a name="ln1325">      if(chgs.size()) {</a>
+<a name="ln1326">        int counter = 0;</a>
+<a name="ln1327">        for (itr=chgs.begin(); itr != chgs.end(); ++itr, counter++) {</a>
+<a name="ln1328">          if (counter % 8 == 0) {</a>
+<a name="ln1329">            if (counter &gt; 0) ofs &lt;&lt; endl;</a>
+<a name="ln1330">            ofs &lt;&lt; &quot;M  CHG&quot; &lt;&lt; setw(3) &lt;&lt; min(static_cast&lt;unsigned long int&gt;(chgs.size() - counter), static_cast&lt;unsigned long int&gt;(8));</a>
+<a name="ln1331">          }</a>
+<a name="ln1332">          ofs &lt;&lt; setw(4) &lt;&lt; (*itr)-&gt;GetIdx() &lt;&lt; setw(4) &lt;&lt; (*itr)-&gt;GetFormalCharge();</a>
+<a name="ln1333">        }</a>
+<a name="ln1334">        ofs &lt;&lt; endl;</a>
+<a name="ln1335">      }</a>
+<a name="ln1336">      if(zchs.size()) {</a>
+<a name="ln1337">        int counter = 0;</a>
+<a name="ln1338">        for (zitr=zchs.begin(); zitr != zchs.end(); ++zitr, counter++) {</a>
+<a name="ln1339">          if (counter % 8 == 0) {</a>
+<a name="ln1340">            if (counter &gt; 0) ofs &lt;&lt; endl;</a>
+<a name="ln1341">            ofs &lt;&lt; &quot;M  ZCH&quot; &lt;&lt; setw(3) &lt;&lt; min(static_cast&lt;unsigned long int&gt;(zchs.size() - counter), static_cast&lt;unsigned long int&gt;(8));</a>
+<a name="ln1342">          }</a>
+<a name="ln1343">          ofs &lt;&lt; setw(4) &lt;&lt; zitr-&gt;first &lt;&lt; setw(4) &lt;&lt; zitr-&gt;second;</a>
+<a name="ln1344">        }</a>
+<a name="ln1345">        ofs &lt;&lt; endl;</a>
+<a name="ln1346">      }</a>
+<a name="ln1347">      if(hyds.size()) {</a>
+<a name="ln1348">        int counter = 0;</a>
+<a name="ln1349">        for (zitr=hyds.begin(); zitr != hyds.end(); ++zitr, counter++) {</a>
+<a name="ln1350">          if (counter % 8 == 0) {</a>
+<a name="ln1351">            if (counter &gt; 0) ofs &lt;&lt; endl;</a>
+<a name="ln1352">            ofs &lt;&lt; &quot;M  HYD&quot; &lt;&lt; setw(3) &lt;&lt; min(static_cast&lt;unsigned long int&gt;(hyds.size() - counter), static_cast&lt;unsigned long int&gt;(8));</a>
+<a name="ln1353">          }</a>
+<a name="ln1354">          ofs &lt;&lt; setw(4) &lt;&lt; zitr-&gt;first &lt;&lt; setw(4) &lt;&lt; zitr-&gt;second;</a>
+<a name="ln1355">        }</a>
+<a name="ln1356">        ofs &lt;&lt; endl;</a>
+<a name="ln1357">      }</a>
+<a name="ln1358">      if(zbos.size()) {</a>
+<a name="ln1359">        int counter = 0;</a>
+<a name="ln1360">        for(vector&lt;int&gt;::iterator it = zbos.begin(); it != zbos.end(); ++it, counter++) {</a>
+<a name="ln1361">          if (counter % 8 == 0) {</a>
+<a name="ln1362">            if (counter &gt; 0) ofs &lt;&lt; endl;</a>
+<a name="ln1363">            ofs &lt;&lt; &quot;M  ZBO&quot; &lt;&lt; setw(3) &lt;&lt; min(static_cast&lt;unsigned long int&gt;(zbos.size() - counter), static_cast&lt;unsigned long int&gt;(8));</a>
+<a name="ln1364">          }</a>
+<a name="ln1365">          ofs &lt;&lt; setw(4) &lt;&lt; *it &lt;&lt; setw(4) &lt;&lt; 0;</a>
+<a name="ln1366">        }</a>
+<a name="ln1367">        ofs &lt;&lt; endl;</a>
+<a name="ln1368">      }</a>
+<a name="ln1369">      if(numberedRGroups.size()) {</a>
+<a name="ln1370">        int counter = 0;</a>
+<a name="ln1371">        for (zitr=numberedRGroups.begin(); zitr != numberedRGroups.end(); ++zitr, counter++) {</a>
+<a name="ln1372">          if (counter % 8 == 0) {</a>
+<a name="ln1373">            if (counter &gt; 0) ofs &lt;&lt; endl;</a>
+<a name="ln1374">            ofs &lt;&lt; &quot;M  RGP&quot; &lt;&lt; setw(3) &lt;&lt; min(static_cast&lt;unsigned long int&gt;(numberedRGroups.size() - counter), static_cast&lt;unsigned long int&gt;(8));</a>
+<a name="ln1375">          }</a>
+<a name="ln1376">          ofs &lt;&lt; setw(4) &lt;&lt; zitr-&gt;first &lt;&lt; setw(4) &lt;&lt; zitr-&gt;second;</a>
+<a name="ln1377">        }</a>
+<a name="ln1378">        ofs &lt;&lt; endl;</a>
+<a name="ln1379">      }</a>
+<a name="ln1380">    }</a>
+<a name="ln1381">    ofs &lt;&lt; &quot;M  END&quot; &lt;&lt; endl;</a>
+<a name="ln1382"> </a>
+<a name="ln1383">    //For SD files only, write properties unless option m</a>
+<a name="ln1384">    if(pConv-&gt;IsOption(&quot;sd&quot;) &amp;&amp; !pConv-&gt;IsOption(&quot;m&quot;))</a>
+<a name="ln1385">    {</a>
+<a name="ln1386">      if (pConv-&gt;IsOption(&quot;E&quot;))</a>
+<a name="ln1387">        GenerateAsciiDepiction(pmol);</a>
+<a name="ln1388"> </a>
+<a name="ln1389">      vector&lt;OBGenericData*&gt;::iterator k;</a>
+<a name="ln1390">      vector&lt;OBGenericData*&gt; vdata = mol.GetData();</a>
+<a name="ln1391">      for (k = vdata.begin();k != vdata.end();k++)</a>
+<a name="ln1392">      {</a>
+<a name="ln1393">        if ((*k)-&gt;GetDataType() == OBGenericDataType::PairData</a>
+<a name="ln1394">            &amp;&amp; (*k)-&gt;GetOrigin()!=local) //internal OBPairData is not written</a>
+<a name="ln1395">        {</a>
+<a name="ln1396">          HasProperties = true;</a>
+<a name="ln1397">          //Since partial charges are not output</a>
+<a name="ln1398">          //in this format, don't need the annotation</a>
+<a name="ln1399">          if((*k)-&gt;GetAttribute()!=&quot;PartialCharges&quot;)</a>
+<a name="ln1400">          {</a>
+<a name="ln1401">            ofs &lt;&lt; &quot;&gt;  &lt;&quot; &lt;&lt; (*k)-&gt;GetAttribute() &lt;&lt; &quot;&gt;&quot; &lt;&lt; endl;</a>
+<a name="ln1402">            ofs &lt;&lt; ((OBPairData*)(*k))-&gt;GetValue() &lt;&lt; endl &lt;&lt; endl;</a>
+<a name="ln1403">          }</a>
+<a name="ln1404">        }</a>
+<a name="ln1405">      }</a>
+<a name="ln1406">    }</a>
+<a name="ln1407"> </a>
+<a name="ln1408">    //Unless option no$$$$ is set, $$$$ is always written between molecules and</a>
+<a name="ln1409">    //at the end any if properties have been output in any molecule,</a>
+<a name="ln1410">    //or if the sd option is set.</a>
+<a name="ln1411">    if(!pConv-&gt;IsOption(&quot;no$$$$&quot;))</a>
+<a name="ln1412">      if(!pConv-&gt;IsLast()  || HasProperties  || pConv-&gt;IsOption(&quot;sd&quot;))</a>
+<a name="ln1413">        ofs &lt;&lt; &quot;$$$$&quot; &lt;&lt; endl;</a>
+<a name="ln1414"> </a>
+<a name="ln1415">    return(true);</a>
+<a name="ln1416">  }</a>
+<a name="ln1417"> </a>
+<a name="ln1418"> </a>
+<a name="ln1419">  //////////////////////////////////////////////////////</a>
+<a name="ln1420">  bool MDLFormat::ReadV3000Block(istream&amp; ifs, OBMol&amp; mol, OBConversion* pConv,bool DoMany)</a>
+<a name="ln1421">  {</a>
+<a name="ln1422">    bool ret = true;</a>
+<a name="ln1423">    do</a>
+<a name="ln1424">      {</a>
+<a name="ln1425">        if(!ReadV3000Line(ifs,vs)) return false;</a>
+<a name="ln1426">        if(vs[1]==&quot;END&quot;) return true;</a>
+<a name="ln1427">        if(vs[2]==&quot;LINKNODE&quot;){continue;} //not implemented</a>
+<a name="ln1428">        if(vs[2]!=&quot;BEGIN&quot;) return false;</a>
+<a name="ln1429"> </a>
+<a name="ln1430">        if(vs[3]==&quot;CTAB&quot;)</a>
+<a name="ln1431">          {</a>
+<a name="ln1432">            if(!ReadV3000Line(ifs,vs) || vs[2]!=&quot;COUNTS&quot;) return false;</a>
+<a name="ln1433">            int natoms = ReadUIntField(vs[3].c_str());</a>
+<a name="ln1434">            //int nbonds = ReadUIntField(vs[4].c_str());</a>
+<a name="ln1435">            //int chiral = ReadUIntField(vs[7].c_str());</a>
+<a name="ln1436">            //number of s groups, number of 3D constraints, chiral flag and regno not yet implemented</a>
+<a name="ln1437">            mol.ReserveAtoms(natoms);</a>
+<a name="ln1438"> </a>
+<a name="ln1439">            ReadV3000Block(ifs,mol,pConv,true);//go for contained blocks</a>
+<a name="ln1440">            if(vs[2]!=&quot;END&quot; &amp;&amp; vs[3]!=&quot;CTAB&quot;) return false;</a>
+<a name="ln1441">            ret= true;</a>
+<a name="ln1442">          }</a>
+<a name="ln1443">        else if(vs[3]==&quot;ATOM&quot;)</a>
+<a name="ln1444">          ret = ReadAtomBlock(ifs,mol,pConv);</a>
+<a name="ln1445">        else if(vs[3]==&quot;BOND&quot;)</a>
+<a name="ln1446">          ret = ReadBondBlock(ifs,mol,pConv);</a>
+<a name="ln1447">        //else if(vs[3]==&quot;COLLECTION&quot;)</a>
+<a name="ln1448">        //  ret = ReadCollectionBlock(ifs,mol,pConv);</a>
+<a name="ln1449">        else if(vs[3]==&quot;RGROUP&quot;)</a>
+<a name="ln1450">          ret = ReadRGroupBlock(ifs,mol,pConv);</a>
+<a name="ln1451">        else</a>
+<a name="ln1452">          ret =ReadUnimplementedBlock(ifs,mol,pConv,vs[3]);</a>
+<a name="ln1453">        /*</a>
+<a name="ln1454">          else if(vs[3]==&quot;3D&quot;)</a>
+<a name="ln1455">          //not currently implemented</a>
+<a name="ln1456">          else if(vs[3]==&quot;SGROUP&quot;)</a>
+<a name="ln1457">          //not currently implemented</a>
+<a name="ln1458">        */</a>
+<a name="ln1459">      }while(ret &amp;&amp; ifs.good());</a>
+<a name="ln1460">    //  if(is3D){mol.SetDimension(3);cout&lt;&lt;&quot;SetDim to 3&quot;&lt;&lt;endl;}</a>
+<a name="ln1461">    //  else if(is2D){mol.SetDimension(2);cout&lt;&lt;&quot;SetDim to 2&quot;&lt;&lt;endl;}</a>
+<a name="ln1462">    return true;</a>
+<a name="ln1463">  }</a>
+<a name="ln1464"> </a>
+<a name="ln1465">  //////////////////////////////////////////////////////</a>
+<a name="ln1466">  bool MDLFormat::ReadV3000Line(istream&amp; ifs, vector&lt;string&gt;&amp; vs)</a>
+<a name="ln1467">  {</a>
+<a name="ln1468">    char buffer[BUFF_SIZE];</a>
+<a name="ln1469">    if(!ifs.getline(buffer,BUFF_SIZE)) return false;</a>
+<a name="ln1470">    tokenize(vs,buffer,&quot; \t\n\r&quot;);</a>
+<a name="ln1471">    if (vs.size() &lt; 2) return false; // timvdm 18/06/2008</a>
+<a name="ln1472">    if(vs[0]!=&quot;M&quot; || (vs[1]!=&quot;V30&quot; &amp;&amp; vs[1]!=&quot;END&quot;)) return false;</a>
+<a name="ln1473"> </a>
+<a name="ln1474">    if(buffer[strlen(buffer)-1] == '-') //continuation char</a>
+<a name="ln1475">      {</a>
+<a name="ln1476">        //Read continuation line iteratively and add parsed tokens (without M V30) to vs</a>
+<a name="ln1477">        vector&lt;string&gt; vsx;</a>
+<a name="ln1478">        if(!ReadV3000Line(ifs,vsx)) return false;</a>
+<a name="ln1479">        vs.insert(vs.end(),vsx.begin()+3,vsx.end());</a>
+<a name="ln1480">      }</a>
+<a name="ln1481">    return true;</a>
+<a name="ln1482">  }</a>
+<a name="ln1483"> </a>
+<a name="ln1484">  //////////////////////////////////////////////////////</a>
+<a name="ln1485">  bool MDLFormat::ReadAtomBlock(istream&amp; ifs,OBMol&amp; mol, OBConversion* pConv)</a>
+<a name="ln1486">  {</a>
+<a name="ln1487">    OBAtom atom;</a>
+<a name="ln1488">    bool chiralWatch=false;</a>
+<a name="ln1489">    int obindex;</a>
+<a name="ln1490">    for(obindex=1;;obindex++)</a>
+<a name="ln1491">      {</a>
+<a name="ln1492">        if(!ReadV3000Line(ifs,vs)) return false;</a>
+<a name="ln1493">        if(vs[2]==&quot;END&quot;) break;</a>
+<a name="ln1494"> </a>
+<a name="ln1495">        indexmap[ReadUIntField(vs[2].c_str())] = obindex;</a>
+<a name="ln1496">        atom.SetVector(atof(vs[4].c_str()), atof(vs[5].c_str()), atof(vs[6].c_str()));</a>
+<a name="ln1497">        //      if(abs(atof(vs[6].c_str()))&gt;0)is3D=true;</a>
+<a name="ln1498">        //      if(abs(atof(vs[4].c_str()))&gt;0)is2D=true;</a>
+<a name="ln1499">        //      if(abs(atof(vs[5].c_str()))&gt;0)is2D=true;</a>
+<a name="ln1500">        char type[5];</a>
+<a name="ln1501">        strncpy(type,vs[3].c_str(),5);</a>
+<a name="ln1502">        type[4] = '\0'; // ensure it's always null-terminated</a>
+<a name="ln1503">        if(!strcmp(type, &quot;R#&quot;))</a>
+<a name="ln1504">          {</a>
+<a name="ln1505">          obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln1506">            &quot;A molecule contains an R group which are not currently implemented&quot;</a>
+<a name="ln1507">            , obWarning, onceOnly);</a>
+<a name="ln1508">          atom.SetAtomicNum(0);</a>
+<a name="ln1509">          }</a>
+<a name="ln1510">        else</a>
+<a name="ln1511">          {</a>
+<a name="ln1512">          SetAtomicNumAndIsotope(&amp;atom, type);</a>
+<a name="ln1513">          atom.SetType(type); //takes a char not a const char!</a>
+<a name="ln1514">          //mapping vs[7] not implemented</a>
+<a name="ln1515"> </a>
+<a name="ln1516">          //Atom properties</a>
+<a name="ln1517">          vector&lt;string&gt;::iterator itr;</a>
+<a name="ln1518">          for(itr=vs.begin()+8;itr!=vs.end();itr++)</a>
+<a name="ln1519">            {</a>
+<a name="ln1520">              string::size_type pos = (*itr).find('=');</a>
+<a name="ln1521">              if (pos==string::npos) return false;</a>
+<a name="ln1522">              int val = ReadIntField((*itr).substr(pos+1).c_str());</a>
+<a name="ln1523"> </a>
+<a name="ln1524">              if((*itr).substr(0,pos)==&quot;CHG&quot;)</a>
+<a name="ln1525">                {</a>
+<a name="ln1526">                  atom.SetFormalCharge(val);</a>
+<a name="ln1527">                }</a>
+<a name="ln1528">              else if((*itr).substr(0,pos)==&quot;RAD&quot;)</a>
+<a name="ln1529">                {</a>
+<a name="ln1530">                  atom.SetSpinMultiplicity(val);</a>
+<a name="ln1531">                }</a>
+<a name="ln1532">              else if((*itr).substr(0,pos)==&quot;CFG&quot;)</a>
+<a name="ln1533">                {</a>
+<a name="ln1534">                  //Stereo configuration: 0 none; 1 odd parity; 2 even parity; (3 either parity)</a>
+<a name="ln1535">                  //Reversed 12Aug05 as advised by Nick England</a>
+<a name="ln1536">                 /* @todo</a>
+<a name="ln1537">                  if(val==2) atom.SetAntiClockwiseStereo();</a>
+<a name="ln1538">                  else if(val==1) atom.SetClockwiseStereo();</a>
+<a name="ln1539">                  else if(val==3) atom.SetChiral();</a>
+<a name="ln1540">                  chiralWatch=true;</a>
+<a name="ln1541">                  */</a>
+<a name="ln1542">                }</a>
+<a name="ln1543">              else if((*itr).substr(0,pos)==&quot;MASS&quot;)</a>
+<a name="ln1544">                {</a>
+<a name="ln1545">                  if(val) atom.SetIsotope(val);</a>
+<a name="ln1546">                }</a>
+<a name="ln1547">              else if((*itr).substr(0,pos)==&quot;VAL&quot;)</a>
+<a name="ln1548">                {</a>
+<a name="ln1549">                  //@todo Abnormal valence: 0 normal;-1 zero</a>
+<a name="ln1550">                }</a>
+<a name="ln1551">              //Several query properties unimplemented</a>
+<a name="ln1552">              //Unknown properties ignored</a>
+<a name="ln1553">            }</a>
+<a name="ln1554">          }</a>
+<a name="ln1555">        if(!mol.AddAtom(atom)) return false;</a>
+<a name="ln1556">        atom.Clear();</a>
+<a name="ln1557">      }</a>
+<a name="ln1558">    return true;</a>
+<a name="ln1559">  }</a>
+<a name="ln1560"> </a>
+<a name="ln1561">  //////////////////////////////////////////////////////</a>
+<a name="ln1562">  bool MDLFormat::ReadBondBlock(istream&amp; ifs,OBMol&amp; mol, OBConversion* pConv)</a>
+<a name="ln1563">  {</a>
+<a name="ln1564">    for(;;)</a>
+<a name="ln1565">      {</a>
+<a name="ln1566">        if(!ReadV3000Line(ifs,vs)) return false;</a>
+<a name="ln1567">        if(vs[2]==&quot;END&quot;) break;</a>
+<a name="ln1568"> </a>
+<a name="ln1569">        unsigned flag=0;</a>
+<a name="ln1570"> </a>
+<a name="ln1571">        int order = ReadUIntField(vs[3].c_str());</a>
+<a name="ln1572">        if(order==4) order=5;</a>
+<a name="ln1573"> </a>
+<a name="ln1574">        int obstart = indexmap[ReadUIntField(vs[4].c_str())];</a>
+<a name="ln1575">        int obend = indexmap[ReadUIntField(vs[5].c_str())];</a>
+<a name="ln1576"> </a>
+<a name="ln1577">        vector&lt;string&gt;::iterator itr;</a>
+<a name="ln1578">        for(itr=vs.begin()+6;itr!=vs.end();itr++)</a>
+<a name="ln1579">          {</a>
+<a name="ln1580">            string::size_type pos = (*itr).find('=');</a>
+<a name="ln1581">            if (pos==string::npos) return false;</a>
+<a name="ln1582">            int val = ReadUIntField((*itr).substr(pos+1).c_str());</a>
+<a name="ln1583"> </a>
+<a name="ln1584">            if((*itr).substr(0,pos)==&quot;CFG&quot;)</a>
+<a name="ln1585">              {</a>
+<a name="ln1586">                //@todo Bond Configuration 2 or 3D??</a>
+<a name="ln1587">                if (val == 1)</a>
+<a name="ln1588">                  {</a>
+<a name="ln1589">                    flag |= OB_WEDGE_BOND;</a>
+<a name="ln1590">                  }</a>
+<a name="ln1591">                else if (val == 3)</a>
+<a name="ln1592">                  {</a>
+<a name="ln1593">                    flag |= OB_HASH_BOND;</a>
+<a name="ln1594">                  }</a>
+<a name="ln1595">              }</a>
+<a name="ln1596">          }</a>
+<a name="ln1597">        if (!mol.AddBond(obstart,obend,order,flag)) return false;</a>
+<a name="ln1598">      }</a>
+<a name="ln1599">    return true;</a>
+<a name="ln1600">  }</a>
+<a name="ln1601"> </a>
+<a name="ln1602">////////////////////////////////////////////////////////////</a>
+<a name="ln1603">  bool MDLFormat::ReadUnimplementedBlock(istream&amp; ifs,OBMol&amp; mol, OBConversion* pConv, string&amp; blockname)</a>
+<a name="ln1604">  {</a>
+<a name="ln1605">    //Not currently implemented</a>
+<a name="ln1606">    obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln1607">      blockname + &quot; blocks are not currently implemented and their contents are ignored.&quot;, obWarning, onceOnly);</a>
+<a name="ln1608">    for(;;)</a>
+<a name="ln1609">    {</a>
+<a name="ln1610">      if(!ReadV3000Line(ifs,vs))</a>
+<a name="ln1611">        return false;</a>
+<a name="ln1612">      if(vs[2]==&quot;END&quot;)</a>
+<a name="ln1613">        break;</a>
+<a name="ln1614">    }</a>
+<a name="ln1615">    return true;</a>
+<a name="ln1616">  }</a>
+<a name="ln1617"> </a>
+<a name="ln1618">////////////////////////////////////////////////////////////</a>
+<a name="ln1619">  bool MDLFormat::ReadRGroupBlock(istream&amp; ifs,OBMol&amp; mol, OBConversion* pConv)</a>
+<a name="ln1620">  {</a>
+<a name="ln1621">    //Not currently implemented</a>
+<a name="ln1622">    obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln1623">      &quot;RGROUP and RLOGIC blocks are not currently implemented and their contents are ignored.&quot;,</a>
+<a name="ln1624">      obWarning, onceOnly);</a>
+<a name="ln1625">    for(;;)</a>
+<a name="ln1626">    {</a>
+<a name="ln1627">      if(!ReadV3000Line(ifs,vs))</a>
+<a name="ln1628">        return false;</a>
+<a name="ln1629">      if(vs[2]==&quot;END&quot; &amp;&amp; vs[3]==&quot;RGROUP&quot;)</a>
+<a name="ln1630">        break;</a>
+<a name="ln1631">    }</a>
+<a name="ln1632">    return true;</a>
+<a name="ln1633">  }</a>
+<a name="ln1634"> </a>
+<a name="ln1635">  //////////////////////////////////////////////////////////</a>
+<a name="ln1636">  bool MDLFormat::WriteV3000(ostream&amp; ofs,OBMol&amp; mol, OBConversion* pConv)</a>
+<a name="ln1637">  {</a>
+<a name="ln1638">    bool chiralFlag = GetChiralFlagFromGenericData(mol);</a>
+<a name="ln1639"> </a>
+<a name="ln1640">    ofs &lt;&lt; &quot;  0  0  0     0  0            999 V3000&quot; &lt;&lt; endl; //line 4</a>
+<a name="ln1641">    ofs &lt;&lt; &quot;M  V30 BEGIN CTAB&quot; &lt;&lt;endl;</a>
+<a name="ln1642">    ofs &lt;&lt; &quot;M  V30 COUNTS &quot; &lt;&lt; mol.NumAtoms() &lt;&lt; &quot; &quot; &lt;&lt; mol.NumBonds()</a>
+<a name="ln1643">        &lt;&lt; &quot; 0 0 &quot; &lt;&lt; chiralFlag &lt;&lt; endl;</a>
+<a name="ln1644"> </a>
+<a name="ln1645">    ofs &lt;&lt; &quot;M  V30 BEGIN ATOM&quot; &lt;&lt;endl;</a>
+<a name="ln1646">    OBAtom *atom;</a>
+<a name="ln1647">    int index=1;</a>
+<a name="ln1648">    vector&lt;OBAtom*&gt;::iterator i;</a>
+<a name="ln1649">    for (atom = mol.BeginAtom(i);atom;atom = mol.NextAtom(i))</a>
+<a name="ln1650">      {</a>
+<a name="ln1651">        ofs     &lt;&lt; &quot;M  V30 &quot;</a>
+<a name="ln1652">                &lt;&lt; index++ &lt;&lt; &quot; &quot;</a>
+<a name="ln1653">                &lt;&lt; OBElements::GetSymbol(atom-&gt;GetAtomicNum()) &lt;&lt; &quot; &quot;</a>
+<a name="ln1654">                &lt;&lt; atom-&gt;GetX() &lt;&lt; &quot; &quot;</a>
+<a name="ln1655">                &lt;&lt; atom-&gt;GetY() &lt;&lt; &quot; &quot;</a>
+<a name="ln1656">                &lt;&lt; atom-&gt;GetZ()</a>
+<a name="ln1657">                &lt;&lt; &quot; 0&quot;;</a>
+<a name="ln1658">        if(atom-&gt;GetFormalCharge()!=0)</a>
+<a name="ln1659">          ofs &lt;&lt; &quot; CHG=&quot; &lt;&lt; atom-&gt;GetFormalCharge();</a>
+<a name="ln1660">        if(atom-&gt;GetSpinMultiplicity()!=0)</a>
+<a name="ln1661">          ofs &lt;&lt; &quot; RAD=&quot; &lt;&lt; atom-&gt;GetSpinMultiplicity();</a>
+<a name="ln1662">        if(atom-&gt;GetIsotope()!=0)</a>
+<a name="ln1663">          ofs &lt;&lt; &quot; MASS=&quot; &lt;&lt; atom-&gt;GetIsotope();</a>
+<a name="ln1664">        ofs &lt;&lt; endl;</a>
+<a name="ln1665">      }</a>
+<a name="ln1666">    ofs &lt;&lt; &quot;M  V30 END ATOM&quot; &lt;&lt;endl;</a>
+<a name="ln1667"> </a>
+<a name="ln1668">    ofs &lt;&lt; &quot;M  V30 BEGIN BOND&quot; &lt;&lt;endl;</a>
+<a name="ln1669">    //so the bonds come out sorted</a>
+<a name="ln1670">    index=1;</a>
+<a name="ln1671">    OBAtom *nbr;</a>
+<a name="ln1672">    OBBond *bond;</a>
+<a name="ln1673">    vector&lt;OBBond*&gt;::iterator j;</a>
+<a name="ln1674">    for (atom = mol.BeginAtom(i);atom;atom = mol.NextAtom(i))</a>
+<a name="ln1675">      {</a>
+<a name="ln1676">        for (nbr = atom-&gt;BeginNbrAtom(j);nbr;nbr = atom-&gt;NextNbrAtom(j))</a>
+<a name="ln1677">          {</a>
+<a name="ln1678">            if (atom-&gt;GetIdx() &lt; nbr-&gt;GetIdx())</a>
+<a name="ln1679">              {</a>
+<a name="ln1680">                bond = (OBBond*) *j;</a>
+<a name="ln1681">                ofs &lt;&lt; &quot;M  V30 &quot;</a>
+<a name="ln1682">                    &lt;&lt; index++ &lt;&lt; &quot; &quot;</a>
+<a name="ln1683">                    &lt;&lt; bond-&gt;GetBondOrder() &lt;&lt; &quot; &quot;</a>
+<a name="ln1684">                    &lt;&lt; bond-&gt;GetBeginAtomIdx() &lt;&lt; &quot; &quot;</a>
+<a name="ln1685">                    &lt;&lt; bond-&gt;GetEndAtomIdx();</a>
+<a name="ln1686">                //@todo do the following stereo chemistry properly</a>
+<a name="ln1687">                int cfg=0;</a>
+<a name="ln1688">                if(bond-&gt;IsWedge()) cfg=1;</a>
+<a name="ln1689">                if(bond-&gt;IsHash()) cfg=6;</a>
+<a name="ln1690">                if(bond-&gt;IsWedgeOrHash()) cfg=4;</a>
+<a name="ln1691">                if(cfg) ofs &lt;&lt; &quot; CFG=&quot; &lt;&lt; cfg;</a>
+<a name="ln1692">                ofs &lt;&lt; endl;</a>
+<a name="ln1693">              }</a>
+<a name="ln1694">          }</a>
+<a name="ln1695">      }</a>
+<a name="ln1696">    ofs &lt;&lt; &quot;M  V30 END BOND&quot; &lt;&lt;endl;</a>
+<a name="ln1697">    ofs &lt;&lt; &quot;M  V30 END CTAB&quot; &lt;&lt;endl;</a>
+<a name="ln1698">    return true;</a>
+<a name="ln1699">  }</a>
+<a name="ln1700"> </a>
+<a name="ln1701">  string MDLFormat::GetTimeDate()</a>
+<a name="ln1702">  {</a>
+<a name="ln1703">    char td[11];</a>
+<a name="ln1704">    //returns MMDDYYHHmm</a>
+<a name="ln1705">    struct tm* ts;</a>
+<a name="ln1706">    time_t long_time;</a>
+<a name="ln1707">    time( &amp;long_time );</a>
+<a name="ln1708">    ts = localtime( &amp;long_time );</a>
+<a name="ln1709">    snprintf(td, 11, &quot;%02d%02d%02d%02d%02d&quot;, ts-&gt;tm_mon+1, ts-&gt;tm_mday,</a>
+<a name="ln1710">             ((ts-&gt;tm_year&gt;=100)? ts-&gt;tm_year-100 : ts-&gt;tm_year),</a>
+<a name="ln1711">             ts-&gt;tm_hour, ts-&gt;tm_min);</a>
+<a name="ln1712">    return string(td);</a>
+<a name="ln1713">  }</a>
+<a name="ln1714"> </a>
+<a name="ln1715">  void MDLFormat::GetUpDown(OBMol&amp; mol, map&lt;OBBond*, OBStereo::BondDirection&gt; &amp;updown,</a>
+<a name="ln1716">                            set&lt;OBBond*&gt; &amp;stereodbl)</a>
+<a name="ln1717">  {</a>
+<a name="ln1718">    // Create a set of unvisited CT stereos</a>
+<a name="ln1719">    OBStereoFacade facade(&amp;mol);</a>
+<a name="ln1720">    std::set&lt;OBCisTransStereo*&gt; cistrans;</a>
+<a name="ln1721">    FOR_BONDBFS_OF_MOL(b, mol) // Probably no real advantage in the BFS part</a>
+<a name="ln1722">    {</a>
+<a name="ln1723">      if (b-&gt;GetBondOrder() != 2 || !facade.HasCisTransStereo(b-&gt;GetId())) continue;</a>
+<a name="ln1724">      OBCisTransStereo *ct = facade.GetCisTransStereo(b-&gt;GetId());</a>
+<a name="ln1725">      OBCisTransStereo::Config cfg = ct-&gt;GetConfig();</a>
+<a name="ln1726">      if (ct-&gt;GetConfig().specified)</a>
+<a name="ln1727">        cistrans.insert(ct);</a>
+<a name="ln1728">    }</a>
+<a name="ln1729"> </a>
+<a name="ln1730">    // Initialise two opposite configurations for up/downness</a>
+<a name="ln1731">    bool use_alt_config;</a>
+<a name="ln1732">    vector&lt;OBStereo::BondDirection&gt; config(4), alt_config(4);</a>
+<a name="ln1733">    config[0] = OBStereo::UpBond;   config[3] = config[0];</a>
+<a name="ln1734">    config[1] = OBStereo::DownBond; config[2] = config[1];</a>
+<a name="ln1735">    alt_config[0] = config[1]; alt_config[3] = alt_config[0];</a>
+<a name="ln1736">    alt_config[1] = config[0]; alt_config[2] = alt_config[1];</a>
+<a name="ln1737"> </a>
+<a name="ln1738">    // Initialize the stack</a>
+<a name="ln1739">    std::vector&lt;OBCisTransStereo *&gt; stack;</a>
+<a name="ln1740"> </a>
+<a name="ln1741">    // Keep looping until all CT stereos have been handled</a>
+<a name="ln1742">    while (cistrans.size() &gt; 0) {</a>
+<a name="ln1743">      stack.push_back( *(cistrans.begin()) );</a>
+<a name="ln1744"> </a>
+<a name="ln1745">      // This loop uses the stack to handle a conjugated dbl bond system</a>
+<a name="ln1746">      while (stack.size() &gt; 0) {</a>
+<a name="ln1747">        OBCisTransStereo *ct = stack.back();</a>
+<a name="ln1748">        stack.pop_back();</a>
+<a name="ln1749">        cistrans.erase(ct);</a>
+<a name="ln1750">        OBCisTransStereo::Config cfg = ct-&gt;GetConfig();</a>
+<a name="ln1751"> </a>
+<a name="ln1752">        // ****************** START OF HANDLING ONE DOUBLE BOND ******************************</a>
+<a name="ln1753">        std::vector&lt;OBBond *&gt; refbonds(4, nullptr);</a>
+<a name="ln1754">        if (cfg.refs[0] != OBStereo::ImplicitRef) // Could be a hydrogen</a>
+<a name="ln1755">          refbonds[0] = mol.GetBond(mol.GetAtomById(cfg.refs[0]), mol.GetAtomById(cfg.begin));</a>
+<a name="ln1756">        if (cfg.refs[1] != OBStereo::ImplicitRef) // Could be a hydrogen</a>
+<a name="ln1757">          refbonds[1] = mol.GetBond(mol.GetAtomById(cfg.refs[1]), mol.GetAtomById(cfg.begin));</a>
+<a name="ln1758"> </a>
+<a name="ln1759">        if (cfg.refs[2] != OBStereo::ImplicitRef) // Could be a hydrogen</a>
+<a name="ln1760">          refbonds[2] = mol.GetBond(mol.GetAtomById(cfg.refs[2]), mol.GetAtomById(cfg.end));</a>
+<a name="ln1761">        if (cfg.refs[3] != OBStereo::ImplicitRef) // Could be a hydrogen</a>
+<a name="ln1762">          refbonds[3] = mol.GetBond(mol.GetAtomById(cfg.refs[3]), mol.GetAtomById(cfg.end));</a>
+<a name="ln1763"> </a>
+<a name="ln1764">        // If any of the bonds have been previously set, now set them all</a>
+<a name="ln1765">        // in agreement</a>
+<a name="ln1766">        use_alt_config = false;</a>
+<a name="ln1767">        for (int i=0; i&lt;4; ++i)</a>
+<a name="ln1768">          if (updown.find(refbonds[i]) != updown.end()) // We have already set this one (conjugated bond)</a>
+<a name="ln1769">            if (updown[refbonds[i]] != config[i])</a>
+<a name="ln1770">            {</a>
+<a name="ln1771">              use_alt_config = true;</a>
+<a name="ln1772">              break;</a>
+<a name="ln1773">            }</a>
+<a name="ln1774"> </a>
+<a name="ln1775">        // Set the configuration</a>
+<a name="ln1776">        OBBond* dbl_bond = mol.GetBond(mol.GetAtomById(cfg.begin), mol.GetAtomById(cfg.end));</a>
+<a name="ln1777">        stereodbl.insert(dbl_bond);</a>
+<a name="ln1778">        for(int i=0;i&lt;4;i++)</a>
+<a name="ln1779">          if (refbonds[i] != nullptr)</a>
+<a name="ln1780">            updown[refbonds[i]] = use_alt_config ? alt_config[i] : config[i];</a>
+<a name="ln1781">        // ******************** END OF HANDLING ONE DOUBLE BOND ******************************</a>
+<a name="ln1782"> </a>
+<a name="ln1783">        // Find any conjugated CT stereos and put them on the stack</a>
+<a name="ln1784">        set&lt;OBCisTransStereo*&gt;::iterator ChiralSearch;</a>
+<a name="ln1785">        for (ChiralSearch = cistrans.begin(); ChiralSearch != cistrans.end(); ChiralSearch++)</a>
+<a name="ln1786">        {</a>
+<a name="ln1787">          // Are any of the refs of cfg on stereo double bonds?</a>
+<a name="ln1788">          OBCisTransStereo::Config cscfg = (*ChiralSearch)-&gt;GetConfig();</a>
+<a name="ln1789">          if (std::find(cfg.refs.begin(), cfg.refs.end(), cscfg.begin) != cfg.refs.end() ||</a>
+<a name="ln1790">              std::find(cfg.refs.begin(), cfg.refs.end(), cscfg.end)   != cfg.refs.end())</a>
+<a name="ln1791">          {</a>
+<a name="ln1792">            stack.push_back(*ChiralSearch);</a>
+<a name="ln1793">            //stack.insert(stack.begin(), *ChiralSearch);</a>
+<a name="ln1794">          }</a>
+<a name="ln1795">        }</a>
+<a name="ln1796"> </a>
+<a name="ln1797">      } // Loop over stack</a>
+<a name="ln1798">    } // Loop over remaining CT stereos</a>
+<a name="ln1799"> </a>
+<a name="ln1800">  }</a>
+<a name="ln1801"> </a>
+<a name="ln1802">  void MDLFormat::GetParity(OBMol&amp; mol, map&lt;OBAtom*, MDLFormat::Parity&gt; &amp;parity)</a>
+<a name="ln1803">  {</a>
+<a name="ln1804">    // This loop sets the atom parity for each tet center</a>
+<a name="ln1805">    std::vector&lt;OBGenericData*&gt; vdata = mol.GetAllData(OBGenericDataType::StereoData);</a>
+<a name="ln1806">    for (std::vector&lt;OBGenericData*&gt;::iterator data = vdata.begin(); data != vdata.end(); ++data)</a>
+<a name="ln1807">      if (((OBStereoBase*)*data)-&gt;GetType() == OBStereo::Tetrahedral) {</a>
+<a name="ln1808">        OBTetrahedralStereo *ts = dynamic_cast&lt;OBTetrahedralStereo*&gt;(*data);</a>
+<a name="ln1809"> </a>
+<a name="ln1810">        OBTetrahedralStereo::Config cfg = ts-&gt;GetConfig();</a>
+<a name="ln1811"> </a>
+<a name="ln1812">        Parity atomparity = Unknown;</a>
+<a name="ln1813">        if (cfg.specified &amp;&amp; cfg.winding != OBStereo::UnknownWinding) {</a>
+<a name="ln1814">          // If, when looking towards the maxref, the remaining refs increase in number</a>
+<a name="ln1815">          // clockwise, parity is 1 (Parity::Clockwise). Note that Implicit Refs and Hydrogens</a>
+<a name="ln1816">          // should be treated considered the maxref if present.</a>
+<a name="ln1817">          OBStereo::Refs refs = cfg.refs;</a>
+<a name="ln1818"> </a>
+<a name="ln1819">          unsigned long maxref = OBStereo::NoRef;</a>
+<a name="ln1820">          // Search for an explicit Hydrogen in the cfg refs...</a>
+<a name="ln1821">          if (cfg.from != OBStereo::ImplicitRef &amp;&amp; mol.GetAtomById(cfg.from)-&gt;GetAtomicNum() == OBElements::Hydrogen)</a>
+<a name="ln1822">            maxref = cfg.from;</a>
+<a name="ln1823">          else</a>
+<a name="ln1824">            for (OBStereo::RefIter ref_it = refs.begin(); ref_it != refs.end(); ++ref_it)</a>
+<a name="ln1825">              if ((*ref_it) != OBStereo::ImplicitRef &amp;&amp; mol.GetAtomById(*ref_it)-&gt;GetAtomicNum() == OBElements::Hydrogen)</a>
+<a name="ln1826">                maxref = *ref_it;</a>
+<a name="ln1827">          // ...otherwise, find the maximum ref (note that ImplicitRef will be max if present)</a>
+<a name="ln1828">          if (maxref == OBStereo::NoRef)</a>
+<a name="ln1829">            maxref = std::max(*(std::max_element(refs.begin(), refs.end())), cfg.from);</a>
+<a name="ln1830"> </a>
+<a name="ln1831">          // Get a new cfg and refs looking towards the maxref</a>
+<a name="ln1832">          cfg = ts-&gt;GetConfig(maxref, OBStereo::Clockwise, OBStereo::ViewTowards);</a>
+<a name="ln1833">          int inversions = OBStereo::NumInversions(cfg.refs);</a>
+<a name="ln1834"> </a>
+<a name="ln1835">          // If they were in increasing order, inversions would be 0 or some even value</a>
+<a name="ln1836">          if (inversions % 2 == 0)</a>
+<a name="ln1837">            atomparity = Clockwise;</a>
+<a name="ln1838">          else</a>
+<a name="ln1839">            atomparity = AntiClockwise;</a>
+<a name="ln1840">        }</a>
+<a name="ln1841">        parity[mol.GetAtomById(cfg.center)] = atomparity;</a>
+<a name="ln1842">      }</a>
+<a name="ln1843">  }</a>
+<a name="ln1844"> </a>
+<a name="ln1845">  void MDLFormat::TetStereoFromParity(OBMol&amp; mol, vector&lt;MDLFormat::Parity&gt; &amp;parity, bool deleteExisting)</a>
+<a name="ln1846">  {</a>
+<a name="ln1847">    if (deleteExisting) { // Remove any existing tet stereo</a>
+<a name="ln1848">      std::vector&lt;OBGenericData*&gt; vdata = mol.GetAllData(OBGenericDataType::StereoData);</a>
+<a name="ln1849">      for (std::vector&lt;OBGenericData*&gt;::iterator data = vdata.begin(); data != vdata.end(); ++data)</a>
+<a name="ln1850">        if (((OBStereoBase*)*data)-&gt;GetType() == OBStereo::Tetrahedral)</a>
+<a name="ln1851">          mol.DeleteData(*data);</a>
+<a name="ln1852">    }</a>
+<a name="ln1853"> </a>
+<a name="ln1854">    for (unsigned long i=0;i&lt;parity.size();i++) {</a>
+<a name="ln1855">      if (parity[i] == NotStereo)</a>
+<a name="ln1856">        continue;</a>
+<a name="ln1857"> </a>
+<a name="ln1858">      OBStereo::Refs refs;</a>
+<a name="ln1859">      unsigned long towards = OBStereo::ImplicitRef;</a>
+<a name="ln1860">      FOR_NBORS_OF_ATOM(nbr, mol.GetAtomById(i)) {</a>
+<a name="ln1861">        if (nbr-&gt;GetAtomicNum() != OBElements::Hydrogen)</a>
+<a name="ln1862">          refs.push_back(nbr-&gt;GetId());</a>
+<a name="ln1863">        else</a>
+<a name="ln1864">          towards = nbr-&gt;GetId(); // Look towards the H</a>
+<a name="ln1865">      }</a>
+<a name="ln1866"> </a>
+<a name="ln1867">      sort(refs.begin(), refs.end());</a>
+<a name="ln1868">      if (refs.size() == 4) { // No implicit ref or H present</a>
+<a name="ln1869">        towards = refs.back();</a>
+<a name="ln1870">        refs.pop_back();</a>
+<a name="ln1871">      }</a>
+<a name="ln1872"> </a>
+<a name="ln1873">      OBStereo::Winding winding = OBStereo::Clockwise;</a>
+<a name="ln1874">      if (parity[i] == AntiClockwise)</a>
+<a name="ln1875">        winding = OBStereo::AntiClockwise;</a>
+<a name="ln1876">      OBTetrahedralStereo::Config cfg = OBTetrahedralStereo::Config(i, towards, refs,</a>
+<a name="ln1877">                                                                    winding, OBStereo::ViewTowards);</a>
+<a name="ln1878">      if (parity[i] == Unknown)</a>
+<a name="ln1879">        cfg.specified = false;</a>
+<a name="ln1880"> </a>
+<a name="ln1881">      OBTetrahedralStereo *th = new OBTetrahedralStereo(&amp;mol);</a>
+<a name="ln1882">      th-&gt;SetConfig(cfg);</a>
+<a name="ln1883">      mol.SetData(th);</a>
+<a name="ln1884">    }</a>
+<a name="ln1885">  }</a>
+<a name="ln1886"> </a>
+<a name="ln1887">  int MDLFormat::ReadIntField(const char *s)</a>
+<a name="ln1888">  {</a>
+<a name="ln1889">    char *end;</a>
+<a name="ln1890">    if (s == nullptr) return 0;</a>
+<a name="ln1891">    int n = strtol(s, &amp;end, 10);</a>
+<a name="ln1892">    if (*end != '\0' &amp;&amp; *end != ' ') return 0;</a>
+<a name="ln1893">    return n;</a>
+<a name="ln1894">  }</a>
+<a name="ln1895"> </a>
+<a name="ln1896">  unsigned int MDLFormat::ReadUIntField(const char *s)</a>
+<a name="ln1897">  {</a>
+<a name="ln1898">    char *end;</a>
+<a name="ln1899">    if (s == nullptr) return 0;</a>
+<a name="ln1900">    int n = strtoul(s, &amp;end, 10);</a>
+<a name="ln1901">    if (*end != '\0' &amp;&amp; *end != ' ') return 0;</a>
+<a name="ln1902">    return n;</a>
+<a name="ln1903">  }</a>
+<a name="ln1904"> </a>
+<a name="ln1905">  bool MDLFormat::ReadPropertyLines(istream&amp; ifs, OBMol&amp; mol)</a>
+<a name="ln1906">  {</a>
+<a name="ln1907">    string line;</a>
+<a name="ln1908">    while (std::getline(ifs, line)) {</a>
+<a name="ln1909">      if (line.substr(0, 4) == &quot;$RXN&quot;)</a>
+<a name="ln1910">        return false; //Has read the first line of the next reaction in RXN format</a>
+<a name="ln1911"> </a>
+<a name="ln1912">      if (line.find(&quot;&lt;&quot;) != string::npos) {</a>
+<a name="ln1913">        size_t lt = line.find(&quot;&lt;&quot;)+1;</a>
+<a name="ln1914">        size_t rt = line.find_last_of(&quot;&gt;&quot;);</a>
+<a name="ln1915">        string attr = line.substr(lt, rt - lt);</a>
+<a name="ln1916"> </a>
+<a name="ln1917">        // sometimes we can hit more data than BUFF_SIZE, so we'll use a std::string</a>
+<a name="ln1918">        string buff;</a>
+<a name="ln1919">        while (std::getline(ifs, line)) {</a>
+<a name="ln1920">          Trim(line);</a>
+<a name="ln1921">          if (line.size()) {</a>
+<a name="ln1922">            buff.append(line);</a>
+<a name="ln1923">            buff += &quot;\n&quot;;</a>
+<a name="ln1924">          } else</a>
+<a name="ln1925">            break;</a>
+<a name="ln1926">        }</a>
+<a name="ln1927">        Trim(buff);</a>
+<a name="ln1928"> </a>
+<a name="ln1929">        OBPairData *dp = new OBPairData;</a>
+<a name="ln1930">        dp-&gt;SetAttribute(attr);</a>
+<a name="ln1931">        dp-&gt;SetValue(buff);</a>
+<a name="ln1932">        dp-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln1933">        mol.SetData(dp);</a>
+<a name="ln1934"> </a>
+<a name="ln1935">        if(!strcasecmp(attr.c_str(),&quot;NAME&quot;) &amp;&amp; *mol.GetTitle()=='\0')</a>
+<a name="ln1936">          mol.SetTitle(buff);</a>
+<a name="ln1937">      }</a>
+<a name="ln1938">      if (line.substr(0, 4) ==  &quot;$$$$&quot;)</a>
+<a name="ln1939">        break;</a>
+<a name="ln1940">      if (line.substr(0, 4) == &quot;$MOL&quot;)</a>
+<a name="ln1941">        break;</a>
+<a name="ln1942">    }</a>
+<a name="ln1943">    return true;</a>
+<a name="ln1944">  }</a>
+<a name="ln1945"> </a>
+<a name="ln1946">  bool MDLFormat::TestForAlias(const string&amp; symbol, OBAtom* at, vector&lt;pair&lt;AliasData*,OBAtom*&gt; &gt;&amp; aliases)</a>
+<a name="ln1947">  {</a>
+<a name="ln1948">  /*If symbol is R R' R'' R# R� R�� or Rn Rnn where n is an digit</a>
+<a name="ln1949">    the atom is added to the alias list and the atomic number set to zero. Returns false.</a>
+<a name="ln1950">    Otherwise, e.g Rh or Ru, returns true.</a>
+<a name="ln1951">  */</a>
+<a name="ln1952">    if(symbol.size()==1 || isdigit(symbol[1]) || symbol[1]=='\'' || symbol[1]=='\xa2' || symbol[1]=='#')</a>
+<a name="ln1953">    {</a>
+<a name="ln1954">      AliasData* ad = new AliasData();</a>
+<a name="ln1955">      ad-&gt;SetAlias(symbol);</a>
+<a name="ln1956">      ad-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln1957">      at-&gt;SetData(ad);</a>
+<a name="ln1958">      at-&gt;SetAtomicNum(0);</a>
+<a name="ln1959">      //The alias has now been added as a dummy atom with a AliasData object.</a>
+<a name="ln1960">      //Delay the chemical interpretation until the rest of the molecule has been built</a>
+<a name="ln1961">      aliases.push_back(make_pair(ad, at));</a>
+<a name="ln1962">      return false;</a>
+<a name="ln1963">    }</a>
+<a name="ln1964">    return true;</a>
+<a name="ln1965">  }</a>
+<a name="ln1966"> </a>
+<a name="ln1967">  void MDLFormat::CisTransFromUpDown(OBMol *mol, std::map&lt;OBBond*, OBStereo::BondDirection&gt; *updown)</a>
+<a name="ln1968">  {</a>
+<a name="ln1969">    // Create a vector of CisTransStereo objects for the molecule</a>
+<a name="ln1970"> </a>
+<a name="ln1971">    // Loop across the known cistrans bonds, updating them if necessary</a>
+<a name="ln1972">    std::vector&lt;OBGenericData*&gt;::iterator data;</a>
+<a name="ln1973">    std::vector&lt;OBGenericData*&gt; stereoData = mol-&gt;GetAllData(OBGenericDataType::StereoData);</a>
+<a name="ln1974">    for (data = stereoData.begin(); data != stereoData.end(); ++data) {</a>
+<a name="ln1975">      if (static_cast&lt;OBStereoBase*&gt;(*data)-&gt;GetType() != OBStereo::CisTrans)</a>
+<a name="ln1976">        continue;</a>
+<a name="ln1977"> </a>
+<a name="ln1978">      OBCisTransStereo *ct = dynamic_cast&lt;OBCisTransStereo*&gt;(*data);</a>
+<a name="ln1979">      OBCisTransStereo::Config cfg = ct-&gt;GetConfig();</a>
+<a name="ln1980">      OBAtom *a1 = mol-&gt;GetAtomById(cfg.begin);</a>
+<a name="ln1981">      OBAtom *a2 = mol-&gt;GetAtomById(cfg.end);</a>
+<a name="ln1982"> </a>
+<a name="ln1983">      OBBond* dbl_bond = mol-&gt;GetBond(a1, a2);</a>
+<a name="ln1984"> </a>
+<a name="ln1985">      // Get the bonds of neighbors of atom1 and atom2</a>
+<a name="ln1986">      OBBond *a1_b1 = nullptr, *a1_b2 = nullptr, *a2_b1 = nullptr, *a2_b2 = nullptr;</a>
+<a name="ln1987">      OBStereo::BondDirection a1_stereo, a2_stereo;</a>
+<a name="ln1988"> </a>
+<a name="ln1989">      FOR_BONDS_OF_ATOM(bi, a1) {</a>
+<a name="ln1990">        OBBond *b = &amp;(*bi);</a>
+<a name="ln1991">        if (b == dbl_bond) continue;  // skip the double bond we're working on</a>
+<a name="ln1992">        if (a1_b1 == nullptr &amp;&amp; updown-&gt;find(b) != updown-&gt;end())</a>
+<a name="ln1993">        {</a>
+<a name="ln1994">          a1_b1 = b;    // remember a stereo bond of Atom1</a>
+<a name="ln1995">          a1_stereo = (*updown)[b];</a>
+<a name="ln1996">        }</a>
+<a name="ln1997">        else</a>
+<a name="ln1998">          a1_b2 = b;    // remember a 2nd bond of Atom1</a>
+<a name="ln1999">      }</a>
+<a name="ln2000"> </a>
+<a name="ln2001">      FOR_BONDS_OF_ATOM(bi, a2) {</a>
+<a name="ln2002">        OBBond *b = &amp;(*bi);</a>
+<a name="ln2003">        if (b == dbl_bond) continue;</a>
+<a name="ln2004">        if (a2_b1 == nullptr &amp;&amp; updown-&gt;find(b) != updown-&gt;end())</a>
+<a name="ln2005">        {</a>
+<a name="ln2006">          a2_b1 = b;    // remember a stereo bond of Atom2</a>
+<a name="ln2007">          a2_stereo = (*updown)[b];</a>
+<a name="ln2008">        }</a>
+<a name="ln2009">        else</a>
+<a name="ln2010">          a2_b2 = b;    // remember a 2nd bond of Atom2</a>
+<a name="ln2011">      }</a>
+<a name="ln2012"> </a>
+<a name="ln2013">      if (a1_b1 == nullptr || a2_b1 == nullptr) continue; // No cis/trans</a>
+<a name="ln2014"> </a>
+<a name="ln2015">      cfg.specified = true;</a>
+<a name="ln2016"> </a>
+<a name="ln2017">      // a1_b2 and/or a2_b2 will be NULL if there are bonds to implicit hydrogens</a>
+<a name="ln2018">      unsigned int second = (a1_b2 == nullptr) ? OBStereo::ImplicitRef : a1_b2-&gt;GetNbrAtom(a1)-&gt;GetId();</a>
+<a name="ln2019">      unsigned int fourth = (a2_b2 == nullptr) ? OBStereo::ImplicitRef : a2_b2-&gt;GetNbrAtom(a2)-&gt;GetId();</a>
+<a name="ln2020"> </a>
+<a name="ln2021">      // If a1_stereo==a2_stereo, this means cis for a1_b1 and a2_b1.</a>
+<a name="ln2022">      if (a1_stereo == a2_stereo)</a>
+<a name="ln2023">        cfg.refs = OBStereo::MakeRefs(a1_b1-&gt;GetNbrAtom(a1)-&gt;GetId(), second,</a>
+<a name="ln2024">                                      fourth, a2_b1-&gt;GetNbrAtom(a2)-&gt;GetId());</a>
+<a name="ln2025">      else</a>
+<a name="ln2026">        cfg.refs = OBStereo::MakeRefs(a1_b1-&gt;GetNbrAtom(a1)-&gt;GetId(), second,</a>
+<a name="ln2027">                                      a2_b1-&gt;GetNbrAtom(a2)-&gt;GetId(), fourth);</a>
+<a name="ln2028">      if (a1_stereo == OBStereo::UnknownDir || a2_stereo == OBStereo::UnknownDir)</a>
+<a name="ln2029">        cfg.specified = false;</a>
+<a name="ln2030">      // FIXME:: Handle specified unknown stereo on the dbl bond itself</a>
+<a name="ln2031"> </a>
+<a name="ln2032">      ct-&gt;SetConfig(cfg);</a>
+<a name="ln2033">    }</a>
+<a name="ln2034">  }</a>
+<a name="ln2035"> </a>
+<a name="ln2036">}//namespace</a>
+
+</code></pre>
+<div class="balloon" rel="489"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'parity' variable was assigned the same value.</p></div>
+<div class="balloon" rel="569"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v796/" target="_blank">V796</a> It is possible that 'break' statement is missing in switch statement.</p></div>
+<div class="balloon" rel="1029"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v779/" target="_blank">V779</a> Unreachable code detected. It is possible that an error is present.</p></div>
+<div class="balloon" rel="1048"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v522/" target="_blank">V522</a> There might be dereferencing of a potential null pointer 'pmol'.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,473 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>moldenformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">//</a>
+<a name="ln2">// Molekel - Molecular Visualization Program</a>
+<a name="ln3">// Copyright (C) 2006, 2007 Swiss National Supercomputing Centre (CSCS)</a>
+<a name="ln4">// Some portions Copyright (C) 2009 Michael Banck</a>
+<a name="ln5">//</a>
+<a name="ln6">// This program is free software; you can redistribute it and/or</a>
+<a name="ln7">// modify it under the terms of the GNU General Public License</a>
+<a name="ln8">// as published by the Free Software Foundation; either version 2</a>
+<a name="ln9">// of the License, or (at your option) any later version.</a>
+<a name="ln10"> </a>
+<a name="ln11">// This program is distributed in the hope that it will be useful,</a>
+<a name="ln12">// but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln13">// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln14">// GNU General Public License for more details.</a>
+<a name="ln15">//</a>
+<a name="ln16">// You should have received a copy of the GNU General Public License</a>
+<a name="ln17">// along with this program; if not, write to the Free Software</a>
+<a name="ln18">// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,</a>
+<a name="ln19">// MA  02110-1301, USA.</a>
+<a name="ln20">//</a>
+<a name="ln21">// $Author$</a>
+<a name="ln22">// $Date$</a>
+<a name="ln23">// $Revision$</a>
+<a name="ln24">//</a>
+<a name="ln25"> </a>
+<a name="ln26">// STD</a>
+<a name="ln27">#include &lt;fstream&gt;</a>
+<a name="ln28">#include &lt;string&gt;</a>
+<a name="ln29">#include &lt;vector&gt;</a>
+<a name="ln30">#include &lt;sstream&gt;</a>
+<a name="ln31">#include &lt;cstring&gt;</a>
+<a name="ln32">#include &lt;cstdlib&gt;</a>
+<a name="ln33">// reference: http://www.cmbi.ru.nl/molden/molden_format.html</a>
+<a name="ln34"> </a>
+<a name="ln35">#include &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln36">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln37">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln38">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln39">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln40">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln41">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln42"> </a>
+<a name="ln43"> </a>
+<a name="ln44">#define BOHR_TO_ANGSTROM 0.529177249</a>
+<a name="ln45">#define ANGSTROM_TO_BOHR 1.889725989</a>
+<a name="ln46"> </a>
+<a name="ln47">using namespace std;</a>
+<a name="ln48"> </a>
+<a name="ln49">namespace OpenBabel</a>
+<a name="ln50">{</a>
+<a name="ln51"> </a>
+<a name="ln52">/// Molden input reader: reads atoms from [Atoms] section of Molden input file.</a>
+<a name="ln53">class OBMoldenFormat : public OpenBabel::OBMoleculeFormat</a>
+<a name="ln54">{</a>
+<a name="ln55">public:</a>
+<a name="ln56">    /// Constructor: register 'molden' format.</a>
+<a name="ln57">    OBMoldenFormat()</a>
+<a name="ln58">    {</a>
+<a name="ln59">        OBConversion::RegisterFormat( &quot;molden&quot;, this );</a>
+<a name="ln60">        OBConversion::RegisterFormat( &quot;mold&quot;, this );</a>
+<a name="ln61">        OBConversion::RegisterFormat( &quot;molf&quot;, this );</a>
+<a name="ln62">    }</a>
+<a name="ln63"> </a>
+<a name="ln64">    /// Return description.</a>
+<a name="ln65">    virtual const char* Description() //required</a>
+<a name="ln66">    {</a>
+<a name="ln67">        return</a>
+<a name="ln68">        &quot;Molden format\n&quot;</a>
+<a name="ln69">        &quot;Read Options e.g. -as\n&quot;</a>
+<a name="ln70">        &quot;  b no bonds\n&quot;</a>
+<a name="ln71">        &quot;  s no multiple bonds\n\n&quot;;</a>
+<a name="ln72">    }</a>
+<a name="ln73"> </a>
+<a name="ln74">    /// Return a specification url, not really a specification since</a>
+<a name="ln75">    /// I couldn't find it but close enough.</a>
+<a name="ln76">    virtual const char* SpecificationURL()</a>
+<a name="ln77">    {</a>
+<a name="ln78">        return &quot;http://www.cmbi.ru.nl/molden/molden_format.html&quot;;</a>
+<a name="ln79">    }</a>
+<a name="ln80"> </a>
+<a name="ln81">    /// Return MIME type, NULL in this case.</a>
+<a name="ln82">    virtual const char* GetMIMEType() { return nullptr; }</a>
+<a name="ln83"> </a>
+<a name="ln84">      /// Return read/write flag.</a>
+<a name="ln85">    virtual unsigned int Flags()</a>
+<a name="ln86">    {</a>
+<a name="ln87">        return READONEONLY | WRITEONEONLY ;</a>
+<a name="ln88">    };</a>
+<a name="ln89"> </a>
+<a name="ln90">    /// Skip to object: used for multi-object file formats.</a>
+<a name="ln91">    virtual int SkipObjects( int n, OpenBabel::OBConversion* pConv ) { return 0; }</a>
+<a name="ln92"> </a>
+<a name="ln93">    /// Read.</a>
+<a name="ln94">    virtual bool ReadMolecule( OpenBabel::OBBase* pOb, OpenBabel::OBConversion* pConv );</a>
+<a name="ln95"> </a>
+<a name="ln96">    /// Write.</a>
+<a name="ln97">    virtual bool WriteMolecule( OpenBabel::OBBase* , OpenBabel::OBConversion* );</a>
+<a name="ln98">};</a>
+<a name="ln99"> </a>
+<a name="ln100">//------------------------------------------------------------------------------</a>
+<a name="ln101"> </a>
+<a name="ln102">// Global variable used to register Molden format.</a>
+<a name="ln103">OBMoldenFormat moldenFormat__;</a>
+<a name="ln104"> </a>
+<a name="ln105">//------------------------------------------------------------------------------</a>
+<a name="ln106"> </a>
+<a name="ln107"> </a>
+<a name="ln108">//==============================================================================</a>
+<a name="ln109"> </a>
+<a name="ln110">//------------------------------------------------------------------------------</a>
+<a name="ln111">bool OBMoldenFormat::ReadMolecule( OBBase* pOb, OBConversion* pConv )</a>
+<a name="ln112">{</a>
+<a name="ln113">    OBMol* pmol = dynamic_cast&lt; OBMol* &gt;(pOb);</a>
+<a name="ln114">    if (pmol == nullptr) return false;</a>
+<a name="ln115"> </a>
+<a name="ln116">    istream&amp; ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln117"> </a>
+<a name="ln118">    //Vibrational data</a>
+<a name="ln119">    std::vector&lt; std::vector&lt; vector3 &gt; &gt; Lx;</a>
+<a name="ln120">    std::vector&lt;double&gt; Frequencies, Intensities;</a>
+<a name="ln121"> </a>
+<a name="ln122">    std::vector&lt; std::vector&lt; vector3 &gt; &gt; conformers; // multiple geometries</a>
+<a name="ln123">    std::vector&lt; std::vector&lt; vector3 &gt; &gt; forces;</a>
+<a name="ln124">    std::vector&lt;double&gt; energies;</a>
+<a name="ln125"> </a>
+<a name="ln126">    pmol-&gt;BeginModify();</a>
+<a name="ln127">    pmol-&gt;SetDimension( 3 );</a>
+<a name="ln128">    string lineBuffer;</a>
+<a name="ln129"> </a>
+<a name="ln130">    while( getline( ifs, lineBuffer ) )</a>
+<a name="ln131">      {</a>
+<a name="ln132">        if( lineBuffer.find( &quot;[Atoms]&quot; ) != string::npos ||</a>
+<a name="ln133">            lineBuffer.find( &quot;[ATOMS]&quot; ) != string::npos ) {</a>
+<a name="ln134">          unsigned int ecpLines = 0;</a>
+<a name="ln135">          double factor = 1.; // Angstrom</a>
+<a name="ln136">          if( lineBuffer.find( &quot;AU&quot; ) != string::npos ) factor = BOHR_TO_ANGSTROM; // Bohr</a>
+<a name="ln137">          while( getline( ifs, lineBuffer ) )</a>
+<a name="ln138">            {</a>
+<a name="ln139">              if( lineBuffer == &quot;&quot; ) continue;</a>
+<a name="ln140">              if( lineBuffer.find( &quot;[&quot; ) != string::npos ) break;</a>
+<a name="ln141">              istringstream is( lineBuffer );</a>
+<a name="ln142">              string atomName;</a>
+<a name="ln143">              int atomId;</a>
+<a name="ln144">              int atomicNumber;</a>
+<a name="ln145">              int valenceCharge;</a>
+<a name="ln146">              double x, y, z;</a>
+<a name="ln147">              is &gt;&gt; atomName &gt;&gt; atomId &gt;&gt; valenceCharge &gt;&gt; x &gt;&gt; y &gt;&gt; z;</a>
+<a name="ln148">              OBAtom* atom = pmol-&gt;NewAtom();</a>
+<a name="ln149">              if( !atom ) break;</a>
+<a name="ln150">              atomicNumber = OBElements::GetAtomicNum(atomName.c_str());</a>
+<a name="ln151">              atom-&gt;SetAtomicNum( atomicNumber );</a>
+<a name="ln152">              atom-&gt;SetVector( x * factor, y * factor, z * factor );</a>
+<a name="ln153">              if (atomicNumber-valenceCharge!=0){</a>
+<a name="ln154">                OBPairData* ecpData = new OBPairData();</a>
+<a name="ln155">                ecpData-&gt;SetAttribute(&quot;ecp&quot;);</a>
+<a name="ln156">                std::ostringstream os;</a>
+<a name="ln157">                os &lt;&lt; atomicNumber-valenceCharge;</a>
+<a name="ln158">                ecpData-&gt;SetValue(os.str());</a>
+<a name="ln159">                atom-&gt;SetData(ecpData);</a>
+<a name="ln160">                ++ecpLines;</a>
+<a name="ln161">              }</a>
+<a name="ln162">            }</a>
+<a name="ln163">          if (ecpLines!=0){</a>
+<a name="ln164">              cerr &lt;&lt; &quot;WARNING: element number given in 3rd column does not agree with element name on &quot; &lt;&lt; ecpLines &lt;&lt; &quot; lines.&quot; &lt;&lt; endl</a>
+<a name="ln165">                   &lt;&lt; &quot;         Difference between expected nuclear charge and given element number saved to atom property 'ecp'.&quot; &lt;&lt; endl;</a>
+<a name="ln166">          }</a>
+<a name="ln167">        } // &quot;[Atoms]&quot; || &quot;[ATOMS]&quot;</a>
+<a name="ln168">        if ( lineBuffer.find( &quot;[GEOMETRIES] (XYZ)&quot; ) != string::npos ) {</a>
+<a name="ln169">          while( getline( ifs, lineBuffer ) ) {</a>
+<a name="ln170">              if( lineBuffer == &quot;&quot; ) continue;</a>
+<a name="ln171">              if( lineBuffer.find( &quot;[&quot; ) != string::npos ) break;</a>
+<a name="ln172"> </a>
+<a name="ln173">              // should give us a number of atoms (i.e., this is an XYZ-format file)</a>
+<a name="ln174">              unsigned int natoms;</a>
+<a name="ln175">              bool createAtoms = false;</a>
+<a name="ln176"> </a>
+<a name="ln177">              if (sscanf(lineBuffer.c_str(), &quot;%d&quot;, &amp;natoms) == 0 || !natoms) {</a>
+<a name="ln178">                obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln179">                                      &quot;Problems reading an XYZ geometry: The first line must contain the number of atoms.&quot;, obWarning);</a>
+<a name="ln180">//                return(false);</a>
+<a name="ln181">              }</a>
+<a name="ln182">              if (pmol-&gt;NumAtoms() != 0 &amp;&amp; pmol-&gt;NumAtoms() != natoms) {</a>
+<a name="ln183">                obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln184">                                      &quot;Problems reading an XYZ geometry: The first line must contain the number of atoms.&quot;, obWarning);</a>
+<a name="ln185">//                return(false);</a>
+<a name="ln186">              } else if (pmol-&gt;NumAtoms() == 0) {</a>
+<a name="ln187">                createAtoms = true;</a>
+<a name="ln188">              }</a>
+<a name="ln189"> </a>
+<a name="ln190">              // next line should be the energy</a>
+<a name="ln191">              double energy;</a>
+<a name="ln192">              getline( ifs, lineBuffer );</a>
+<a name="ln193">              energy = atof(lineBuffer.c_str());</a>
+<a name="ln194">              if (fabs(energy) &lt; 1.0e-8 ) {</a>
+<a name="ln195">                obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln196">                                      &quot;Problems reading an XYZ geometry: The second line should contain the energy.&quot;, obWarning);</a>
+<a name="ln197">              }</a>
+<a name="ln198">              energies.push_back(energy);</a>
+<a name="ln199"> </a>
+<a name="ln200">              vector&lt;vector3&gt; coordinates;</a>
+<a name="ln201">              vector&lt;string&gt; vs;</a>
+<a name="ln202">              for (unsigned int a = 0; a &lt; natoms; ++a) {</a>
+<a name="ln203">                if (!getline(ifs, lineBuffer) )</a>
+<a name="ln204">                  break;</a>
+<a name="ln205">                tokenize(vs, lineBuffer);</a>
+<a name="ln206">                if (vs.size() != 4)</a>
+<a name="ln207">                  break;</a>
+<a name="ln208"> </a>
+<a name="ln209">                double x, y, z;</a>
+<a name="ln210">                x = atof(vs[1].c_str());</a>
+<a name="ln211">                y = atof(vs[2].c_str());</a>
+<a name="ln212">                z = atof(vs[3].c_str());</a>
+<a name="ln213">                vector3 point(x, y, z);</a>
+<a name="ln214">                coordinates.push_back(point);</a>
+<a name="ln215"> </a>
+<a name="ln216">                if (createAtoms) {</a>
+<a name="ln217">                  int atomicNum = OBElements::GetAtomicNum(vs[0].c_str());</a>
+<a name="ln218">                  //set atomic number, or '0' if the atom type is not recognized</a>
+<a name="ln219">                  if (atomicNum == 0) {</a>
+<a name="ln220">                    // Sometimes people call this an XYZ file, but it's actually Unichem</a>
+<a name="ln221">                    // i.e., the first column is the atomic number, not a symbol</a>
+<a name="ln222">                    // so we'll try to convert this to an element number</a>
+<a name="ln223">                    atomicNum = atoi(vs[0].c_str());</a>
+<a name="ln224">                  }</a>
+<a name="ln225"> </a>
+<a name="ln226">                  OBAtom* atom = pmol-&gt;NewAtom();</a>
+<a name="ln227">                  if( !atom ) break;</a>
+<a name="ln228">                  atom-&gt;SetAtomicNum( atomicNum );</a>
+<a name="ln229">                  atom-&gt;SetVector( x, y, z );</a>
+<a name="ln230">                } // end creating atoms</a>
+<a name="ln231"> </a>
+<a name="ln232">              } // end reading this set of coords</a>
+<a name="ln233">              conformers.push_back(coordinates);</a>
+<a name="ln234">          } // end GEOM block</a>
+<a name="ln235"> </a>
+<a name="ln236">        }</a>
+<a name="ln237"> </a>
+<a name="ln238">        if( lineBuffer.find( &quot;[FREQ]&quot; ) != string::npos ) {</a>
+<a name="ln239">          while( getline( ifs, lineBuffer ) )</a>
+<a name="ln240">            {</a>
+<a name="ln241">              if( lineBuffer == &quot;&quot; ) continue;</a>
+<a name="ln242">              if( lineBuffer.find( &quot;[&quot; ) != string::npos ) break;</a>
+<a name="ln243">              istringstream is( lineBuffer );</a>
+<a name="ln244">              double freq;</a>
+<a name="ln245">              is &gt;&gt; freq;</a>
+<a name="ln246">              Frequencies.push_back( freq );</a>
+<a name="ln247">            }</a>
+<a name="ln248">        } // &quot;[FREQ]&quot;</a>
+<a name="ln249">        if( lineBuffer.find( &quot;[INT]&quot; ) != string::npos ) {</a>
+<a name="ln250">          while( getline( ifs, lineBuffer ) )</a>
+<a name="ln251">            {</a>
+<a name="ln252">              if( lineBuffer == &quot;&quot; ) continue;</a>
+<a name="ln253">              if( lineBuffer.find( &quot;[&quot; ) != string::npos ) break;</a>
+<a name="ln254">              istringstream is( lineBuffer );</a>
+<a name="ln255">              double intens;</a>
+<a name="ln256">              is &gt;&gt; intens;</a>
+<a name="ln257">              Intensities.push_back( intens );</a>
+<a name="ln258">            }</a>
+<a name="ln259">        } // &quot;[INT]&quot;</a>
+<a name="ln260">        if( lineBuffer.find( &quot;[FR-COORD]&quot; ) != string::npos ) {</a>
+<a name="ln261">          if (pmol-&gt;NumAtoms() == 0) {</a>
+<a name="ln262">            // No atoms yet, probably there is no [ATOMS] section</a>
+<a name="ln263">            // in the file.</a>
+<a name="ln264">            while ( getline( ifs, lineBuffer ) )</a>
+<a name="ln265">              {</a>
+<a name="ln266">                if( lineBuffer == &quot;&quot; ) continue;</a>
+<a name="ln267">                if( lineBuffer.find( &quot;[&quot; ) != string::npos ) break;</a>
+<a name="ln268">                string atomName;</a>
+<a name="ln269">                double x, y, z;</a>
+<a name="ln270">                istringstream is( lineBuffer );</a>
+<a name="ln271">                is &gt;&gt; atomName &gt;&gt; x &gt;&gt; y &gt;&gt; z;</a>
+<a name="ln272">                OBAtom* atom = pmol-&gt;NewAtom();</a>
+<a name="ln273">                if( !atom ) break;</a>
+<a name="ln274">                atom-&gt;SetAtomicNum( OBElements::GetAtomicNum(atomName.c_str()));</a>
+<a name="ln275">                // Vibrational equilibrium geometry is mandated to be</a>
+<a name="ln276">                // in Bohr.</a>
+<a name="ln277">                atom-&gt;SetVector( x * BOHR_TO_ANGSTROM,</a>
+<a name="ln278">                                 y * BOHR_TO_ANGSTROM,</a>
+<a name="ln279">                                 z * BOHR_TO_ANGSTROM);</a>
+<a name="ln280">             }</a>
+<a name="ln281">           }</a>
+<a name="ln282">         } // &quot;[FR-COORD]&quot;</a>
+<a name="ln283">        if( lineBuffer.find( &quot;[FR-NORM-COORD]&quot; ) != string::npos ) {</a>
+<a name="ln284">          getline( ifs, lineBuffer );</a>
+<a name="ln285">          vector&lt;string&gt; vs;</a>
+<a name="ln286">          while( ifs &amp;&amp; lineBuffer.find( &quot;ibration&quot;) != string::npos )</a>
+<a name="ln287">            {</a>
+<a name="ln288">              vector&lt;vector3&gt; vib;</a>
+<a name="ln289">              getline( ifs, lineBuffer );</a>
+<a name="ln290">              tokenize(vs, lineBuffer);</a>
+<a name="ln291">              while( ifs &amp;&amp; vs.size() == 3)</a>
+<a name="ln292">                {</a>
+<a name="ln293">                  istringstream is( lineBuffer );</a>
+<a name="ln294">                  double x, y, z;</a>
+<a name="ln295">                  is &gt;&gt; x &gt;&gt; y &gt;&gt; z;</a>
+<a name="ln296">                  vib.push_back( vector3( x, y, z ) );</a>
+<a name="ln297">                  getline( ifs, lineBuffer );</a>
+<a name="ln298">                  tokenize(vs, lineBuffer);</a>
+<a name="ln299">                }</a>
+<a name="ln300">              Lx.push_back( vib );</a>
+<a name="ln301">           } // while</a>
+<a name="ln302">        } // &quot;[FR-NORM-COORD]&quot;</a>
+<a name="ln303">      } // while</a>
+<a name="ln304"> </a>
+<a name="ln305">    if ( pmol-&gt;NumAtoms() == 0 ) {</a>
+<a name="ln306">      pmol-&gt;EndModify();</a>
+<a name="ln307">      return false;</a>
+<a name="ln308">    }</a>
+<a name="ln309"> </a>
+<a name="ln310">    // Attach vibrational data, if there is any, to molecule</a>
+<a name="ln311">    if(Frequencies.size()&gt;0)</a>
+<a name="ln312">    {</a>
+<a name="ln313">      for (unsigned int i = 0; i &lt; Frequencies.size(); i++) {</a>
+<a name="ln314">        if (fabs(Frequencies[i]) &lt; 10.) {</a>
+<a name="ln315">          // skip translational and rotational modes</a>
+<a name="ln316">          Frequencies.erase( Frequencies.begin() + i );</a>
+<a name="ln317">          if (Intensities.size() &gt; i) Intensities.erase( Intensities.begin() + i );</a>
+<a name="ln318">          Lx.erase( Lx.begin() + i );</a>
+<a name="ln319">          i--;  // compensate for the vibration which just got cut out</a>
+<a name="ln320">        }</a>
+<a name="ln321">      }</a>
+<a name="ln322">      OBVibrationData* vd = new OBVibrationData;</a>
+<a name="ln323">      vd-&gt;SetData(Lx, Frequencies, Intensities);</a>
+<a name="ln324">      pmol-&gt;SetData(vd);</a>
+<a name="ln325">    }</a>
+<a name="ln326"> </a>
+<a name="ln327">    if (energies.size() &gt; 0)</a>
+<a name="ln328">      pmol-&gt;SetEnergies(energies);</a>
+<a name="ln329"> </a>
+<a name="ln330">    if (conformers.size() &gt; 0) {</a>
+<a name="ln331">      for (unsigned int i = 0; i &lt; conformers.size(); ++i) {</a>
+<a name="ln332">        double *confCoord = new double [3*pmol-&gt;NumAtoms()];</a>
+<a name="ln333">        vector&lt;vector3&gt; coordinates = conformers[i];</a>
+<a name="ln334">        if (coordinates.size() != pmol-&gt;NumAtoms())</a>
+<a name="ln335">          cerr &lt;&lt; &quot; Wrong number of coordinates! &quot; &lt;&lt; endl;</a>
+<a name="ln336">        for (unsigned int a = 0; a &lt; coordinates.size(); ++a) {</a>
+<a name="ln337">          confCoord[3*a] = coordinates[a].x();</a>
+<a name="ln338">          confCoord[3*a+1] = coordinates[a].y();</a>
+<a name="ln339">          confCoord[3*a+2] = coordinates[a].z();</a>
+<a name="ln340">        } // finished atoms</a>
+<a name="ln341">        pmol-&gt;AddConformer(confCoord);</a>
+<a name="ln342">      } // finished iteration through conformers</a>
+<a name="ln343">      pmol-&gt;SetConformer(pmol-&gt;NumConformers());</a>
+<a name="ln344">    }</a>
+<a name="ln345"> </a>
+<a name="ln346">    if( !pConv-&gt;IsOption( &quot;b&quot;, OBConversion::INOPTIONS ) ) pmol-&gt;ConnectTheDots();</a>
+<a name="ln347">    if (!pConv-&gt;IsOption( &quot;s&quot;, OBConversion::INOPTIONS )</a>
+<a name="ln348">        &amp;&amp; !pConv-&gt;IsOption( &quot;b&quot;, OBConversion::INOPTIONS ) )</a>
+<a name="ln349">    {</a>
+<a name="ln350">        pmol-&gt;PerceiveBondOrders();</a>
+<a name="ln351">    }</a>
+<a name="ln352">    pmol-&gt;EndModify();</a>
+<a name="ln353"> </a>
+<a name="ln354">    return true;</a>
+<a name="ln355">}</a>
+<a name="ln356"> </a>
+<a name="ln357">bool OBMoldenFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln358">{</a>
+<a name="ln359">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln360">    if (pmol == nullptr)</a>
+<a name="ln361">      return false;</a>
+<a name="ln362"> </a>
+<a name="ln363">    //Define some references so we can use the old parameter names</a>
+<a name="ln364">    ostream &amp;ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln365">    OBMol &amp;mol = *pmol;</a>
+<a name="ln366"> </a>
+<a name="ln367">    char buffer[BUFF_SIZE];</a>
+<a name="ln368">    int i = 1;</a>
+<a name="ln369"> </a>
+<a name="ln370">    ofs &lt;&lt; &quot;[Molden Format]&quot; &lt;&lt; endl;</a>
+<a name="ln371">    ofs &lt;&lt; &quot;[Atoms] Angs&quot; &lt;&lt; endl;</a>
+<a name="ln372"> </a>
+<a name="ln373">    FOR_ATOMS_OF_MOL(atom, mol)</a>
+<a name="ln374">      {</a>
+<a name="ln375">        snprintf(buffer, BUFF_SIZE, &quot;%2s%6d%3d%13.6f%13.6f%13.6f\n&quot;,</a>
+<a name="ln376">                OBElements::GetSymbol(atom-&gt;GetAtomicNum()),</a>
+<a name="ln377">		i++,</a>
+<a name="ln378">                atom-&gt;GetAtomicNum(),</a>
+<a name="ln379">                atom-&gt;GetX(),</a>
+<a name="ln380">                atom-&gt;GetY(),</a>
+<a name="ln381">                atom-&gt;GetZ());</a>
+<a name="ln382">        ofs &lt;&lt; buffer;</a>
+<a name="ln383">      }</a>
+<a name="ln384"> </a>
+<a name="ln385">    OBVibrationData *vib = (OBVibrationData *) mol.GetData(OBGenericDataType::VibrationData);</a>
+<a name="ln386">    if (vib &amp;&amp; vib-&gt;GetNumberOfFrequencies() &gt; 0) {</a>
+<a name="ln387">      ofs &lt;&lt; &quot;[FREQ]&quot; &lt;&lt; endl;</a>
+<a name="ln388">      vector&lt;double&gt; frequencies = vib-&gt;GetFrequencies();</a>
+<a name="ln389">      vector&lt;double&gt; intensities = vib-&gt;GetIntensities();</a>
+<a name="ln390">      for (unsigned int i = 0; i &lt; vib-&gt;GetNumberOfFrequencies(); i++) {</a>
+<a name="ln391">	snprintf(buffer, BUFF_SIZE, &quot;%10.4f\n&quot;, frequencies[i]);</a>
+<a name="ln392">        ofs &lt;&lt; buffer;</a>
+<a name="ln393">      }</a>
+<a name="ln394">      if (intensities.size() &gt; 0) {</a>
+<a name="ln395">        ofs &lt;&lt; &quot;[INT]&quot; &lt;&lt; endl;</a>
+<a name="ln396">	for (unsigned int i = 0; i &lt; vib-&gt;GetNumberOfFrequencies(); i++) {</a>
+<a name="ln397">	  snprintf(buffer, BUFF_SIZE, &quot;%10.4f\n&quot;, intensities[i]);</a>
+<a name="ln398">	  ofs &lt;&lt; buffer;</a>
+<a name="ln399">        }</a>
+<a name="ln400">      }</a>
+<a name="ln401">      ofs &lt;&lt; &quot;[FR-COORD]&quot; &lt;&lt; endl;</a>
+<a name="ln402">      FOR_ATOMS_OF_MOL(atom, mol)</a>
+<a name="ln403">        {</a>
+<a name="ln404">          snprintf(buffer, BUFF_SIZE, &quot;%2s%13.6f%13.6f%13.6f\n&quot;,</a>
+<a name="ln405">                  OBElements::GetSymbol(atom-&gt;GetAtomicNum()),</a>
+<a name="ln406">                  atom-&gt;GetX()*ANGSTROM_TO_BOHR,</a>
+<a name="ln407">                  atom-&gt;GetY()*ANGSTROM_TO_BOHR,</a>
+<a name="ln408">                  atom-&gt;GetZ()*ANGSTROM_TO_BOHR);</a>
+<a name="ln409">          ofs &lt;&lt; buffer;</a>
+<a name="ln410">        }</a>
+<a name="ln411">      ofs &lt;&lt; &quot;[FR-NORM-COORD]&quot; &lt;&lt; endl;</a>
+<a name="ln412">      for (unsigned int mode = 0; mode &lt; vib-&gt;GetNumberOfFrequencies(); mode++) {</a>
+<a name="ln413">	snprintf(buffer, BUFF_SIZE, &quot;vibration%6d\n&quot;, mode+1);</a>
+<a name="ln414">	ofs &lt;&lt; buffer;</a>
+<a name="ln415">        vector&lt;vector3&gt; lx = vib-&gt;GetLx()[mode];</a>
+<a name="ln416">	for (unsigned int i = 0; i &lt; mol.NumAtoms(); i++) {</a>
+<a name="ln417">	  vector3 disp = lx[i];</a>
+<a name="ln418">	  snprintf(buffer, BUFF_SIZE, &quot;%12.6f%13.6f%13.6f\n&quot;,</a>
+<a name="ln419">		  disp[0], disp[1], disp[2]);</a>
+<a name="ln420">	  ofs &lt;&lt; buffer;</a>
+<a name="ln421">	}</a>
+<a name="ln422">      }</a>
+<a name="ln423">    } // vib</a>
+<a name="ln424">    return(true);</a>
+<a name="ln425">}</a>
+<a name="ln426"> </a>
+<a name="ln427">}</a>
+
+</code></pre>
+<div class="balloon" rel="177"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v576/" target="_blank">V576</a> Incorrect format. Consider checking the third actual argument of the 'sscanf' function. A pointer to the signed int type is expected.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

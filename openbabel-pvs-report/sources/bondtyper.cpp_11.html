@@ -1,0 +1,346 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>bondtyper.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">bondtyper.cpp - Bond typer to perceive connectivity and bond orders/types.</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 2003-2006 by Geoffrey R. Hutchison</a>
+<a name="ln5"> </a>
+<a name="ln6">This file is part of the Open Babel project.</a>
+<a name="ln7">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln10">it under the terms of the GNU General Public License as published by</a>
+<a name="ln11">the Free Software Foundation version 2 of the License.</a>
+<a name="ln12"> </a>
+<a name="ln13">This program is distributed in the hope that it will be useful,</a>
+<a name="ln14">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln15">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln16">GNU General Public License for more details.</a>
+<a name="ln17">***********************************************************************/</a>
+<a name="ln18">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln19">#include &lt;cstdlib&gt;</a>
+<a name="ln20">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/oberror.h&gt;</a>
+<a name="ln24">#include &lt;openbabel/bondtyper.h&gt;</a>
+<a name="ln25">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln26"> </a>
+<a name="ln27">// data header with default parameters</a>
+<a name="ln28">#include &quot;bondtyp.h&quot;</a>
+<a name="ln29"> </a>
+<a name="ln30">using namespace std;</a>
+<a name="ln31"> </a>
+<a name="ln32">namespace OpenBabel</a>
+<a name="ln33">{</a>
+<a name="ln34">  extern OBMessageHandler obErrorLog;</a>
+<a name="ln35"> </a>
+<a name="ln36"> </a>
+<a name="ln37">  //! Global OBBondTyper for perception of bond order assignment.</a>
+<a name="ln38">#if __cplusplus &gt;= 201103L</a>
+<a name="ln39">  thread_local //this is required for correct multi-threading</a>
+<a name="ln40">#endif</a>
+<a name="ln41">	OBBondTyper  bondtyper;</a>
+<a name="ln42"> </a>
+<a name="ln43">  /*! \class OBBondTyper bondtyper.h &lt;openbabel/bondtyper.cpp&gt;</a>
+<a name="ln44">    \brief Assigns bond types for file formats without bond information</a>
+<a name="ln45"> </a>
+<a name="ln46">    The OBBondTyper class is designed to read in a list of bond typing</a>
+<a name="ln47">    rules and apply them to molecules. It is called from the</a>
+<a name="ln48">    OBMol::PerceiveBondOrders() method.</a>
+<a name="ln49">  */</a>
+<a name="ln50">  OBBondTyper::OBBondTyper()</a>
+<a name="ln51">  {</a>
+<a name="ln52">    _init = false;</a>
+<a name="ln53">    _dir = BABEL_DATADIR;</a>
+<a name="ln54">    _envvar = &quot;BABEL_DATADIR&quot;;</a>
+<a name="ln55">    _filename = &quot;bondtyp.txt&quot;;</a>
+<a name="ln56">    _subdir = &quot;data&quot;;</a>
+<a name="ln57">    _dataptr = BondTypeData;</a>
+<a name="ln58">  }</a>
+<a name="ln59"> </a>
+<a name="ln60">  void OBBondTyper::ParseLine(const char *buffer)</a>
+<a name="ln61">  {</a>
+<a name="ln62">    vector&lt;string&gt; vs;</a>
+<a name="ln63">    vector&lt;int&gt;    bovector;</a>
+<a name="ln64">    OBSmartsPattern *sp;</a>
+<a name="ln65"> </a>
+<a name="ln66">    if (buffer[0] != '#')</a>
+<a name="ln67">      {</a>
+<a name="ln68">        tokenize(vs,buffer);</a>
+<a name="ln69">        // Make sure we actually have a SMARTS pattern plus at least one triple</a>
+<a name="ln70">        // and make sure we have the correct number of integers</a>
+<a name="ln71">        if (vs.size() &lt; 4)</a>
+<a name="ln72">          return; // just ignore empty (or short lines)</a>
+<a name="ln73">        else if (vs.size() &gt;= 4 &amp;&amp; (vs.size() % 3 != 1))</a>
+<a name="ln74">          {</a>
+<a name="ln75">            stringstream errorMsg;</a>
+<a name="ln76">            errorMsg &lt;&lt; &quot; Error in OBBondTyper. Pattern is incorrect, found &quot;</a>
+<a name="ln77">                     &lt;&lt; vs.size() &lt;&lt; &quot; tokens.&quot; &lt;&lt; endl;</a>
+<a name="ln78">            errorMsg &lt;&lt; &quot; Buffer is: &quot; &lt;&lt; buffer &lt;&lt; endl;</a>
+<a name="ln79">            obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obInfo);</a>
+<a name="ln80">            return;</a>
+<a name="ln81">          }</a>
+<a name="ln82"> </a>
+<a name="ln83">        sp = new OBSmartsPattern;</a>
+<a name="ln84">        if (sp-&gt;Init(vs[0]))</a>
+<a name="ln85">          {</a>
+<a name="ln86">            for (unsigned int i = 1; i &lt; vs.size() ; ++i)</a>
+<a name="ln87">              {</a>
+<a name="ln88">                bovector.push_back( atoi((char *)vs[i].c_str()) );</a>
+<a name="ln89">              }</a>
+<a name="ln90">            _fgbonds.push_back(pair&lt;OBSmartsPattern*,vector&lt;int&gt; &gt;</a>
+<a name="ln91">                               (sp, bovector));</a>
+<a name="ln92">          }</a>
+<a name="ln93">        else</a>
+<a name="ln94">          {</a>
+<a name="ln95">            delete sp;</a>
+<a name="ln96">            sp = nullptr;</a>
+<a name="ln97">          }</a>
+<a name="ln98">      }</a>
+<a name="ln99">  }</a>
+<a name="ln100"> </a>
+<a name="ln101">  OBBondTyper::~OBBondTyper()</a>
+<a name="ln102">  {</a>
+<a name="ln103">    vector&lt;pair&lt;OBSmartsPattern*, vector&lt;int&gt; &gt; &gt;::iterator i;</a>
+<a name="ln104">    for (i = _fgbonds.begin();i != _fgbonds.end();++i)</a>
+<a name="ln105">      {</a>
+<a name="ln106">        delete i-&gt;first;</a>
+<a name="ln107">        i-&gt;first = nullptr;</a>
+<a name="ln108">      }</a>
+<a name="ln109">  }</a>
+<a name="ln110"> </a>
+<a name="ln111">  void OBBondTyper::AssignFunctionalGroupBonds(OBMol &amp;mol)</a>
+<a name="ln112">  {</a>
+<a name="ln113">    if (!_init)</a>
+<a name="ln114">      Init();</a>
+<a name="ln115"> </a>
+<a name="ln116">    OBSmartsPattern *currentPattern;</a>
+<a name="ln117">    OBBond *b1, *b2;</a>
+<a name="ln118">    OBAtom *a1,*a2, *a3;</a>
+<a name="ln119">    double angle, dist1, dist2;</a>
+<a name="ln120">    vector&lt;int&gt; assignments;</a>
+<a name="ln121">    vector&lt;vector&lt;int&gt; &gt; mlist;</a>
+<a name="ln122">    vector&lt;vector&lt;int&gt; &gt;::iterator matches, l;</a>
+<a name="ln123">    vector&lt;pair&lt;OBSmartsPattern*, vector&lt;int&gt; &gt; &gt;::iterator i;</a>
+<a name="ln124">    unsigned int j;</a>
+<a name="ln125"> </a>
+<a name="ln126">    // Loop through for all the functional groups and assign bond orders</a>
+<a name="ln127">    for (i = _fgbonds.begin();i != _fgbonds.end();++i)</a>
+<a name="ln128">      {</a>
+<a name="ln129">        currentPattern = i-&gt;first;</a>
+<a name="ln130">        assignments = i-&gt;second;</a>
+<a name="ln131"> </a>
+<a name="ln132">        if (currentPattern &amp;&amp; currentPattern-&gt;Match(mol))</a>
+<a name="ln133">          {</a>
+<a name="ln134">            mlist = currentPattern-&gt;GetUMapList();</a>
+<a name="ln135">            for (matches = mlist.begin(); matches != mlist.end(); ++matches)</a>
+<a name="ln136">              {</a>
+<a name="ln137">                // Now loop through the bonds to assign from _fgbonds</a>
+<a name="ln138">                for (j = 0; j &lt; assignments.size(); j += 3)</a>
+<a name="ln139">                  {</a>
+<a name="ln140">                    // along the assignments vector: atomID1 atomID2 bondOrder</a>
+<a name="ln141">                    a1 = mol.GetAtom((*matches)[ assignments[j] ]);</a>
+<a name="ln142">                    a2 = mol.GetAtom((*matches)[ assignments[j+1 ] ]);</a>
+<a name="ln143">                    if (!a1 || !a2) continue;</a>
+<a name="ln144"> </a>
+<a name="ln145">                    b1 = a1-&gt;GetBond(a2);</a>
+<a name="ln146"> </a>
+<a name="ln147">                    if (!b1) continue;</a>
+<a name="ln148">                    b1-&gt;SetBondOrder(assignments[j+2]);</a>
+<a name="ln149">                  } // bond order assignments</a>
+<a name="ln150">              } // each match</a>
+<a name="ln151">          } // current pattern matches</a>
+<a name="ln152"> </a>
+<a name="ln153">      } // for(functional groups)</a>
+<a name="ln154"> </a>
+<a name="ln155">    // FG with distance and/or bond criteria</a>
+<a name="ln156">    // Carbonyl oxygen C=O (O must be neutral)</a>
+<a name="ln157">    OBSmartsPattern carbo; carbo.Init(&quot;[#8D1;!-][#6](*)(*)&quot;);</a>
+<a name="ln158"> </a>
+<a name="ln159">    if (carbo.Match(mol))</a>
+<a name="ln160">      {</a>
+<a name="ln161">        mlist = carbo.GetUMapList();</a>
+<a name="ln162">        for (l = mlist.begin(); l != mlist.end(); ++l)</a>
+<a name="ln163">          {</a>
+<a name="ln164">            a1 = mol.GetAtom((*l)[0]);</a>
+<a name="ln165">            a2 = mol.GetAtom((*l)[1]);</a>
+<a name="ln166"> </a>
+<a name="ln167">            angle = a2-&gt;AverageBondAngle();</a>
+<a name="ln168">            dist1 = a1-&gt;GetDistance(a2);</a>
+<a name="ln169"> </a>
+<a name="ln170">            // carbonyl geometries ?</a>
+<a name="ln171">            if (angle &gt; 115 &amp;&amp; angle &lt; 150 &amp;&amp; dist1 &lt; 1.28) {</a>
+<a name="ln172"> </a>
+<a name="ln173">              if ( !a1-&gt;HasDoubleBond() ) {// no double bond already assigned</a>
+<a name="ln174">                b1 = a1-&gt;GetBond(a2);</a>
+<a name="ln175"> </a>
+<a name="ln176">                if (!b1 ) continue;</a>
+<a name="ln177">                b1-&gt;SetBondOrder(2);</a>
+<a name="ln178">              }</a>
+<a name="ln179">            }</a>
+<a name="ln180">          }</a>
+<a name="ln181">      } // Carbonyl oxygen</a>
+<a name="ln182"> </a>
+<a name="ln183">    // thione C=S</a>
+<a name="ln184">    OBSmartsPattern thione; thione.Init(&quot;[#16D1][#6](*)(*)&quot;);</a>
+<a name="ln185"> </a>
+<a name="ln186">    if (thione.Match(mol))</a>
+<a name="ln187">      {</a>
+<a name="ln188">        mlist = thione.GetUMapList();</a>
+<a name="ln189">        for (l = mlist.begin(); l != mlist.end(); ++l)</a>
+<a name="ln190">          {</a>
+<a name="ln191">            a1 = mol.GetAtom((*l)[0]);</a>
+<a name="ln192">            a2 = mol.GetAtom((*l)[1]);</a>
+<a name="ln193"> </a>
+<a name="ln194">            angle = a2-&gt;AverageBondAngle();</a>
+<a name="ln195">            dist1 = a1-&gt;GetDistance(a2);</a>
+<a name="ln196"> </a>
+<a name="ln197">            // thione geometries ?</a>
+<a name="ln198">            if (angle &gt; 115 &amp;&amp; angle &lt; 150 &amp;&amp; dist1 &lt; 1.72) {</a>
+<a name="ln199"> </a>
+<a name="ln200">              if ( !a1-&gt;HasDoubleBond() ) {// no double bond already assigned</a>
+<a name="ln201">                b1 = a1-&gt;GetBond(a2);</a>
+<a name="ln202"> </a>
+<a name="ln203">                if (!b1 ) continue;</a>
+<a name="ln204">                b1-&gt;SetBondOrder(2);</a>
+<a name="ln205">              }</a>
+<a name="ln206">            }</a>
+<a name="ln207">          }</a>
+<a name="ln208">      } // thione</a>
+<a name="ln209"> </a>
+<a name="ln210">    // Isocyanate N=C=O or Isothiocyanate</a>
+<a name="ln211">    bool dist1OK;</a>
+<a name="ln212">    OBSmartsPattern isocyanate; isocyanate.Init(&quot;[#8,#16;D1][#6D2][#7D2]&quot;);</a>
+<a name="ln213">    if (isocyanate.Match(mol))</a>
+<a name="ln214">      {</a>
+<a name="ln215">        mlist = isocyanate.GetUMapList();</a>
+<a name="ln216">        for (l = mlist.begin(); l != mlist.end(); ++l)</a>
+<a name="ln217">          {</a>
+<a name="ln218">            a1 = mol.GetAtom((*l)[0]);</a>
+<a name="ln219">            a2 = mol.GetAtom((*l)[1]);</a>
+<a name="ln220">            a3 = mol.GetAtom((*l)[2]);</a>
+<a name="ln221"> </a>
+<a name="ln222">            angle = a2-&gt;AverageBondAngle();</a>
+<a name="ln223">            dist1 = a1-&gt;GetDistance(a2);</a>
+<a name="ln224">            dist2 = a2-&gt;GetDistance(a3);</a>
+<a name="ln225"> </a>
+<a name="ln226">            // isocyanate geometry or Isothiocyanate geometry ?</a>
+<a name="ln227">            if (a1-&gt;GetAtomicNum() == OBElements::Oxygen)</a>
+<a name="ln228">              dist1OK =  dist1 &lt; 1.28;</a>
+<a name="ln229">            else</a>
+<a name="ln230">              dist1OK =  dist1 &lt; 1.72;</a>
+<a name="ln231"> </a>
+<a name="ln232">            if (angle &gt; 150 &amp;&amp; dist1OK &amp;&amp; dist2 &lt; 1.34) {</a>
+<a name="ln233"> </a>
+<a name="ln234">              b1 = a1-&gt;GetBond(a2);</a>
+<a name="ln235">              b2 = a2-&gt;GetBond(a3);</a>
+<a name="ln236">              if (!b1 || !b2) continue;</a>
+<a name="ln237">              b1-&gt;SetBondOrder(2);</a>
+<a name="ln238">              b2-&gt;SetBondOrder(2);</a>
+<a name="ln239"> </a>
+<a name="ln240">            }</a>
+<a name="ln241"> </a>
+<a name="ln242">          }</a>
+<a name="ln243">      } // Isocyanate</a>
+<a name="ln244"> </a>
+<a name="ln245">    // oxime C=S</a>
+<a name="ln246">    OBSmartsPattern oxime; oxime.Init(&quot;[#6D3][#7D2][#8D2]&quot;);</a>
+<a name="ln247"> </a>
+<a name="ln248">    if (oxime.Match(mol))</a>
+<a name="ln249">      {</a>
+<a name="ln250">        mlist = oxime.GetUMapList();</a>
+<a name="ln251">        for (l = mlist.begin(); l != mlist.end(); ++l)</a>
+<a name="ln252">          {</a>
+<a name="ln253">            a1 = mol.GetAtom((*l)[0]);</a>
+<a name="ln254">            a2 = mol.GetAtom((*l)[1]);</a>
+<a name="ln255"> </a>
+<a name="ln256">            angle = a2-&gt;AverageBondAngle();</a>
+<a name="ln257">            dist1 = a1-&gt;GetDistance(a2);</a>
+<a name="ln258"> </a>
+<a name="ln259">            // thione geometries ?</a>
+<a name="ln260">            if (angle &gt; 110 &amp;&amp; angle &lt; 150 &amp;&amp; dist1 &lt; 1.4) {</a>
+<a name="ln261"> </a>
+<a name="ln262">              if ( !a1-&gt;HasDoubleBond() ) {// no double bond already assigned</a>
+<a name="ln263">                b1 = a1-&gt;GetBond(a2);</a>
+<a name="ln264"> </a>
+<a name="ln265">                if (!b1 ) continue;</a>
+<a name="ln266">                b1-&gt;SetBondOrder(2);</a>
+<a name="ln267">              }</a>
+<a name="ln268">            }</a>
+<a name="ln269">          }</a>
+<a name="ln270">      } // oxime</a>
+<a name="ln271"> </a>
+<a name="ln272">    // oxido-n+ (e.g., pyridine-N-oxide)</a>
+<a name="ln273">    OBSmartsPattern oxidopyr; oxidopyr.Init(&quot;[#8D1][#7D3r6]&quot;);</a>
+<a name="ln274">    if (oxidopyr.Match(mol))</a>
+<a name="ln275">      {</a>
+<a name="ln276">        mlist = oxidopyr.GetUMapList();</a>
+<a name="ln277">        for (l = mlist.begin(); l != mlist.end(); ++l)</a>
+<a name="ln278">          {</a>
+<a name="ln279">            a1 = mol.GetAtom((*l)[0]);</a>
+<a name="ln280">            a2 = mol.GetAtom((*l)[1]);</a>
+<a name="ln281"> </a>
+<a name="ln282">            angle = a2-&gt;AverageBondAngle();</a>
+<a name="ln283">            dist1 = a1-&gt;GetDistance(a2);</a>
+<a name="ln284"> </a>
+<a name="ln285">            if (angle &gt; 110 &amp;&amp; angle &lt; 150 &amp;&amp; dist1 &lt; 1.35) {</a>
+<a name="ln286">              a1-&gt;SetFormalCharge(-1); // oxygen</a>
+<a name="ln287">              a2-&gt;SetFormalCharge(+1); // nitrogen</a>
+<a name="ln288">            }</a>
+<a name="ln289">          }</a>
+<a name="ln290">      }</a>
+<a name="ln291"> </a>
+<a name="ln292">  }</a>
+<a name="ln293"> </a>
+<a name="ln294">} //namespace OpenBabel;</a>
+<a name="ln295"> </a>
+<a name="ln296">//! \file bondtyper.cpp</a>
+<a name="ln297">//! \brief Bond typer to perceive connectivity and bond orders/types.</a>
+<a name="ln298">//! \todo Needs to add aromatic ring bond order assignment.</a>
+<a name="ln299">//!   Eventually need to migrate OBMol::PerceiveBondOrders(),</a>
+<a name="ln300">//!   OBMol::ConnectTheDots(), and possibly some of the Kekulize routines</a>
+
+</code></pre>
+<div class="balloon" rel="73"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: vs.size() >= 4.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

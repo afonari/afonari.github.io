@@ -1,0 +1,2422 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>ichirvr7.c</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/*</a>
+<a name="ln2"> * International Chemical Identifier (InChI)</a>
+<a name="ln3"> * Version 1</a>
+<a name="ln4"> * Software version 1.04</a>
+<a name="ln5"> * September 9, 2011</a>
+<a name="ln6"> *</a>
+<a name="ln7"> * The InChI library and programs are free software developed under the</a>
+<a name="ln8"> * auspices of the International Union of Pure and Applied Chemistry (IUPAC).</a>
+<a name="ln9"> * Originally developed at NIST. Modifications and additions by IUPAC </a>
+<a name="ln10"> * and the InChI Trust.</a>
+<a name="ln11"> *</a>
+<a name="ln12"> * IUPAC/InChI-Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln13"> * Software version 1.0.</a>
+<a name="ln14"> * Copyright (C) IUPAC and InChI Trust Limited</a>
+<a name="ln15"> * </a>
+<a name="ln16"> * This library is free software; you can redistribute it and/or modify it under the </a>
+<a name="ln17"> * terms of the IUPAC/InChI Trust Licence for the International Chemical Identifier </a>
+<a name="ln18"> * (InChI) Software version 1.0; either version 1.0 of the License, or </a>
+<a name="ln19"> * (at your option) any later version.</a>
+<a name="ln20"> * </a>
+<a name="ln21"> * This library is distributed in the hope that it will be useful, </a>
+<a name="ln22"> * but WITHOUT ANY WARRANTY; without even the implied warranty of </a>
+<a name="ln23"> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  </a>
+<a name="ln24"> * See the IUPAC/InChI Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln25"> * Software version 1.0 for more details.</a>
+<a name="ln26"> * </a>
+<a name="ln27"> * You should have received a copy of the IUPAC/InChI Trust Licence for the </a>
+<a name="ln28"> * International Chemical Identifier (InChI) Software version 1.0 along with </a>
+<a name="ln29"> * this library; if not, write to:</a>
+<a name="ln30"> * </a>
+<a name="ln31"> * The InChI Trust</a>
+<a name="ln32"> * c/o FIZ CHEMIE Berlin</a>
+<a name="ln33"> * Franklinstrasse 11</a>
+<a name="ln34"> * 10587 Berlin</a>
+<a name="ln35"> * GERMANY</a>
+<a name="ln36"> * </a>
+<a name="ln37"> */</a>
+<a name="ln38"> </a>
+<a name="ln39"> </a>
+<a name="ln40">#include &lt;stdio.h&gt;</a>
+<a name="ln41">#include &lt;stdlib.h&gt;</a>
+<a name="ln42">#include &lt;string.h&gt;</a>
+<a name="ln43">#include &lt;ctype.h&gt;</a>
+<a name="ln44">#include &lt;math.h&gt;</a>
+<a name="ln45"> </a>
+<a name="ln46">/*^^^ */</a>
+<a name="ln47">/* #define CHECK_WIN32_VC_HEAP */</a>
+<a name="ln48">#include &quot;mode.h&quot;</a>
+<a name="ln49"> </a>
+<a name="ln50">#if ( READ_INCHI_STRING == 1 )</a>
+<a name="ln51"> </a>
+<a name="ln52">#include &quot;ichicomp.h&quot;</a>
+<a name="ln53">#include &quot;ichi.h&quot;</a>
+<a name="ln54">#include &quot;ichitime.h&quot;</a>
+<a name="ln55">#include &quot;ichierr.h&quot;</a>
+<a name="ln56">#include &quot;util.h&quot;</a>
+<a name="ln57">#include &quot;strutil.h&quot;</a>
+<a name="ln58"> </a>
+<a name="ln59">/* reverse InChI */</a>
+<a name="ln60">#include &quot;ichimain.h&quot;</a>
+<a name="ln61">#include &quot;extr_ct.h&quot;</a>
+<a name="ln62">#include &quot;ichitaut.h&quot;</a>
+<a name="ln63">#include &quot;ichister.h&quot;</a>
+<a name="ln64">#include &quot;strutil.h&quot;</a>
+<a name="ln65">#include &quot;ichisize.h&quot;</a>
+<a name="ln66">#include &quot;ichiring.h&quot;</a>
+<a name="ln67">#include &quot;ichinorm.h&quot;</a>
+<a name="ln68"> </a>
+<a name="ln69">#include &quot;ichirvrs.h&quot;</a>
+<a name="ln70">#include &quot;inchicmp.h&quot;</a>
+<a name="ln71"> </a>
+<a name="ln72">/******************************************************************************************************/</a>
+<a name="ln73">int InChI2Atom( ICHICONST INPUT_PARMS *ip,  STRUCT_DATA *sd, const char *szCurHdr, long num_inp,</a>
+<a name="ln74">                StrFromINChI *pStruct, int iComponent, int iAtNoOffset, int  bI2A_Flag, int bHasSomeFixedH, InpInChI *OneInput)</a>
+<a name="ln75">{</a>
+<a name="ln76">    int           iINChI   = (bI2A_Flag &amp; I2A_FLAG_RECMET)? INCHI_REC : INCHI_BAS;</a>
+<a name="ln77">    int           bMobileH = (bI2A_Flag &amp; I2A_FLAG_FIXEDH)? TAUT_NON  : TAUT_YES;</a>
+<a name="ln78">    INChI        *pInChI[TAUT_NUM];</a>
+<a name="ln79">    int           ret = 0;</a>
+<a name="ln80"> </a>
+<a name="ln81">    memset( pInChI, 0, sizeof(pInChI) );</a>
+<a name="ln82">    /* disconnected or reconnected */</a>
+<a name="ln83">    if ( iINChI == INCHI_REC ) {</a>
+<a name="ln84">        if ( !OneInput-&gt;nNumComponents[iINChI][TAUT_YES] ) {</a>
+<a name="ln85">            iINChI = INCHI_BAS;</a>
+<a name="ln86">        }</a>
+<a name="ln87">    }</a>
+<a name="ln88">    if ( iComponent &gt;= OneInput-&gt;nNumComponents[iINChI][TAUT_YES] ) {</a>
+<a name="ln89">        return 0; /* component does not exist */</a>
+<a name="ln90">    }</a>
+<a name="ln91">    /* mobile or fixed H */</a>
+<a name="ln92">    pStruct-&gt;bFixedHExists = 0;</a>
+<a name="ln93">    if ( bMobileH == TAUT_NON ) {</a>
+<a name="ln94">        if ( !OneInput-&gt;nNumComponents[iINChI][bMobileH] ) {</a>
+<a name="ln95">            /* only one InChI exists (no mobile H) */</a>
+<a name="ln96">            bMobileH = TAUT_YES;</a>
+<a name="ln97">        }</a>
+<a name="ln98">    } </a>
+<a name="ln99">    </a>
+<a name="ln100">    if ( iComponent &gt;= OneInput-&gt;nNumComponents[iINChI][bMobileH] ) {</a>
+<a name="ln101">        return 0; /* component does not exist */</a>
+<a name="ln102">    }</a>
+<a name="ln103">    /* pointer to the InChI that is going to be reversed */</a>
+<a name="ln104">    pInChI[0] = &amp;OneInput-&gt;pInpInChI[iINChI][bMobileH][iComponent];</a>
+<a name="ln105">    pStruct-&gt;bMobileH = bMobileH;</a>
+<a name="ln106">    pStruct-&gt;iINCHI   = iINChI;</a>
+<a name="ln107">    /* deleted component only in case Mobile-H and compound contains only protons */</a>
+<a name="ln108">    if ( pInChI[0]-&gt;bDeleted ) {</a>
+<a name="ln109">        return 0; /* deleted component, presumably H(+) */</a>
+<a name="ln110">    }</a>
+<a name="ln111"> </a>
+<a name="ln112">    if ( bMobileH == TAUT_NON &amp;&amp; OneInput-&gt;nNumProtons[iINChI][TAUT_YES].pNumProtons ) {</a>
+<a name="ln113">        pStruct-&gt;nNumRemovedProtonsMobHInChI = </a>
+<a name="ln114">            OneInput-&gt;nNumProtons[iINChI][TAUT_YES].pNumProtons[iComponent].nNumRemovedProtons;</a>
+<a name="ln115">    }</a>
+<a name="ln116"> </a>
+<a name="ln117">    if ( bMobileH == TAUT_NON || (bMobileH == TAUT_YES &amp;&amp; OneInput-&gt;pInpInChI[iINChI][TAUT_NON] &amp;&amp;</a>
+<a name="ln118">         OneInput-&gt;pInpInChI[iINChI][TAUT_NON][iComponent].nNumberOfAtoms &gt; 0 &amp;&amp;</a>
+<a name="ln119">        !OneInput-&gt;pInpInChI[iINChI][TAUT_NON][iComponent].bDeleted) ) {</a>
+<a name="ln120">        pStruct-&gt;bFixedHExists = 1;</a>
+<a name="ln121">    }</a>
+<a name="ln122">    if ( bMobileH == TAUT_NON &amp;&amp; iComponent &lt; OneInput-&gt;nNumComponents[iINChI][TAUT_YES] &amp;&amp;</a>
+<a name="ln123">         OneInput-&gt;pInpInChI[iINChI][TAUT_YES] &amp;&amp;</a>
+<a name="ln124">         OneInput-&gt;pInpInChI[iINChI][TAUT_YES][iComponent].nNumberOfAtoms &gt; 0 &amp;&amp;</a>
+<a name="ln125">         !OneInput-&gt;pInpInChI[iINChI][TAUT_YES][iComponent].bDeleted ) {</a>
+<a name="ln126">        /* pointer to the Mobile-H InChI if we are reversing Fixed-H InChI */</a>
+<a name="ln127">        pInChI[1] = &amp;OneInput-&gt;pInpInChI[iINChI][TAUT_YES][iComponent];</a>
+<a name="ln128">    }</a>
+<a name="ln129">    pStruct-&gt;num_inp_actual = OneInput-&gt;num_inp;</a>
+<a name="ln130">    ret = OneInChI2Atom( ip, sd, szCurHdr, num_inp, pStruct, iComponent, iAtNoOffset, bHasSomeFixedH, pInChI);</a>
+<a name="ln131">    return ret; /* same interpretation as in ProcessOneStructure ??? */</a>
+<a name="ln132">}</a>
+<a name="ln133"> </a>
+<a name="ln134">/*******************************************************************/</a>
+<a name="ln135">void RemoveFixHInChIIdentical2MobH( InpInChI *pOneInput )</a>
+<a name="ln136">{</a>
+<a name="ln137">    int iInchiRec, cur_num_comp, k;</a>
+<a name="ln138">    /* eliminate Fixed-H InChI that are exactly came as the corresponding Mobile-H structures */</a>
+<a name="ln139">    for ( iInchiRec = 0; iInchiRec &lt; INCHI_NUM; iInchiRec ++ ) {</a>
+<a name="ln140">        cur_num_comp = inchi_min(pOneInput-&gt;nNumComponents[iInchiRec][TAUT_YES],</a>
+<a name="ln141">                                 pOneInput-&gt;nNumComponents[iInchiRec][TAUT_NON]);</a>
+<a name="ln142">        for ( k = 0; k &lt; cur_num_comp; k ++ ) {</a>
+<a name="ln143">            if ( !CompareReversedINChI( pOneInput-&gt;pInpInChI[iInchiRec][TAUT_YES]+k,</a>
+<a name="ln144">                                        pOneInput-&gt;pInpInChI[iInchiRec][TAUT_NON]+k, NULL, NULL ) ) {</a>
+<a name="ln145">                Free_INChI_Members( pOneInput-&gt;pInpInChI[iInchiRec][TAUT_NON]+k );</a>
+<a name="ln146">                memset( pOneInput-&gt;pInpInChI[iInchiRec][TAUT_NON]+k, 0, sizeof(pOneInput-&gt;pInpInChI[0][0][0]) );</a>
+<a name="ln147">            }</a>
+<a name="ln148">        }</a>
+<a name="ln149">    }</a>
+<a name="ln150">}</a>
+<a name="ln151">/*******************************************************************/</a>
+<a name="ln152">int MarkDisconectedIdenticalToReconnected ( InpInChI *pOneInput )</a>
+<a name="ln153">{</a>
+<a name="ln154">    /* mark Disconnected InChI components that are exactly came as Reconnected ones */</a>
+<a name="ln155">    /* Disconnected will have a negative number of the reconnected component */</a>
+<a name="ln156">    /* Reconnected will have a positive number of the disconnected component */</a>
+<a name="ln157">    int k1, k2, num_marked = 0;</a>
+<a name="ln158">    for ( k1 = 0; k1 &lt; inchi_max(pOneInput-&gt;nNumComponents[INCHI_BAS][TAUT_YES],</a>
+<a name="ln159">                                 pOneInput-&gt;nNumComponents[INCHI_BAS][TAUT_NON]); k1 ++ ) {</a>
+<a name="ln160">    for ( k2 = 0; k2 &lt; inchi_max(pOneInput-&gt;nNumComponents[INCHI_REC][TAUT_YES],</a>
+<a name="ln161">                                 pOneInput-&gt;nNumComponents[INCHI_REC][TAUT_NON]); k2 ++ ) {</a>
+<a name="ln162">        int eqM = ( k1 &lt; pOneInput-&gt;nNumComponents[INCHI_BAS][TAUT_YES] &amp;&amp;</a>
+<a name="ln163">                    k2 &lt; pOneInput-&gt;nNumComponents[INCHI_REC][TAUT_YES] &amp;&amp;</a>
+<a name="ln164">                   !pOneInput-&gt;pInpInChI[INCHI_REC][TAUT_YES][k2].nLink &amp;&amp; /* already linked */</a>
+<a name="ln165">                   !pOneInput-&gt;pInpInChI[INCHI_BAS][TAUT_YES][k1].bDeleted &amp;&amp;</a>
+<a name="ln166">                    pOneInput-&gt;pInpInChI[INCHI_BAS][TAUT_YES][k1].nNumberOfAtoms &amp;&amp;</a>
+<a name="ln167">                    pOneInput-&gt;pInpInChI[INCHI_BAS][TAUT_YES][k1].nNumberOfAtoms ==</a>
+<a name="ln168">                    pOneInput-&gt;pInpInChI[INCHI_REC][TAUT_YES][k2].nNumberOfAtoms &amp;&amp;</a>
+<a name="ln169">                   !pOneInput-&gt;pInpInChI[INCHI_REC][TAUT_YES][k2].bDeleted &amp;&amp;</a>
+<a name="ln170">                    !CompareReversedINChI( pOneInput-&gt;pInpInChI[INCHI_REC][TAUT_YES]+k2,</a>
+<a name="ln171">                                           pOneInput-&gt;pInpInChI[INCHI_BAS][TAUT_YES]+k1,</a>
+<a name="ln172">                                           NULL, NULL ));</a>
+<a name="ln173">        int isF1 = (k1 &lt; pOneInput-&gt;nNumComponents[INCHI_BAS][TAUT_NON] &amp;&amp;</a>
+<a name="ln174">                    0 == pOneInput-&gt;pInpInChI[INCHI_BAS][TAUT_NON][k1].bDeleted &amp;&amp;</a>
+<a name="ln175">                    0  &lt; pOneInput-&gt;pInpInChI[INCHI_BAS][TAUT_NON][k1].nNumberOfAtoms );</a>
+<a name="ln176">        int isF2 = (k2 &lt; pOneInput-&gt;nNumComponents[INCHI_REC][TAUT_NON] &amp;&amp;</a>
+<a name="ln177">                    0 == pOneInput-&gt;pInpInChI[INCHI_REC][TAUT_NON][k2].bDeleted &amp;&amp;</a>
+<a name="ln178">                    0  &lt; pOneInput-&gt;pInpInChI[INCHI_REC][TAUT_NON][k2].nNumberOfAtoms );</a>
+<a name="ln179">        int eqF =  isF1 &amp;&amp; isF2 &amp;&amp;</a>
+<a name="ln180">                   !pOneInput-&gt;pInpInChI[INCHI_REC][TAUT_NON][k2].nLink &amp;&amp;</a>
+<a name="ln181">                    pOneInput-&gt;pInpInChI[INCHI_BAS][TAUT_NON][k1].nNumberOfAtoms ==</a>
+<a name="ln182">                    pOneInput-&gt;pInpInChI[INCHI_REC][TAUT_NON][k2].nNumberOfAtoms &amp;&amp;</a>
+<a name="ln183">                    !CompareReversedINChI( pOneInput-&gt;pInpInChI[INCHI_REC][TAUT_NON]+k2,</a>
+<a name="ln184">                                           pOneInput-&gt;pInpInChI[INCHI_BAS][TAUT_NON]+k1,</a>
+<a name="ln185">                                           NULL, NULL );</a>
+<a name="ln186">        if ( eqM &amp;&amp; ((!isF1 &amp;&amp; !isF2) || eqF ) ) {</a>
+<a name="ln187">            pOneInput-&gt;pInpInChI[INCHI_BAS][TAUT_YES][k1].nLink = -(k2+1);</a>
+<a name="ln188">            pOneInput-&gt;pInpInChI[INCHI_REC][TAUT_YES][k2].nLink =  (k1+1);</a>
+<a name="ln189">            if ( eqF ) {</a>
+<a name="ln190">                pOneInput-&gt;pInpInChI[INCHI_BAS][TAUT_NON][k1].nLink = -(k2+1);</a>
+<a name="ln191">                pOneInput-&gt;pInpInChI[INCHI_REC][TAUT_NON][k2].nLink =  (k1+1);</a>
+<a name="ln192">            }</a>
+<a name="ln193">            num_marked ++;</a>
+<a name="ln194">            break; /* equal InChI has been deleted from the disconnected layer, get next k1 */</a>
+<a name="ln195">        }</a>
+<a name="ln196">    }</a>
+<a name="ln197">    }</a>
+<a name="ln198">    return num_marked;</a>
+<a name="ln199"> </a>
+<a name="ln200">}</a>
+<a name="ln201">/**************************************************************/</a>
+<a name="ln202">void SetUpSrm( SRM *pSrm )</a>
+<a name="ln203">{</a>
+<a name="ln204">    /* structure restore parms !!!!! */</a>
+<a name="ln205">    memset( pSrm, 0, sizeof(pSrm[0]) );</a>
+<a name="ln206">    pSrm-&gt;bFixStereoBonds      = FIX_STEREO_BOND_ORDER;</a>
+<a name="ln207">    pSrm-&gt;nMetal2EndpointMinBondOrder  = 1;</a>
+<a name="ln208">    pSrm-&gt;nMetal2EndpointInitEdgeFlow  = 0;</a>
+<a name="ln209">    if ( METAL_FREE_CHARGE_VAL == 1 ) { </a>
+<a name="ln210">        pSrm-&gt;bMetalAddFlower      = 1;</a>
+<a name="ln211">        /* the next 3 parameters: */</a>
+<a name="ln212">        /* 0, 0, 0 =&gt; all bonds 0, no init radical on metal */</a>
+<a name="ln213">        /* 0, 0, 1 =&gt; all bonds 0,    init radical on metal */</a>
+<a name="ln214">        /* 0, 1, 0 =&gt; wrong */</a>
+<a name="ln215">        /* 0, 1, 1 =&gt; all bonds 1, no init radical on metal */</a>
+<a name="ln216">        /* 1, 0, 1 =&gt; min bond order 1, all bonds to metal have order 1 */</a>
+<a name="ln217">        /* 1, 1, 0 =&gt; wrong */</a>
+<a name="ln218">        /* 1, 1, 1 =&gt; wrong */</a>
+<a name="ln219">        pSrm-&gt;nMetalMinBondOrder   = 0; </a>
+<a name="ln220">        pSrm-&gt;nMetalInitEdgeFlow   = 1;  </a>
+<a name="ln221">        pSrm-&gt;nMetalInitBondOrder  = 1; </a>
+<a name="ln222">        pSrm-&gt;bStereoRemovesMetalFlag = pSrm-&gt;bFixStereoBonds;</a>
+<a name="ln223">        pSrm-&gt;nMetalFlowerParam_D     = 16;</a>
+<a name="ln224">        pSrm-&gt;nMetalMaxCharge_D       = 16;</a>
+<a name="ln225">    } else {</a>
+<a name="ln226">        pSrm-&gt;bMetalAddFlower      = 0;</a>
+<a name="ln227">        pSrm-&gt;nMetalMinBondOrder   = 1;</a>
+<a name="ln228">        pSrm-&gt;nMetalInitEdgeFlow   = 0;</a>
+<a name="ln229">        pSrm-&gt;nMetalInitBondOrder  = 1;</a>
+<a name="ln230">        pSrm-&gt;bStereoRemovesMetalFlag = pSrm-&gt;bFixStereoBonds;</a>
+<a name="ln231">        pSrm-&gt;nMetalFlowerParam_D     = 16;</a>
+<a name="ln232">        pSrm-&gt;nMetalMaxCharge_D       = 0;</a>
+<a name="ln233">    }</a>
+<a name="ln234">    /*</a>
+<a name="ln235">    pSrm-&gt;nMetalInitBondOrder  = pSrm-&gt;nMetalMinBondOrder </a>
+<a name="ln236">                             + pSrm-&gt;nMetalInitEdgeFlow;</a>
+<a name="ln237">    */</a>
+<a name="ln238">    pSrm-&gt;nMetal2EndpointInitBondOrder = pSrm-&gt;nMetal2EndpointMinBondOrder </a>
+<a name="ln239">                                     + pSrm-&gt;nMetal2EndpointInitEdgeFlow;</a>
+<a name="ln240"> </a>
+<a name="ln241">}</a>
+<a name="ln242">/**************************************************************************************/</a>
+<a name="ln243">int MergeStructureComponents( ICHICONST INPUT_PARMS *ip, STRUCT_DATA *sd, long num_inp, char *szCurHdr,</a>
+<a name="ln244">                         ICHICONST SRM *pSrm, int bReqNonTaut, StrFromINChI *pStruct[INCHI_NUM][TAUT_NUM],</a>
+<a name="ln245">                         InpInChI *pOneInput )</a>
+<a name="ln246">{</a>
+<a name="ln247">    int iInchiRec, iMobileH, iAlternH, num_components, tot_just_atoms, tot_removed_H, tot_atoms, cur_nA, cur_nH;</a>
+<a name="ln248">    int k, i, j, ret, iCurAtomOffs, iNxtAtomOffs, iCurDelHOffs, iNxtDelHOffs, len, len2, iShiftH, icomp;</a>
+<a name="ln249">    int *nAtomOffs=NULL, *nDelHOffs=NULL;</a>
+<a name="ln250">    StrFromINChI *pStruct1;</a>
+<a name="ln251">    inp_ATOM *at=NULL, *a;</a>
+<a name="ln252"> </a>
+<a name="ln253">    ret = 0;</a>
+<a name="ln254">    pOneInput-&gt;num_atoms = 0;</a>
+<a name="ln255">    /* select highest detail level */</a>
+<a name="ln256">    if ( (num_components = pOneInput-&gt;nNumComponents[INCHI_REC][TAUT_NON]) ) {</a>
+<a name="ln257">        iInchiRec = INCHI_REC;</a>
+<a name="ln258">        iMobileH  = TAUT_NON;</a>
+<a name="ln259">    } else</a>
+<a name="ln260">    if ( (num_components = pOneInput-&gt;nNumComponents[INCHI_REC][TAUT_YES]) ) {</a>
+<a name="ln261">        iInchiRec = INCHI_REC;</a>
+<a name="ln262">        iMobileH  = TAUT_YES;</a>
+<a name="ln263">    } else</a>
+<a name="ln264">    if ( (num_components = pOneInput-&gt;nNumComponents[INCHI_BAS][TAUT_NON]) ) {</a>
+<a name="ln265">        iInchiRec = INCHI_BAS;</a>
+<a name="ln266">        iMobileH  = TAUT_NON;</a>
+<a name="ln267">    } else</a>
+<a name="ln268">    if ( (num_components = pOneInput-&gt;nNumComponents[INCHI_BAS][TAUT_YES]) ) {</a>
+<a name="ln269">        iInchiRec = INCHI_BAS;</a>
+<a name="ln270">        iMobileH  = TAUT_YES;</a>
+<a name="ln271">    } else {</a>
+<a name="ln272">        return 0; /* no components available */</a>
+<a name="ln273">    }</a>
+<a name="ln274"> </a>
+<a name="ln275">    nAtomOffs = (int*) inchi_malloc((num_components+1) * sizeof(nAtomOffs[0]));</a>
+<a name="ln276">    nDelHOffs = (int*) inchi_malloc((num_components+1) * sizeof(nDelHOffs[0]));</a>
+<a name="ln277">    if ( !nAtomOffs || !nDelHOffs ) {</a>
+<a name="ln278">        ret = RI_ERR_ALLOC;</a>
+<a name="ln279">        goto exit_function;</a>
+<a name="ln280">    }</a>
+<a name="ln281">    /* count number of atoms and removed H */</a>
+<a name="ln282">    tot_just_atoms = tot_removed_H = tot_atoms = 0;</a>
+<a name="ln283">    iAlternH = (iMobileH==TAUT_NON &amp;&amp; pOneInput-&gt;nNumComponents[iInchiRec][TAUT_YES])? TAUT_YES : -1;</a>
+<a name="ln284">    nAtomOffs[0] = nDelHOffs[0] = 0;</a>
+<a name="ln285">    for ( k = 0; k &lt; num_components; k ++ ) {</a>
+<a name="ln286">        pStruct1 = pStruct[iInchiRec][iMobileH][k].num_atoms? pStruct[iInchiRec][iMobileH]+k :</a>
+<a name="ln287">                   iAlternH&gt;=0 &amp;&amp;</a>
+<a name="ln288">                   pStruct[iInchiRec][iAlternH][k].num_atoms? pStruct[iInchiRec][iAlternH]+k : NULL;</a>
+<a name="ln289">        if ( !pStruct1 || !pStruct1-&gt;at2 || !pStruct1-&gt;num_atoms || pStruct1-&gt;bDeleted ) {</a>
+<a name="ln290">            cur_nA = cur_nH = 0;</a>
+<a name="ln291">        } else {</a>
+<a name="ln292">            cur_nA = pStruct1-&gt;num_atoms;</a>
+<a name="ln293">            cur_nH = pStruct1-&gt;num_deleted_H;</a>
+<a name="ln294">        }</a>
+<a name="ln295">        nAtomOffs[k+1] = nAtomOffs[k] + cur_nA;</a>
+<a name="ln296">        nDelHOffs[k+1] = nDelHOffs[k] + cur_nH;</a>
+<a name="ln297">    }</a>
+<a name="ln298">    tot_just_atoms = nAtomOffs[num_components];</a>
+<a name="ln299">    /* shift all H to the end */</a>
+<a name="ln300">    for ( k = 0; k &lt;= num_components; k ++ ) {</a>
+<a name="ln301">        nDelHOffs[k] += tot_just_atoms;</a>
+<a name="ln302">    }</a>
+<a name="ln303">    tot_atoms = nDelHOffs[num_components];</a>
+<a name="ln304"> </a>
+<a name="ln305">    /* merge atoms together: 1. Allocate */</a>
+<a name="ln306">    if ( NULL == (at = (inp_ATOM *) inchi_malloc( (tot_atoms+1) * sizeof(at[0]) ) ) ) {</a>
+<a name="ln307">        ret = RI_ERR_ALLOC;</a>
+<a name="ln308">        goto exit_function;</a>
+<a name="ln309">    }</a>
+<a name="ln310">    if ( !tot_atoms ) {</a>
+<a name="ln311">        ret = 0;</a>
+<a name="ln312">        goto exit_function; /* empty structure */</a>
+<a name="ln313">    }</a>
+<a name="ln314">    /* merge atoms together: 2. Copy */</a>
+<a name="ln315">    for ( k = 0; k &lt; num_components; k ++ ) {</a>
+<a name="ln316">        pStruct1 = pStruct[iInchiRec][iMobileH][k].num_atoms? pStruct[iInchiRec][iMobileH]+k :</a>
+<a name="ln317">                   iAlternH&gt;=0 &amp;&amp;</a>
+<a name="ln318">                   pStruct[iInchiRec][iAlternH][k].num_atoms? pStruct[iInchiRec][iAlternH]+k : NULL;</a>
+<a name="ln319">        if ( (len = nAtomOffs[k+1] - nAtomOffs[k]) ) {</a>
+<a name="ln320">            memcpy( at + nAtomOffs[k], pStruct1-&gt;at2, len * sizeof(at[0]) );</a>
+<a name="ln321">            if ( (len2 = nDelHOffs[k+1] - nDelHOffs[k]) ) {</a>
+<a name="ln322">                memcpy( at + nDelHOffs[k], pStruct1-&gt;at2+len, len2 * sizeof(at[0]) );</a>
+<a name="ln323">            }</a>
+<a name="ln324">        }</a>
+<a name="ln325">    }</a>
+<a name="ln326">    /* merge atoms together: 3. Update atom numbers */</a>
+<a name="ln327">    icomp = 0;</a>
+<a name="ln328">    for ( k = 0; k &lt; num_components; k ++ ) {</a>
+<a name="ln329">        iCurAtomOffs = nAtomOffs[k];</a>
+<a name="ln330">        iNxtAtomOffs = nAtomOffs[k+1];</a>
+<a name="ln331">        iCurDelHOffs = nDelHOffs[k];</a>
+<a name="ln332">        iNxtDelHOffs = nDelHOffs[k+1];</a>
+<a name="ln333">        len = nAtomOffs[k+1] - nAtomOffs[k]; /* number of atoms in a component excluding explicit H */</a>
+<a name="ln334">        iShiftH      = iCurDelHOffs - len;</a>
+<a name="ln335">        if ( !len ) {</a>
+<a name="ln336">            continue;</a>
+<a name="ln337">        }</a>
+<a name="ln338">        icomp ++; /* current component number */</a>
+<a name="ln339">        /* update atoms */</a>
+<a name="ln340">        for ( i = iCurAtomOffs; i &lt; iNxtAtomOffs; i ++ ) {</a>
+<a name="ln341">            </a>
+<a name="ln342">            a = at+i;</a>
+<a name="ln343"> </a>
+<a name="ln344">            a-&gt;endpoint = 0;</a>
+<a name="ln345">            a-&gt;bAmbiguousStereo = 0;</a>
+<a name="ln346">            a-&gt;at_type = 0;</a>
+<a name="ln347">            a-&gt;bCutVertex = 0;</a>
+<a name="ln348">            a-&gt;bUsed0DParity = 0;</a>
+<a name="ln349">            a-&gt;cFlags = 0;</a>
+<a name="ln350">            a-&gt;nBlockSystem = 0;</a>
+<a name="ln351">            a-&gt;nNumAtInRingSystem = 0;</a>
+<a name="ln352">            a-&gt;nRingSystem = 0;</a>
+<a name="ln353">           </a>
+<a name="ln354">            for ( j = 0; j &lt; a-&gt;valence; j ++ ) {</a>
+<a name="ln355">                if ( a-&gt;neighbor[j] &lt; len ) {</a>
+<a name="ln356">                    a-&gt;neighbor[j] += iCurAtomOffs; /* atom */</a>
+<a name="ln357">                } else {</a>
+<a name="ln358">                    a-&gt;neighbor[j] += iShiftH;      /* explicit H */</a>
+<a name="ln359">                }</a>
+<a name="ln360">            }</a>
+<a name="ln361">            a-&gt;orig_at_number += iCurAtomOffs;</a>
+<a name="ln362">            a-&gt;component = icomp;</a>
+<a name="ln363">            if ( a-&gt;p_parity ) {</a>
+<a name="ln364">                for ( j = 0; j &lt; MAX_NUM_STEREO_ATOM_NEIGH; j ++ ) {</a>
+<a name="ln365">                    if ( a-&gt;p_orig_at_num[j] &lt;= len ) {</a>
+<a name="ln366">                        /* originally, orig_at_num = atom_index+1, therefore &lt;= instead of &lt; */</a>
+<a name="ln367">                        a-&gt;p_orig_at_num[j] += iCurAtomOffs;</a>
+<a name="ln368">                    } else {</a>
+<a name="ln369">                        a-&gt;p_orig_at_num[j] += iShiftH;</a>
+<a name="ln370">                    }</a>
+<a name="ln371">                }</a>
+<a name="ln372">            }</a>
+<a name="ln373">            for ( j = 0; j &lt; MAX_NUM_STEREO_BONDS &amp;&amp; a-&gt;sb_parity[j]; j ++ ) {</a>
+<a name="ln374">                if ( a-&gt;sn_orig_at_num[j] &lt;= len ) {</a>
+<a name="ln375">                    /* originally, orig_at_num = atom_index+1, therefore &lt;= instead of &lt; */</a>
+<a name="ln376">                    a-&gt;sn_orig_at_num[j] += iCurAtomOffs;</a>
+<a name="ln377">                } else {</a>
+<a name="ln378">                    a-&gt;sn_orig_at_num[j] += iShiftH;</a>
+<a name="ln379">                }</a>
+<a name="ln380">            }</a>
+<a name="ln381">        }</a>
+<a name="ln382">        /* update fixed-H */</a>
+<a name="ln383">        for ( i = iCurDelHOffs; i &lt; iNxtDelHOffs; i ++ ) {</a>
+<a name="ln384">            a = at+i;</a>
+<a name="ln385">            a-&gt;neighbor[0]    += iCurAtomOffs;</a>
+<a name="ln386">            a-&gt;orig_at_number += iShiftH;</a>
+<a name="ln387"> </a>
+<a name="ln388">        }</a>
+<a name="ln389">    }</a>
+<a name="ln390">    /* save the results */</a>
+<a name="ln391">    pOneInput-&gt;atom      = at;</a>
+<a name="ln392">    pOneInput-&gt;num_atoms = tot_atoms;</a>
+<a name="ln393">    at = NULL;</a>
+<a name="ln394"> </a>
+<a name="ln395">exit_function:</a>
+<a name="ln396">    if ( at )        inchi_free( at );  /* in case of failure */</a>
+<a name="ln397">    if ( nAtomOffs ) inchi_free( nAtomOffs );</a>
+<a name="ln398">    if ( nDelHOffs ) inchi_free( nDelHOffs );</a>
+<a name="ln399">    return ret;</a>
+<a name="ln400">}</a>
+<a name="ln401">#ifndef COMPILE_ANSI_ONLY</a>
+<a name="ln402">static PER_DRAW_PARMS pdp;</a>
+<a name="ln403">/******************************************************************************************************/</a>
+<a name="ln404">int DisplayAllRestoredComponents( inp_ATOM *at, int num_at, const char *szCurHdr )</a>
+<a name="ln405">{</a>
+<a name="ln406">    int    ret;</a>
+<a name="ln407">    char     szTitle[512];</a>
+<a name="ln408">    DRAW_PARMS dp;</a>
+<a name="ln409">    TBL_DRAW_PARMS tdp;</a>
+<a name="ln410">    if ( num_at &lt;= 0 ) {</a>
+<a name="ln411">        return 0;</a>
+<a name="ln412">    }</a>
+<a name="ln413">    memset( &amp;dp, 0, sizeof(dp));</a>
+<a name="ln414">    memset( &amp;tdp, 0, sizeof(tdp) );</a>
+<a name="ln415">    //memset( &amp;pdp, 0, sizeof(pdp) );</a>
+<a name="ln416">    dp.sdp.tdp       = &amp;tdp;</a>
+<a name="ln417">    dp.pdp           = &amp;pdp;</a>
+<a name="ln418">    dp.sdp.nFontSize = -9;</a>
+<a name="ln419">    sprintf( szTitle, &quot;All Components of Restored %s Structure&quot;, szCurHdr? szCurHdr : &quot;(No structure name)&quot;);</a>
+<a name="ln420">    ret = DisplayStructure( at, num_at, 0 /* nNumDeletedH*/, 0 /*bAdd_DT_to_num_H*/,</a>
+<a name="ln421">                      0 /*nNumRemovedProtons*/, NULL /*NUM_H *nNumRemovedProtonsIsotopic*/,</a>
+<a name="ln422">                      1 /*int bIsotopic*/, 0 /*bTautomeric*/,</a>
+<a name="ln423">                      NULL /* pINChI */, NULL /* INChI_Aux **cur_INChI_Aux*/,</a>
+<a name="ln424">                      0 /*bAbcNumbers*/, &amp;dp, 0 /*INCHI_MODE nMode*/, szTitle );</a>
+<a name="ln425">    return 0;</a>
+<a name="ln426">}</a>
+<a name="ln427">/******************************************************************************************************/</a>
+<a name="ln428">int DisplayOneRestoredComponent( StrFromINChI *pStruct, inp_ATOM *at,</a>
+<a name="ln429">                                 int iComponent, int nNumComponents, int bMobileH,</a>
+<a name="ln430">                                 const char *szCurHdr )</a>
+<a name="ln431">{</a>
+<a name="ln432">    int    ret, k;</a>
+<a name="ln433">    int    num_at        = pStruct-&gt;num_atoms;</a>
+<a name="ln434">    XYZ_COORD *pxyz      = pStruct-&gt;pXYZ;</a>
+<a name="ln435">    char     szTitle[512];</a>
+<a name="ln436">    DRAW_PARMS dp;</a>
+<a name="ln437">    TBL_DRAW_PARMS tdp;</a>
+<a name="ln438">    int         iInchiRec = pStruct-&gt;iInchiRec;</a>
+<a name="ln439">    int         iMobileH  = pStruct-&gt;iMobileH;</a>
+<a name="ln440">    INChI     **pInChI = NULL;</a>
+<a name="ln441">    INChI_Aux **pAux   = NULL;</a>
+<a name="ln442">    int         nNumRemovedProtons         = pAux? pAux[iMobileH]-&gt;nNumRemovedProtons : 0;</a>
+<a name="ln443">    NUM_H      *nNumRemovedProtonsIsotopic = pAux? pAux[iMobileH]-&gt;nNumRemovedIsotopicH : NULL;</a>
+<a name="ln444"> </a>
+<a name="ln445"> </a>
+<a name="ln446">    if ( num_at &lt;= 0 || !pxyz ) {</a>
+<a name="ln447">        return 0;</a>
+<a name="ln448">    }</a>
+<a name="ln449">    if ( iInchiRec &amp;&amp; !pStruct-&gt;RevInChI.pINChI_Aux[iInchiRec][0] ) {</a>
+<a name="ln450">        iInchiRec = 0;</a>
+<a name="ln451">    }</a>
+<a name="ln452">    k = iMobileH;</a>
+<a name="ln453">    if ( !bRevInchiComponentExists( pStruct, iInchiRec, k, 0 ) ) {</a>
+<a name="ln454">        k = ALT_TAUT(k);</a>
+<a name="ln455">    }</a>
+<a name="ln456">    pInChI = pStruct-&gt;RevInChI.pINChI[iInchiRec][0];</a>
+<a name="ln457">    pAux   = pStruct-&gt;RevInChI.pINChI_Aux[iInchiRec][0];</a>
+<a name="ln458">    </a>
+<a name="ln459"> </a>
+<a name="ln460">    memset( &amp;dp, 0, sizeof(dp));</a>
+<a name="ln461">    memset( &amp;tdp, 0, sizeof(tdp) );</a>
+<a name="ln462">    //memset( &amp;pdp, 0, sizeof(pdp) );</a>
+<a name="ln463">    dp.sdp.tdp       = &amp;tdp;</a>
+<a name="ln464">    dp.pdp           = &amp;pdp;</a>
+<a name="ln465">    dp.sdp.nFontSize = -9;</a>
+<a name="ln466">    sprintf( szTitle, &quot;Restored %s Component %d of %d %c%c&quot;,</a>
+<a name="ln467">                      szCurHdr? szCurHdr : &quot;(No structure name)&quot;, iComponent+1, nNumComponents,</a>
+<a name="ln468">                      pStruct-&gt;iInchiRec? 'R':'D', pStruct-&gt;iMobileH?'M':'F' );</a>
+<a name="ln469">    ret = DisplayStructure( at, num_at, 0 /* nNumDeletedH*/, 0 /*bAdd_DT_to_num_H*/,</a>
+<a name="ln470">                      nNumRemovedProtons, /*NULL*/ nNumRemovedProtonsIsotopic,</a>
+<a name="ln471">                      1 /*int bIsotopic*/, k,</a>
+<a name="ln472">                      pInChI, pAux,</a>
+<a name="ln473">                      0 /*bAbcNumbers*/, &amp;dp, 0 /*INCHI_MODE nMode*/, szTitle );</a>
+<a name="ln474">    return 0;</a>
+<a name="ln475">}</a>
+<a name="ln476">/******************************************************************************************************/</a>
+<a name="ln477">int DisplayRestoredComponent( StrFromINChI *pStruct, int iComponent, int iAtNoOffset, INChI *pInChI, const char *szCurHdr )</a>
+<a name="ln478">{</a>
+<a name="ln479">    int    i, ret;</a>
+<a name="ln480">    int    num_at        = pStruct-&gt;num_atoms;</a>
+<a name="ln481">    int    num_deleted_H = pStruct-&gt;num_deleted_H;</a>
+<a name="ln482">    inp_ATOM *atom       = pStruct-&gt;at2;</a>
+<a name="ln483">    XYZ_COORD *pxyz      = pStruct-&gt;pXYZ;</a>
+<a name="ln484">    inp_ATOM *at         = NULL;</a>
+<a name="ln485">    char     szTitle[512];</a>
+<a name="ln486">    DRAW_PARMS dp;</a>
+<a name="ln487">    TBL_DRAW_PARMS tdp;</a>
+<a name="ln488">    if ( !atom || num_at &lt;= 0 || !pxyz ) {</a>
+<a name="ln489">        return 0;</a>
+<a name="ln490">    }</a>
+<a name="ln491">    at = (inp_ATOM *)inchi_calloc( num_at + num_deleted_H, sizeof(at[0]) );</a>
+<a name="ln492">    if ( !at ) {</a>
+<a name="ln493">        return RI_ERR_ALLOC;</a>
+<a name="ln494">    }</a>
+<a name="ln495">    memcpy( at, atom, (num_at + num_deleted_H) * sizeof(at[0]) );</a>
+<a name="ln496">    for ( i = 0; i &lt; num_at; i ++ ) {</a>
+<a name="ln497">        at[i].x = pxyz[i].xyz[0]; </a>
+<a name="ln498">        at[i].y = pxyz[i].xyz[1]; </a>
+<a name="ln499">        at[i].z = pxyz[i].xyz[2]; </a>
+<a name="ln500">    }</a>
+<a name="ln501">    memset( &amp;dp, 0, sizeof(dp));</a>
+<a name="ln502">    memset( &amp;tdp, 0, sizeof(tdp) );</a>
+<a name="ln503">    //memset( &amp;pdp, 0, sizeof(pdp) );</a>
+<a name="ln504">    dp.sdp.tdp       = &amp;tdp;</a>
+<a name="ln505">    dp.pdp           = &amp;pdp;</a>
+<a name="ln506">    dp.sdp.nFontSize = -9;</a>
+<a name="ln507">    sprintf( szTitle, &quot;DBG Restored %s Component %d %c%c&quot;, szCurHdr? szCurHdr : &quot;(No structure name)&quot;, iComponent+1, pStruct-&gt;iInchiRec? 'R':'D', pStruct-&gt;iMobileH?'M':'F' );</a>
+<a name="ln508">    ret = DisplayStructure( at, num_at, 0 /* nNumDeletedH*/, 0 /*bAdd_DT_to_num_H*/,</a>
+<a name="ln509">                      0 /*nNumRemovedProtons*/, NULL /*NUM_H *nNumRemovedProtonsIsotopic*/,</a>
+<a name="ln510">                      1 /*int bIsotopic*/, 0 /*bTautomeric*/,</a>
+<a name="ln511">                      &amp;pInChI, NULL /* INChI_Aux **cur_INChI_Aux*/,</a>
+<a name="ln512">                      0 /*bAbcNumbers*/, &amp;dp, 0 /*INCHI_MODE nMode*/, szTitle );</a>
+<a name="ln513">    inchi_free( at );</a>
+<a name="ln514">    return 0;</a>
+<a name="ln515">}</a>
+<a name="ln516">/**************************************************************************************/</a>
+<a name="ln517">int DisplayStructureComponents( ICHICONST INPUT_PARMS *ip, STRUCT_DATA *sd, long num_inp, char *szCurHdr,</a>
+<a name="ln518">                         ICHICONST SRM *pSrm, int bReqNonTaut, StrFromINChI *pStruct[INCHI_NUM][TAUT_NUM],</a>
+<a name="ln519">                         InpInChI *pOneInput )</a>
+<a name="ln520">{</a>
+<a name="ln521">    int iInchiRec, iMobileH, iCurMobH, iAlternH, num_components, tot_just_atoms, tot_removed_H, tot_atoms, cur_nA, cur_nH;</a>
+<a name="ln522">    int k, i, j, ret, iCurAtomOffs, iNxtAtomOffs, iCurDelHOffs, iNxtDelHOffs, len, len2, iShiftH, icomp;</a>
+<a name="ln523">    int *nAtomOffs=NULL, *nDelHOffs=NULL, bNoCoord=0, iNewCoord=0, nNewCoord=0;</a>
+<a name="ln524">    double x_max=-1.0e16, x_min = 1.0e16, y_max=-1.0e16, y_min=1.0e16, delta = 0.0;</a>
+<a name="ln525">    StrFromINChI *pStruct1;</a>
+<a name="ln526">    inp_ATOM *at=NULL, *a;</a>
+<a name="ln527"> </a>
+<a name="ln528">    if (!ip-&gt;bDisplayCompositeResults &amp;&amp; !ip-&gt;bDisplay ) {</a>
+<a name="ln529">        return 0;</a>
+<a name="ln530">    }</a>
+<a name="ln531"> </a>
+<a name="ln532">    ret = 0;</a>
+<a name="ln533">    pOneInput-&gt;num_atoms = 0;</a>
+<a name="ln534">    /* select highest detail level */</a>
+<a name="ln535">    if ( num_components = pOneInput-&gt;nNumComponents[INCHI_REC][TAUT_NON] ) {</a>
+<a name="ln536">        iInchiRec = INCHI_REC;</a>
+<a name="ln537">        iMobileH  = TAUT_NON;</a>
+<a name="ln538">    } else</a>
+<a name="ln539">    if ( num_components = pOneInput-&gt;nNumComponents[INCHI_REC][TAUT_YES] ) {</a>
+<a name="ln540">        iInchiRec = INCHI_REC;</a>
+<a name="ln541">        iMobileH  = TAUT_YES;</a>
+<a name="ln542">    } else</a>
+<a name="ln543">    if ( num_components = pOneInput-&gt;nNumComponents[INCHI_BAS][TAUT_NON] ) {</a>
+<a name="ln544">        iInchiRec = INCHI_BAS;</a>
+<a name="ln545">        iMobileH  = TAUT_NON;</a>
+<a name="ln546">    } else</a>
+<a name="ln547">    if ( num_components = pOneInput-&gt;nNumComponents[INCHI_BAS][TAUT_YES] ) {</a>
+<a name="ln548">        iInchiRec = INCHI_BAS;</a>
+<a name="ln549">        iMobileH  = TAUT_YES;</a>
+<a name="ln550">    } else {</a>
+<a name="ln551">        return 0; /* no components available */</a>
+<a name="ln552">    }</a>
+<a name="ln553">    for ( k = 0; k &lt; num_components; k ++ ) {</a>
+<a name="ln554">        if ( pStruct[iInchiRec][iMobileH][k].bDeleted )</a>
+<a name="ln555">            break;</a>
+<a name="ln556">    }</a>
+<a name="ln557">    num_components = k;</a>
+<a name="ln558"> </a>
+<a name="ln559">    nAtomOffs = (int*) inchi_malloc((num_components+1) * sizeof(nAtomOffs[0]));</a>
+<a name="ln560">    nDelHOffs = (int*) inchi_malloc((num_components+1) * sizeof(nDelHOffs[0]));</a>
+<a name="ln561">    if ( !nAtomOffs || !nDelHOffs ) {</a>
+<a name="ln562">        ret = RI_ERR_ALLOC;</a>
+<a name="ln563">        goto exit_function;</a>
+<a name="ln564">    }</a>
+<a name="ln565">    /* count number of atoms and removed H */</a>
+<a name="ln566">    tot_just_atoms = tot_removed_H = tot_atoms = 0;</a>
+<a name="ln567">    iAlternH = (iMobileH==TAUT_NON &amp;&amp; pOneInput-&gt;nNumComponents[iInchiRec][TAUT_YES])? TAUT_YES : -1;</a>
+<a name="ln568">    nAtomOffs[0] = nDelHOffs[0] = 0;</a>
+<a name="ln569">    for ( k = 0; k &lt; num_components; k ++ ) {</a>
+<a name="ln570">        pStruct1 = pStruct[iInchiRec][iMobileH][k].num_atoms? pStruct[iInchiRec][iMobileH]+k :</a>
+<a name="ln571">                   iAlternH&gt;=0 &amp;&amp;</a>
+<a name="ln572">                   pStruct[iInchiRec][iAlternH][k].num_atoms? pStruct[iInchiRec][iAlternH]+k : NULL;</a>
+<a name="ln573">        if ( !pStruct1 || !pStruct1-&gt;at2 || !pStruct1-&gt;num_atoms ) {</a>
+<a name="ln574">            cur_nA = cur_nH = 0;</a>
+<a name="ln575">        } else {</a>
+<a name="ln576">            cur_nA = pStruct1-&gt;num_atoms;</a>
+<a name="ln577">            cur_nH = pStruct1-&gt;num_deleted_H;</a>
+<a name="ln578">            if ( cur_nA &amp;&amp; !pStruct1-&gt;pXYZ ) {</a>
+<a name="ln579">                if ( !k ) {</a>
+<a name="ln580">                    ret = 0; /* no coordinates available */</a>
+<a name="ln581">                    goto exit_function;</a>
+<a name="ln582">                } else {</a>
+<a name="ln583">                    bNoCoord ++;</a>
+<a name="ln584">                }</a>
+<a name="ln585">            }</a>
+<a name="ln586">        }</a>
+<a name="ln587">        nAtomOffs[k+1] = nAtomOffs[k] + cur_nA;</a>
+<a name="ln588">        nDelHOffs[k+1] = nDelHOffs[k] + cur_nH;</a>
+<a name="ln589">    }</a>
+<a name="ln590">    tot_just_atoms = nAtomOffs[num_components];</a>
+<a name="ln591">    /* shift all H to the end */</a>
+<a name="ln592">    for ( k = 0; k &lt;= num_components; k ++ ) {</a>
+<a name="ln593">        nDelHOffs[k] += tot_just_atoms;</a>
+<a name="ln594">    }</a>
+<a name="ln595">    tot_atoms = nDelHOffs[num_components];</a>
+<a name="ln596"> </a>
+<a name="ln597">    /* merge atoms together: 1. Allocate */</a>
+<a name="ln598">    if ( NULL == (at = (inp_ATOM *) inchi_malloc( (tot_atoms+1) * sizeof(at[0]) ) ) ) {</a>
+<a name="ln599">        ret = RI_ERR_ALLOC;</a>
+<a name="ln600">        goto exit_function;</a>
+<a name="ln601">    }</a>
+<a name="ln602">    if ( !tot_atoms ) {</a>
+<a name="ln603">        ret = 0;</a>
+<a name="ln604">        goto exit_function; /* empty structure */</a>
+<a name="ln605">    }</a>
+<a name="ln606">    /* merge atoms together: 2. Copy */</a>
+<a name="ln607">    for ( k = 0; k &lt; num_components; k ++ ) {</a>
+<a name="ln608">        pStruct1 = pStruct[iInchiRec][iMobileH][k].num_atoms? pStruct[iInchiRec][iCurMobH=iMobileH]+k :</a>
+<a name="ln609">                   iAlternH&gt;=0 &amp;&amp;</a>
+<a name="ln610">                   pStruct[iInchiRec][iAlternH][k].num_atoms? pStruct[iInchiRec][iCurMobH=iAlternH]+k : NULL;</a>
+<a name="ln611">        if ( len = nAtomOffs[k+1] - nAtomOffs[k] ) {</a>
+<a name="ln612">            XYZ_COORD *pxyz = pStruct1-&gt;pXYZ;</a>
+<a name="ln613">            len2 = nDelHOffs[k+1] - nDelHOffs[k]; /* do not separate H from the atom: we will not need them */</a>
+<a name="ln614">            iCurAtomOffs = nAtomOffs[k];</a>
+<a name="ln615">            a = at + iCurAtomOffs;</a>
+<a name="ln616">            memcpy( a, pStruct1-&gt;at2, (len+len2) * sizeof(at[0]) );</a>
+<a name="ln617">            DisconnectedConnectedH( a, len, len2 );</a>
+<a name="ln618">            if ( pxyz ) {</a>
+<a name="ln619">                for ( i = 0; i &lt; len; i ++ ) {</a>
+<a name="ln620">                    a[i].x = pxyz[i].xyz[0];</a>
+<a name="ln621">                    x_max = inchi_max( x_max, pxyz[i].xyz[0] );</a>
+<a name="ln622">                    x_min = inchi_min( x_min, pxyz[i].xyz[0] );</a>
+<a name="ln623">                    a[i].y = pxyz[i].xyz[1];</a>
+<a name="ln624">                    y_max = inchi_max( y_max, pxyz[i].xyz[1] );</a>
+<a name="ln625">                    y_min = inchi_min( y_min, pxyz[i].xyz[1] );</a>
+<a name="ln626">                    a[i].z = pxyz[i].xyz[2];</a>
+<a name="ln627">                    nNewCoord ++;</a>
+<a name="ln628">                }</a>
+<a name="ln629">            } else {</a>
+<a name="ln630">                if ( !iNewCoord ) {</a>
+<a name="ln631">                    if ( !nNewCoord ) {</a>
+<a name="ln632">                        ret = 0;</a>
+<a name="ln633">                        goto exit_function; /* empty structure */</a>
+<a name="ln634">                    }</a>
+<a name="ln635">                    delta = inchi_max(x_max - x_min, y_max - y_min);</a>
+<a name="ln636">                    if ( delta == 0.0 ) {</a>
+<a name="ln637">                        delta = 0.5 * (x_max+x_min);</a>
+<a name="ln638">                        if ( delta == 0.0 )</a>
+<a name="ln639">                            delta = 1.0;</a>
+<a name="ln640">                    } else {</a>
+<a name="ln641">                        delta /= sqrt( (double)(nNewCoord+1) );</a>
+<a name="ln642">                    }</a>
+<a name="ln643">                }</a>
+<a name="ln644">                for ( i = 0; i &lt; len; i ++ ) {</a>
+<a name="ln645">                    a[i].x = x_max + delta;</a>
+<a name="ln646">                    a[i].y = y_max - iNewCoord * delta;</a>
+<a name="ln647">                    a[i].z = 0.0;</a>
+<a name="ln648">                    iNewCoord ++;</a>
+<a name="ln649">                }</a>
+<a name="ln650">                if ( pStruct1-&gt;pXYZ = (XYZ_COORD *)inchi_calloc(len, sizeof(pStruct1-&gt;pXYZ[0]) ) ) {</a>
+<a name="ln651"> </a>
+<a name="ln652">                    for ( i = 0; i &lt; len; i ++ ) {</a>
+<a name="ln653">                        pStruct1-&gt;pXYZ[i].xyz[0] = a[i].x;</a>
+<a name="ln654">                        pStruct1-&gt;pXYZ[i].xyz[1] = a[i].y;</a>
+<a name="ln655">                        pStruct1-&gt;pXYZ[i].xyz[2] = 0.0;</a>
+<a name="ln656">                    }</a>
+<a name="ln657">                }</a>
+<a name="ln658">            }</a>
+<a name="ln659">            if ( ip-&gt;bDisplay || ip-&gt;bDisplayCompositeResults &amp;&amp; 1 == num_components ) {</a>
+<a name="ln660">               DisplayOneRestoredComponent( pStruct1, a, k, num_components, iCurMobH, szCurHdr );</a>
+<a name="ln661">            }</a>
+<a name="ln662">            if ( !pxyz &amp;&amp; pStruct1-&gt;pXYZ ) {</a>
+<a name="ln663">                inchi_free( pStruct1-&gt;pXYZ );</a>
+<a name="ln664">                pStruct1-&gt;pXYZ = NULL;</a>
+<a name="ln665">            }</a>
+<a name="ln666">        }</a>
+<a name="ln667">    }</a>
+<a name="ln668">    /* merge atoms together: 3. Update atom numbers */</a>
+<a name="ln669">    icomp = 0;</a>
+<a name="ln670">    if ( ip-&gt;bDisplayCompositeResults &amp;&amp; num_components &gt; 1 ) {</a>
+<a name="ln671">        for ( k = 0; k &lt; num_components; k ++ ) {</a>
+<a name="ln672">            /* display each restored component if requested */</a>
+<a name="ln673">            iCurAtomOffs = nAtomOffs[k];</a>
+<a name="ln674">            iNxtAtomOffs = nAtomOffs[k+1];</a>
+<a name="ln675">            iCurDelHOffs = nDelHOffs[k];</a>
+<a name="ln676">            iNxtDelHOffs = nDelHOffs[k+1];</a>
+<a name="ln677">            len = nAtomOffs[k+1] - nAtomOffs[k]; /* number of atoms in a component excluding explicit H */</a>
+<a name="ln678">            iShiftH      = iCurDelHOffs - len;</a>
+<a name="ln679">            if ( !len ) {</a>
+<a name="ln680">                continue;</a>
+<a name="ln681">            }</a>
+<a name="ln682">            icomp ++; /* current component number */</a>
+<a name="ln683">            /* update atoms */</a>
+<a name="ln684">            for ( i = iCurAtomOffs; i &lt; iNxtAtomOffs; i ++ ) {</a>
+<a name="ln685">                a = at+i;</a>
+<a name="ln686">                for ( j = 0; j &lt; a-&gt;valence; j ++ ) {</a>
+<a name="ln687">                    if ( a-&gt;neighbor[j] &lt; len ) {</a>
+<a name="ln688">                        a-&gt;neighbor[j] += iCurAtomOffs; /* atom */</a>
+<a name="ln689">                    } else {</a>
+<a name="ln690">                        ret = RI_ERR_PROGR;  /* explicit H */</a>
+<a name="ln691">                        goto exit_function;</a>
+<a name="ln692">                    }</a>
+<a name="ln693">                }</a>
+<a name="ln694">                a-&gt;orig_at_number += iCurAtomOffs;</a>
+<a name="ln695">            }</a>
+<a name="ln696">        }</a>
+<a name="ln697">        tot_atoms = nAtomOffs[num_components];</a>
+<a name="ln698">        DisplayAllRestoredComponents( at, tot_atoms, szCurHdr );</a>
+<a name="ln699"> </a>
+<a name="ln700">    }</a>
+<a name="ln701"> </a>
+<a name="ln702">exit_function:</a>
+<a name="ln703">    if ( at )        inchi_free( at );  /* in case of failure */</a>
+<a name="ln704">    if ( nAtomOffs ) inchi_free( nAtomOffs );</a>
+<a name="ln705">    if ( nDelHOffs ) inchi_free( nDelHOffs );</a>
+<a name="ln706">    return ret;</a>
+<a name="ln707">}</a>
+<a name="ln708">#endif</a>
+<a name="ln709">/**************************************************************************************/</a>
+<a name="ln710">int AllInchiToStructure( ICHICONST INPUT_PARMS *ip_inp, STRUCT_DATA *sd_inp, long num_inp, char *szCurHdr,</a>
+<a name="ln711">                         ICHICONST SRM *pSrm, int bHasSomeFixedH, StrFromINChI *pStruct[INCHI_NUM][TAUT_NUM],</a>
+<a name="ln712">                         InpInChI *pOneInput )</a>
+<a name="ln713">{</a>
+<a name="ln714">    int iInchiRec, iMobileH, cur_num_comp, bCurI2A_Flag, k, ret, num_err;</a>
+<a name="ln715">    INPUT_PARMS *ip, ip_loc;</a>
+<a name="ln716">    STRUCT_DATA *sd, sd_loc;</a>
+<a name="ln717">    long          ulProcessingTime = 0;</a>
+<a name="ln718">    inchiTime     ulTStart;</a>
+<a name="ln719"> </a>
+<a name="ln720">    InchiTimeGet( &amp;ulTStart );</a>
+<a name="ln721">    ip  = &amp;ip_loc;</a>
+<a name="ln722">    *ip = *ip_inp;</a>
+<a name="ln723">    sd  = &amp;sd_loc;</a>
+<a name="ln724">    memset( sd, 0, sizeof(*sd));</a>
+<a name="ln725">    sd-&gt;ulStructTime = sd_inp-&gt;ulStructTime;</a>
+<a name="ln726">    ret = 0;</a>
+<a name="ln727">    num_err = 0;</a>
+<a name="ln728">    for ( iInchiRec = 0; iInchiRec &lt; INCHI_NUM; iInchiRec ++ ) { /* Disconnected/Connected */</a>
+<a name="ln729">        for ( iMobileH = 0; iMobileH &lt; TAUT_NUM; iMobileH ++ ) { /* Mobile/Fixed H */</a>
+<a name="ln730">            cur_num_comp = pOneInput-&gt;nNumComponents[iInchiRec][iMobileH];</a>
+<a name="ln731">            if ( !cur_num_comp ) {</a>
+<a name="ln732">                continue;</a>
+<a name="ln733">            }</a>
+<a name="ln734">            /* allocate memory for all existing components */</a>
+<a name="ln735">            pStruct[iInchiRec][iMobileH] = (StrFromINChI *)inchi_calloc( cur_num_comp, sizeof(pStruct[0][0][0]));</a>
+<a name="ln736">            if ( !pStruct[iInchiRec][iMobileH] ) {</a>
+<a name="ln737">                ret = RI_ERR_ALLOC;</a>
+<a name="ln738">                goto exit_error;</a>
+<a name="ln739">            }</a>
+<a name="ln740">            /* set conversion mode */</a>
+<a name="ln741">            bCurI2A_Flag = (iMobileH? 0: I2A_FLAG_FIXEDH) | (iInchiRec? I2A_FLAG_RECMET : 0);</a>
+<a name="ln742">            if ( iMobileH ) {</a>
+<a name="ln743">                ip-&gt;nMode &amp;= ~REQ_MODE_BASIC;</a>
+<a name="ln744">            } else {</a>
+<a name="ln745">                ip-&gt;nMode |= REQ_MODE_BASIC;</a>
+<a name="ln746">            }</a>
+<a name="ln747">            /* InChI --&gt; structure conversion for all components except duplicated */</a>
+<a name="ln748">            for ( k = 0; k &lt; cur_num_comp; k ++ ) { /* components */</a>
+<a name="ln749">                if ( (!iMobileH &amp;&amp; !pOneInput-&gt;pInpInChI[iInchiRec][iMobileH][k].nNumberOfAtoms) ||</a>
+<a name="ln750">                     pOneInput-&gt;pInpInChI[iInchiRec][iMobileH][k].bDeleted ||</a>
+<a name="ln751">                     pOneInput-&gt;pInpInChI[iInchiRec][iMobileH][k].nLink &lt; 0 ) {</a>
+<a name="ln752"> </a>
+<a name="ln753">                    pStruct[iInchiRec][iMobileH][k].nLink = pOneInput-&gt;pInpInChI[iInchiRec][iMobileH][k].nLink;</a>
+<a name="ln754">                    pStruct[iInchiRec][iMobileH][k].bDeleted = pOneInput-&gt;pInpInChI[iInchiRec][iMobileH][k].bDeleted;</a>
+<a name="ln755">                    continue; /* do not create a structure out of an unavailable</a>
+<a name="ln756">                                 Fixed-H InChI or out of the one present in Reconnected layer */</a>
+<a name="ln757">#ifdef NEVER  /* a wrong attempt to process deleted components here */</a>
+<a name="ln758">                    if ( pStruct[iInchiRec][iMobileH][k].nLink = pOneInput-&gt;pInpInChI[iInchiRec][iMobileH][k].nLink ) {</a>
+<a name="ln759">                        continue; /* do not create a structure out of an unavailable</a>
+<a name="ln760">                                     Fixed-H InChI or out of the one present in Reconnected layer */</a>
+<a name="ln761">                    } else</a>
+<a name="ln762">                    if ( iMobileH &amp;&amp; pOneInput-&gt;pInpInChI[iInchiRec][iMobileH][k].nNumberOfAtoms &amp;&amp;</a>
+<a name="ln763">                         pOneInput-&gt;pInpInChI[iInchiRec][iMobileH][k].bDeleted &amp;&amp;</a>
+<a name="ln764">                         pOneInput-&gt;pInpInChI[iInchiRec][iMobileH][0].bDeleted ) {</a>
+<a name="ln765">                        /* all components are protons */</a>
+<a name="ln766">                        ;</a>
+<a name="ln767">                    } else {</a>
+<a name="ln768">                        continue;</a>
+<a name="ln769">                    }</a>
+<a name="ln770">#endif</a>
+<a name="ln771">                }</a>
+<a name="ln772">                if ( bHasSomeFixedH &amp;&amp; iMobileH &amp;&amp; k &lt; pOneInput-&gt;nNumComponents[iInchiRec][TAUT_NON] &amp;&amp;</a>
+<a name="ln773">                     pOneInput-&gt;pInpInChI[iInchiRec][TAUT_NON][k].nNumberOfAtoms ) {</a>
+<a name="ln774">                    continue; /* do not process Mobile-H if Fixed-H is requested and exists */</a>
+<a name="ln775">                }</a>
+<a name="ln776">                pStruct[iInchiRec][iMobileH][k].pSrm      = pSrm;</a>
+<a name="ln777">                pStruct[iInchiRec][iMobileH][k].iInchiRec = iInchiRec;</a>
+<a name="ln778">                pStruct[iInchiRec][iMobileH][k].iMobileH  = iMobileH;</a>
+<a name="ln779"> </a>
+<a name="ln780">                /****************************************************/</a>
+<a name="ln781">                /*                                                  */</a>
+<a name="ln782">                /* Convert InChI of one component into a Structure  */</a>
+<a name="ln783">                /*                                                  */</a>
+<a name="ln784">                /****************************************************/</a>
+<a name="ln785"> </a>
+<a name="ln786">                ret = InChI2Atom( ip, sd, szCurHdr, num_inp, pStruct[iInchiRec][iMobileH]+k, k,</a>
+<a name="ln787">                                   0 /* AtNoOffset*/, bCurI2A_Flag, bHasSomeFixedH, pOneInput );</a>
+<a name="ln788">                pStruct[iInchiRec][iMobileH][k].nLink = pOneInput-&gt;pInpInChI[iInchiRec][iMobileH][k].nLink;</a>
+<a name="ln789">                if ( ret &lt; 0 ) {</a>
+<a name="ln790">#if ( bRELEASE_VERSION != 1 )</a>
+<a name="ln791">#ifndef TARGET_API_LIB</a>
+<a name="ln792">                    /* !!! Conversion Error -- Ignore for now !!! */</a>
+<a name="ln793">                    fprintf( stdout, &quot;%ld %s Conversion failed: %d, %c%c comp %d\n&quot;,</a>
+<a name="ln794">                        num_inp, szCurHdr? szCurHdr : &quot;Struct&quot;, ret, iInchiRec? 'R':'D', iMobileH? 'M':'F', k+1); </a>
+<a name="ln795">#endif</a>
+<a name="ln796">#endif</a>
+<a name="ln797">                    if ( ret == CT_USER_QUIT_ERR ) {</a>
+<a name="ln798">                        goto exit_error;</a>
+<a name="ln799">                    }</a>
+<a name="ln800">                    pStruct[iInchiRec][iMobileH][k].nError = ret;</a>
+<a name="ln801">                    ret = 0; /* force to ignore the errors for now !!!! */</a>
+<a name="ln802">                    num_err ++;</a>
+<a name="ln803">                }</a>
+<a name="ln804">            }</a>
+<a name="ln805">        }</a>
+<a name="ln806">    }</a>
+<a name="ln807">exit_error:</a>
+<a name="ln808">    ulProcessingTime += InchiTimeElapsed( &amp;ulTStart );</a>
+<a name="ln809">    sd-&gt;ulStructTime += ulProcessingTime;</a>
+<a name="ln810">    return ret&lt;0? ret : num_err;</a>
+<a name="ln811">}</a>
+<a name="ln812">/**************************************************************************************/</a>
+<a name="ln813">int AddProtonAndIsoHBalanceToMobHStruct( ICHICONST INPUT_PARMS *ip, STRUCT_DATA *sd,</a>
+<a name="ln814">                                         long num_inp, int bHasSomeFixedH, char *szCurHdr,</a>
+<a name="ln815">                             StrFromINChI *pStruct[INCHI_NUM][TAUT_NUM], InpInChI *pOneInput)</a>
+<a name="ln816">{</a>
+<a name="ln817">    COMPONENT_REM_PROTONS nToBeRemovedByNormFromRevrs[INCHI_NUM];</a>
+<a name="ln818">    int                   nRemovedByNormFromRevrs[INCHI_NUM];</a>
+<a name="ln819">    int                   nRemovedByRevrs[INCHI_NUM];</a>
+<a name="ln820"> </a>
+<a name="ln821">    int   nDeltaFromDisconnected = 0, nRemovedProtonsByNormFromRevrs, nRemovedProtonsByRevrs, num_changes = 0;</a>
+<a name="ln822">    NUM_H nIsoDeltaFromDisconnected[NUM_H_ISOTOPES];</a>
+<a name="ln823">    int iInchiRec, i, k, k1, ret = 0;</a>
+<a name="ln824">    int  nChargeInChI, nChargeRevrs;</a>
+<a name="ln825"> </a>
+<a name="ln826">    if ( bHasSomeFixedH ) {</a>
+<a name="ln827">        return 0; /* 2005-03-01 */</a>
+<a name="ln828">    }</a>
+<a name="ln829"> </a>
+<a name="ln830">    /* num protons removed by InChI Normalization from the original structure */</a>
+<a name="ln831">    for ( i = 0; i &lt; INCHI_NUM; i ++ ) {</a>
+<a name="ln832">        nToBeRemovedByNormFromRevrs[i].nNumRemovedProtons = pOneInput-&gt;nNumProtons[i][TAUT_YES].nNumRemovedProtons;</a>
+<a name="ln833">        for ( k = 0; k &lt; NUM_H_ISOTOPES; k ++ ) {</a>
+<a name="ln834">            nToBeRemovedByNormFromRevrs[i].nNumRemovedIsotopicH[k] = pOneInput-&gt;nNumProtons[i][TAUT_YES].nNumRemovedIsotopicH[k];</a>
+<a name="ln835">        }</a>
+<a name="ln836">    }</a>
+<a name="ln837">    /* accumulate here num. protons removed by the normalization from the reversed structure */</a>
+<a name="ln838">    nRemovedByNormFromRevrs[INCHI_BAS] =</a>
+<a name="ln839">    nRemovedByNormFromRevrs[INCHI_REC] = 0;</a>
+<a name="ln840">    nRemovedByRevrs[INCHI_REC] =</a>
+<a name="ln841">    nRemovedByRevrs[INCHI_BAS] = 0;</a>
+<a name="ln842">    /* protons added/removed by InChI Normalization to/from Restored Structure might have been added by StructureRestore */</a>
+<a name="ln843">    for ( iInchiRec = 0; iInchiRec &lt; INCHI_NUM; iInchiRec ++ ) {</a>
+<a name="ln844">        for ( k = 0; k &lt; pOneInput-&gt;nNumComponents[iInchiRec][TAUT_YES]; k ++ ) {</a>
+<a name="ln845">            if ( !bInpInchiComponentExists( pOneInput, iInchiRec, TAUT_YES, k ) ) {</a>
+<a name="ln846">                continue;</a>
+<a name="ln847">            }</a>
+<a name="ln848">            nRemovedProtonsByNormFromRevrs = 0; /* Num protons removed from the Restored Structure by InChI Normalization */</a>
+<a name="ln849">            nRemovedProtonsByRevrs         = 0; /* Num protons removed by the Reconstruction from the Restored Structure */</a>
+<a name="ln850">            if ( iInchiRec == INCHI_REC || (iInchiRec == INCHI_BAS &amp;&amp; (k1=pStruct[iInchiRec][TAUT_YES][k].nLink) &gt;= 0) ) {</a>
+<a name="ln851">                </a>
+<a name="ln852">                REV_INCHI  *pRevInChI   = &amp;pStruct[iInchiRec][TAUT_YES][k].RevInChI;</a>
+<a name="ln853">                INChI_Aux  **pINChI_Aux2 = pRevInChI-&gt;pINChI_Aux[iInchiRec][0]; /* component 0*/</a>
+<a name="ln854">                INChI      **pINChI_Revr = pRevInChI-&gt;pINChI[iInchiRec][0];</a>
+<a name="ln855">                INChI       *pINChI_Orig = pOneInput-&gt;pInpInChI[iInchiRec][TAUT_YES]+k;</a>
+<a name="ln856">                nChargeRevrs = pINChI_Revr? pINChI_Revr[TAUT_YES]-&gt;nTotalCharge : NO_VALUE_INT;</a>
+<a name="ln857">                nChargeInChI = pINChI_Orig-&gt;nTotalCharge;</a>
+<a name="ln858">                if ( pINChI_Aux2 ) {</a>
+<a name="ln859">                    nRemovedProtonsByNormFromRevrs = pINChI_Aux2[TAUT_YES]-&gt;nNumRemovedProtons;</a>
+<a name="ln860">                }</a>
+<a name="ln861">                nRemovedProtonsByRevrs = pStruct[iInchiRec][TAUT_YES][k].nNumRemovedProtonsByRevrs;</a>
+<a name="ln862">                pStruct[iInchiRec][TAUT_YES][k].nChargeRevrs = nChargeRevrs;</a>
+<a name="ln863">                pStruct[iInchiRec][TAUT_YES][k].nChargeInChI = nChargeInChI;</a>
+<a name="ln864">            } else</a>
+<a name="ln865">            if ( 0 &lt;= ( k1 = -(1+pStruct[iInchiRec][TAUT_YES][k].nLink) ) ) {</a>
+<a name="ln866">                REV_INCHI  *pRevInChI   = &amp;pStruct[INCHI_REC][TAUT_YES][k1].RevInChI;</a>
+<a name="ln867">                INChI_Aux  **pINChI_Aux2 = pRevInChI-&gt;pINChI_Aux[INCHI_BAS][0]; /* component 0 */</a>
+<a name="ln868">                INChI      **pINChI_Revr = pRevInChI-&gt;pINChI[INCHI_BAS][0];</a>
+<a name="ln869">                INChI       *pINChI_Orig = pOneInput-&gt;pInpInChI[INCHI_REC][TAUT_YES]+k1;</a>
+<a name="ln870">                nChargeRevrs = pINChI_Revr? pINChI_Revr[TAUT_YES]-&gt;nTotalCharge : NO_VALUE_INT;</a>
+<a name="ln871">                nChargeInChI = pINChI_Orig-&gt;nTotalCharge;</a>
+<a name="ln872">                if ( pINChI_Aux2 ) {</a>
+<a name="ln873">                    nRemovedProtonsByNormFromRevrs = pINChI_Aux2[TAUT_YES]-&gt;nNumRemovedProtons;</a>
+<a name="ln874">                }</a>
+<a name="ln875">                /* this component cannot be disconnected because it is same as in reconnected layer */</a>
+<a name="ln876">                nRemovedProtonsByRevrs = pStruct[INCHI_REC][TAUT_YES][k1].nNumRemovedProtonsByRevrs;</a>
+<a name="ln877">                pStruct[iInchiRec][TAUT_YES][k1].nChargeRevrs = nChargeRevrs;</a>
+<a name="ln878">                pStruct[iInchiRec][TAUT_YES][k1].nChargeInChI = nChargeInChI;</a>
+<a name="ln879">            }</a>
+<a name="ln880">            /* how many protons (to be removed by InChI Normalization) to add = </a>
+<a name="ln881">               (proton balance in InChI} - </a>
+<a name="ln882">               {number of protons known to be removed by InChI Normalization from Reconstructed structure} */</a>
+<a name="ln883">            nToBeRemovedByNormFromRevrs[iInchiRec].nNumRemovedProtons -= nRemovedProtonsByNormFromRevrs;</a>
+<a name="ln884">            nRemovedByNormFromRevrs[iInchiRec] += nRemovedProtonsByNormFromRevrs;</a>
+<a name="ln885">            nRemovedByRevrs[iInchiRec]         += nRemovedProtonsByRevrs;</a>
+<a name="ln886">            pStruct[iInchiRec][TAUT_YES][k].nRemovedProtonsByNormFromRevrs = nRemovedProtonsByNormFromRevrs;</a>
+<a name="ln887">        }</a>
+<a name="ln888">    }</a>
+<a name="ln889"> </a>
+<a name="ln890">    /* Since fixed-H layer is missing we need to add proton balance to the components */</a>
+<a name="ln891">    memset( nIsoDeltaFromDisconnected, 0, sizeof(nIsoDeltaFromDisconnected) );</a>
+<a name="ln892">    for ( iInchiRec = INCHI_REC; INCHI_BAS &lt;= iInchiRec; iInchiRec -- ) {</a>
+<a name="ln893">        /*</a>
+<a name="ln894">        if ( !pOneInput-&gt;nNumComponents[iInchiRec][TAUT_NON] &amp;&amp;</a>
+<a name="ln895">              pOneInput-&gt;nNumComponents[iInchiRec][TAUT_YES] ) {</a>
+<a name="ln896">        */</a>
+<a name="ln897">             int bHasRecMobH = (iInchiRec==INCHI_BAS &amp;&amp; pOneInput-&gt;nNumComponents[INCHI_REC][TAUT_YES]);</a>
+<a name="ln898">             /* bHasRecMobH means all components that could not be disconnected are in reconnected part */</a>
+<a name="ln899">             if ( iInchiRec==INCHI_BAS ) {</a>
+<a name="ln900">                 /* second pass: common structures have been changed */</a>
+<a name="ln901">                 nToBeRemovedByNormFromRevrs[INCHI_BAS].nNumRemovedProtons += nDeltaFromDisconnected;</a>
+<a name="ln902">             }</a>
+<a name="ln903">             /* after proton removal InChI is recalculated */</a>
+<a name="ln904"> </a>
+<a name="ln905">             ret = AddRemProtonsInRestrStruct( ip, sd, num_inp, bHasSomeFixedH, pStruct[iInchiRec][TAUT_YES],</a>
+<a name="ln906">                                     pOneInput-&gt;nNumComponents[iInchiRec][TAUT_YES],</a>
+<a name="ln907">                                     bHasRecMobH? pStruct[INCHI_REC][TAUT_YES] : NULL,</a>
+<a name="ln908">                                     bHasRecMobH? pOneInput-&gt;nNumComponents[INCHI_REC][TAUT_YES]:0,</a>
+<a name="ln909">                                     &amp;nToBeRemovedByNormFromRevrs[iInchiRec].nNumRemovedProtons,</a>
+<a name="ln910">                                     (iInchiRec==INCHI_REC)?&amp;nDeltaFromDisconnected : NULL);</a>
+<a name="ln911">             if ( ret &lt; 0 ) {</a>
+<a name="ln912">                 goto exit_function;</a>
+<a name="ln913">             }</a>
+<a name="ln914">             num_changes += ret;</a>
+<a name="ln915">        /*</a>
+<a name="ln916">        }</a>
+<a name="ln917">        */</a>
+<a name="ln918">    }</a>
+<a name="ln919">    /* if fixed-H layer is missing then we need to add isotopic exchangeable proton balance to the components */</a>
+<a name="ln920">    for ( iInchiRec = INCHI_REC; INCHI_BAS &lt;= iInchiRec; iInchiRec -- ) {</a>
+<a name="ln921">        /*</a>
+<a name="ln922">        if ( !pOneInput-&gt;nNumComponents[iInchiRec][TAUT_NON] &amp;&amp;</a>
+<a name="ln923">              pOneInput-&gt;nNumComponents[iInchiRec][TAUT_YES] ) {</a>
+<a name="ln924">        */</a>
+<a name="ln925">             int bHasRecMobH = (iInchiRec==INCHI_BAS &amp;&amp; pOneInput-&gt;nNumComponents[INCHI_REC][TAUT_YES]);</a>
+<a name="ln926">             /* bHasRecMobH means all components that could not be disconnected are in reconnected part */</a>
+<a name="ln927">             if ( iInchiRec==INCHI_BAS ) {</a>
+<a name="ln928">                 /* second pass: common structures have been changed */</a>
+<a name="ln929">                 for ( k = 0; k &lt; NUM_H_ISOTOPES; k ++ ) {</a>
+<a name="ln930">                     nToBeRemovedByNormFromRevrs[INCHI_BAS].nNumRemovedIsotopicH[k] += nIsoDeltaFromDisconnected[k];</a>
+<a name="ln931">                 }</a>
+<a name="ln932">             }</a>
+<a name="ln933">             /* after proton removal InChI is recalculated */</a>
+<a name="ln934">             ret = AddRemIsoProtonsInRestrStruct( ip, sd, num_inp, bHasSomeFixedH, pStruct[iInchiRec][TAUT_YES],</a>
+<a name="ln935">                                     pOneInput-&gt;nNumComponents[iInchiRec][TAUT_YES],</a>
+<a name="ln936">                                     bHasRecMobH? pStruct[INCHI_REC][TAUT_YES] : NULL,</a>
+<a name="ln937">                                     bHasRecMobH? pOneInput-&gt;nNumComponents[INCHI_REC][TAUT_YES]:0,</a>
+<a name="ln938">                                     nToBeRemovedByNormFromRevrs[iInchiRec].nNumRemovedIsotopicH,</a>
+<a name="ln939">                                     (iInchiRec==INCHI_REC)?nIsoDeltaFromDisconnected : NULL);</a>
+<a name="ln940">             if ( ret &lt; 0 ) {</a>
+<a name="ln941">                 goto exit_function;</a>
+<a name="ln942">             }</a>
+<a name="ln943">             num_changes += ret;</a>
+<a name="ln944">        /*</a>
+<a name="ln945">        }</a>
+<a name="ln946">        */</a>
+<a name="ln947">    }</a>
+<a name="ln948"> </a>
+<a name="ln949">exit_function:</a>
+<a name="ln950">    return ret;</a>
+<a name="ln951">}</a>
+<a name="ln952"> </a>
+<a name="ln953">/*************************************************************/</a>
+<a name="ln954">void FreeStrFromINChI( StrFromINChI *pStruct[INCHI_NUM][TAUT_NUM], int nNumComponents[INCHI_NUM][TAUT_NUM] )</a>
+<a name="ln955">{</a>
+<a name="ln956">    int iInchiRec, iMobileH, cur_num_comp, k, j;</a>
+<a name="ln957">    StrFromINChI *pStruct1;</a>
+<a name="ln958">    for ( iInchiRec = 0; iInchiRec &lt; INCHI_NUM; iInchiRec ++ ) {</a>
+<a name="ln959">        for ( iMobileH = 0; iMobileH &lt; TAUT_NUM; iMobileH ++ ) {</a>
+<a name="ln960">            cur_num_comp = nNumComponents[iInchiRec][iMobileH];</a>
+<a name="ln961">            if ( !cur_num_comp || !(pStruct1=pStruct[iInchiRec][iMobileH]) ) {</a>
+<a name="ln962">                continue;</a>
+<a name="ln963">            }</a>
+<a name="ln964">            for ( k = 0; k &lt; cur_num_comp; k ++ ) {</a>
+<a name="ln965">                if ( pStruct1[k].at ) {</a>
+<a name="ln966">                    inchi_free(pStruct1[k].at);</a>
+<a name="ln967">                }</a>
+<a name="ln968">                if ( pStruct1[k].at2 ) {</a>
+<a name="ln969">                    inchi_free(pStruct1[k].at2);</a>
+<a name="ln970">                }</a>
+<a name="ln971">                if ( pStruct1[k].st ) {</a>
+<a name="ln972">                    inchi_free(pStruct1[k].st);</a>
+<a name="ln973">                }</a>
+<a name="ln974">                if ( pStruct1[k].pVA ) {</a>
+<a name="ln975">                    inchi_free(pStruct1[k].pVA);</a>
+<a name="ln976">                }</a>
+<a name="ln977">                /*</a>
+<a name="ln978">                if ( pStruct1[k].ti.t_group ) {</a>
+<a name="ln979">                    inchi_free( pStruct1[k].ti.t_group );</a>
+<a name="ln980">                }</a>
+<a name="ln981">                */</a>
+<a name="ln982">                if ( pStruct1[k].pXYZ ) {</a>
+<a name="ln983">                    inchi_free(pStruct1[k].pXYZ);</a>
+<a name="ln984">                }</a>
+<a name="ln985">                /*==== begin ====*/</a>
+<a name="ln986">                free_t_group_info( &amp;pStruct1[k].ti );</a>
+<a name="ln987">                if ( pStruct1[k].endpoint ) {</a>
+<a name="ln988">                    inchi_free(pStruct1[k].endpoint);</a>
+<a name="ln989">                }</a>
+<a name="ln990">                if ( pStruct1[k].fixed_H ) {</a>
+<a name="ln991">                    inchi_free(pStruct1[k].fixed_H);</a>
+<a name="ln992">                }</a>
+<a name="ln993">                for ( j = 0; j &lt; TAUT_NUM; j ++ ) {</a>
+<a name="ln994">                    if ( pStruct1[k].nAtno2Canon[j] )</a>
+<a name="ln995">                        inchi_free( pStruct1[k].nAtno2Canon[j] );</a>
+<a name="ln996">                    if ( pStruct1[k].nCanon2Atno[j] )</a>
+<a name="ln997">                        inchi_free( pStruct1[k].nCanon2Atno[j] );</a>
+<a name="ln998">                }</a>
+<a name="ln999">                /*===== end ======*/</a>
+<a name="ln1000">                /*  free INChI memory */</a>
+<a name="ln1001">                FreeAllINChIArrays( pStruct1[k].RevInChI.pINChI,</a>
+<a name="ln1002">                                    pStruct1[k].RevInChI.pINChI_Aux,</a>
+<a name="ln1003">                                    pStruct1[k].RevInChI.num_components );</a>
+<a name="ln1004">#ifdef NEVER</a>
+<a name="ln1005">                /* don't do that: these are just pointers to OneInput structure members */</a>
+<a name="ln1006">                Free_INChI( &amp;pStruct1[k].pINChI );</a>
+<a name="ln1007">                Free_INChI_Aux( &amp;pStruct1[k].pINChI_Aux );</a>
+<a name="ln1008">                if ( pStruct1[k].inp_norm_data ) {</a>
+<a name="ln1009">                    FreeInpAtomData( pStruct1[k].inp_norm_data );</a>
+<a name="ln1010">                    inchi_free( pStruct1[k].inp_norm_data );</a>
+<a name="ln1011">                }</a>
+<a name="ln1012">#endif</a>
+<a name="ln1013">            }</a>
+<a name="ln1014">            inchi_free(pStruct[iInchiRec][iMobileH]);</a>
+<a name="ln1015">            pStruct[iInchiRec][iMobileH] = NULL;</a>
+<a name="ln1016">        }</a>
+<a name="ln1017">    }</a>
+<a name="ln1018">}</a>
+<a name="ln1019">/********************************************************************/</a>
+<a name="ln1020">void FreeInpInChI( InpInChI *pOneInput )</a>
+<a name="ln1021">{</a>
+<a name="ln1022">    int iINChI, k, j;</a>
+<a name="ln1023">    for ( iINChI = 0; iINChI &lt; INCHI_NUM; iINChI ++ ) {</a>
+<a name="ln1024">        for ( j = 0; j &lt; TAUT_NUM; j ++ ) {</a>
+<a name="ln1025">            if ( pOneInput-&gt;pInpInChI[iINChI][j] ) {</a>
+<a name="ln1026">                for ( k = 0; k &lt; pOneInput-&gt;nNumComponents[iINChI][j]; k ++ ) {</a>
+<a name="ln1027">                    Free_INChI_Members( &amp;pOneInput-&gt;pInpInChI[iINChI][j][k] );</a>
+<a name="ln1028">                }</a>
+<a name="ln1029">                inchi_free(pOneInput-&gt;pInpInChI[iINChI][j]);</a>
+<a name="ln1030">                pOneInput-&gt;pInpInChI[iINChI][j] = NULL;</a>
+<a name="ln1031">            }</a>
+<a name="ln1032">            if ( pOneInput-&gt;nNumProtons[iINChI][j].pNumProtons ) {</a>
+<a name="ln1033">                inchi_free( pOneInput-&gt;nNumProtons[iINChI][j].pNumProtons );</a>
+<a name="ln1034">                pOneInput-&gt;nNumProtons[iINChI][j].pNumProtons = NULL;</a>
+<a name="ln1035">            }</a>
+<a name="ln1036">        }</a>
+<a name="ln1037">    }</a>
+<a name="ln1038">    if ( pOneInput-&gt;atom ) inchi_free(pOneInput-&gt;atom);</a>
+<a name="ln1039">    memset( pOneInput, 0, sizeof(*pOneInput) );</a>
+<a name="ln1040">}</a>
+<a name="ln1041"> </a>
+<a name="ln1042">/***********************************************************************************************/</a>
+<a name="ln1043">int CompareAllOrigInchiToRevInChI(StrFromINChI *pStruct[INCHI_NUM][TAUT_NUM], InpInChI *pOneInput, int bReqNonTaut,</a>
+<a name="ln1044">                                  long num_inp, char *szCurHdr)</a>
+<a name="ln1045">{</a>
+<a name="ln1046">    int i, iInchiRec, iMobileH, iMobileHpStruct, num_components, iComponent, ret=0;</a>
+<a name="ln1047">    COMPONENT_REM_PROTONS nCurRemovedProtons, nNumRemovedProtons;</a>
+<a name="ln1048">    INChI     *pInChI[TAUT_NUM];</a>
+<a name="ln1049">    INCHI_MODE  CompareInchiFlags[TAUT_NUM];</a>
+<a name="ln1050">    memset( pOneInput-&gt;CompareInchiFlags[0], 0, sizeof(pOneInput-&gt;CompareInchiFlags[0]) );</a>
+<a name="ln1051">    memset( &amp;nNumRemovedProtons, 0, sizeof(nNumRemovedProtons) );</a>
+<a name="ln1052">    </a>
+<a name="ln1053">    /* do we have reconnected InChI ?*/</a>
+<a name="ln1054">    iInchiRec = INCHI_REC;</a>
+<a name="ln1055">    iMobileH  = TAUT_NON;</a>
+<a name="ln1056">    if ( !pOneInput-&gt;nNumComponents[iInchiRec][TAUT_YES] &amp;&amp; !pOneInput-&gt;nNumComponents[iInchiRec][TAUT_NON] ) {</a>
+<a name="ln1057">        iInchiRec = INCHI_BAS;</a>
+<a name="ln1058">    }</a>
+<a name="ln1059">    /* do we have Mobile or Fixed-H ? */</a>
+<a name="ln1060">    if ( !pOneInput-&gt;nNumComponents[iInchiRec][TAUT_NON] || !bReqNonTaut ) {</a>
+<a name="ln1061">        iMobileH = TAUT_YES;  /* index for pOneInput */</a>
+<a name="ln1062">    }</a>
+<a name="ln1063">    /* if a restored structure has Fixed-H InChI then its mobile-H restored InChI is in Fixed-H pStruct */</a>
+<a name="ln1064">    num_components = pOneInput-&gt;nNumComponents[iInchiRec][iMobileH];</a>
+<a name="ln1065">    for ( iComponent = 0; iComponent &lt; num_components; iComponent ++ ) {</a>
+<a name="ln1066">        int bMobileH = iMobileH;</a>
+<a name="ln1067">        pInChI[0]     = pInChI[1]     = NULL;</a>
+<a name="ln1068">        if ( pOneInput-&gt;pInpInChI[iInchiRec][bMobileH][iComponent].nNumberOfAtoms &amp;&amp;</a>
+<a name="ln1069">             !pOneInput-&gt;pInpInChI[iInchiRec][bMobileH][iComponent].bDeleted ) {</a>
+<a name="ln1070">            /* the requested InChI layer exists */</a>
+<a name="ln1071">            pInChI[0]     = &amp;pOneInput-&gt;pInpInChI[iInchiRec][bMobileH][iComponent];</a>
+<a name="ln1072">            if ( bMobileH == TAUT_NON ) {</a>
+<a name="ln1073">                pInChI[1] = &amp;pOneInput-&gt;pInpInChI[iInchiRec][TAUT_YES][iComponent];</a>
+<a name="ln1074">            }</a>
+<a name="ln1075">        } else</a>
+<a name="ln1076">        if ( bMobileH == TAUT_NON &amp;&amp;</a>
+<a name="ln1077">             pOneInput-&gt;pInpInChI[iInchiRec][TAUT_YES][iComponent].nNumberOfAtoms &amp;&amp;</a>
+<a name="ln1078">             !pOneInput-&gt;pInpInChI[iInchiRec][TAUT_YES][iComponent].bDeleted ) {</a>
+<a name="ln1079">            /* the requested Fixed-H InChI layer does not exist; however, the Mobile-H does exist */</a>
+<a name="ln1080">            bMobileH = TAUT_YES; /* only Mobile-H is available */</a>
+<a name="ln1081">            pInChI[0] = &amp;pOneInput-&gt;pInpInChI[iInchiRec][bMobileH][iComponent];</a>
+<a name="ln1082">        }</a>
+<a name="ln1083">        memset( CompareInchiFlags, 0, sizeof(CompareInchiFlags) );</a>
+<a name="ln1084">        memset( &amp;nCurRemovedProtons, 0, sizeof(nCurRemovedProtons) );</a>
+<a name="ln1085">        iMobileHpStruct = </a>
+<a name="ln1086">#if ( bRELEASE_VERSION == 0 )</a>
+<a name="ln1087">#ifndef TARGET_API_LIB</a>
+<a name="ln1088">        /* legacy: reproduce old output */</a>
+<a name="ln1089">        OldPrintCompareOneOrigInchiToRevInChI(pStruct[iInchiRec][bMobileH]+iComponent, pInChI, bMobileH,</a>
+<a name="ln1090">                                              iComponent, num_inp, szCurHdr);</a>
+<a name="ln1091">#endif</a>
+<a name="ln1092">#endif</a>
+<a name="ln1093">        /* one component comparison result bits */</a>
+<a name="ln1094">        ret = CompareOneOrigInchiToRevInChI( pStruct[iInchiRec][bMobileH]+iComponent, pInChI, bMobileH, iComponent,</a>
+<a name="ln1095">                                             num_inp, szCurHdr, &amp;nCurRemovedProtons, CompareInchiFlags);</a>
+<a name="ln1096">        if ( ret &gt;= 0 ) {</a>
+<a name="ln1097">            /* no errors encountered -&gt; accumulate removed protons from individual Mobile-H layers of components */</a>
+<a name="ln1098">            nNumRemovedProtons.nNumRemovedProtons += nCurRemovedProtons.nNumRemovedProtons;</a>
+<a name="ln1099">            for ( i = 0; i &lt; NUM_H_ISOTOPES; i ++ ) {</a>
+<a name="ln1100">                nNumRemovedProtons.nNumRemovedIsotopicH[i] += nCurRemovedProtons.nNumRemovedIsotopicH[i];</a>
+<a name="ln1101">            }</a>
+<a name="ln1102">            /* accumulate compare bits */</a>
+<a name="ln1103">            for ( i = 0; i &lt; TAUT_NUM; i ++ ) {</a>
+<a name="ln1104">                pOneInput-&gt;CompareInchiFlags[0][i] |= CompareInchiFlags[i];</a>
+<a name="ln1105">            }</a>
+<a name="ln1106">        } else {</a>
+<a name="ln1107">            goto exit_function;</a>
+<a name="ln1108">        }</a>
+<a name="ln1109">    }</a>
+<a name="ln1110">    if ( iMobileH == TAUT_YES ) {</a>
+<a name="ln1111">        if ( pOneInput-&gt;nNumProtons[iInchiRec][iMobileH].pNumProtons ) {</a>
+<a name="ln1112">            ret = RI_ERR_PROGR; /* in Mobile-H case proton balances are split between compoments */</a>
+<a name="ln1113">        } else {</a>
+<a name="ln1114">            /*   num removed protons in orig. InChI      num removed protons in restored InChi */</a>
+<a name="ln1115">            if ( nNumRemovedProtons.nNumRemovedProtons != pOneInput-&gt;nNumProtons[iInchiRec][iMobileH].nNumRemovedProtons ) {</a>
+<a name="ln1116">                /* restored structure InChI has less or more removed protons */</a>
+<a name="ln1117">                pOneInput-&gt;CompareInchiFlags[0][TAUT_YES] |= INCHIDIFF_MOBH_PROTONS;</a>
+<a name="ln1118">#if ( bRELEASE_VERSION == 0 )</a>
+<a name="ln1119">                /* debug output only */</a>
+<a name="ln1120">                {</a>
+<a name="ln1121">                    int num_H_AddedByRevrs = pOneInput-&gt;nNumProtons[iInchiRec][iMobileH].nNumRemovedProtons</a>
+<a name="ln1122">                                              - nNumRemovedProtons.nNumRemovedProtons;</a>
+<a name="ln1123">                    fprintf( stdout, &quot;COMPARE_INCHI: %ld: %s %cM: Proton balance (Diff: %d, RevrsRem=%d)\n&quot;,</a>
+<a name="ln1124">                        num_inp, szCurHdr? szCurHdr : &quot;Struct&quot;, iInchiRec? 'R':'D',</a>
+<a name="ln1125">                        pOneInput-&gt;nNumProtons[iInchiRec][iMobileH].nNumRemovedProtons,num_H_AddedByRevrs);</a>
+<a name="ln1126">                }</a>
+<a name="ln1127">#endif</a>
+<a name="ln1128">            }</a>
+<a name="ln1129">            for ( i = 0; i &lt; NUM_H_ISOTOPES; i ++ ) {</a>
+<a name="ln1130">                if ( nNumRemovedProtons.nNumRemovedIsotopicH[i] != pOneInput-&gt;nNumProtons[iInchiRec][TAUT_YES].nNumRemovedIsotopicH[i] ) {</a>
+<a name="ln1131">                    pOneInput-&gt;CompareInchiFlags[0][TAUT_YES] |= INCHIDIFF_MOB_ISO_H;</a>
+<a name="ln1132">#if ( bRELEASE_VERSION == 0 )</a>
+<a name="ln1133">                    /* debug output only */</a>
+<a name="ln1134">                    {</a>
+<a name="ln1135">                    int num_H_AddedByRevrs = pOneInput-&gt;nNumProtons[iInchiRec][TAUT_YES].nNumRemovedIsotopicH[i]</a>
+<a name="ln1136">                      - nNumRemovedProtons.nNumRemovedIsotopicH[i];</a>
+<a name="ln1137">                    fprintf( stdout, &quot;COMPARE_INCHI: %ld: %s %cM: Iso Xchg %dH balance (Diff: %d, RevrsRem=%d)\n&quot;,</a>
+<a name="ln1138">                        num_inp, szCurHdr? szCurHdr : &quot;Struct&quot;, iInchiRec? 'R':'D', i+1,</a>
+<a name="ln1139">                        pOneInput-&gt;nNumProtons[iInchiRec][TAUT_YES].nNumRemovedIsotopicH[i],num_H_AddedByRevrs);</a>
+<a name="ln1140">                    }</a>
+<a name="ln1141">#endif</a>
+<a name="ln1142">                }</a>
+<a name="ln1143">            }</a>
+<a name="ln1144">        }</a>
+<a name="ln1145">    }</a>
+<a name="ln1146"> </a>
+<a name="ln1147">exit_function:</a>
+<a name="ln1148">    return ret;</a>
+<a name="ln1149">}</a>
+<a name="ln1150">/***********************************************************************************************/</a>
+<a name="ln1151">int CompareAllDisconnectedOrigInchiToRevInChI(StrFromINChI *pStruct[INCHI_NUM][TAUT_NUM],</a>
+<a name="ln1152">                                              InpInChI *pOneInput, int bHasSomeFixedH,</a>
+<a name="ln1153">                                              long num_inp, char *szCurHdr)</a>
+<a name="ln1154">{</a>
+<a name="ln1155">    int i, k, m, n, iInChI, iMobileH, bMobileH, ifk;</a>
+<a name="ln1156">    int num_components_D, num_components_R;</a>
+<a name="ln1157">    int nNumCompHaveSeparateProtons_D, nNumCompHaveSeparateProtons_R;</a>
+<a name="ln1158">    int num_fragments_D, num_fragments_R, num_fragments_DR, num_fragments, iComponent, ret;</a>
+<a name="ln1159">    int ifInChI, ifMobileH, bfMobileH, nLink;</a>
+<a name="ln1160">    COMPONENT_REM_PROTONS nNumRemovedProtons_D;     /* removed from the disconnected layer of the Input InChI */</a>
+<a name="ln1161">    COMPONENT_REM_PROTONS nNumRemovedProtons_D_all; /* if only totals are avalable */</a>
+<a name="ln1162">    COMPONENT_REM_PROTONS nNumRemovedProtons_R; /* removed from disconnected layer of the reconstructed struct */</a>
+<a name="ln1163">    COMPONENT_REM_PROTONS nNumRemovedProtons_R_all;</a>
+<a name="ln1164">    INCHI_MODE  CompareInchiFlags[TAUT_NUM];</a>
+<a name="ln1165">    StrFromINChI *pStruct1;</a>
+<a name="ln1166">    INChI_Aux *pINChI_Aux;</a>
+<a name="ln1167">    INCHI_SORT *pINChISort1 = NULL; /* from reversed structure */</a>
+<a name="ln1168">    INCHI_SORT *pINChISort2 = NULL; /* original input InChI */</a>
+<a name="ln1169">    int        nNumNonTaut1=0, nNumNonTaut2=0;</a>
+<a name="ln1170"> </a>
+<a name="ln1171">    ret = 0;</a>
+<a name="ln1172">    memset( pOneInput-&gt;CompareInchiFlags[1], 0, sizeof(pOneInput-&gt;CompareInchiFlags[1]) );</a>
+<a name="ln1173"> </a>
+<a name="ln1174">    /* count components that are not subject to disconnection */</a>
+<a name="ln1175">    if ( !pOneInput-&gt;nNumComponents[INCHI_REC][TAUT_YES] &amp;&amp;</a>
+<a name="ln1176">         !pOneInput-&gt;nNumComponents[INCHI_REC][TAUT_NON] ) {</a>
+<a name="ln1177">        return 0; /* nothing to do */</a>
+<a name="ln1178">    }</a>
+<a name="ln1179"> </a>
+<a name="ln1180">    memset( &amp;nNumRemovedProtons_D, 0, sizeof(nNumRemovedProtons_D) );</a>
+<a name="ln1181">    memset( &amp;nNumRemovedProtons_R, 0, sizeof(nNumRemovedProtons_R) );</a>
+<a name="ln1182">    memset( &amp;nNumRemovedProtons_D_all, 0, sizeof(nNumRemovedProtons_D_all) );</a>
+<a name="ln1183">    memset( &amp;nNumRemovedProtons_R_all, 0, sizeof(nNumRemovedProtons_R_all) );</a>
+<a name="ln1184">    memset( CompareInchiFlags, 0, sizeof(CompareInchiFlags) );</a>
+<a name="ln1185"> </a>
+<a name="ln1186">    num_components_D = inchi_max( pOneInput-&gt;nNumComponents[INCHI_BAS][TAUT_YES],</a>
+<a name="ln1187">                                  pOneInput-&gt;nNumComponents[INCHI_BAS][TAUT_NON] );</a>
+<a name="ln1188">    num_components_R = inchi_max( pOneInput-&gt;nNumComponents[INCHI_REC][TAUT_YES],</a>
+<a name="ln1189">                                  pOneInput-&gt;nNumComponents[INCHI_REC][TAUT_NON] );</a>
+<a name="ln1190">    /***********************************************************************************************/</a>
+<a name="ln1191">    /* InpInChI: count fragments -- disconnected components that do not match reconnected          */</a>
+<a name="ln1192">    /* Accumulate removed H and isotopic H from ALL Fixed-H disconnected components except deleted */</a>
+<a name="ln1193">    /* This segment collects info from the original InChI                                          */</a>
+<a name="ln1194">    /***********************************************************************************************/</a>
+<a name="ln1195">    /*---- Original InChI ----*/</a>
+<a name="ln1196">    num_fragments_D = 0;</a>
+<a name="ln1197">    iInChI   = INCHI_BAS;</a>
+<a name="ln1198">    iMobileH = bHasSomeFixedH? !pOneInput-&gt;nNumComponents[iInChI][TAUT_NON] : TAUT_YES;</a>
+<a name="ln1199">    nNumCompHaveSeparateProtons_D = 0;</a>
+<a name="ln1200"> </a>
+<a name="ln1201">    /* in case of Mobile-H components here are the proton totals from the original InChI disconn. layer */</a>
+<a name="ln1202">    nNumRemovedProtons_D.nNumRemovedProtons = pOneInput-&gt;nNumProtons[iInChI][TAUT_YES].nNumRemovedProtons;</a>
+<a name="ln1203">    memcpy( nNumRemovedProtons_D.nNumRemovedIsotopicH, </a>
+<a name="ln1204">            pOneInput-&gt;nNumProtons[iInChI][TAUT_YES].nNumRemovedIsotopicH,</a>
+<a name="ln1205">            sizeof(nNumRemovedProtons_D.nNumRemovedIsotopicH) ); /* total for the disconnected layer */</a>
+<a name="ln1206"> </a>
+<a name="ln1207">    for ( k = 0; k &lt; num_components_D; k ++ ) {</a>
+<a name="ln1208">        bMobileH = iMobileH;</a>
+<a name="ln1209">        if ( !bInpInchiComponentExists( pOneInput, iInChI, bMobileH, k ) ) {</a>
+<a name="ln1210">            if ( bInpInchiComponentExists( pOneInput, iInChI, TAUT_YES, k ) ) {</a>
+<a name="ln1211">                bMobileH = TAUT_YES;</a>
+<a name="ln1212">            } else {</a>
+<a name="ln1213">                continue; /* component is missing ??? */</a>
+<a name="ln1214">            }</a>
+<a name="ln1215">        }</a>
+<a name="ln1216">        if ( 0 &gt; (nLink = pOneInput-&gt;pInpInChI[iInChI][bMobileH][k].nLink) ) {</a>
+<a name="ln1217">            /* component in Disconnected layer is linked to the identical one in the Reconnected layer */</a>
+<a name="ln1218">            if ( pOneInput-&gt;nNumProtons[INCHI_REC][TAUT_YES].pNumProtons ) {</a>
+<a name="ln1219">                nNumCompHaveSeparateProtons_D ++;</a>
+<a name="ln1220">                nLink = -(1+nLink);</a>
+<a name="ln1221">                nNumRemovedProtons_D.nNumRemovedProtons += pOneInput-&gt;nNumProtons[INCHI_REC][TAUT_YES].pNumProtons[nLink].nNumRemovedProtons;</a>
+<a name="ln1222">                for ( m = 0; m &lt; NUM_H_ISOTOPES; m ++ ) {</a>
+<a name="ln1223">                    nNumRemovedProtons_D.nNumRemovedIsotopicH[m] += pOneInput-&gt;nNumProtons[INCHI_REC][TAUT_YES].pNumProtons[nLink].nNumRemovedIsotopicH[m];</a>
+<a name="ln1224">                }</a>
+<a name="ln1225">            }</a>
+<a name="ln1226">            continue; /* same as reconnected */</a>
+<a name="ln1227">        }</a>
+<a name="ln1228">        /* component in the reconnected layer that was disconnected */</a>
+<a name="ln1229">        nNumNonTaut2 += (bMobileH == TAUT_NON);</a>
+<a name="ln1230">        if ( pOneInput-&gt;nNumProtons[iInChI][TAUT_YES].pNumProtons ) {</a>
+<a name="ln1231">            nNumCompHaveSeparateProtons_D ++;</a>
+<a name="ln1232">            nNumRemovedProtons_D.nNumRemovedProtons += pOneInput-&gt;nNumProtons[iInChI][TAUT_YES].pNumProtons[k].nNumRemovedProtons;</a>
+<a name="ln1233">            for ( m = 0; m &lt; NUM_H_ISOTOPES; m ++ ) {</a>
+<a name="ln1234">                nNumRemovedProtons_D.nNumRemovedIsotopicH[m] += pOneInput-&gt;nNumProtons[iInChI][TAUT_YES].pNumProtons[k].nNumRemovedIsotopicH[m];</a>
+<a name="ln1235">            }</a>
+<a name="ln1236">        }</a>
+<a name="ln1237">        num_fragments_D ++; /* number of disconnected fragments from original reconnected structure */</a>
+<a name="ln1238">    }</a>
+<a name="ln1239">    /* in case of Mobile-H components here are the proton totals from the original InChI */</a>
+<a name="ln1240">    /*</a>
+<a name="ln1241">    nNumRemovedProtons_D_all.nNumRemovedProtons = pOneInput-&gt;nNumProtons[iInChI][TAUT_YES].nNumRemovedProtons;</a>
+<a name="ln1242">    memcpy( nNumRemovedProtons_D_all.nNumRemovedIsotopicH, </a>
+<a name="ln1243">            pOneInput-&gt;nNumProtons[iInChI][TAUT_YES].nNumRemovedIsotopicH,</a>
+<a name="ln1244">            sizeof(nNumRemovedProtons_D_all.nNumRemovedIsotopicH) );</a>
+<a name="ln1245"> </a>
+<a name="ln1246">    */</a>
+<a name="ln1247">    /****************************************************************************************************/</a>
+<a name="ln1248">    /* count fragments in reconstructed reconnected structure                                           */</a>
+<a name="ln1249">    /* accumulate removed H and isotopic H from ALL reconstructed reconnected components except deleted */</a>
+<a name="ln1250">    /* This segment collects info from the reconstructed structure InChI                                */</a>
+<a name="ln1251">    /****************************************************************************************************/</a>
+<a name="ln1252">    /*---- InChI from the reconstructed reconnected structure ----*/</a>
+<a name="ln1253">    num_fragments_R = 0;</a>
+<a name="ln1254">    iInChI   = INCHI_REC;</a>
+<a name="ln1255">    iMobileH = bHasSomeFixedH? !pOneInput-&gt;nNumComponents[iInChI][TAUT_NON] : TAUT_YES;</a>
+<a name="ln1256">    nNumCompHaveSeparateProtons_R = 0;</a>
+<a name="ln1257">    for ( k = 0; k &lt; num_components_R; k ++ ) {</a>
+<a name="ln1258">        bMobileH = iMobileH;</a>
+<a name="ln1259">        if ( !bInpInchiComponentExists( pOneInput, iInChI, bMobileH, k ) ) {</a>
+<a name="ln1260">            if ( bInpInchiComponentExists( pOneInput, iInChI, TAUT_YES, k ) ) {</a>
+<a name="ln1261">                bMobileH = TAUT_YES;</a>
+<a name="ln1262">            } else {</a>
+<a name="ln1263">                continue; /* component is missing ??? (Deleted proton in Mobile-H layer) */</a>
+<a name="ln1264">            }</a>
+<a name="ln1265">        }</a>
+<a name="ln1266">        if ( 0 &lt; pOneInput-&gt;pInpInChI[iInChI][bMobileH][k].nLink ) {</a>
+<a name="ln1267">            /* this reconstructed reconnected component was NOT DISCONNECTED */</a>
+<a name="ln1268">            /* same component is in the disconnected layer, it has no metal atoms or is an isolated metal atom */</a>
+<a name="ln1269">            pStruct1 = pStruct[iInChI][bMobileH]+k;</a>
+<a name="ln1270">            ifMobileH = TAUT_YES;  /* Mobile-H Aux_Info contains number removed protons */</a>
+<a name="ln1271">            ifInChI   = INCHI_BAS; /* this component cannot be reconnected */</a>
+<a name="ln1272">            ifk       = 0;         /* 0th component since it is InChI of a single component */</a>
+<a name="ln1273">            /* The statement in the following line is *WRONG*, component number mixed with bMobileH:  */</a>
+<a name="ln1274">            /* in RevInchi, when only Mobile-H is present then its only non-NULL InChI has index 0==TAUT_NON */</a>
+<a name="ln1275">            if ( bRevInchiComponentExists( pStruct1, ifInChI, ifMobileH, ifk ) ) {</a>
+<a name="ln1276">                /* count protons */</a>
+<a name="ln1277">                pINChI_Aux = pStruct1-&gt;RevInChI.pINChI_Aux[ifInChI][ifk][ifMobileH];</a>
+<a name="ln1278">                if ( pINChI_Aux ) {</a>
+<a name="ln1279">                    nNumRemovedProtons_R.nNumRemovedProtons += pINChI_Aux-&gt;nNumRemovedProtons;</a>
+<a name="ln1280">                    for ( m = 0; m &lt; NUM_H_ISOTOPES; m ++ ) {</a>
+<a name="ln1281">                        nNumRemovedProtons_R.nNumRemovedIsotopicH[m] += pINChI_Aux-&gt;nNumRemovedIsotopicH[m];</a>
+<a name="ln1282">                    }</a>
+<a name="ln1283">                }</a>
+<a name="ln1284">            }</a>
+<a name="ln1285">            nNumCompHaveSeparateProtons_R += bRevInchiComponentExists( pStruct1, ifInChI, ALT_TAUT(ifMobileH), ifk );</a>
+<a name="ln1286">            continue; /* same as disconnected, has no metal atoms */</a>
+<a name="ln1287">        }</a>
+<a name="ln1288">        /* this reconstructed reconnected component WAS DISCONNECTED; check its fragments */</a>
+<a name="ln1289">        /* it does not have same component in the disconnected layer */</a>
+<a name="ln1290">        pStruct1 = pStruct[iInChI][bMobileH]+k;</a>
+<a name="ln1291">        num_fragments = pStruct1-&gt;RevInChI.num_components[INCHI_BAS];</a>
+<a name="ln1292">        ifInChI = INCHI_BAS; /* disconnected layer */</a>
+<a name="ln1293">        ifMobileH = bHasSomeFixedH? TAUT_NON : TAUT_YES;</a>
+<a name="ln1294">        for ( ifk = 0; ifk &lt; num_fragments; ifk ++ ) {</a>
+<a name="ln1295">            bfMobileH = ifMobileH;</a>
+<a name="ln1296">            if ( !bRevInchiComponentExists( pStruct1, ifInChI, bfMobileH, ifk ) ) {</a>
+<a name="ln1297">                if ( bRevInchiComponentExists( pStruct1, ifInChI, TAUT_YES, ifk ) ) {</a>
+<a name="ln1298">                    bfMobileH = TAUT_YES;</a>
+<a name="ln1299">                } else {</a>
+<a name="ln1300">                    continue; /* fragment does not exist ??? */</a>
+<a name="ln1301">                }</a>
+<a name="ln1302">            }</a>
+<a name="ln1303">            nNumNonTaut1           += (bfMobileH == TAUT_NON);</a>
+<a name="ln1304">            nNumCompHaveSeparateProtons_R += (bfMobileH == TAUT_NON);</a>
+<a name="ln1305">            /* count protons from fragments made by metal disconnection */</a>
+<a name="ln1306">            pINChI_Aux = pStruct1-&gt;RevInChI.pINChI_Aux[ifInChI][ifk][TAUT_YES];</a>
+<a name="ln1307">            if ( pINChI_Aux ) {</a>
+<a name="ln1308">                nNumRemovedProtons_R.nNumRemovedProtons += pINChI_Aux-&gt;nNumRemovedProtons;</a>
+<a name="ln1309">                for ( m = 0; m &lt; NUM_H_ISOTOPES; m ++ ) {</a>
+<a name="ln1310">                    nNumRemovedProtons_R.nNumRemovedIsotopicH[m] += pINChI_Aux-&gt;nNumRemovedIsotopicH[m];</a>
+<a name="ln1311">                }</a>
+<a name="ln1312">            }</a>
+<a name="ln1313">            num_fragments_R ++; /* number of disconnected fragments from reconstructed reconnected structure */</a>
+<a name="ln1314">        }</a>
+<a name="ln1315">    }</a>
+<a name="ln1316">    /*---------------- special treatment of the last reconstructed component -----------------*/</a>
+<a name="ln1317">    /*---------------- this may contain separate protons added by the reconstruction ---------*/</a>
+<a name="ln1318">    k = num_components_R - 1;</a>
+<a name="ln1319">    pStruct1 = pStruct[iInChI][iMobileH]+k;</a>
+<a name="ln1320">    if ( iMobileH == TAUT_YES &amp;&amp; !bHasSomeFixedH &amp;&amp;</a>
+<a name="ln1321">         bInpInchiComponentDeleted( pOneInput, iInChI, iMobileH, k ) &amp;&amp;</a>
+<a name="ln1322">         (num_fragments = pStruct1-&gt;RevInChI.num_components[INCHI_BAS]) ) {</a>
+<a name="ln1323"> </a>
+<a name="ln1324">        ifInChI = INCHI_BAS; /* disconnected layer */</a>
+<a name="ln1325">        ifMobileH = TAUT_YES;</a>
+<a name="ln1326">        for ( ifk = 0; ifk &lt; num_fragments; ifk ++ ) {</a>
+<a name="ln1327">            bfMobileH = ifMobileH;</a>
+<a name="ln1328">            if ( !bRevInchiComponentDeleted( pStruct1, ifInChI, bfMobileH, ifk ) ) {</a>
+<a name="ln1329">                continue; /* fragment does exist ??? Should not happen */</a>
+<a name="ln1330">            }</a>
+<a name="ln1331">            /*</a>
+<a name="ln1332">            nNumNonTaut1           += (bfMobileH == TAUT_NON);</a>
+<a name="ln1333">            nNumCompHaveSeparateProtons_R += (bfMobileH == TAUT_NON);</a>
+<a name="ln1334">            */</a>
+<a name="ln1335">            /* count protons from fragments made by metal disconnection */</a>
+<a name="ln1336">            pINChI_Aux = pStruct1-&gt;RevInChI.pINChI_Aux[ifInChI][ifk][TAUT_YES];</a>
+<a name="ln1337">            if ( pINChI_Aux ) {</a>
+<a name="ln1338">                nNumRemovedProtons_R.nNumRemovedProtons += pINChI_Aux-&gt;nNumRemovedProtons;</a>
+<a name="ln1339">                for ( m = 0; m &lt; NUM_H_ISOTOPES; m ++ ) {</a>
+<a name="ln1340">                    nNumRemovedProtons_R.nNumRemovedIsotopicH[m] += pINChI_Aux-&gt;nNumRemovedIsotopicH[m];</a>
+<a name="ln1341">                }</a>
+<a name="ln1342">            }</a>
+<a name="ln1343">            /*num_fragments_R ++;*/ /* number of disconnected fragments from reconstructed reconnected structure */</a>
+<a name="ln1344">        }</a>
+<a name="ln1345">    }</a>
+<a name="ln1346"> </a>
+<a name="ln1347"> </a>
+<a name="ln1348"> </a>
+<a name="ln1349">    num_fragments_DR = inchi_max( num_fragments_D, num_fragments_R );</a>
+<a name="ln1350">    /* in case of correct reconstruction, num_fragments_D, num_fragments_R */</a>
+<a name="ln1351"> </a>
+<a name="ln1352">    if ( !num_fragments_DR ) {</a>
+<a name="ln1353">        return 0; /* no component was disconnected */</a>
+<a name="ln1354">    }</a>
+<a name="ln1355">    if ( num_fragments_D != num_fragments_R ) {</a>
+<a name="ln1356">        for ( i = 0; i &lt; TAUT_NUM; i ++ ) {</a>
+<a name="ln1357">            if ( pOneInput-&gt;nNumComponents[INCHI_BAS][i] ) {</a>
+<a name="ln1358">                pOneInput-&gt;CompareInchiFlags[1][i] |= INCHIDIFF_PROBLEM;</a>
+<a name="ln1359">            }</a>
+<a name="ln1360">        }</a>
+<a name="ln1361">        return 1; /* severe error */</a>
+<a name="ln1362">    }</a>
+<a name="ln1363"> </a>
+<a name="ln1364"> </a>
+<a name="ln1365">    pINChISort1 = (INCHI_SORT *)inchi_calloc(num_fragments_DR, sizeof(pINChISort1[0]));</a>
+<a name="ln1366">    pINChISort2 = (INCHI_SORT *)inchi_calloc(num_fragments_DR, sizeof(pINChISort2[0]));</a>
+<a name="ln1367">    if ( !pINChISort1 || !pINChISort2 ) {</a>
+<a name="ln1368">        ret = RI_ERR_ALLOC;</a>
+<a name="ln1369">        goto exit_function;</a>
+<a name="ln1370">    }</a>
+<a name="ln1371"> </a>
+<a name="ln1372">    /* accumulate original InChI of fragments -- disconnected components that do not match reconnected */</a>
+<a name="ln1373">    iInChI   = INCHI_BAS;</a>
+<a name="ln1374">    iMobileH = bHasSomeFixedH? !pOneInput-&gt;nNumComponents[iInChI][TAUT_NON] : TAUT_YES;</a>
+<a name="ln1375">    for ( k = n = 0; k &lt; num_components_D; k ++ ) {</a>
+<a name="ln1376">        bMobileH = iMobileH;</a>
+<a name="ln1377">        if ( !bInpInchiComponentExists( pOneInput, iInChI, bMobileH, k ) ) {</a>
+<a name="ln1378">            if ( bInpInchiComponentExists( pOneInput, iInChI, TAUT_YES, k ) ) {</a>
+<a name="ln1379">                bMobileH = TAUT_YES;</a>
+<a name="ln1380">            } else {</a>
+<a name="ln1381">                continue; /* component is missing ??? (Deleted proton in Mobile-H layer) */</a>
+<a name="ln1382">            }</a>
+<a name="ln1383">        }</a>
+<a name="ln1384">        if ( 0 &gt; pOneInput-&gt;pInpInChI[iInChI][bMobileH][k].nLink ) {</a>
+<a name="ln1385">            continue; /* same as reconnected */</a>
+<a name="ln1386">        }</a>
+<a name="ln1387">        /* the component exists in disconnected layer of the orig. InChI only: it is a fragment */</a>
+<a name="ln1388">        pINChISort2[n].pINChI[bMobileH] = pOneInput-&gt;pInpInChI[iInChI][bMobileH] + k;</a>
+<a name="ln1389">        if ( bMobileH == TAUT_NON &amp;&amp; </a>
+<a name="ln1390">             (bInpInchiComponentExists( pOneInput, iInChI, TAUT_YES, k ) ||</a>
+<a name="ln1391">              bInpInchiComponentDeleted( pOneInput, iInChI, TAUT_YES, k ) ) ) {</a>
+<a name="ln1392">            pINChISort2[n].pINChI[TAUT_YES] = pOneInput-&gt;pInpInChI[iInChI][TAUT_YES] + k;</a>
+<a name="ln1393">        }</a>
+<a name="ln1394">        /* the last sort key is a number of removed protons */</a>
+<a name="ln1395">        pINChISort2[n].ord_number = pOneInput-&gt;nNumProtons[iInChI][TAUT_YES].pNumProtons?</a>
+<a name="ln1396">                     pOneInput-&gt;nNumProtons[iInChI][TAUT_YES].pNumProtons[k].nNumRemovedProtons : 0;</a>
+<a name="ln1397">        pINChISort2[n].n1 = k;  /* orig. InChI disconnected layer component number */</a>
+<a name="ln1398">        pINChISort2[n].n2 = -1; /* no fragment index */</a>
+<a name="ln1399">        n ++;     </a>
+<a name="ln1400">    }</a>
+<a name="ln1401"> </a>
+<a name="ln1402">    /* accumulate fragments from the reconstructed structure */</a>
+<a name="ln1403">    iInChI   = INCHI_REC;</a>
+<a name="ln1404">    iMobileH = bHasSomeFixedH? !pOneInput-&gt;nNumComponents[iInChI][TAUT_NON] : TAUT_YES;</a>
+<a name="ln1405">    for ( k = n = 0; k &lt; num_components_R; k ++ ) {</a>
+<a name="ln1406">        bMobileH = iMobileH;</a>
+<a name="ln1407">        if ( !bInpInchiComponentExists( pOneInput, iInChI, bMobileH, k ) ) {</a>
+<a name="ln1408">            if ( bInpInchiComponentExists( pOneInput, iInChI, TAUT_YES, k ) ) {</a>
+<a name="ln1409">                bMobileH = TAUT_YES;</a>
+<a name="ln1410">            } else {</a>
+<a name="ln1411">                continue; /* component is missing ??? (Deleted proton in Mobile-H layer) */</a>
+<a name="ln1412">            }</a>
+<a name="ln1413">        }</a>
+<a name="ln1414">        /* the reconstructed structure */</a>
+<a name="ln1415">        if ( 0 &lt; pOneInput-&gt;pInpInChI[iInChI][bMobileH][k].nLink ) {</a>
+<a name="ln1416">            continue; /* same as disconnected, has no metal atoms */</a>
+<a name="ln1417">        }</a>
+<a name="ln1418">        /* this reconstructed structure was disconnected */</a>
+<a name="ln1419">        pStruct1 = pStruct[iInChI][bMobileH]+k;</a>
+<a name="ln1420">        num_fragments = pStruct1-&gt;RevInChI.num_components[INCHI_BAS];</a>
+<a name="ln1421">        ifInChI = INCHI_BAS;</a>
+<a name="ln1422">        ifMobileH = bHasSomeFixedH? TAUT_NON : TAUT_YES;</a>
+<a name="ln1423">        for ( i = 0; i &lt; num_fragments; i ++ ) {</a>
+<a name="ln1424">            bfMobileH = ifMobileH;</a>
+<a name="ln1425">            if ( !bRevInchiComponentExists( pStruct1, ifInChI, bfMobileH, i ) ) {</a>
+<a name="ln1426">                if ( bRevInchiComponentExists( pStruct1, ifInChI, TAUT_YES, i ) ) {</a>
+<a name="ln1427">                    bfMobileH = TAUT_YES;</a>
+<a name="ln1428">                } else {</a>
+<a name="ln1429">                    continue; /* component is missing ??? */</a>
+<a name="ln1430">                }</a>
+<a name="ln1431">            }</a>
+<a name="ln1432">            pINChISort1[n].pINChI[bfMobileH] =  pStruct1-&gt;RevInChI.pINChI[ifInChI][i][bfMobileH];</a>
+<a name="ln1433">            if ( bfMobileH == TAUT_NON /*&amp;&amp; bRevInchiComponentExists( pStruct1, ifInChI, TAUT_YES, i )*/ ) {</a>
+<a name="ln1434">                pINChISort1[n].pINChI[TAUT_YES] = pStruct1-&gt;RevInChI.pINChI[ifInChI][i][TAUT_YES];</a>
+<a name="ln1435">                /* remove Fixed-H InChI if is is identical to Mobile-H */</a>
+<a name="ln1436">                /* do it exactly same way the identical components were removed from InpInChI */</a>
+<a name="ln1437">                if ( !CompareReversedINChI( pINChISort1[n].pINChI[bfMobileH],</a>
+<a name="ln1438">                                            pINChISort1[n].pINChI[TAUT_YES], NULL, NULL ) ) {</a>
+<a name="ln1439">                    pINChISort1[n].pINChI[bfMobileH] = NULL; /* remove Fixed-H layer */</a>
+<a name="ln1440">                } else {</a>
+<a name="ln1441">                    pINChISort1[n].ord_number = pStruct1-&gt;RevInChI.pINChI_Aux[ifInChI][i][TAUT_YES]-&gt;nNumRemovedProtons;</a>
+<a name="ln1442">                }</a>
+<a name="ln1443">            }</a>
+<a name="ln1444"> </a>
+<a name="ln1445">            pINChISort1[n].n1 = k;  /* reconstructed reconnected structure component index */</a>
+<a name="ln1446">            pINChISort1[n].n2 = i;  /* index of a fragment made out of this component */</a>
+<a name="ln1447">            n ++;</a>
+<a name="ln1448">        }</a>
+<a name="ln1449">    }</a>
+<a name="ln1450">    </a>
+<a name="ln1451">    /* sort fragment InChI before comparing them */</a>
+<a name="ln1452">    qsort( pINChISort1, num_fragments_D, sizeof(pINChISort1[0]), CompINChITaut2 );</a>
+<a name="ln1453">    qsort( pINChISort2, num_fragments_R, sizeof(pINChISort2[0]), CompINChITaut2 );</a>
+<a name="ln1454">    </a>
+<a name="ln1455">    /* compare fragments -- components present in disconnected layer only */</a>
+<a name="ln1456">    for ( iComponent = 0; iComponent &lt; num_fragments_DR; iComponent ++ ) {</a>
+<a name="ln1457">        INChI *pInChI1[TAUT_NUM]; /* from reversed structure */</a>
+<a name="ln1458">        INChI *pInChI2[TAUT_NUM]; /* original input InChI */</a>
+<a name="ln1459">        for ( i = 0; i &lt; TAUT_NUM; i ++ ) {</a>
+<a name="ln1460">            pInChI1[i] = pINChISort1[iComponent].pINChI[i];</a>
+<a name="ln1461">            pInChI2[i] = pINChISort2[iComponent].pINChI[i];</a>
+<a name="ln1462">        }</a>
+<a name="ln1463">        CompareTwoPairsOfInChI( pInChI1, pInChI2, !bHasSomeFixedH, CompareInchiFlags );</a>
+<a name="ln1464">    }</a>
+<a name="ln1465">    </a>
+<a name="ln1466">    if ( /*nNumNonTaut1 &amp;&amp; nNumNonTaut2 &amp;&amp;*/ bHasSomeFixedH ) {</a>
+<a name="ln1467">        if ( nNumCompHaveSeparateProtons_D || nNumCompHaveSeparateProtons_R ) {</a>
+<a name="ln1468">            /* for each component, compare number removed protons */</a>
+<a name="ln1469">            /* comparison does not make sense if Disconnected Fixed-H layer is not present */</a>
+<a name="ln1470">            for ( iComponent = 0; iComponent &lt; num_fragments_DR; iComponent ++ ) {</a>
+<a name="ln1471">                NUM_H   nNumRemovedIsotopicH1[NUM_H_ISOTOPES];</a>
+<a name="ln1472">                NUM_H   nNumRemovedIsotopicH2[NUM_H_ISOTOPES];</a>
+<a name="ln1473"> </a>
+<a name="ln1474">                memset( nNumRemovedIsotopicH1, 0, sizeof(nNumRemovedIsotopicH1) );</a>
+<a name="ln1475">                memset( nNumRemovedIsotopicH2, 0, sizeof(nNumRemovedIsotopicH2) );</a>
+<a name="ln1476">                /* compare removed protons */</a>
+<a name="ln1477">                if ( pINChISort1[iComponent].ord_number != pINChISort2[iComponent].ord_number ) {</a>
+<a name="ln1478">                    CompareInchiFlags[TAUT_YES] |= INCHIDIFF_MOBH_PROTONS; /* diff number of removed protons */</a>
+<a name="ln1479">                }</a>
+<a name="ln1480">                /* also compare removed isotopic atoms H */</a>
+<a name="ln1481">                k = pINChISort2[iComponent].n1; /* input InChI, OneInput */</a>
+<a name="ln1482">                if ( pOneInput-&gt;nNumProtons[INCHI_BAS][TAUT_YES].pNumProtons ) {</a>
+<a name="ln1483">                    memcpy( nNumRemovedIsotopicH2,</a>
+<a name="ln1484">                        pOneInput-&gt;nNumProtons[INCHI_BAS][TAUT_YES].pNumProtons[k].nNumRemovedIsotopicH,</a>
+<a name="ln1485">                        sizeof( nNumRemovedIsotopicH2 ) );</a>
+<a name="ln1486">                }</a>
+<a name="ln1487">               /* get fragments of reconstructed structure removed protons info */</a>
+<a name="ln1488">                k = pINChISort1[iComponent].n1; /* restored component number */</a>
+<a name="ln1489">                i = pINChISort1[iComponent].n2; /* subcomponent number */</a>
+<a name="ln1490">                iInChI   = INCHI_REC;</a>
+<a name="ln1491">                iMobileH = bHasSomeFixedH? !pOneInput-&gt;nNumComponents[iInChI][TAUT_NON] : TAUT_YES;</a>
+<a name="ln1492">                bMobileH = iMobileH;</a>
+<a name="ln1493">                if ( !bInpInchiComponentExists( pOneInput, iInChI, bMobileH, k ) ) {</a>
+<a name="ln1494">                    if ( bInpInchiComponentExists( pOneInput, iInChI, TAUT_YES, k ) ) {</a>
+<a name="ln1495">                        bMobileH = TAUT_YES;</a>
+<a name="ln1496">                    } else {</a>
+<a name="ln1497">                       goto compare_iso_H;</a>
+<a name="ln1498">                    }</a>
+<a name="ln1499">                }</a>
+<a name="ln1500">                if ( pOneInput-&gt;pInpInChI[iInChI][bMobileH][k].nLink ) {</a>
+<a name="ln1501">                    continue;</a>
+<a name="ln1502">                    /*</a>
+<a name="ln1503">                    ret = RI_ERR_PROGR;</a>
+<a name="ln1504">                    goto exit_function;</a>
+<a name="ln1505">                    */</a>
+<a name="ln1506">                }</a>
+<a name="ln1507">                pStruct1 = pStruct[iInChI][bMobileH]+k;</a>
+<a name="ln1508">                num_fragments = pStruct1-&gt;RevInChI.num_components[INCHI_BAS];</a>
+<a name="ln1509">                ifInChI = INCHI_BAS;</a>
+<a name="ln1510">                ifMobileH = bHasSomeFixedH? TAUT_NON : TAUT_YES;</a>
+<a name="ln1511">                if ( i &lt; num_fragments ) {</a>
+<a name="ln1512">                    bfMobileH = ifMobileH;</a>
+<a name="ln1513">                    if ( !bRevInchiComponentExists( pStruct1, ifInChI, bfMobileH, i ) ) {</a>
+<a name="ln1514">                        if ( bRevInchiComponentExists( pStruct1, ifInChI, TAUT_YES, i ) ) {</a>
+<a name="ln1515">                            bfMobileH = TAUT_YES;</a>
+<a name="ln1516">                        } else {</a>
+<a name="ln1517">                            goto compare_iso_H;</a>
+<a name="ln1518">                        }</a>
+<a name="ln1519">                    }</a>
+<a name="ln1520">                    memcpy( nNumRemovedIsotopicH1,</a>
+<a name="ln1521">                        pStruct1-&gt;RevInChI.pINChI_Aux[ifInChI][i][TAUT_YES]-&gt;nNumRemovedIsotopicH,</a>
+<a name="ln1522">                        sizeof( nNumRemovedIsotopicH1 ) );</a>
+<a name="ln1523">                }</a>
+<a name="ln1524">compare_iso_H:</a>
+<a name="ln1525">                if ( memcmp( nNumRemovedIsotopicH1, nNumRemovedIsotopicH2, sizeof( nNumRemovedIsotopicH1 ) ) ) {</a>
+<a name="ln1526">                    CompareInchiFlags[TAUT_YES] |= INCHIDIFF_REM_ISO_H;</a>
+<a name="ln1527">                }</a>
+<a name="ln1528">            }</a>
+<a name="ln1529">        }</a>
+<a name="ln1530">    } else</a>
+<a name="ln1531">    /*if ( !nNumNonTaut1 &amp;&amp; !nNumNonTaut2 || !bHasSomeFixedH )*/ {</a>
+<a name="ln1532">        /* compare totals for removed protons and isotopic H */</a>
+<a name="ln1533">        if ( pOneInput-&gt;nNumProtons[INCHI_BAS][TAUT_YES].nNumRemovedProtons !=</a>
+<a name="ln1534">             nNumRemovedProtons_R.nNumRemovedProtons ) {</a>
+<a name="ln1535">            CompareInchiFlags[TAUT_YES] |= INCHIDIFF_MOBH_PROTONS;</a>
+<a name="ln1536">        }</a>
+<a name="ln1537">        if ( memcmp( pOneInput-&gt;nNumProtons[INCHI_BAS][TAUT_YES].nNumRemovedIsotopicH,</a>
+<a name="ln1538">                     nNumRemovedProtons_R.nNumRemovedIsotopicH,</a>
+<a name="ln1539">                     sizeof( nNumRemovedProtons_R.nNumRemovedIsotopicH ) ) ) {</a>
+<a name="ln1540">                CompareInchiFlags[TAUT_YES] |= INCHIDIFF_REM_ISO_H;</a>
+<a name="ln1541">        }</a>
+<a name="ln1542">    }</a>
+<a name="ln1543"> </a>
+<a name="ln1544">    if ( !nNumNonTaut1 == !nNumNonTaut2 ) {</a>
+<a name="ln1545">        ; /* difference if(nNumNonTaut1 != nNumNonTaut2) will be caught in InChI comparison */</a>
+<a name="ln1546">    } else</a>
+<a name="ln1547">    if ( nNumNonTaut1 ) {</a>
+<a name="ln1548">        /* reconstructed has Fixed-H while the original has not: extra Fixed-H layer */</a>
+<a name="ln1549">        CompareInchiFlags[TAUT_YES] |= INCHIDIFF_WRONG_TAUT;</a>
+<a name="ln1550">    } else {</a>
+<a name="ln1551">        /* the original InChI has Fixed-H while the reconstructed one has not: missing Fixed-H layer */</a>
+<a name="ln1552">        CompareInchiFlags[TAUT_YES] |= INCHIDIFF_NO_TAUT;</a>
+<a name="ln1553">    }</a>
+<a name="ln1554">    for ( i = 0; i &lt; TAUT_NUM; i ++ ) {</a>
+<a name="ln1555">        pOneInput-&gt;CompareInchiFlags[1][i] |= CompareInchiFlags[i];</a>
+<a name="ln1556">    }</a>
+<a name="ln1557"> </a>
+<a name="ln1558">    /* compare totals */</a>
+<a name="ln1559">    if ( nNumRemovedProtons_R.nNumRemovedProtons != nNumRemovedProtons_D.nNumRemovedProtons ) {</a>
+<a name="ln1560">        CompareInchiFlags[TAUT_YES] |= INCHIDIFF_MOBH_PROTONS; /* diff number of removed protons */</a>
+<a name="ln1561">    }</a>
+<a name="ln1562">    if ( memcmp( nNumRemovedProtons_R.nNumRemovedIsotopicH, </a>
+<a name="ln1563">                 nNumRemovedProtons_D.nNumRemovedIsotopicH,</a>
+<a name="ln1564">                 sizeof( nNumRemovedProtons_D.nNumRemovedIsotopicH ) ) ) {</a>
+<a name="ln1565">        CompareInchiFlags[TAUT_YES] |= INCHIDIFF_REM_ISO_H;</a>
+<a name="ln1566">    }</a>
+<a name="ln1567"> </a>
+<a name="ln1568">exit_function:</a>
+<a name="ln1569"> </a>
+<a name="ln1570">    if ( pINChISort1 ) inchi_free( pINChISort1 );</a>
+<a name="ln1571">    if ( pINChISort2 ) inchi_free( pINChISort2 );</a>
+<a name="ln1572"> </a>
+<a name="ln1573">    return ret;</a>
+<a name="ln1574">}</a>
+<a name="ln1575">/******************************************************************************************************/</a>
+<a name="ln1576">int CompareTwoPairsOfInChI( INChI *pInChI1[TAUT_NUM], INChI *pInChI2[TAUT_NUM],</a>
+<a name="ln1577">                            int bMobileH, INCHI_MODE CompareInchiFlags[] )</a>
+<a name="ln1578">{</a>
+<a name="ln1579">    int iMobileH, err=0;</a>
+<a name="ln1580">    INCHI_MODE cmp;</a>
+<a name="ln1581">    for ( iMobileH = 0; iMobileH &lt; TAUT_NUM; iMobileH ++ ) {</a>
+<a name="ln1582">        if ( !pInChI1[iMobileH] != !pInChI2[iMobileH] ) {</a>
+<a name="ln1583">            if ( iMobileH == TAUT_NON &amp;&amp;</a>
+<a name="ln1584">                 pInChI1[TAUT_YES] &amp;&amp; pInChI2[TAUT_YES] ) {</a>
+<a name="ln1585">                CompareInchiFlags[iMobileH] |= INCHIDIFF_COMP_HLAYER;</a>
+<a name="ln1586">            } else {</a>
+<a name="ln1587">                CompareInchiFlags[iMobileH] |= INCHIDIFF_COMP_NUMBER;</a>
+<a name="ln1588">            }</a>
+<a name="ln1589">            continue;</a>
+<a name="ln1590">        }</a>
+<a name="ln1591">        if ( pInChI1[iMobileH] &amp;&amp; pInChI2[iMobileH] ) {</a>
+<a name="ln1592">            cmp = CompareReversedINChI3( pInChI1[iMobileH], pInChI2[iMobileH], NULL, NULL, &amp;err );</a>
+<a name="ln1593">            if ( cmp ) {</a>
+<a name="ln1594">                CompareInchiFlags[iMobileH] |= cmp;</a>
+<a name="ln1595">            }</a>
+<a name="ln1596">        }</a>
+<a name="ln1597">    }</a>
+<a name="ln1598">    return err;</a>
+<a name="ln1599">}</a>
+<a name="ln1600">/******************************************************************************************************/</a>
+<a name="ln1601">int CompareOneOrigInchiToRevInChI(StrFromINChI *pStruct, INChI *pInChI[TAUT_NUM], int bMobileH, int iComponent,</a>
+<a name="ln1602">                                  long num_inp, char *szCurHdr,</a>
+<a name="ln1603">                                  COMPONENT_REM_PROTONS *nCurRemovedProtons, INCHI_MODE CompareInchiFlags[])</a>
+<a name="ln1604">{</a>
+<a name="ln1605">    int ret = pStruct-&gt;RevInChI.nRetVal, err=0;</a>
+<a name="ln1606">    INCHI_MODE cmp;</a>
+<a name="ln1607">    if ( ret == _IS_OKAY || ret == _IS_WARNING ) {</a>
+<a name="ln1608">        /* ignore bMobileH for now */</a>
+<a name="ln1609">        int i, i0, b /* created type */, b0 /* requested type*/, j, k;</a>
+<a name="ln1610">        /* pINChI[iINCHI][iComponent][bTaut] */</a>
+<a name="ln1611">        /* i0 = requested Rec/Disconnected: 1/0 */</a>
+<a name="ln1612">        /* i  = what InChI creaded out of the restored structure */</a>
+<a name="ln1613">        /* b0 = requested Mobile/Fixed-H: 1/0 */</a>
+<a name="ln1614">        /* b  = what InChI creaded out of the restored structure */</a>
+<a name="ln1615">        i = i0 = pStruct-&gt;iINCHI;</a>
+<a name="ln1616">        b = b0 = pStruct-&gt;iMobileH;</a>
+<a name="ln1617">        if ( i == INCHI_REC &amp;&amp; !pStruct-&gt;RevInChI.num_components[i] ) {</a>
+<a name="ln1618">            i = INCHI_BAS;</a>
+<a name="ln1619">        }</a>
+<a name="ln1620">        if ( b == TAUT_NON &amp;&amp; (!pStruct-&gt;RevInChI.pINChI[i] ||</a>
+<a name="ln1621">                               !pStruct-&gt;RevInChI.pINChI[i][0][b] ||</a>
+<a name="ln1622">                               !pStruct-&gt;RevInChI.pINChI[i][0][b]-&gt;nNumberOfAtoms ) ) {</a>
+<a name="ln1623">            b = TAUT_YES;</a>
+<a name="ln1624">        }</a>
+<a name="ln1625">        if ( pStruct-&gt;bDeleted &amp;&amp; (!pInChI[0] || pInChI[0]-&gt;bDeleted ) ) {</a>
+<a name="ln1626">            return 0;</a>
+<a name="ln1627">        }</a>
+<a name="ln1628"> </a>
+<a name="ln1629">        if ( (pStruct-&gt;RevInChI.num_components[i] &gt; 1 &amp;&amp;</a>
+<a name="ln1630">             !pStruct-&gt;RevInChI.pINChI[i][1][b]-&gt;bDeleted) ||</a>
+<a name="ln1631">             pStruct-&gt;RevInChI.num_components[i] &lt; 1 ) {</a>
+<a name="ln1632">            CompareInchiFlags[bMobileH] |= INCHIDIFF_COMP_NUMBER;</a>
+<a name="ln1633">        }</a>
+<a name="ln1634">        if ( b != b0 || b != bMobileH || b0 != bMobileH || i &gt; i0 ) {</a>
+<a name="ln1635">            /* do not print messages about TAUT_YES instead of TAUT_NON */</a>
+<a name="ln1636">            CompareInchiFlags[bMobileH] |= INCHIDIFF_COMP_HLAYER;</a>
+<a name="ln1637">        }</a>
+<a name="ln1638"> </a>
+<a name="ln1639">        if ( pStruct-&gt;RevInChI.num_components[i] ) {</a>
+<a name="ln1640">            /* compare InChI from restored structure; '0' in [i][0][b] is the first component */</a>
+<a name="ln1641">            if ( b == TAUT_YES &amp;&amp; pStruct-&gt;RevInChI.pINChI[i][0][b]-&gt;bDeleted &amp;&amp; (!pInChI[0] || pInChI[0]-&gt;bDeleted ) ) {</a>
+<a name="ln1642">                /* the 1st component is made out of proton(s) and the input component is missing or also a proton */</a>
+<a name="ln1643">                cmp = 0;</a>
+<a name="ln1644">            } else {</a>
+<a name="ln1645">                cmp = CompareReversedINChI3( pStruct-&gt;RevInChI.pINChI[i][0][b], pInChI[0], NULL, NULL, &amp;err );</a>
+<a name="ln1646">                if ( cmp ) {</a>
+<a name="ln1647">                    CompareInchiFlags[bMobileH] |= cmp;</a>
+<a name="ln1648">                }</a>
+<a name="ln1649">            }</a>
+<a name="ln1650">            if ( b == b0 &amp;&amp; b == TAUT_NON ) {</a>
+<a name="ln1651">                if ( (pStruct-&gt;RevInChI.pINChI[i][0][TAUT_YES] &amp;&amp;</a>
+<a name="ln1652">                     !pStruct-&gt;RevInChI.pINChI[i][0][TAUT_YES]-&gt;bDeleted) ||</a>
+<a name="ln1653">                     (pInChI[1] &amp;&amp; !pInChI[1]-&gt;bDeleted) ) {</a>
+<a name="ln1654"> </a>
+<a name="ln1655">                    /* in addition to fixed-H also compare mobile-H InChI */</a>
+<a name="ln1656">                    cmp = CompareReversedINChI3( pStruct-&gt;RevInChI.pINChI[i][0][TAUT_YES], pInChI[1], NULL, NULL, &amp;err );</a>
+<a name="ln1657">                    if ( cmp ) {</a>
+<a name="ln1658">                        CompareInchiFlags[TAUT_YES] |= cmp;</a>
+<a name="ln1659">                    }</a>
+<a name="ln1660">                }</a>
+<a name="ln1661">                /* compare removed H */</a>
+<a name="ln1662">                if ( pStruct-&gt;nNumRemovedProtonsMobHInChI != pStruct-&gt;RevInChI.pINChI_Aux[i][0][TAUT_YES]-&gt;nNumRemovedProtons ) {</a>
+<a name="ln1663">                    CompareInchiFlags[TAUT_YES] |= INCHIDIFF_MOBH_PROTONS;</a>
+<a name="ln1664">                }</a>
+<a name="ln1665">            }</a>
+<a name="ln1666">            memset( nCurRemovedProtons, 0, sizeof(*nCurRemovedProtons) );</a>
+<a name="ln1667">            for ( k = 0; k &lt; pStruct-&gt;RevInChI.num_components[i]; k ++ ) {</a>
+<a name="ln1668">                if ( !k || pStruct-&gt;RevInChI.pINChI[i][k][TAUT_YES]-&gt;bDeleted ) {</a>
+<a name="ln1669">                    /* get removed protons from the 1st component; add othere only if they are deleted protons */</a>
+<a name="ln1670">                    nCurRemovedProtons-&gt;nNumRemovedProtons += pStruct-&gt;RevInChI.pINChI_Aux[i][k][TAUT_YES]-&gt;nNumRemovedProtons;</a>
+<a name="ln1671">                    for ( j = 0; j &lt; NUM_H_ISOTOPES; j ++ ) {</a>
+<a name="ln1672">                        nCurRemovedProtons-&gt;nNumRemovedIsotopicH[j] += pStruct-&gt;RevInChI.pINChI_Aux[i][k][TAUT_YES]-&gt;nNumRemovedIsotopicH[j];</a>
+<a name="ln1673">                    }</a>
+<a name="ln1674">                }</a>
+<a name="ln1675">            }</a>
+<a name="ln1676">        }</a>
+<a name="ln1677">    } else {</a>
+<a name="ln1678">        CompareInchiFlags[bMobileH] |= INCHIDIFF_STR2INCHI_ERR;</a>
+<a name="ln1679">    }</a>
+<a name="ln1680">    return err;</a>
+<a name="ln1681">}</a>
+<a name="ln1682">/*************************************************************************************/</a>
+<a name="ln1683">INCHI_MODE CompareReversedStereoINChI3( INChI_Stereo *s1/* InChI from reversed struct */, INChI_Stereo *s2 /* input InChI */, ICR *picr)</a>
+<a name="ln1684">{</a>
+<a name="ln1685">    int ret = 0;</a>
+<a name="ln1686">    int j1, j2, num_eq, num_dif, num_extra_undf, num_miss_undf, num_in1_only, num_in2_only;</a>
+<a name="ln1687">    int bAddSb = !(picr-&gt;num_sb_undef_in1_only + picr-&gt;num_sb_in1_only + picr-&gt;num_sb_in2_only);</a>
+<a name="ln1688">    int bAddSc = !(picr-&gt;num_sc_undef_in1_only + picr-&gt;num_sc_in1_only + picr-&gt;num_sc_in2_only);</a>
+<a name="ln1689">    </a>
+<a name="ln1690">    int nNumSc1 = s1? s1-&gt;nNumberOfStereoCenters : 0;</a>
+<a name="ln1691">    int nNumSc2 = s2? s2-&gt;nNumberOfStereoCenters : 0;</a>
+<a name="ln1692">    int nNumSb1 = s1? s1-&gt;nNumberOfStereoBonds   : 0;</a>
+<a name="ln1693">    int nNumSb2 = s2? s2-&gt;nNumberOfStereoBonds   : 0;</a>
+<a name="ln1694">    </a>
+<a name="ln1695">    if ( (nNumSc1 || nNumSc2) &amp;&amp;</a>
+<a name="ln1696">         ( nNumSc1 != nNumSc2 ||</a>
+<a name="ln1697">           memcmp( s1-&gt;nNumber,  s2-&gt;nNumber,  nNumSc1*sizeof(s1-&gt;nNumber[0] ) ) ||</a>
+<a name="ln1698">           memcmp( s1-&gt;t_parity, s2-&gt;t_parity, nNumSc1*sizeof(s1-&gt;t_parity[0]) ) ) ) {</a>
+<a name="ln1699"> </a>
+<a name="ln1700">        num_eq = num_dif = num_extra_undf = num_miss_undf = num_in1_only = num_in2_only = 0;</a>
+<a name="ln1701">        for ( j1 = j2 = 0; j1 &lt; nNumSc1 &amp;&amp; j2 &lt; nNumSc2; ) {</a>
+<a name="ln1702">            if ( s1-&gt;nNumber[j1] ==  s2-&gt;nNumber[j2] ) {</a>
+<a name="ln1703">                if ( s1-&gt;t_parity[j1] == s2-&gt;t_parity[j2] ) {</a>
+<a name="ln1704">                    num_eq ++;</a>
+<a name="ln1705">                } else {</a>
+<a name="ln1706">                    num_dif ++;</a>
+<a name="ln1707">                }</a>
+<a name="ln1708">                j1 ++;</a>
+<a name="ln1709">                j2 ++;</a>
+<a name="ln1710">            } else</a>
+<a name="ln1711">            if ( s1-&gt;nNumber[j1] &lt; s2-&gt;nNumber[j2] ) {</a>
+<a name="ln1712">                num_in1_only ++;</a>
+<a name="ln1713">                if ( s1-&gt;t_parity[j1] == AB_PARITY_UNDF ) {</a>
+<a name="ln1714">                    num_extra_undf ++;</a>
+<a name="ln1715">                }</a>
+<a name="ln1716">                if ( bAddSc ) {</a>
+<a name="ln1717">                    if ( picr-&gt;num_sc_in1_only &lt; ICR_MAX_SC_IN1_ONLY )</a>
+<a name="ln1718">                        picr-&gt;sc_in1_only[picr-&gt;num_sc_in1_only ++] = j1;</a>
+<a name="ln1719">                    if ( s1-&gt;t_parity[j1] == AB_PARITY_UNDF ) {</a>
+<a name="ln1720">                        if ( picr-&gt;num_sc_undef_in1_only &lt; ICR_MAX_SC_UNDF )</a>
+<a name="ln1721">                            picr-&gt;sc_undef_in1_only[picr-&gt;num_sc_undef_in1_only ++] = j1;</a>
+<a name="ln1722">                    }</a>
+<a name="ln1723">                }</a>
+<a name="ln1724">                j1 ++;</a>
+<a name="ln1725">            } else {</a>
+<a name="ln1726">                num_in2_only ++;</a>
+<a name="ln1727">                if ( s2-&gt;t_parity[j2] == AB_PARITY_UNDF ) {</a>
+<a name="ln1728">                    num_miss_undf ++;</a>
+<a name="ln1729">                }</a>
+<a name="ln1730">                if ( bAddSc ) {</a>
+<a name="ln1731">                    if ( picr-&gt;num_sc_in2_only &lt; ICR_MAX_SC_IN2_ONLY )</a>
+<a name="ln1732">                        picr-&gt;sc_in2_only[picr-&gt;num_sc_in2_only ++] = j2;</a>
+<a name="ln1733">                    if ( s2-&gt;t_parity[j2] == AB_PARITY_UNDF ) {</a>
+<a name="ln1734">                        if ( picr-&gt;num_sc_undef_in2_only &lt; ICR_MAX_SC_UNDF )</a>
+<a name="ln1735">                            picr-&gt;sc_undef_in2_only[picr-&gt;num_sc_undef_in2_only ++] = j1;</a>
+<a name="ln1736">                    }</a>
+<a name="ln1737">                }</a>
+<a name="ln1738">                j2 ++;</a>
+<a name="ln1739">            }</a>
+<a name="ln1740">        }</a>
+<a name="ln1741">        while ( j1 &lt; nNumSc1 ) {</a>
+<a name="ln1742">            if ( s1-&gt;t_parity[j1] == AB_PARITY_UNDF ) {</a>
+<a name="ln1743">                num_extra_undf ++;</a>
+<a name="ln1744">            }</a>
+<a name="ln1745">            num_in1_only ++;</a>
+<a name="ln1746">            if ( bAddSc ) {</a>
+<a name="ln1747">                if ( picr-&gt;num_sc_in1_only &lt; ICR_MAX_SC_IN1_ONLY )</a>
+<a name="ln1748">                    picr-&gt;sc_in1_only[picr-&gt;num_sc_in1_only ++] = j1;</a>
+<a name="ln1749">                if ( s1-&gt;t_parity[j1] == AB_PARITY_UNDF ) {</a>
+<a name="ln1750">                    if ( picr-&gt;num_sc_undef_in1_only &lt; ICR_MAX_SC_UNDF )</a>
+<a name="ln1751">                        picr-&gt;sc_undef_in1_only[picr-&gt;num_sc_undef_in1_only ++] = j1;</a>
+<a name="ln1752">                }</a>
+<a name="ln1753">            }</a>
+<a name="ln1754">            j1 ++;</a>
+<a name="ln1755">        }</a>
+<a name="ln1756">        while ( j2 &lt; nNumSc2 ) {</a>
+<a name="ln1757">            if ( s2-&gt;t_parity[j2] == AB_PARITY_UNDF ) {</a>
+<a name="ln1758">                num_miss_undf ++;</a>
+<a name="ln1759">            }</a>
+<a name="ln1760">            num_in2_only ++;</a>
+<a name="ln1761">            if ( bAddSc ) {</a>
+<a name="ln1762">                if ( picr-&gt;num_sc_in2_only &lt; ICR_MAX_SC_IN2_ONLY )</a>
+<a name="ln1763">                    picr-&gt;sc_in2_only[picr-&gt;num_sc_in2_only ++] = j2;</a>
+<a name="ln1764">            }</a>
+<a name="ln1765">            j2 ++;</a>
+<a name="ln1766">        }</a>
+<a name="ln1767">        if ( num_dif ) {</a>
+<a name="ln1768">            ret |= INCHIDIFF_SC_PARITY; </a>
+<a name="ln1769">        }</a>
+<a name="ln1770">        if ( num_in1_only ) {</a>
+<a name="ln1771">            if ( num_extra_undf ) {</a>
+<a name="ln1772">                ret |= INCHIDIFF_SC_EXTRA_UNDF;</a>
+<a name="ln1773">            }</a>
+<a name="ln1774">            if ( num_in1_only != num_extra_undf ) {</a>
+<a name="ln1775">                ret |= INCHIDIFF_SC_EXTRA;</a>
+<a name="ln1776">            }</a>
+<a name="ln1777">        }</a>
+<a name="ln1778">        if ( num_in2_only ) {</a>
+<a name="ln1779">            if ( num_miss_undf ) {</a>
+<a name="ln1780">                ret |= INCHIDIFF_SC_MISS_UNDF;</a>
+<a name="ln1781">            }</a>
+<a name="ln1782">            if ( num_in2_only != num_miss_undf ) {</a>
+<a name="ln1783">                ret |= INCHIDIFF_SC_MISS;</a>
+<a name="ln1784">            }</a>
+<a name="ln1785">        }</a>
+<a name="ln1786">    }</a>
+<a name="ln1787">    if ( s1 &amp;&amp; s2 &amp;&amp; (s2-&gt;nCompInv2Abs != 2) &amp;&amp; s1-&gt;nCompInv2Abs != s2-&gt;nCompInv2Abs &amp;&amp; s1-&gt;nCompInv2Abs &amp;&amp; s2-&gt;nCompInv2Abs ) {</a>
+<a name="ln1788">        ret |= INCHIDIFF_SC_INV; /* 2007-07-13 DT: added (s2-&gt;nCompInv2Abs != 2) to fix bug reoprted by Yerin on 2007/02/28 */</a>
+<a name="ln1789">                                 /* Bug description: falsely reported &quot;Stereo centers/allenes: Falsely inverted&quot; for /S2 or /S3 */</a>
+<a name="ln1790">    }</a>
+<a name="ln1791"> </a>
+<a name="ln1792">    if ( (nNumSb1 || nNumSb2 ) &amp;&amp;</a>
+<a name="ln1793">         (nNumSb1 != nNumSb2 ||</a>
+<a name="ln1794">          memcmp( s1-&gt;nBondAtom1, s2-&gt;nBondAtom1, nNumSb1*sizeof(s1-&gt;nBondAtom1[0]) ) ||</a>
+<a name="ln1795">          memcmp( s1-&gt;nBondAtom2, s2-&gt;nBondAtom2, nNumSb1*sizeof(s1-&gt;nBondAtom2[0]) ) ||</a>
+<a name="ln1796">          memcmp( s1-&gt;b_parity,   s2-&gt;b_parity,   nNumSb1*sizeof(s1-&gt;b_parity[0]) ) ) ) {</a>
+<a name="ln1797"> </a>
+<a name="ln1798">        num_eq = num_dif = num_extra_undf = num_miss_undf = num_in1_only = num_in2_only = 0;</a>
+<a name="ln1799">        for ( j1 = j2 = 0; j1 &lt; nNumSb1 &amp;&amp; j2 &lt; nNumSb2; ) {</a>
+<a name="ln1800">            if ( s1-&gt;nBondAtom1[j1] ==  s2-&gt;nBondAtom1[j2] &amp;&amp;</a>
+<a name="ln1801">                 s1-&gt;nBondAtom2[j1] ==  s2-&gt;nBondAtom2[j2] ) {</a>
+<a name="ln1802">                if ( s1-&gt;b_parity[j1] == s2-&gt;b_parity[j2] ) {</a>
+<a name="ln1803">                    num_eq ++;</a>
+<a name="ln1804">                } else {</a>
+<a name="ln1805">                    num_dif ++;</a>
+<a name="ln1806">                }</a>
+<a name="ln1807">                j1 ++;</a>
+<a name="ln1808">                j2 ++;</a>
+<a name="ln1809">            } else</a>
+<a name="ln1810">            if ( s1-&gt;nBondAtom1[j1] &lt;  s2-&gt;nBondAtom1[j2] ||</a>
+<a name="ln1811">                 (s1-&gt;nBondAtom1[j1] == s2-&gt;nBondAtom1[j2] &amp;&amp; s1-&gt;nBondAtom2[j1] &lt;  s2-&gt;nBondAtom2[j2])) {</a>
+<a name="ln1812">                num_in1_only ++;</a>
+<a name="ln1813">                if ( s1-&gt;b_parity[j1] == AB_PARITY_UNDF ) {</a>
+<a name="ln1814">                    num_extra_undf ++;</a>
+<a name="ln1815">                }</a>
+<a name="ln1816">                if ( bAddSb ) {</a>
+<a name="ln1817">                    if ( picr-&gt;num_sb_in1_only &lt; ICR_MAX_SB_IN1_ONLY )</a>
+<a name="ln1818">                        picr-&gt;sb_in1_only[picr-&gt;num_sb_in1_only ++] = j1;</a>
+<a name="ln1819">                    if ( s1-&gt;b_parity[j1] == AB_PARITY_UNDF ) {</a>
+<a name="ln1820">                        if ( picr-&gt;num_sb_undef_in1_only &lt; ICR_MAX_SB_UNDF )</a>
+<a name="ln1821">                            picr-&gt;sb_undef_in1_only[picr-&gt;num_sb_undef_in1_only ++] = j1;</a>
+<a name="ln1822">                    }</a>
+<a name="ln1823">                }</a>
+<a name="ln1824">                j1 ++;</a>
+<a name="ln1825">            } else {</a>
+<a name="ln1826">                num_in2_only ++;</a>
+<a name="ln1827">                if ( s2-&gt;b_parity[j2] == AB_PARITY_UNDF ) {</a>
+<a name="ln1828">                    num_miss_undf ++;</a>
+<a name="ln1829">                }</a>
+<a name="ln1830">                if ( bAddSb ) {</a>
+<a name="ln1831">                    if ( picr-&gt;num_sb_in2_only &lt; ICR_MAX_SB_IN2_ONLY )</a>
+<a name="ln1832">                        picr-&gt;sb_in2_only[picr-&gt;num_sb_in2_only ++] = j2;</a>
+<a name="ln1833">                    if ( s2-&gt;b_parity[j2] == AB_PARITY_UNDF ) {</a>
+<a name="ln1834">                        if ( picr-&gt;num_sb_undef_in2_only &lt; ICR_MAX_SB_UNDF )</a>
+<a name="ln1835">                            picr-&gt;sb_undef_in2_only[picr-&gt;num_sb_undef_in2_only ++] = j1;</a>
+<a name="ln1836">                    }</a>
+<a name="ln1837">                }</a>
+<a name="ln1838">                j2 ++;</a>
+<a name="ln1839">            }</a>
+<a name="ln1840">        }</a>
+<a name="ln1841">        while ( j1 &lt; nNumSb1 ) {</a>
+<a name="ln1842">            num_in1_only ++;</a>
+<a name="ln1843">            if ( s1-&gt;b_parity[j1] == AB_PARITY_UNDF ) {</a>
+<a name="ln1844">                num_extra_undf ++;</a>
+<a name="ln1845">            }</a>
+<a name="ln1846">            if ( bAddSb ) {</a>
+<a name="ln1847">                if ( picr-&gt;num_sb_in1_only &lt; ICR_MAX_SB_IN1_ONLY )</a>
+<a name="ln1848">                    picr-&gt;sb_in1_only[picr-&gt;num_sb_in1_only ++] = j1;</a>
+<a name="ln1849">                if ( s1-&gt;b_parity[j1] == AB_PARITY_UNDF ) {</a>
+<a name="ln1850">                    if ( picr-&gt;num_sb_undef_in1_only &lt; ICR_MAX_SB_UNDF )</a>
+<a name="ln1851">                        picr-&gt;sb_undef_in1_only[picr-&gt;num_sb_undef_in1_only ++] = j1;</a>
+<a name="ln1852">                }</a>
+<a name="ln1853">            }</a>
+<a name="ln1854">            j1 ++;</a>
+<a name="ln1855">        }</a>
+<a name="ln1856">        while ( j2 &lt; nNumSb2 ) {</a>
+<a name="ln1857">            num_in2_only ++;</a>
+<a name="ln1858">            if ( s2-&gt;b_parity[j2] == AB_PARITY_UNDF ) {</a>
+<a name="ln1859">                num_miss_undf ++;</a>
+<a name="ln1860">            }</a>
+<a name="ln1861">            if ( bAddSb ) {</a>
+<a name="ln1862">                if ( picr-&gt;num_sb_in2_only &lt; ICR_MAX_SB_IN2_ONLY )</a>
+<a name="ln1863">                    picr-&gt;sb_in2_only[picr-&gt;num_sb_in2_only ++] = j2;</a>
+<a name="ln1864">                if ( s2-&gt;b_parity[j2] == AB_PARITY_UNDF ) {</a>
+<a name="ln1865">                    if ( picr-&gt;num_sb_undef_in2_only &lt; ICR_MAX_SB_UNDF )</a>
+<a name="ln1866">                        picr-&gt;sb_undef_in2_only[picr-&gt;num_sb_undef_in2_only ++] = j1;</a>
+<a name="ln1867">                }</a>
+<a name="ln1868">            }</a>
+<a name="ln1869">            j2 ++;</a>
+<a name="ln1870">        }</a>
+<a name="ln1871">        if ( num_dif ) {</a>
+<a name="ln1872">            ret |= INCHIDIFF_SB_PARITY; </a>
+<a name="ln1873">        }</a>
+<a name="ln1874">        if ( num_in1_only ) {</a>
+<a name="ln1875">            if ( num_extra_undf ) {</a>
+<a name="ln1876">                ret |= INCHIDIFF_SB_EXTRA_UNDF;</a>
+<a name="ln1877">            }</a>
+<a name="ln1878">            if ( num_in1_only != num_extra_undf ) {</a>
+<a name="ln1879">                ret |= INCHIDIFF_SB_EXTRA;</a>
+<a name="ln1880">            }</a>
+<a name="ln1881">        }</a>
+<a name="ln1882">        if ( num_in2_only ) {</a>
+<a name="ln1883">            if ( num_miss_undf ) {</a>
+<a name="ln1884">                ret |= INCHIDIFF_SB_MISS_UNDF;</a>
+<a name="ln1885">            }</a>
+<a name="ln1886">            if ( num_in2_only != num_miss_undf ) {</a>
+<a name="ln1887">                ret |= INCHIDIFF_SB_MISS;</a>
+<a name="ln1888">            }</a>
+<a name="ln1889">        }</a>
+<a name="ln1890">    }</a>
+<a name="ln1891"> </a>
+<a name="ln1892">    return ret;</a>
+<a name="ln1893">}</a>
+<a name="ln1894">/*********************************************************************************************************/</a>
+<a name="ln1895">INCHI_MODE CompareReversedINChI3( INChI *i1 /* InChI from reversed struct */, INChI *i2 /* input InChI */,</a>
+<a name="ln1896">                                  INChI_Aux *a1, INChI_Aux *a2, int *err )</a>
+<a name="ln1897">{</a>
+<a name="ln1898">    INCHI_MODE ret = 0;</a>
+<a name="ln1899">    INChI_Stereo *Stereo1=NULL, *Stereo2=NULL;</a>
+<a name="ln1900">    int  n1, n2, m, j, j1, j2, ret2, num_H1, num_H2;</a>
+<a name="ln1901">    ICR icr;</a>
+<a name="ln1902">    ICR *picr = &amp;icr;</a>
+<a name="ln1903">    </a>
+<a name="ln1904">    *err = 0;</a>
+<a name="ln1905"> </a>
+<a name="ln1906">    memset( picr, 0, sizeof(*picr) );</a>
+<a name="ln1907"> </a>
+<a name="ln1908">    if ( i1 == NULL &amp;&amp; i2 == NULL )</a>
+<a name="ln1909">        return 0;</a>
+<a name="ln1910">    if ( (i1 == NULL) ^ (i2 == NULL) ) {</a>
+<a name="ln1911">        ret |= INCHIDIFF_PROBLEM; /* one InChI exists while another doesn't */</a>
+<a name="ln1912">        goto exit_function;</a>
+<a name="ln1913">    }</a>
+<a name="ln1914">    </a>
+<a name="ln1915">    if ( i1-&gt;nErrorCode == i2-&gt;nErrorCode ) {</a>
+<a name="ln1916">        if ( i1-&gt;nErrorCode ) {</a>
+<a name="ln1917">            ret |= INCHIDIFF_PROBLEM; /* both InChI have same error codes */</a>
+<a name="ln1918">            goto exit_function;</a>
+<a name="ln1919">        }</a>
+<a name="ln1920">    } else {</a>
+<a name="ln1921">        ret |= INCHIDIFF_PROBLEM; /* at least one InChI has an error code */</a>
+<a name="ln1922">        goto exit_function;</a>
+<a name="ln1923">    }</a>
+<a name="ln1924">    </a>
+<a name="ln1925">    if ( i1-&gt;nNumberOfAtoms != i2-&gt;nNumberOfAtoms ) {</a>
+<a name="ln1926">        ret |= INCHIDIFF_NUM_AT;</a>
+<a name="ln1927">        goto exit_function;</a>
+<a name="ln1928">    }</a>
+<a name="ln1929">    if ( i1-&gt;nNumberOfAtoms &gt; 0 ) {</a>
+<a name="ln1930">        if ( memcmp( i1-&gt;nAtom, i2-&gt;nAtom, i1-&gt;nNumberOfAtoms*sizeof(i1-&gt;nAtom[0]) ) ) {</a>
+<a name="ln1931">            ret |= INCHIDIFF_ATOMS;</a>
+<a name="ln1932">            goto exit_function;</a>
+<a name="ln1933">        }</a>
+<a name="ln1934">        /* INCHIDIFF_NON_TAUT_H,  INCHIDIFF_MORE_FH, INCHIDIFF_LESS_FH */</a>
+<a name="ln1935">        if ( memcmp( i1-&gt;nNum_H, i2-&gt;nNum_H, i1-&gt;nNumberOfAtoms*sizeof(i1-&gt;nNum_H[0]) ) ) {</a>
+<a name="ln1936">            ret |= INCHIDIFF_POSITION_H;</a>
+<a name="ln1937">            for ( j1 = 0; j1 &lt; i1-&gt;nNumberOfAtoms; j1 ++ ) {</a>
+<a name="ln1938">                if ( i1-&gt;nNum_H[j1] != i2-&gt;nNum_H[j1] &amp;&amp; picr-&gt;num_diff_pos_H &lt; ICR_MAX_DIFF_FIXED_H ) {</a>
+<a name="ln1939">                    picr-&gt;diff_pos_H_at[picr-&gt;num_diff_pos_H] = j1;</a>
+<a name="ln1940">                    picr-&gt;diff_pos_H_nH[picr-&gt;num_diff_pos_H] = i1-&gt;nNum_H[j1] - i2-&gt;nNum_H[j1];</a>
+<a name="ln1941">                    picr-&gt;num_diff_pos_H ++;</a>
+<a name="ln1942">                }</a>
+<a name="ln1943">            }</a>
+<a name="ln1944">        }</a>
+<a name="ln1945">        /* fixed H */</a>
+<a name="ln1946">        if ( i1-&gt;nNum_H_fixed || i2-&gt;nNum_H_fixed ) {</a>
+<a name="ln1947">            int bHasFixedH1 = 0, bHasFixedH2 = 0, i;</a>
+<a name="ln1948">            if ( i1-&gt;nNum_H_fixed ) {</a>
+<a name="ln1949">                for ( i = 0; i &lt; i1-&gt;nNumberOfAtoms; i ++ ) {</a>
+<a name="ln1950">                    if ( i1-&gt;nNum_H_fixed[i] ) {</a>
+<a name="ln1951">                        bHasFixedH1 ++;</a>
+<a name="ln1952">                    }</a>
+<a name="ln1953">                }</a>
+<a name="ln1954">            }</a>
+<a name="ln1955">            if ( i2-&gt;nNum_H_fixed ) {</a>
+<a name="ln1956">                for ( i = 0; i &lt; i2-&gt;nNumberOfAtoms; i ++ ) {</a>
+<a name="ln1957">                    if ( i2-&gt;nNum_H_fixed[i] ) {</a>
+<a name="ln1958">                        bHasFixedH2 ++;</a>
+<a name="ln1959">                    }</a>
+<a name="ln1960">                }</a>
+<a name="ln1961">            }</a>
+<a name="ln1962">            if ( bHasFixedH1 &amp;&amp; !bHasFixedH2 ) {</a>
+<a name="ln1963">                for ( i = j = 0; i &lt; i1-&gt;nNumberOfAtoms; i ++ ) {</a>
+<a name="ln1964">                    if ( i1-&gt;nNum_H_fixed[i] ) {</a>
+<a name="ln1965">                        if ( j &lt; ICR_MAX_DIFF_FIXED_H ) {</a>
+<a name="ln1966">                            picr-&gt;fixed_H_at1_more[j] = i;</a>
+<a name="ln1967">                            picr-&gt;fixed_H_nH1_more[j] = i1-&gt;nNum_H_fixed[i];</a>
+<a name="ln1968">                            j ++;</a>
+<a name="ln1969">                        }</a>
+<a name="ln1970">                    }</a>
+<a name="ln1971">                }</a>
+<a name="ln1972">                picr-&gt;num_fixed_H1_more = j;</a>
+<a name="ln1973">                ret |= INCHIDIFF_MORE_FH; /* Extra Fixed-H */</a>
+<a name="ln1974">            } else</a>
+<a name="ln1975">            if ( !bHasFixedH1 &amp;&amp; bHasFixedH2 ) {</a>
+<a name="ln1976">                for ( i = j = 0; i &lt; i2-&gt;nNumberOfAtoms; i ++ ) {</a>
+<a name="ln1977">                    if ( i2-&gt;nNum_H_fixed[i] ) {</a>
+<a name="ln1978">                        if ( j &lt; ICR_MAX_DIFF_FIXED_H ) {</a>
+<a name="ln1979">                            picr-&gt;fixed_H_at2_more[j] = i;</a>
+<a name="ln1980">                            picr-&gt;fixed_H_nH2_more[j] = i2-&gt;nNum_H_fixed[i];</a>
+<a name="ln1981">                            j ++;</a>
+<a name="ln1982">                        }</a>
+<a name="ln1983">                    }</a>
+<a name="ln1984">                }</a>
+<a name="ln1985">                picr-&gt;num_fixed_H2_more = j;</a>
+<a name="ln1986">                ret |= INCHIDIFF_LESS_FH; /* Missed Fixed-H */</a>
+<a name="ln1987">            } else</a>
+<a name="ln1988">            if ( bHasFixedH1 &amp;&amp; bHasFixedH2 &amp;&amp;</a>
+<a name="ln1989">                 memcmp( i1-&gt;nNum_H_fixed, i2-&gt;nNum_H_fixed, i1-&gt;nNumberOfAtoms*sizeof(i1-&gt;nNum_H_fixed[0]) ) ) {</a>
+<a name="ln1990">                for ( i = j1 = j2 = 0; i &lt; i1-&gt;nNumberOfAtoms; i ++ ) {</a>
+<a name="ln1991">                    if ( i1-&gt;nNum_H_fixed[i] &gt; i2-&gt;nNum_H_fixed[i] ) {</a>
+<a name="ln1992">                        if ( j1 &lt; ICR_MAX_DIFF_FIXED_H ) {</a>
+<a name="ln1993">                            picr-&gt;fixed_H_at1_more[j1] = i;</a>
+<a name="ln1994">                            picr-&gt;fixed_H_nH1_more[j1] = i1-&gt;nNum_H_fixed[i] - i2-&gt;nNum_H_fixed[i];</a>
+<a name="ln1995">                            j1 ++;</a>
+<a name="ln1996">                        }</a>
+<a name="ln1997">                    } else</a>
+<a name="ln1998">                    if ( i1-&gt;nNum_H_fixed[i] &lt; i2-&gt;nNum_H_fixed[i] ) {</a>
+<a name="ln1999">                        if ( j2 &lt; ICR_MAX_DIFF_FIXED_H ) {</a>
+<a name="ln2000">                            picr-&gt;fixed_H_at2_more[j2] = i;</a>
+<a name="ln2001">                            picr-&gt;fixed_H_nH2_more[j2] = i2-&gt;nNum_H_fixed[i] - i1-&gt;nNum_H_fixed[i];</a>
+<a name="ln2002">                            j2 ++;</a>
+<a name="ln2003">                        }</a>
+<a name="ln2004">                    }</a>
+<a name="ln2005">                }</a>
+<a name="ln2006">                ret |= (j1? INCHIDIFF_MORE_FH:0) | (j2? INCHIDIFF_LESS_FH:0);</a>
+<a name="ln2007">                picr-&gt;num_fixed_H1_more = j1;</a>
+<a name="ln2008">                picr-&gt;num_fixed_H2_more = j2;</a>
+<a name="ln2009">            }</a>
+<a name="ln2010">        }</a>
+<a name="ln2011">    }</a>
+<a name="ln2012">    /* compare formulas and H */</a>
+<a name="ln2013">    num_H1 = 0;</a>
+<a name="ln2014">    num_H2 = 0;</a>
+<a name="ln2015">    ret2 = CompareHillFormulasNoH( i1-&gt;szHillFormula, i2-&gt;szHillFormula, &amp;num_H1, &amp;num_H2 );</a>
+<a name="ln2016">    picr-&gt;tot_num_H1 = num_H1;</a>
+<a name="ln2017">    picr-&gt;tot_num_H2 = num_H2;</a>
+<a name="ln2018">    if ( ret2 ) {</a>
+<a name="ln2019">        ret |= INCHIDIFF_NUM_EL;</a>
+<a name="ln2020">        goto exit_function;</a>
+<a name="ln2021">    }</a>
+<a name="ln2022">    if ( num_H1 &gt; num_H2 ) {</a>
+<a name="ln2023">        ret |= INCHIDIFF_MORE_H;</a>
+<a name="ln2024">    }</a>
+<a name="ln2025">    if ( num_H1 &lt; num_H2 ) {</a>
+<a name="ln2026">        ret |= INCHIDIFF_LESS_H;</a>
+<a name="ln2027">    }</a>
+<a name="ln2028"> </a>
+<a name="ln2029">    if ( i1-&gt;lenConnTable != i2-&gt;lenConnTable ) {</a>
+<a name="ln2030">        ret |= INCHIDIFF_CON_LEN;</a>
+<a name="ln2031">        goto exit_function;</a>
+<a name="ln2032">    } else</a>
+<a name="ln2033">    if ( i1-&gt;lenConnTable &gt; 0 &amp;&amp; memcmp( i1-&gt;nConnTable, i2-&gt;nConnTable, i1-&gt;lenConnTable*sizeof(i1-&gt;nConnTable[0]) ) ) {</a>
+<a name="ln2034">        ret |= INCHIDIFF_CON_TBL;</a>
+<a name="ln2035">        goto exit_function;</a>
+<a name="ln2036">    }</a>
+<a name="ln2037">    /* output special cases: different number of t-groups, different sizes of t-groups, different endpoints */</a>
+<a name="ln2038">    /* in isotopic or deprotonated cases i1-&gt;lenTautomer == 1 &amp;&amp; i1-&gt;nTautomer[0] = 0 */</a>
+<a name="ln2039">/*</a>
+<a name="ln2040">    if ( i1-&gt;lenTautomer != i2-&gt;lenTautomer &amp;&amp; (i1-&gt;lenTautomer &gt; 1 || i2-&gt;lenTautomer &gt; 1) ) {</a>
+<a name="ln2041">        ret |=  INCHIDIFF_TAUT_LEN; </a>
+<a name="ln2042">    }</a>
+<a name="ln2043">*/</a>
+<a name="ln2044">    /* compare number of t-groups */</a>
+<a name="ln2045">    n1 = i1-&gt;lenTautomer? i1-&gt;nTautomer[0] : 0;</a>
+<a name="ln2046">    n2 = i2-&gt;lenTautomer? i2-&gt;nTautomer[0] : 0;</a>
+<a name="ln2047">    if ( !n1 &amp;&amp; n2 ) {</a>
+<a name="ln2048">        ret |= INCHIDIFF_NO_TAUT;</a>
+<a name="ln2049">    } else</a>
+<a name="ln2050">    if ( n1 &amp;&amp; !n2 ) {</a>
+<a name="ln2051">        ret |= INCHIDIFF_WRONG_TAUT;</a>
+<a name="ln2052">    } else</a>
+<a name="ln2053">    if ( n1 == 1 &amp;&amp; n2 &gt; 1 ) {</a>
+<a name="ln2054">        ret |= INCHIDIFF_SINGLE_TG;</a>
+<a name="ln2055">    } else</a>
+<a name="ln2056">    if ( n1 &gt; 1 &amp;&amp; n2 == 1 ) {</a>
+<a name="ln2057">        ret |= INCHIDIFF_MULTIPLE_TG;</a>
+<a name="ln2058">    } else</a>
+<a name="ln2059">    if ( n1 != n2 ) {</a>
+<a name="ln2060">        ret |= INCHIDIFF_NUM_TG;</a>
+<a name="ln2061">    }</a>
+<a name="ln2062">    if ( n1 || n2 ) {</a>
+<a name="ln2063">        /* number of endpoints */</a>
+<a name="ln2064">        int num1 = 0, num2 = 0, num_M1=0, num_M2=0;</a>
+<a name="ln2065">        int len, num_eq, num_in1_only, num_in2_only;</a>
+<a name="ln2066">        AT_NUMB *pe1 = (AT_NUMB *) inchi_malloc( (i1-&gt;lenTautomer+1) * sizeof(pe1[0]) );</a>
+<a name="ln2067">        AT_NUMB *pe2 = (AT_NUMB *) inchi_malloc( (i2-&gt;lenTautomer+1) * sizeof(pe2[0]) );</a>
+<a name="ln2068">        num_H1 = num_H2=0;</a>
+<a name="ln2069">        /* collect endpoints, H, (-) */</a>
+<a name="ln2070">        if ( !pe1 || !pe2 ) {</a>
+<a name="ln2071">            if ( pe1 ) inchi_free( pe1 );</a>
+<a name="ln2072">            if ( pe2 ) inchi_free( pe2 );</a>
+<a name="ln2073">            *err = RI_ERR_ALLOC; /* allocation error */</a>
+<a name="ln2074">            goto exit_function;</a>
+<a name="ln2075">        }</a>
+<a name="ln2076">        for ( m = 1; m &lt; i1-&gt;lenTautomer; m += len ) {</a>
+<a name="ln2077">            len = i1-&gt;nTautomer[m ++];</a>
+<a name="ln2078">            num_H1 += i1-&gt;nTautomer[m];</a>
+<a name="ln2079">            num_M1 += i1-&gt;nTautomer[m+1];</a>
+<a name="ln2080">            for ( j = 2; j &lt; len; j ++ ) {</a>
+<a name="ln2081">                pe1[num1 ++] = i1-&gt;nTautomer[m + j];</a>
+<a name="ln2082">            }</a>
+<a name="ln2083">        }</a>
+<a name="ln2084">        for ( m = 1; m &lt; i2-&gt;lenTautomer; m += len ) {</a>
+<a name="ln2085">            len = i2-&gt;nTautomer[m ++];</a>
+<a name="ln2086">            num_H2 += i2-&gt;nTautomer[m];</a>
+<a name="ln2087">            num_M2 += i2-&gt;nTautomer[m+1];</a>
+<a name="ln2088">            for ( j = 2; j &lt; len; j ++ ) {</a>
+<a name="ln2089">                pe2[num2 ++] = i2-&gt;nTautomer[m + j];</a>
+<a name="ln2090">            }</a>
+<a name="ln2091">        }</a>
+<a name="ln2092">        picr-&gt;num_taut_H1 = num_H1;</a>
+<a name="ln2093">        picr-&gt;num_taut_H2 = num_H2;</a>
+<a name="ln2094">        picr-&gt;num_taut_M1 = num_M1;</a>
+<a name="ln2095">        picr-&gt;num_taut_M2 = num_M2;</a>
+<a name="ln2096">        /* sort endpoints */</a>
+<a name="ln2097">        insertions_sort_AT_NUMB( pe1, num1 );</a>
+<a name="ln2098">        insertions_sort_AT_NUMB( pe2, num2 );</a>
+<a name="ln2099">        /* compare */</a>
+<a name="ln2100">        /*</a>
+<a name="ln2101">        if ( num1 &lt; num2 ) {</a>
+<a name="ln2102">            ret |= INCHIDIFF_LESS_TG_ENDP;</a>
+<a name="ln2103">        } else</a>
+<a name="ln2104">        if ( num1 &gt; num2 ) {</a>
+<a name="ln2105">            ret |= INCHIDIFF_MORE_TG_ENDP;</a>
+<a name="ln2106">        }</a>
+<a name="ln2107">        */</a>
+<a name="ln2108">        /* compare all */</a>
+<a name="ln2109">        num_eq = num_in1_only = num_in2_only = 0;</a>
+<a name="ln2110">        for ( j1 = j2 = 0; j1 &lt; num1 &amp;&amp; j2 &lt; num2; ) {</a>
+<a name="ln2111">            if( pe1[j1] == pe2[j2] ) {</a>
+<a name="ln2112">                j1 ++;</a>
+<a name="ln2113">                j2 ++;</a>
+<a name="ln2114">                num_eq ++;</a>
+<a name="ln2115">            } else</a>
+<a name="ln2116">            if ( pe1[j1] &lt; pe2[j1] ) {</a>
+<a name="ln2117">                if ( picr-&gt;num_endp_in1_only &lt; ICR_MAX_ENDP_IN1_ONLY ) {</a>
+<a name="ln2118">                    picr-&gt;endp_in1_only[picr-&gt;num_endp_in1_only ++] = pe1[j1];</a>
+<a name="ln2119">                }</a>
+<a name="ln2120">                j1 ++;</a>
+<a name="ln2121">                num_in1_only ++;</a>
+<a name="ln2122">            } else {</a>
+<a name="ln2123">                if ( picr-&gt;num_endp_in2_only &lt; ICR_MAX_ENDP_IN2_ONLY ) {</a>
+<a name="ln2124">                    picr-&gt;endp_in2_only[picr-&gt;num_endp_in2_only ++] = pe2[j2];</a>
+<a name="ln2125">                }</a>
+<a name="ln2126">                j2 ++;</a>
+<a name="ln2127">                num_in2_only ++;</a>
+<a name="ln2128">            }</a>
+<a name="ln2129">        }</a>
+<a name="ln2130">        while ( j1 &lt; num1 ) {</a>
+<a name="ln2131">            if ( picr-&gt;num_endp_in1_only &lt; ICR_MAX_ENDP_IN1_ONLY ) {</a>
+<a name="ln2132">                picr-&gt;endp_in1_only[picr-&gt;num_endp_in1_only ++] = pe1[j1];</a>
+<a name="ln2133">            }</a>
+<a name="ln2134">            j1 ++;</a>
+<a name="ln2135">            num_in1_only ++;</a>
+<a name="ln2136">        }</a>
+<a name="ln2137">        while ( j2 &lt; num2 ) {</a>
+<a name="ln2138">            if ( picr-&gt;num_endp_in2_only &lt; ICR_MAX_ENDP_IN2_ONLY ) {</a>
+<a name="ln2139">                picr-&gt;endp_in2_only[picr-&gt;num_endp_in2_only ++] = pe2[j2];</a>
+<a name="ln2140">            }</a>
+<a name="ln2141">            j2 ++;</a>
+<a name="ln2142">            num_in2_only ++;</a>
+<a name="ln2143">        }</a>
+<a name="ln2144">        if ( num_in1_only ) {</a>
+<a name="ln2145">            ret |= INCHIDIFF_EXTRA_TG_ENDP;</a>
+<a name="ln2146">        }</a>
+<a name="ln2147">        if ( num_in2_only ) {</a>
+<a name="ln2148">            ret |= INCHIDIFF_MISS_TG_ENDP;</a>
+<a name="ln2149">        }</a>
+<a name="ln2150">        if ( !num_in1_only &amp;&amp; !num_in2_only &amp;&amp; num_eq ) {</a>
+<a name="ln2151">           ; /* same t-groups endpoints */</a>
+<a name="ln2152">        } else {</a>
+<a name="ln2153">           ret |= INCHIDIFF_DIFF_TG_ENDP;</a>
+<a name="ln2154">        }</a>
+<a name="ln2155">        inchi_free( pe1 );</a>
+<a name="ln2156">        inchi_free( pe2 );</a>
+<a name="ln2157"> </a>
+<a name="ln2158">    }</a>
+<a name="ln2159"> </a>
+<a name="ln2160">    if ( (i1-&gt;lenTautomer &gt; 1 &amp;&amp; i2-&gt;lenTautomer &gt; 1) &amp;&amp;</a>
+<a name="ln2161">         ( i1-&gt;lenTautomer != i2-&gt;lenTautomer ||</a>
+<a name="ln2162">         memcmp( i1-&gt;nTautomer, i2-&gt;nTautomer, i1-&gt;lenTautomer*sizeof(i1-&gt;nTautomer[0]) ) ) )</a>
+<a name="ln2163">        ret |= INCHIDIFF_TG;</a>
+<a name="ln2164"> </a>
+<a name="ln2165">    if ( i1-&gt;nNumberOfIsotopicAtoms != i2-&gt;nNumberOfIsotopicAtoms ) {</a>
+<a name="ln2166">        ret |= INCHIDIFF_NUM_ISO_AT;</a>
+<a name="ln2167">    } else</a>
+<a name="ln2168">    if ( i1-&gt;nNumberOfIsotopicAtoms &gt; 0 &amp;&amp; memcmp( i1-&gt;IsotopicAtom, i2-&gt;IsotopicAtom, i1-&gt;nNumberOfIsotopicAtoms*sizeof(i1-&gt;IsotopicAtom[0]) ) )</a>
+<a name="ln2169">        ret |= INCHIDIFF_ISO_AT;</a>
+<a name="ln2170">    if ( i1-&gt;nTotalCharge != i2-&gt;nTotalCharge )</a>
+<a name="ln2171">        ret |= INCHIDIFF_CHARGE;</a>
+<a name="ln2172">    if ( a1 &amp;&amp; a1-&gt;nNumRemovedProtons &amp;&amp; (!a2 || a2-&gt;nNumRemovedProtons != a1-&gt;nNumRemovedProtons) ) {</a>
+<a name="ln2173">        ret |= INCHIDIFF_REM_PROT;</a>
+<a name="ln2174">    }</a>
+<a name="ln2175">    if ( a1 &amp;&amp; (!a2 || </a>
+<a name="ln2176">         a2-&gt;nNumRemovedIsotopicH[0] != a1-&gt;nNumRemovedIsotopicH[0] ||</a>
+<a name="ln2177">         a2-&gt;nNumRemovedIsotopicH[1] != a1-&gt;nNumRemovedIsotopicH[1] ||</a>
+<a name="ln2178">         a2-&gt;nNumRemovedIsotopicH[2] != a1-&gt;nNumRemovedIsotopicH[2]) ) {</a>
+<a name="ln2179">        ret |= INCHIDIFF_REM_ISO_H;</a>
+<a name="ln2180">    }</a>
+<a name="ln2181"> </a>
+<a name="ln2182">/*</a>
+<a name="ln2183">    if ( i1-&gt;nPossibleLocationsOfIsotopicH &amp;&amp; i2-&gt;nPossibleLocationsOfIsotopicH ) {</a>
+<a name="ln2184">        if ( i1-&gt;nPossibleLocationsOfIsotopicH[0] != i2-&gt;nPossibleLocationsOfIsotopicH[0] ||</a>
+<a name="ln2185">             memcmp(i1-&gt;nPossibleLocationsOfIsotopicH, i2-&gt;nPossibleLocationsOfIsotopicH,</a>
+<a name="ln2186">                    sizeof(i1-&gt;nPossibleLocationsOfIsotopicH[0])*i1-&gt;nPossibleLocationsOfIsotopicH[0]) )</a>
+<a name="ln2187">            return 18;</a>
+<a name="ln2188">    } else</a>
+<a name="ln2189">    if ( !i1-&gt;nPossibleLocationsOfIsotopicH != !i2-&gt;nPossibleLocationsOfIsotopicH ) {</a>
+<a name="ln2190">        return 19;</a>
+<a name="ln2191">    }</a>
+<a name="ln2192">*/</a>
+<a name="ln2193">    if ( i1-&gt;StereoIsotopic &amp;&amp;</a>
+<a name="ln2194">         i1-&gt;StereoIsotopic-&gt;nNumberOfStereoBonds + i1-&gt;StereoIsotopic-&gt;nNumberOfStereoCenters ) {</a>
+<a name="ln2195">        Stereo1 = i1-&gt;StereoIsotopic;</a>
+<a name="ln2196">    } else {</a>
+<a name="ln2197">        Stereo1 = i1-&gt;Stereo;</a>
+<a name="ln2198">    }</a>
+<a name="ln2199">    if ( i2-&gt;StereoIsotopic &amp;&amp;</a>
+<a name="ln2200">         i2-&gt;StereoIsotopic-&gt;nNumberOfStereoBonds + i2-&gt;StereoIsotopic-&gt;nNumberOfStereoCenters ) {</a>
+<a name="ln2201">        Stereo2 = i2-&gt;StereoIsotopic;</a>
+<a name="ln2202">    } else {</a>
+<a name="ln2203">        Stereo2 = i2-&gt;Stereo;</a>
+<a name="ln2204">    }</a>
+<a name="ln2205">    ret |= CompareReversedStereoINChI3( Stereo1, Stereo2, picr );</a>
+<a name="ln2206"> </a>
+<a name="ln2207">exit_function:</a>
+<a name="ln2208"> </a>
+<a name="ln2209">    picr-&gt;flags = ret;</a>
+<a name="ln2210"> </a>
+<a name="ln2211">    return ret;</a>
+<a name="ln2212">}</a>
+<a name="ln2213">/* message group names */</a>
+<a name="ln2214">CMP_INCHI_MSG_GROUP CompareInchiMsgsGroup[] = {</a>
+<a name="ln2215">{IDGRP_ERR,     &quot; Error:&quot;},</a>
+<a name="ln2216">{IDGRP_H,       &quot; Hydrogens:&quot;},</a>
+<a name="ln2217">{IDGRP_MOB_GRP, &quot; Mobile-H groups:&quot;},</a>
+<a name="ln2218">{IDGRP_ISO_AT,  &quot; Isotopic:&quot;},</a>
+<a name="ln2219">{IDGRP_CHARGE,  &quot; Charge(s):&quot;},</a>
+<a name="ln2220">{IDGRP_PROTONS, &quot; Proton balance:&quot;},</a>
+<a name="ln2221">{IDGRP_ISO_H,   &quot; Exchangeable isotopic H:&quot;},</a>
+<a name="ln2222">{IDGRP_SC,      &quot; Stereo centers/allenes:&quot;},</a>
+<a name="ln2223">{IDGRP_SB,      &quot; Stereobonds/cumulenes:&quot;},</a>
+<a name="ln2224">{IDGRP_HLAYER,  &quot; Fixed-H layer:&quot;},</a>
+<a name="ln2225">{IDGRP_COMP,    &quot; Number of components:&quot;},</a>
+<a name="ln2226">{IDGRP_CONV_ERR,&quot; Conversion encountered:&quot;},</a>
+<a name="ln2227">{IDGRP_ZERO,    &quot;&quot;}</a>
+<a name="ln2228">};</a>
+<a name="ln2229">/* messages */</a>
+<a name="ln2230">CMP_INCHI_MSG  CompareInchiMsgs[] = {</a>
+<a name="ln2231">{INCHIDIFF_PROBLEM      ,IDGRP_ERR,     &quot; Wrong result&quot;                   }, /*0x00000001,  severe: at least one InChI does not exist */</a>
+<a name="ln2232">{INCHIDIFF_POSITION_H   ,IDGRP_H,       &quot; Locations or number&quot;            }, /*0x00000002,  difference in non-taut {Mobile-H} or all H {Fixed-H} location/number */</a>
+<a name="ln2233">{INCHIDIFF_MORE_FH      ,IDGRP_H,       &quot; Fixed-H&quot;                        }, /*0x00000004,  extra fixed H */</a>
+<a name="ln2234">{INCHIDIFF_LESS_FH      ,IDGRP_H,       &quot; Fixed-H&quot;                        }, /*0x00000004,  missing fixed H */</a>
+<a name="ln2235">{INCHIDIFF_MORE_H       ,IDGRP_H,       &quot; Number&quot;                         }, /*0x00000008,  formulas differ in number of H */</a>
+<a name="ln2236">{INCHIDIFF_LESS_H       ,IDGRP_H,       &quot; Number&quot;                         }, /*0x00000008,  formulas differ in number of H */</a>
+<a name="ln2237">{INCHIDIFF_NO_TAUT      ,IDGRP_MOB_GRP, &quot; Missing&quot;                        }, /*0x00000010,  restored structure has no taut groups while the original InChI has some */</a>
+<a name="ln2238">{INCHIDIFF_WRONG_TAUT   ,IDGRP_MOB_GRP, &quot; Falsely present&quot;                }, /*0x00000020,  restored has tautomerism while the original does not have it */</a>
+<a name="ln2239">{INCHIDIFF_SINGLE_TG    ,IDGRP_MOB_GRP, &quot; One instead of multiple&quot;        }, /*0x00000040,  restored has 1 taut. group while the original InChI has multiple tg */</a>
+<a name="ln2240">{INCHIDIFF_MULTIPLE_TG  ,IDGRP_MOB_GRP, &quot; Multiple instead of one&quot;        }, /*0x00000080,  restored has multiple tg while the original InChI has only one tg */</a>
+<a name="ln2241">{INCHIDIFF_EXTRA_TG_ENDP,IDGRP_MOB_GRP, &quot; Attachment points&quot;              }, /*0x00000100,  extra tautomeric endpoint{s} in restored structure */</a>
+<a name="ln2242">{INCHIDIFF_MISS_TG_ENDP ,IDGRP_MOB_GRP, &quot; Attachment points&quot;              }, /*0x00000100,  one or more tg endpoint is not in the restored structure */</a>
+<a name="ln2243">{INCHIDIFF_DIFF_TG_ENDP ,IDGRP_MOB_GRP, &quot; Attachment points&quot;              }, /*0x00000100,  lists of tg endpoints are different */</a>
+<a name="ln2244">{INCHIDIFF_NUM_TG       ,IDGRP_MOB_GRP, &quot; Number&quot;                         }, /*0x00000200,  different number of tautomeric groups */</a>
+<a name="ln2245">{INCHIDIFF_TG           ,IDGRP_MOB_GRP, &quot; Do not match&quot;                   }, /*0x00000200,  different tautomeric groups */</a>
+<a name="ln2246">{INCHIDIFF_NUM_ISO_AT   ,IDGRP_ISO_AT,  &quot; Atoms do not match&quot;             }, /*0x00000400,  ?severe: restored struct. has different number of isotopic atoms */</a>
+<a name="ln2247">{INCHIDIFF_ISO_AT       ,IDGRP_ISO_AT,  &quot; Atoms do not match&quot;             }, /*0x00000400,  ?severe: restored struct. has different locations/isotopes of isotopic atoms */</a>
+<a name="ln2248">{INCHIDIFF_REM_ISO_H    ,IDGRP_ISO_H,   &quot; Does not match for a component&quot; }, /*0x00000800,  isotopic H removed */</a>
+<a name="ln2249">{INCHIDIFF_MOB_ISO_H    ,IDGRP_ISO_H,   &quot; Do not match&quot;                   }, /*0x00001000,  different number of mobile exchangeable isotopic H */</a>
+<a name="ln2250">{INCHIDIFF_CHARGE       ,IDGRP_CHARGE,  &quot; Do not match&quot;                   }, /*0x00002000,  restored structure has different charge */</a>
+<a name="ln2251">{INCHIDIFF_REM_PROT     ,IDGRP_PROTONS, &quot; Does not match for a component&quot; }, /*0x00004000,  proton{s} removed/added from the restored structure */</a>
+<a name="ln2252">{INCHIDIFF_MOBH_PROTONS ,IDGRP_PROTONS, &quot; Does not match&quot;                 }, /*0x00008000,  different proton balance */</a>
+<a name="ln2253">{INCHIDIFF_SC_INV       ,IDGRP_SC,      &quot; Falsely inverted&quot;               }, /*0x00010000,  restores structure has different inversion stereocenter mark */</a>
+<a name="ln2254">{INCHIDIFF_SC_PARITY    ,IDGRP_SC,      &quot; Wrong parity&quot;                   }, /*0x00020000,  restored structure has stereoatoms or allenes with different parity */</a>
+<a name="ln2255">{INCHIDIFF_SC_EXTRA_UNDF,IDGRP_SC,      &quot; Extra undefined&quot;                }, /*0x00040000,  restored structure has extra undefined stereocenter{s} */</a>
+<a name="ln2256">{INCHIDIFF_SC_EXTRA     ,IDGRP_SC,      &quot; Extra known&quot;                    }, /*0x00080000,  restored structure has extra stereocenter{s} */</a>
+<a name="ln2257">{INCHIDIFF_SC_MISS_UNDF ,IDGRP_SC,      &quot; Missing undefined&quot;              }, /*0x00100000,  restored structure has not some undefined stereocenter{s} */</a>
+<a name="ln2258">{INCHIDIFF_SC_MISS      ,IDGRP_SC,      &quot; Missing known&quot;                  }, /*0x00200000,  restored structure has not some stereocenters that are not undefined */</a>
+<a name="ln2259">{INCHIDIFF_SB_PARITY    ,IDGRP_SB,      &quot; Wrong parity&quot;                   }, /*0x00400000,  restored structure has stereobonds or cumulenes with different parity */</a>
+<a name="ln2260">{INCHIDIFF_SB_EXTRA_UNDF,IDGRP_SB,      &quot; Extra undefined&quot;                }, /*0x00800000,  restored structure has extra undefined stereobond{s} */</a>
+<a name="ln2261">{INCHIDIFF_SB_EXTRA     ,IDGRP_SB,      &quot; Missing known&quot;                  }, /*0x01000000,  restored structure has extra stereobond{s} */</a>
+<a name="ln2262">{INCHIDIFF_SB_MISS_UNDF ,IDGRP_SB,      &quot; Missing undefined&quot;              }, /*0x02000000,  restored structure has not some undefined stereocenters */</a>
+<a name="ln2263">{INCHIDIFF_SB_MISS      ,IDGRP_SB,      &quot; Missing known&quot;                  }, /*0x04000000,  restored structure has not some stereobonds that are not undefined */</a>
+<a name="ln2264">{INCHIDIFF_COMP_HLAYER  ,IDGRP_HLAYER,  &quot; Missing or extra&quot;               }, /*0x08000000,  Restored component has Mobile-H layer instead of both Mobile-H &amp; Fixed-H or both instead of one */</a>
+<a name="ln2265">{INCHIDIFF_COMP_NUMBER  ,IDGRP_COMP,    &quot; Does not match&quot;                 }, /*0x10000000,  wrong number of components */</a>
+<a name="ln2266">{INCHIDIFF_STR2INCHI_ERR,IDGRP_CONV_ERR,&quot; Error&quot;                          },  /*0x20000000   Restored structure to InChI conversion error */</a>
+<a name="ln2267">{INCHIDIFF_ZERO         ,IDGRP_ZERO,    &quot;&quot;                                }</a>
+<a name="ln2268">};</a>
+<a name="ln2269"> </a>
+<a name="ln2270">/*************************************************************************/</a>
+<a name="ln2271">int AddOneMsg( char *szMsg, int used_len, int tot_len, const char *szAddMsg, const char *szDelim )</a>
+<a name="ln2272">{</a>
+<a name="ln2273">    const char ellip[] = &quot;...&quot;;</a>
+<a name="ln2274">    int len = strlen( szAddMsg );</a>
+<a name="ln2275">    int len_delim = (used_len &amp;&amp; szDelim)? strlen(szDelim) : 0;</a>
+<a name="ln2276">    int len_to_copy;</a>
+<a name="ln2277">    if ( len + len_delim + used_len &lt; tot_len ) {</a>
+<a name="ln2278">        if ( len_delim ) {</a>
+<a name="ln2279">            strcpy( szMsg+used_len, szDelim );</a>
+<a name="ln2280">            used_len += len_delim;</a>
+<a name="ln2281">        }</a>
+<a name="ln2282">        strcpy( szMsg+used_len, szAddMsg );</a>
+<a name="ln2283">        used_len += len;</a>
+<a name="ln2284">    } else</a>
+<a name="ln2285">    if ( (len_to_copy = (tot_len - used_len - len_delim - (int)sizeof(ellip))) &gt; 10 ) {</a>
+<a name="ln2286">        if ( len_delim ) {</a>
+<a name="ln2287">            strcpy( szMsg+used_len, szDelim );</a>
+<a name="ln2288">            used_len += len_delim;</a>
+<a name="ln2289">        }</a>
+<a name="ln2290">        strncpy( szMsg+used_len, szAddMsg, len_to_copy );</a>
+<a name="ln2291">        used_len += len_to_copy;</a>
+<a name="ln2292">        strcpy( szMsg+used_len, ellip );</a>
+<a name="ln2293">        used_len += sizeof( ellip ) - 1;</a>
+<a name="ln2294">    }</a>
+<a name="ln2295">    return used_len;</a>
+<a name="ln2296">}</a>
+<a name="ln2297">/*************************************************************************/</a>
+<a name="ln2298">int FillOutCompareMessage( char *szMsg, int nLenMsg, INCHI_MODE bits[] )</a>
+<a name="ln2299">{</a>
+<a name="ln2300">    int bMobileH, k, n, len = strlen( szMsg );</a>
+<a name="ln2301">    int iPrevGrpIdx, iCurGrpIdx, bFound;</a>
+<a name="ln2302">    INCHI_MODE bit;</a>
+<a name="ln2303">    static const char *hdr = &quot; Problems/mismatches:&quot;;</a>
+<a name="ln2304">    char szOneMsg[256];</a>
+<a name="ln2305">    if ( bits[TAUT_YES] || bits[TAUT_NON] ) {</a>
+<a name="ln2306">        if ( !strstr( szMsg, hdr ) ) {</a>
+<a name="ln2307">            len = AddOneMsg( szMsg, len, nLenMsg, hdr, NULL );</a>
+<a name="ln2308">        }</a>
+<a name="ln2309">        for ( bMobileH = TAUT_YES; 0 &lt;= bMobileH; bMobileH -- ) {</a>
+<a name="ln2310">            if ( bits[bMobileH] ) {</a>
+<a name="ln2311">                strcpy( szOneMsg, bMobileH==TAUT_YES? &quot; Mobile-H(&quot; : &quot; Fixed-H(&quot; );</a>
+<a name="ln2312">                len = AddOneMsg( szMsg, len, nLenMsg, szOneMsg, NULL );</a>
+<a name="ln2313">            }</a>
+<a name="ln2314">            bit = 1;</a>
+<a name="ln2315">            iPrevGrpIdx = -1;</a>
+<a name="ln2316">            do {</a>
+<a name="ln2317">                if ( bit &amp; bits[bMobileH] ) {</a>
+<a name="ln2318">                    /* search for the message */</a>
+<a name="ln2319">                    bFound = 0;</a>
+<a name="ln2320">                    for ( k = 0; CompareInchiMsgs[k].nBit != INCHIDIFF_ZERO &amp;&amp; !bFound; k ++ ) {</a>
+<a name="ln2321">                        if ( bit &amp; (INCHI_MODE)CompareInchiMsgs[k].nBit ) {</a>
+<a name="ln2322">                            /* message found */</a>
+<a name="ln2323">                            for ( n = 0; CompareInchiMsgsGroup[n].nGroupID != IDGRP_ZERO; n ++ ) {</a>
+<a name="ln2324">                                if ( CompareInchiMsgsGroup[n].nGroupID == CompareInchiMsgs[k].nGroupID ) {</a>
+<a name="ln2325">                                    iCurGrpIdx = n;</a>
+<a name="ln2326">                                    if ( iCurGrpIdx != iPrevGrpIdx ) {</a>
+<a name="ln2327">                                        if ( iPrevGrpIdx &gt;= 0 ) {</a>
+<a name="ln2328">                                            len = AddOneMsg( szMsg, len, nLenMsg, &quot;;&quot;, NULL );</a>
+<a name="ln2329">                                        }</a>
+<a name="ln2330">                                        len = AddOneMsg( szMsg, len, nLenMsg, CompareInchiMsgsGroup[iCurGrpIdx].szGroupName, NULL );</a>
+<a name="ln2331">                                    }</a>
+<a name="ln2332">                                    len = AddOneMsg( szMsg, len, nLenMsg, CompareInchiMsgs[k].szMsg, iCurGrpIdx == iPrevGrpIdx? &quot;,&quot;:NULL );</a>
+<a name="ln2333">                                    iPrevGrpIdx = iCurGrpIdx;</a>
+<a name="ln2334">                                    bFound = 1;</a>
+<a name="ln2335">                                    break;</a>
+<a name="ln2336">                                }</a>
+<a name="ln2337">                            }</a>
+<a name="ln2338">                        }</a>
+<a name="ln2339">                    }</a>
+<a name="ln2340">                }</a>
+<a name="ln2341">                bit &lt;&lt;= 1;</a>
+<a name="ln2342">            } while ( bit );</a>
+<a name="ln2343">            if ( bits[bMobileH] ) {</a>
+<a name="ln2344">                len = AddOneMsg( szMsg, len, nLenMsg, &quot;)&quot;, NULL );</a>
+<a name="ln2345">            }</a>
+<a name="ln2346">        }</a>
+<a name="ln2347">    }</a>
+<a name="ln2348">    return len;</a>
+<a name="ln2349">}</a>
+<a name="ln2350"> </a>
+<a name="ln2351">#endif</a>
+
+</code></pre>
+<div class="balloon" rel="117"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: bMobileH == 1.</p></div>
+<div class="balloon" rel="311"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'ret' variable was assigned the same value.</p></div>
+<div class="balloon" rel="396"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'at' is always true.</p></div>
+<div class="balloon" rel="397"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'nAtomOffs' is always true.</p></div>
+<div class="balloon" rel="398"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'nDelHOffs' is always true.</p></div>
+<div class="balloon" rel="298"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v519/" target="_blank">V519</a> The 'tot_just_atoms' variable is assigned values twice successively. Perhaps this is a mistake. Check lines: 282, 298.</p></div>
+<div class="balloon" rel="303"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v519/" target="_blank">V519</a> The 'tot_atoms' variable is assigned values twice successively. Perhaps this is a mistake. Check lines: 282, 303.</p></div>
+<div class="balloon" rel="850"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: iInchiRec == 0.</p></div>
+<div class="balloon" rel="856"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'pINChI_Revr' is always true.</p></div>
+<div class="balloon" rel="858"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'pINChI_Aux2' is always true.</p></div>
+<div class="balloon" rel="870"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'pINChI_Revr' is always true.</p></div>
+<div class="balloon" rel="872"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'pINChI_Aux2' is always true.</p></div>
+<div class="balloon" rel="1038"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'pOneInput->atom' is always true.</p></div>
+<div class="balloon" rel="1491"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'bHasSomeFixedH' is always true.</p></div>
+<div class="balloon" rel="1510"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'bHasSomeFixedH' is always true.</p></div>
+<div class="balloon" rel="1570"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'pINChISort1' is always true.</p></div>
+<div class="balloon" rel="1571"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'pINChISort2' is always true.</p></div>
+<div class="balloon" rel="1182"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v597/" target="_blank">V597</a> The compiler could delete the 'memset' function call, which is used to flush 'nNumRemovedProtons_D_all' object. The memset_s() function should be used to erase the private data.</p></div>
+<div class="balloon" rel="1183"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v597/" target="_blank">V597</a> The compiler could delete the 'memset' function call, which is used to flush 'nNumRemovedProtons_R_all' object. The memset_s() function should be used to erase the private data.</p></div>
+<div class="balloon" rel="1697"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1004/" target="_blank">V1004</a> The 's1' pointer was used unsafely after it was verified against nullptr. Check lines: 1690, 1697.</p></div>
+<div class="balloon" rel="1697"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1004/" target="_blank">V1004</a> The 's2' pointer was used unsafely after it was verified against nullptr. Check lines: 1691, 1697.</p></div>
+<div class="balloon" rel="1757"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v595/" target="_blank">V595</a> The 's2' pointer was utilized before it was verified against nullptr. Check lines: 1757, 1787.</p></div>
+<div class="balloon" rel="2071"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'pe1' is always true.</p></div>
+<div class="balloon" rel="2072"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'pe2' is always true.</p></div>
+<div class="balloon" rel="2194"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v793/" target="_blank">V793</a> It is odd that the result of the '+' operator is a part of the condition. Perhaps, this statement should have been compared with something else.</p></div>
+<div class="balloon" rel="2200"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v793/" target="_blank">V793</a> It is odd that the result of the '+' operator is a part of the condition. Perhaps, this statement should have been compared with something else.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

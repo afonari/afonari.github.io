@@ -1,0 +1,631 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>yasaraformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************</a>
+<a name="ln2"> *                                                        *</a>
+<a name="ln3"> *                    Y  A  S  A  R  A                    *</a>
+<a name="ln4"> *                                                        *</a>
+<a name="ln5"> * Yet Another Scientific Artificial Reality Application  *</a>
+<a name="ln6"> *                                                        *</a>
+<a name="ln7"> **********************************************************</a>
+<a name="ln8"> *         www.YASARA.org - Watching Nature@Work          *</a>
+<a name="ln9"> **********************************************************</a>
+<a name="ln10"> *   Reader and Writer for Yasara Objects (*.YOB files)   *</a>
+<a name="ln11"> **********************************************************</a>
+<a name="ln12"> *            (C) 2002-2006 by Elmar Krieger              *</a>
+<a name="ln13"> **********************************************************</a>
+<a name="ln14"> </a>
+<a name="ln15">This reader/writer for Yasara objects is free software;</a>
+<a name="ln16">you can redistribute it and/or modify</a>
+<a name="ln17">it under the terms of the GNU General Public License as published by</a>
+<a name="ln18">the Free Software Foundation version 2 of the License.</a>
+<a name="ln19"> </a>
+<a name="ln20">This program is distributed in the hope that it will be useful,</a>
+<a name="ln21">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln22">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln23">GNU General Public License for more details.</a>
+<a name="ln24"> </a>
+<a name="ln25">***********************************************************/</a>
+<a name="ln26">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln27"> </a>
+<a name="ln28">/* Adapt on some 64bit machines! */</a>
+<a name="ln29">typedef int int32;</a>
+<a name="ln30">typedef unsigned int uint32;</a>
+<a name="ln31">typedef short int16;</a>
+<a name="ln32">typedef unsigned short uint16;</a>
+<a name="ln33"> </a>
+<a name="ln34">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln35">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln36">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln37">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln38">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln39">#include &lt;cstdlib&gt;</a>
+<a name="ln40"> </a>
+<a name="ln41"> </a>
+<a name="ln42">#define mem_alloc malloc</a>
+<a name="ln43">#define mem_free free</a>
+<a name="ln44">#define mem_set memset</a>
+<a name="ln45">#define mem_inc(POINTER,INC) (*((char**)&amp;(POINTER))+=(INC))</a>
+<a name="ln46">#define str_copy strcpy</a>
+<a name="ln47">#define STR_____ 0x20202020</a>
+<a name="ln48">#define FMTOA 0.00001</a>
+<a name="ln49">#define ATOFM 100000.</a>
+<a name="ln50"> </a>
+<a name="ln51">using namespace std;</a>
+<a name="ln52"> </a>
+<a name="ln53">namespace OpenBabel {</a>
+<a name="ln54"> </a>
+<a name="ln55">/* DECODE A SIGNED INT32 STORED IN LITTLE ENDIAN FORMAT</a>
+<a name="ln56">   ==================================================== */</a>
+<a name="ln57">int int32lemem(char *data)</a>
+<a name="ln58">{ int value,intmino2;</a>
+<a name="ln59"> </a>
+<a name="ln60">  value=(int)((unsigned char*)data)[0]+((int)((unsigned char*)data)[1]&lt;&lt;8)+</a>
+<a name="ln61">        ((int)((unsigned char*)data)[2]&lt;&lt;16)+((int)((unsigned char*)data)[3]&lt;&lt;24);</a>
+<a name="ln62">  intmino2=-1073741824;</a>
+<a name="ln63">  if ((unsigned int) INT_MIN!=0x80000000&amp;&amp;(value&amp;0x80000000)) value=(intmino2*2)+(value&amp;0x7fffffff);</a>
+<a name="ln64">  return(value); }</a>
+<a name="ln65"> </a>
+<a name="ln66">int int32le(int32 value)</a>
+<a name="ln67">{ return(int32lemem((char*)&amp;value)); }</a>
+<a name="ln68"> </a>
+<a name="ln69">/* DECODE AN UNSIGNED INT32 STORED IN LITTLE ENDIAN FORMAT</a>
+<a name="ln70">   ======================================================= */</a>
+<a name="ln71">unsigned int uint32lemem(char *data)</a>
+<a name="ln72">{ return((int)((unsigned char*)data)[0]+((int)((unsigned char*)data)[1]&lt;&lt;8)+</a>
+<a name="ln73">         ((int)((unsigned char*)data)[2]&lt;&lt;16)+((int)((unsigned char*)data)[3]&lt;&lt;24)); }</a>
+<a name="ln74"> </a>
+<a name="ln75">unsigned int uint32le(uint32 value)</a>
+<a name="ln76">{ return(uint32lemem((char*)&amp;value)); }</a>
+<a name="ln77"> </a>
+<a name="ln78">/* STORE AN INT32 IN LITTLE ENDIAN FORMAT</a>
+<a name="ln79">   ====================================== */</a>
+<a name="ln80">void storeint32le(char *data,int32 value)</a>
+<a name="ln81">{ int i;</a>
+<a name="ln82"> </a>
+<a name="ln83">  for (i=0;i&lt;4;i++) data[i]=(value&gt;&gt;(i*8))&amp;255; }</a>
+<a name="ln84"> </a>
+<a name="ln85">/* CONVERT MAXIMALLY n CHARACTERS TO INTEGER</a>
+<a name="ln86">   ========================================= */</a>
+<a name="ln87">int str_natoi(char *string,int number)</a>
+<a name="ln88">{ char ch;</a>
+<a name="ln89">  int i;</a>
+<a name="ln90"> </a>
+<a name="ln91">  for (i=0;i&lt;number;i++) if (!string[i]) return(atoi(string));</a>
+<a name="ln92">  ch=string[number];</a>
+<a name="ln93">  string[number]=0;</a>
+<a name="ln94">  i=atoi(string);</a>
+<a name="ln95">  string[number]=ch;</a>
+<a name="ln96">  return(i); }</a>
+<a name="ln97"> </a>
+<a name="ln98">/* COPY MAXIMALLY n CHARACTERS AND TERMINATE WITH ZERO</a>
+<a name="ln99">   =================================================== */</a>
+<a name="ln100">void str_ncopy(char *string1,char *string2,int len)</a>
+<a name="ln101">{ int i;</a>
+<a name="ln102">  char ch;</a>
+<a name="ln103"> </a>
+<a name="ln104">  for (i=0;i&lt;len;i++)</a>
+<a name="ln105">  { ch=string2[i];</a>
+<a name="ln106">    string1[i]=ch;</a>
+<a name="ln107">    if (!ch) break; }</a>
+<a name="ln108">  string1[i]=0; }</a>
+<a name="ln109"> </a>
+<a name="ln110">/* ELEMENT SYMBOLS */</a>
+<a name="ln111">#define MOB_ELEMENTS 128</a>
+<a name="ln112">const char *mob_elementsym[MOB_ELEMENTS]=</a>
+<a name="ln113">{&quot;?&quot;,</a>
+<a name="ln114"> &quot;H&quot;,&quot;He&quot;,</a>
+<a name="ln115"> &quot;Li&quot;,&quot;Be&quot;,&quot;B&quot;,&quot;C&quot;,&quot;N&quot;,&quot;O&quot;,&quot;F&quot;,&quot;Ne&quot;,</a>
+<a name="ln116"> &quot;Na&quot;,&quot;Mg&quot;,&quot;Al&quot;,&quot;Si&quot;,&quot;P&quot;,&quot;S&quot;,&quot;Cl&quot;,&quot;Ar&quot;,</a>
+<a name="ln117"> &quot;K&quot;,&quot;Ca&quot;,&quot;Sc&quot;,&quot;Ti&quot;,&quot;V&quot;,&quot;Cr&quot;,&quot;Mn&quot;,&quot;Fe&quot;,&quot;Co&quot;,&quot;Ni&quot;,&quot;Cu&quot;,&quot;Zn&quot;,&quot;Ga&quot;,&quot;Ge&quot;,&quot;As&quot;,&quot;Se&quot;,&quot;Br&quot;,&quot;Kr&quot;,</a>
+<a name="ln118"> &quot;Rb&quot;,&quot;Sr&quot;,&quot;Y&quot;,&quot;Zr&quot;,&quot;Nb&quot;,&quot;Mo&quot;,&quot;Tc&quot;,&quot;Ru&quot;,&quot;Rh&quot;,&quot;Pd&quot;,&quot;Ag&quot;,&quot;Cd&quot;,&quot;In&quot;,&quot;Sn&quot;,&quot;Sb&quot;,&quot;Te&quot;,&quot;I&quot;,&quot;Xe&quot;,</a>
+<a name="ln119"> &quot;Cs&quot;,&quot;Ba&quot;,&quot;La&quot;,&quot;Ce&quot;,&quot;Pr&quot;,&quot;Nd&quot;,&quot;Pm&quot;,&quot;Sm&quot;,&quot;Eu&quot;,</a>
+<a name="ln120"> &quot;Gd&quot;,&quot;Tb&quot;,&quot;Dy&quot;,&quot;Ho&quot;,&quot;Er&quot;,&quot;Tm&quot;,&quot;Yb&quot;,&quot;Lu&quot;,&quot;Hf&quot;,&quot;Ta&quot;,&quot;W&quot;, &quot;Re&quot;,&quot;Os&quot;,&quot;Ir&quot;,&quot;Pt&quot;,&quot;Au&quot;,</a>
+<a name="ln121"> &quot;Hg&quot;,&quot;Tl&quot;,&quot;Pb&quot;,&quot;Bi&quot;,&quot;Po&quot;,&quot;At&quot;,&quot;Rn&quot;,&quot;Fr&quot;,&quot;Ra&quot;,&quot;Ac&quot;,&quot;Th&quot;,&quot;Pa&quot;,&quot;U&quot;, &quot;Np&quot;,&quot;Pu&quot;,&quot;Am&quot;,</a>
+<a name="ln122"> &quot;Cm&quot;,&quot;Bk&quot;,&quot;Cf&quot;,&quot;Es&quot;,&quot;Fm&quot;,&quot;Md&quot;,&quot;No&quot;,&quot;Lr&quot;,&quot;Rf&quot;,&quot;Db&quot;,&quot;Sg&quot;,&quot;Bh&quot;,&quot;Hs&quot;,&quot;Mt&quot;,&quot;?&quot;,&quot;?&quot;,</a>
+<a name="ln123"> &quot;?&quot;,&quot;?&quot;,&quot;?&quot;,&quot;?&quot;,&quot;?&quot;,&quot;?&quot;,&quot;?&quot;,&quot;?&quot;,&quot;?&quot;,&quot;?&quot;,&quot;?&quot;,&quot;?&quot;,&quot;?&quot;,&quot;?&quot;,&quot;?&quot;,&quot;?&quot; };</a>
+<a name="ln124"> </a>
+<a name="ln125">/* HEADER */</a>
+<a name="ln126">#define MOB_ATOMS 0</a>
+<a name="ln127">#define MOB_TERMINI 1</a>
+<a name="ln128">#define MOB_TERLIST 2</a>
+<a name="ln129">#define MOB_HEADERLEN 3</a>
+<a name="ln130">#define MOB_HEADERSIZE 12</a>
+<a name="ln131">/* ATOM ENTRIES */</a>
+<a name="ln132">#define MOB_LINKS 0</a>
+<a name="ln133">#define MOB_LINKSMASK 15</a>
+<a name="ln134">#define MOB_IDLEN 1</a>
+<a name="ln135">#define MOB_ELEMENT 2</a>
+<a name="ln136">#define MOB_ELEMENTMASK 127</a>
+<a name="ln137">#define MOB_HETATOMFLAG 128</a>
+<a name="ln138">#define MOB_COLOR 3</a>
+<a name="ln139">#define MOB_UNDEFCOLOR 64</a>
+<a name="ln140">#define MOB_POSX 4</a>
+<a name="ln141">#define MOB_POSY 8</a>
+<a name="ln142">#define MOB_POSZ 12</a>
+<a name="ln143">#define MOB_LINK1 16</a>
+<a name="ln144">#define MOB_LINKTYPEMASK 0xff000000</a>
+<a name="ln145">#define MOB_LINKTYPESHIFTS 24</a>
+<a name="ln146">#define MOB_LINKATOMMASK 0xffffff</a>
+<a name="ln147">#define MOB_PRINTRESIDSIZE 10</a>
+<a name="ln148">#define MOB_NOATOM -1</a>
+<a name="ln149">/* LINK TYPES */</a>
+<a name="ln150">#define MOB_LINKTYPES 10</a>
+<a name="ln151">#define MOB_LINKNONE 0</a>
+<a name="ln152">#define MOB_LINKSINGLE 1</a>
+<a name="ln153">#define MOB_LINKDOUBLE 2</a>
+<a name="ln154">#define MOB_LINKTRIPLE 3</a>
+<a name="ln155">#define MOB_LINKRESONANCE50 4</a>
+<a name="ln156">#define MOB_LINKRESONANCE25 5</a>
+<a name="ln157">#define MOB_LINKRESONANCE33 6</a>
+<a name="ln158">#define MOB_LINKRESONANCE66 7</a>
+<a name="ln159">#define MOB_LINKRESONANCE75 8</a>
+<a name="ln160">#define MOB_LINKQUADRUPLE 9</a>
+<a name="ln161">/* ATOM ID STRUCTURE */</a>
+<a name="ln162">#define MOB_RESNAMEMASK 0xffffff</a>
+<a name="ln163">#define MOB_CHAINMASK 0xff000000</a>
+<a name="ln164">#define MOB_CHAINSHIFTS 24</a>
+<a name="ln165">/* FLAGS OF ID FIELDS PRESENT IN MOB DATA */</a>
+<a name="ln166">#define MOB_ATOMFLAG 1</a>
+<a name="ln167">#define MOB_RESFLAG 2</a>
+<a name="ln168">#define MOB_INSCODEALTLOCFLAG 4</a>
+<a name="ln169">#define MOB_OCCUPANCYFLAG 8</a>
+<a name="ln170">#define MOB_TEMPFACFLAG 16</a>
+<a name="ln171">#define MOB_SEGMENTFLAG 32</a>
+<a name="ln172">#define MOB_PROPERTYFLAG 0x2000</a>
+<a name="ln173">#define MOB_AROMATICFLAG 0x4000</a>
+<a name="ln174">#define MOB_DOTFLAG 0x40000</a>
+<a name="ln175">#define MOB_SURFENVFLAG 0x80000</a>
+<a name="ln176">#define MOB_FIXEDFLAG 0x800000</a>
+<a name="ln177">#define MOB_ATOMSIZEMAX 44         // Header+3*POS+Flags+Atom+ResChain+Numb+AltIns+Occupany+Bfac</a>
+<a name="ln178">#define MOB_INFOHISTORY 6</a>
+<a name="ln179">#define MOB_INFOHISTORYSIZE 136</a>
+<a name="ln180">#define MOB_INFOEND 0x7fffffff</a>
+<a name="ln181">#define MOB_INFOENDSIZE 8</a>
+<a name="ln182">#define mob_element(ATOM) ((ATOM)-&gt;header[MOB_ELEMENT]&amp;MOB_ELEMENTMASK)</a>
+<a name="ln183">#define mob_links(ATOM) ((ATOM)-&gt;header[MOB_LINKS]&amp;MOB_LINKSMASK)</a>
+<a name="ln184"> </a>
+<a name="ln185">typedef int32 mobdata;</a>
+<a name="ln186"> </a>
+<a name="ln187">struct mobatom                     /* Modeling object atom structure */</a>
+<a name="ln188">{ unsigned char header[4];</a>
+<a name="ln189">  int32 posx;</a>
+<a name="ln190">  int32 posy;</a>
+<a name="ln191">  int32 posz;</a>
+<a name="ln192">  int32 link[4]; };</a>
+<a name="ln193"> </a>
+<a name="ln194">struct atomid                      /* The order of the fields is not important */</a>
+<a name="ln195">{ uint32 atom;</a>
+<a name="ln196">  uint32 resnamechain;</a>
+<a name="ln197">  uint32 resno;</a>
+<a name="ln198">  uint32 restype;</a>
+<a name="ln199">  uint16 inscode;</a>
+<a name="ln200">  uint16 altloc;</a>
+<a name="ln201">  uint32 flags;                    /* Use the same MOB_ masks as mobatom */</a>
+<a name="ln202">  uint32 secstr;</a>
+<a name="ln203">  uint32 segment;</a>
+<a name="ln204">  float occupancy;</a>
+<a name="ln205">  float bfactor;</a>
+<a name="ln206">  float property; };</a>
+<a name="ln207"> </a>
+<a name="ln208">/* SET POINTER TO DATA START</a>
+<a name="ln209">   ========================= */</a>
+<a name="ln210">struct mobatom *mob_start(mobdata *mob)</a>
+<a name="ln211">{ int termini;</a>
+<a name="ln212"> </a>
+<a name="ln213">  termini=uint32le(mob[MOB_TERMINI]);</a>
+<a name="ln214">  return((struct mobatom*)(mob+termini+2)); }</a>
+<a name="ln215"> </a>
+<a name="ln216">/* GET SIZE OF ATOM</a>
+<a name="ln217">   ================ */</a>
+<a name="ln218">int mob_atomlen(struct mobatom *atom)</a>
+<a name="ln219">{ return(4+mob_links(atom)+atom-&gt;header[MOB_IDLEN]); }</a>
+<a name="ln220"> </a>
+<a name="ln221">int mob_atomsize(struct mobatom *atom)</a>
+<a name="ln222">{ return(mob_atomlen(atom)*sizeof(mobdata)); }</a>
+<a name="ln223"> </a>
+<a name="ln224">/* MOVE POINTER TO NEXT ATOM OF YASARA OBJECT STRUCTURE</a>
+<a name="ln225">   ==================================================== */</a>
+<a name="ln226">struct mobatom *mob_next(struct mobatom *atom)</a>
+<a name="ln227">{ mem_inc(atom,mob_atomsize(atom));</a>
+<a name="ln228">  return(atom); }</a>
+<a name="ln229"> </a>
+<a name="ln230">void mob_setnext(struct mobatom **atomadd)</a>
+<a name="ln231">{ *atomadd=mob_next(*atomadd); }</a>
+<a name="ln232"> </a>
+<a name="ln233">/* GET ATOM ID</a>
+<a name="ln234">   =========== */</a>
+<a name="ln235">void mob_getid(struct atomid *id,struct mobatom *atom)</a>
+<a name="ln236">{ int idpos,links,flags,inscodealtloc;</a>
+<a name="ln237"> </a>
+<a name="ln238">  links=mob_links(atom);</a>
+<a name="ln239">  flags=int32le(atom-&gt;link[links]);</a>
+<a name="ln240">  idpos=links+1;</a>
+<a name="ln241">  id-&gt;atom=atom-&gt;link[idpos++];</a>
+<a name="ln242">  id-&gt;resnamechain=atom-&gt;link[idpos++];</a>
+<a name="ln243">  id-&gt;resno=atom-&gt;link[idpos++];</a>
+<a name="ln244">  if (flags&amp;MOB_INSCODEALTLOCFLAG)</a>
+<a name="ln245">  { inscodealtloc=int32le(atom-&gt;link[idpos++]);</a>
+<a name="ln246">    id-&gt;inscode=inscodealtloc&amp;0xffff;</a>
+<a name="ln247">    id-&gt;altloc=inscodealtloc&amp;0xffff; }</a>
+<a name="ln248">  else id-&gt;inscode=id-&gt;altloc=0;</a>
+<a name="ln249">  if (flags&amp;MOB_OCCUPANCYFLAG) id-&gt;occupancy=((float*)atom-&gt;link)[idpos++];</a>
+<a name="ln250">  else id-&gt;occupancy=1.0f;</a>
+<a name="ln251">  if (flags&amp;MOB_TEMPFACFLAG) id-&gt;bfactor=((float*)atom-&gt;link)[idpos++];</a>
+<a name="ln252">  else id-&gt;bfactor=0;</a>
+<a name="ln253">  if (flags&amp;MOB_SEGMENTFLAG) id-&gt;segment=atom-&gt;link[idpos++];</a>
+<a name="ln254">  else id-&gt;segment=0;</a>
+<a name="ln255">  if (flags&amp;MOB_PROPERTYFLAG) id-&gt;property=((float*)atom-&gt;link)[idpos++];</a>
+<a name="ln256">  else id-&gt;property=0;</a>
+<a name="ln257">  id-&gt;flags=flags&amp;(MOB_SURFENVFLAG|MOB_DOTFLAG); }</a>
+<a name="ln258"> </a>
+<a name="ln259">/* CLEAR ATOMID</a>
+<a name="ln260">   ============ */</a>
+<a name="ln261">#define SEC_UNDEFINED 4</a>
+<a name="ln262">void mob_clearid(struct atomid *id)</a>
+<a name="ln263">{ id-&gt;atom=id-&gt;resnamechain=id-&gt;resno=STR_____;</a>
+<a name="ln264">  id-&gt;inscode=id-&gt;altloc=0;</a>
+<a name="ln265">  id-&gt;occupancy=1.0;</a>
+<a name="ln266">  id-&gt;bfactor=0.0;</a>
+<a name="ln267">  id-&gt;secstr=SEC_UNDEFINED; }</a>
+<a name="ln268"> </a>
+<a name="ln269">/* INVALIDATE ATOMID</a>
+<a name="ln270">   ================= */</a>
+<a name="ln271">void mob_invid(struct atomid *id)</a>
+<a name="ln272">{ id-&gt;atom=id-&gt;resnamechain=id-&gt;resno=0xffffffff;</a>
+<a name="ln273">  id-&gt;inscode=id-&gt;altloc=0;</a>
+<a name="ln274">  id-&gt;secstr=SEC_UNDEFINED; }</a>
+<a name="ln275"> </a>
+<a name="ln276">/* COMPARE TWO RESIDUE NAMES</a>
+<a name="ln277">   ========================= */</a>
+<a name="ln278">int mob_issameres(struct atomid *id1,struct atomid *id2)</a>
+<a name="ln279">{ if (id1-&gt;resnamechain==id2-&gt;resnamechain&amp;&amp;id1-&gt;resno==id2-&gt;resno&amp;&amp;</a>
+<a name="ln280">      id1-&gt;inscode==id2-&gt;inscode) return(1);</a>
+<a name="ln281">  return(0); }</a>
+<a name="ln282"> </a>
+<a name="ln283">/* CHECK IF ATOM BELONGS TO GIVEN RESIDUE</a>
+<a name="ln284">   ====================================== */</a>
+<a name="ln285">int mob_hasres(struct mobatom *atom,struct atomid *id2)</a>
+<a name="ln286">{ struct atomid id1;</a>
+<a name="ln287"> </a>
+<a name="ln288">  mob_getid(&amp;id1,atom);</a>
+<a name="ln289">  return(mob_issameres(&amp;id1,id2)); }</a>
+<a name="ln290"> </a>
+<a name="ln291">/* GET LENGTH OF RESIDUE</a>
+<a name="ln292">   =====================</a>
+<a name="ln293">   atomsleft SPECIFIES THE NUMBER OF ATOMS LEFT</a>
+<a name="ln294">   TILL END OF STRUCTURE IS REACHED */</a>
+<a name="ln295">int mob_reslen(struct mobatom *atom,int atomsleft)</a>
+<a name="ln296">{ int i;</a>
+<a name="ln297">  struct atomid id;</a>
+<a name="ln298"> </a>
+<a name="ln299">  mob_getid(&amp;id,atom);</a>
+<a name="ln300">  i=0;</a>
+<a name="ln301">  while (atomsleft--)</a>
+<a name="ln302">  { if (!mob_hasres(atom,&amp;id)) break;</a>
+<a name="ln303">    i++;</a>
+<a name="ln304">    atom=mob_next(atom); }</a>
+<a name="ln305">  return(i); }</a>
+<a name="ln306"> </a>
+<a name="ln307">/* CHECK IF ATOM HAS THE GIVEN NAME</a>
+<a name="ln308">   ================================ */</a>
+<a name="ln309">int mob_hasname(struct mobatom *atom,struct atomid *id2)</a>
+<a name="ln310">{ struct atomid id1;</a>
+<a name="ln311"> </a>
+<a name="ln312">  mob_getid(&amp;id1,atom);</a>
+<a name="ln313">  if (id1.atom==id2-&gt;atom&amp;&amp;id1.altloc==id2-&gt;altloc) return(1); else return(0); }</a>
+<a name="ln314"> </a>
+<a name="ln315"> </a>
+<a name="ln316">class YOBFormat : public OBMoleculeFormat</a>
+<a name="ln317">{</a>
+<a name="ln318">public:</a>
+<a name="ln319">    //Register this format type ID</a>
+<a name="ln320">    YOBFormat()</a>
+<a name="ln321">    {</a>
+<a name="ln322">        OBConversion::RegisterFormat(&quot;yob&quot;,this);</a>
+<a name="ln323">    }</a>
+<a name="ln324"> </a>
+<a name="ln325">    virtual const char* Description() //required</a>
+<a name="ln326">    {</a>
+<a name="ln327">        return</a>
+<a name="ln328">            &quot;YASARA.org YOB format\n&quot;</a>
+<a name="ln329">            &quot;The native YASARA format.\n&quot;;</a>
+<a name="ln330">    };</a>
+<a name="ln331"> </a>
+<a name="ln332">    virtual const char* SpecificationURL(){return</a>
+<a name="ln333">            &quot;http://www.yasara.org&quot;;}; //optional</a>
+<a name="ln334"> </a>
+<a name="ln335">    //Flags() can return be any the following combined by | or be omitted if none apply</a>
+<a name="ln336">    // NOTREADABLE  READONEONLY  NOTWRITABLE  WRITEONEONLY</a>
+<a name="ln337">    virtual unsigned int Flags()</a>
+<a name="ln338">    {</a>
+<a name="ln339">        return READONEONLY|READBINARY|WRITEBINARY;</a>
+<a name="ln340">    };</a>
+<a name="ln341"> </a>
+<a name="ln342">    //*** This section identical for most OBMol conversions ***</a>
+<a name="ln343">    ////////////////////////////////////////////////////</a>
+<a name="ln344">    /// The &quot;API&quot; interface functions</a>
+<a name="ln345">    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln346">    virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln347"> </a>
+<a name="ln348"> </a>
+<a name="ln349">};</a>
+<a name="ln350">//***</a>
+<a name="ln351"> </a>
+<a name="ln352">//Make an instance of the format class</a>
+<a name="ln353">YOBFormat theYOBFormat;</a>
+<a name="ln354"> </a>
+<a name="ln355">/* READ YASARA OBJECT</a>
+<a name="ln356">   ==================</a>
+<a name="ln357">   IF options CONTAINS 'f' (COMMAND LINE -af), ATOM NAMES WILL STAY FIXED (I.E. LEAVING THE SPACE IN THE FIRST COLUMN) */</a>
+<a name="ln358">bool YOBFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln359">{</a>
+<a name="ln360">  OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln361">  if (pmol == nullptr)</a>
+<a name="ln362">      return false;</a>
+<a name="ln363"> </a>
+<a name="ln364">  //Define some references so we can use the old parameter names</a>
+<a name="ln365">  istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln366">  OBMol &amp;mol = *pmol;</a>
+<a name="ln367">  //   const char* title = pConv-&gt;GetTitle();</a>
+<a name="ln368"> </a>
+<a name="ln369">  bool hetatom;</a>
+<a name="ln370">  char buffer[8],resname[4],atomname[5];</a>
+<a name="ln371">  string str;</a>
+<a name="ln372">  unsigned int i,j/*,m,q*/;</a>
+<a name="ln373">  unsigned int /*resno,chainNum,*/link,linked,linktype,atoms,element,links,chain;</a>
+<a name="ln374">  int /*samenames,*/reslen,charged;</a>
+<a name="ln375">  unsigned int infosize,size;</a>
+<a name="ln376">  mobdata *mob;</a>
+<a name="ln377">  struct mobatom *srcatom,/**atom2,*/*resstart;</a>
+<a name="ln378">  struct atomid id;</a>
+<a name="ln379">  OBAtom *dstatom;</a>
+<a name="ln380">  OBResidue *res;</a>
+<a name="ln381">  bool has_residue_info = false;</a>
+<a name="ln382"> </a>
+<a name="ln383">  /* VERIFY FILE FORMAT */</a>
+<a name="ln384">  ifs.read(buffer,8);</a>
+<a name="ln385">  if (!EQn(buffer,&quot;YMOB&quot;,4)) return(false);</a>
+<a name="ln386">  /* IGNORE ENTIRE INFO STRUCTURE */</a>
+<a name="ln387">  infosize=uint32lemem(&amp;buffer[4]);</a>
+<a name="ln388">  for (i=0;i&lt;infosize;i++) ifs.read(buffer,1);</a>
+<a name="ln389">  /* READ ATOM DATA */</a>
+<a name="ln390">  ifs.read(buffer,4);</a>
+<a name="ln391">  size=uint32lemem(buffer);</a>
+<a name="ln392">  mob=(mobdata*)mem_alloc(size);</a>
+<a name="ln393">  if (!mob) return(false);</a>
+<a name="ln394">  ifs.read((char*)mob,size);</a>
+<a name="ln395">  /* PARSE THE ATOMS */</a>
+<a name="ln396">  mol.Clear();</a>
+<a name="ln397">  mol.BeginModify();</a>
+<a name="ln398">  mob_invid(&amp;id);</a>
+<a name="ln399">  atoms=uint32le(mob[MOB_ATOMS]);</a>
+<a name="ln400">  srcatom=mob_start(mob);</a>
+<a name="ln401">  res=nullptr;</a>
+<a name="ln402">  charged=0;</a>
+<a name="ln403">  for (i=0;i&lt;atoms;i++)</a>
+<a name="ln404">  { /* GET ELEMENT, TYPE AND POSITION */</a>
+<a name="ln405">    element=mob_element(srcatom);</a>
+<a name="ln406">    dstatom=mol.NewAtom();</a>
+<a name="ln407">    dstatom-&gt;SetAtomicNum(element);</a>
+<a name="ln408">    dstatom-&gt;SetType(mob_elementsym[element]);</a>
+<a name="ln409">    vector3 pos(int32le(srcatom-&gt;posx)*-FMTOA,int32le(srcatom-&gt;posy)*FMTOA,</a>
+<a name="ln410">                int32le(srcatom-&gt;posz)*FMTOA);</a>
+<a name="ln411">    dstatom-&gt;SetVector(pos);</a>
+<a name="ln412">    if (!mob_hasres(srcatom,&amp;id))</a>
+<a name="ln413">    { /* NEW RESIDUE FOUND */</a>
+<a name="ln414">      has_residue_info = true;</a>
+<a name="ln415">      resstart=srcatom;</a>
+<a name="ln416">      reslen=mob_reslen(resstart,atoms-i);</a>
+<a name="ln417">      mob_getid(&amp;id,srcatom);</a>
+<a name="ln418">      res=mol.NewResidue();</a>
+<a name="ln419">      *((int32*)resname)=id.resnamechain;</a>
+<a name="ln420">      chain=resname[3];</a>
+<a name="ln421">      if (chain&gt;='0'&amp;&amp;chain&lt;='9') chain-=48;</a>
+<a name="ln422">      else if (chain&gt;='A'&amp;&amp;chain&lt;='Z') chain-=64;</a>
+<a name="ln423">      else if (chain&gt;='a'&amp;&amp;chain&lt;='z') chain-=96;</a>
+<a name="ln424">      resname[3]=0;</a>
+<a name="ln425">      res-&gt;SetChainNum(chain);</a>
+<a name="ln426">      str=resname;</a>
+<a name="ln427">      res-&gt;SetName(str);</a>
+<a name="ln428">      res-&gt;SetNum(str_natoi((char*)&amp;id.resno,4)); }</a>
+<a name="ln429">    else mob_getid(&amp;id,srcatom);</a>
+<a name="ln430">    /* SET THE CHARGE, WHICH IS PASSED IN THE property FIELD */</a>
+<a name="ln431">    dstatom-&gt;SetPartialCharge(id.property);</a>
+<a name="ln432">    if (id.property!=0) charged=1;</a>
+<a name="ln433">    res-&gt;AddAtom(dstatom);</a>
+<a name="ln434">    /* WHO KNOWS WHY HALF OF THE ATOM PARAMETERS CAN BE SET DIRECTLY</a>
+<a name="ln435">       ABOVE, AND THE SECOND HALF NEEDS A RESIDUE OBJECT IN BETWEEN? */</a>
+<a name="ln436">    res-&gt;SetSerialNum(dstatom,i+1);</a>
+<a name="ln437">    *((int32*)atomname)=id.atom;</a>
+<a name="ln438">    atomname[4]=0;</a>
+<a name="ln439">    /* SHIFT ATOM NAME BY ONE CHARACTER TO REMOVE LEADING SPACE */</a>
+<a name="ln440">    if (atomname[0]==' '&amp;&amp;(!pConv-&gt;IsOption(&quot;f&quot;,OBConversion::INOPTIONS))) memcpy(atomname,atomname+1,4);</a>
+<a name="ln441">    /* RENAME TERMINAL OXYGENS */</a>
+<a name="ln442">    str=atomname;</a>
+<a name="ln443">    if (str==&quot;OT1&quot;) str=&quot;O&quot;;</a>
+<a name="ln444">    if (str==&quot;OT2&quot;) str=&quot;OXT&quot;;</a>
+<a name="ln445">    res-&gt;SetAtomID(dstatom,str);</a>
+<a name="ln446">    if (srcatom-&gt;header[MOB_ELEMENT]&amp;MOB_HETATOMFLAG) hetatom=true;</a>
+<a name="ln447">    else hetatom=false;</a>
+<a name="ln448">    res-&gt;SetHetAtom(dstatom,hetatom);</a>
+<a name="ln449">    /* NOW ADD THE BONDS */</a>
+<a name="ln450">    links=srcatom-&gt;header[MOB_LINKS];</a>
+<a name="ln451">    for (j=0;j&lt;links;j++)</a>
+<a name="ln452">    { link=uint32le(srcatom-&gt;link[j]);</a>
+<a name="ln453">      linked=link&amp;MOB_LINKATOMMASK;</a>
+<a name="ln454">      if (linked&lt;i)</a>
+<a name="ln455">      { linktype=link&gt;&gt;MOB_LINKTYPESHIFTS;</a>
+<a name="ln456">        if (linktype==MOB_LINKQUADRUPLE) linktype=4;</a>
+<a name="ln457">        else if (linktype&gt;MOB_LINKTRIPLE) linktype=5;</a>
+<a name="ln458">        mol.AddBond(i+1,linked+1,linktype); } }</a>
+<a name="ln459">    mob_setnext(&amp;srcatom); }</a>
+<a name="ln460">  mem_free(mob);</a>
+<a name="ln461"> </a>
+<a name="ln462">  mol.EndModify();</a>
+<a name="ln463">  if (charged) mol.SetPartialChargesPerceived();</a>
+<a name="ln464">  if (has_residue_info)</a>
+<a name="ln465">    mol.SetChainsPerceived();</a>
+<a name="ln466">  if (!mol.NumAtoms()) return(false);</a>
+<a name="ln467">  return(true); }</a>
+<a name="ln468"> </a>
+<a name="ln469">/* WRITE YASARA OBJECT</a>
+<a name="ln470">   ===================</a>
+<a name="ln471">   IF options CONTAINS 'f' (COMMAND LINE -xf), ATOM NAMES WILL STAY FIXED (I.E. ADDING NO SPACE IN THE FIRST COLUMN)</a>
+<a name="ln472">   IF options CONTAINS 'a' (COMMAND LINE -xa), AROMATIC ATOMS WILL BE FLAGGED */</a>
+<a name="ln473">bool YOBFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln474">{</a>
+<a name="ln475">  OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln476">  if (pmol == nullptr)</a>
+<a name="ln477">      return false;</a>
+<a name="ln478"> </a>
+<a name="ln479">  //Define some references so we can use the old parameter names</a>
+<a name="ln480">  ostream &amp;ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln481">  OBMol &amp;mol = *pmol;</a>
+<a name="ln482"> </a>
+<a name="ln483">  //  bool hetatom;</a>
+<a name="ln484">  char buffer[32],/*resname[4],*/atomname[5];</a>
+<a name="ln485">  unsigned char double1[8]={0,0,0,0,0,0,0xf0,0x3f};</a>
+<a name="ln486">  //   char *str;</a>
+<a name="ln487">  int i,j,/*m,q,*/pos;</a>
+<a name="ln488">  int /*resno,chainNum,link,linktype,*/atoms,element,links/*,chain*/;</a>
+<a name="ln489">  int /*samenames,reslen,*/bondorder,flags;</a>
+<a name="ln490">  unsigned int /*infosize,*/size;</a>
+<a name="ln491">  //   mobdata *mob;</a>
+<a name="ln492">  //   struct mobatom *atom2,*resstart;</a>
+<a name="ln493">  //   struct atomid id;</a>
+<a name="ln494">  OBAtom *srcatom,*linkedatom;</a>
+<a name="ln495">  OBResidue *res;</a>
+<a name="ln496">  OBBond *bond;</a>
+<a name="ln497">  vector&lt;OBAtom*&gt;::iterator e;</a>
+<a name="ln498">  vector&lt;OBBond*&gt;::iterator iter;</a>
+<a name="ln499"> </a>
+<a name="ln500">  atoms=mol.NumAtoms();</a>
+<a name="ln501">  if (!atoms) return(false);</a>
+<a name="ln502">  /* WRITE FILE FORMAT */</a>
+<a name="ln503">  ofs&lt;&lt;&quot;YMOB&quot;;</a>
+<a name="ln504">  /* WRITE AN INFO STRUCTURE WITH EMPTY TRANSFORMATION HISTORY (UNIT MATRIX) */</a>
+<a name="ln505">  storeint32le(buffer,MOB_INFOHISTORYSIZE+MOB_INFOENDSIZE);</a>
+<a name="ln506">  ofs.write(buffer,4);</a>
+<a name="ln507">  storeint32le(buffer,MOB_INFOHISTORY);</a>
+<a name="ln508">  storeint32le(&amp;buffer[4],MOB_INFOHISTORYSIZE);</a>
+<a name="ln509">  ofs.write(buffer,8);</a>
+<a name="ln510">  mem_set(buffer,0,8);</a>
+<a name="ln511">  for (i=0;i&lt;4;i++)</a>
+<a name="ln512">  { for (j=0;j&lt;4;j++)</a>
+<a name="ln513">    { if (i==j) ofs.write((char*)double1,8);</a>
+<a name="ln514">      else ofs.write(buffer,8); } }</a>
+<a name="ln515">  storeint32le(buffer,MOB_INFOEND);</a>
+<a name="ln516">  storeint32le(&amp;buffer[4],MOB_INFOENDSIZE);</a>
+<a name="ln517">  ofs.write(buffer,8);</a>
+<a name="ln518">  /* DETERMINE SIZE OF ATOM DATA */</a>
+<a name="ln519">  size=MOB_HEADERSIZE;</a>
+<a name="ln520">  for (i=1;i&lt;=atoms;i++)</a>
+<a name="ln521">  { srcatom=mol.GetAtom(i);</a>
+<a name="ln522">    /* COUNT BONDS */</a>
+<a name="ln523">    links=0;</a>
+<a name="ln524">    for (bond=srcatom-&gt;BeginBond(iter);bond;bond=srcatom-&gt;NextBond(iter)) links++;</a>
+<a name="ln525">    size+=links*4+32; }</a>
+<a name="ln526">  /* WRITE DATA HEADER */</a>
+<a name="ln527">  storeint32le(buffer,size);</a>
+<a name="ln528">  storeint32le(&amp;buffer[4],atoms);</a>
+<a name="ln529">  storeint32le(&amp;buffer[8],1);</a>
+<a name="ln530">  storeint32le(&amp;buffer[12],atoms-1);</a>
+<a name="ln531">  ofs.write(buffer,16);</a>
+<a name="ln532">  /* WRITE ATOMS */</a>
+<a name="ln533">  for (i=1;i&lt;=atoms;i++)</a>
+<a name="ln534">  { srcatom=mol.GetAtom(i);</a>
+<a name="ln535">    /* COUNT BONDS AGAIN (EASY ACCESS TO THE NUMBER OF BONDS IS TOO WELL HIDDEN ;-) */</a>
+<a name="ln536">    links=0;</a>
+<a name="ln537">    for (bond=srcatom-&gt;BeginBond(iter);bond;bond=srcatom-&gt;NextBond(iter)) links++;</a>
+<a name="ln538">    /* WRITE ATOM HEADER+POSITION */</a>
+<a name="ln539">    buffer[MOB_LINKS]=links;</a>
+<a name="ln540">    buffer[MOB_IDLEN]=4;</a>
+<a name="ln541">    element=srcatom-&gt;GetAtomicNum();</a>
+<a name="ln542">    buffer[MOB_ELEMENT]=element;</a>
+<a name="ln543">    buffer[MOB_COLOR]=MOB_UNDEFCOLOR;</a>
+<a name="ln544">    storeint32le(&amp;buffer[4],(int)(srcatom-&gt;GetX()*-ATOFM));</a>
+<a name="ln545">    storeint32le(&amp;buffer[8],(int)(srcatom-&gt;GetY()*ATOFM));</a>
+<a name="ln546">    storeint32le(&amp;buffer[12],(int)(srcatom-&gt;GetZ()*ATOFM));</a>
+<a name="ln547">    ofs.write(buffer,16);</a>
+<a name="ln548">    /* WRITE BONDS */</a>
+<a name="ln549">    //printf(&quot;Babel atom %d with %d links:\n&quot;,i,links);</a>
+<a name="ln550">    for (linkedatom=srcatom-&gt;BeginNbrAtom(iter);linkedatom;linkedatom=srcatom-&gt;NextNbrAtom(iter))</a>
+<a name="ln551">    { storeint32le(buffer,linkedatom-&gt;GetIdx()-1);</a>
+<a name="ln552">      bondorder=(*iter)-&gt;GetBondOrder();</a>
+<a name="ln553">      //printf(&quot;  Order %d\n&quot;,bondorder);</a>
+<a name="ln554">      if (bondorder==4) bondorder=MOB_LINKQUADRUPLE;</a>
+<a name="ln555">      else if (bondorder==5) bondorder=MOB_LINKRESONANCE50;</a>
+<a name="ln556">      buffer[3]=bondorder;</a>
+<a name="ln557">      ofs.write(buffer,4); }</a>
+<a name="ln558">    /* WRITE ATOM ID */</a>
+<a name="ln559">    mem_set(buffer,0,sizeof(buffer));</a>
+<a name="ln560">    flags=MOB_ATOMFLAG|MOB_RESFLAG;</a>
+<a name="ln561">    if (pConv-&gt;IsOption(&quot;a&quot;,OBConversion::OUTOPTIONS)&amp;&amp;srcatom-&gt;IsAromatic()) flags|=MOB_AROMATICFLAG;</a>
+<a name="ln562">    storeint32le(buffer,flags);</a>
+<a name="ln563">    if (srcatom-&gt;HasResidue())</a>
+<a name="ln564">    { res=srcatom-&gt;GetResidue();</a>
+<a name="ln565">      str_ncopy(atomname,(char*)res-&gt;GetAtomID(srcatom).c_str(),4);</a>
+<a name="ln566">      pos=4;</a>
+<a name="ln567">      if (!pConv-&gt;IsOption(&quot;f&quot;,OBConversion::OUTOPTIONS))</a>
+<a name="ln568">      { /* GUESS IF THE ATOM NAME NEEDS TO BE SHIFTED */</a>
+<a name="ln569">        if (strlen(mob_elementsym[element])==1||strncasecmp(mob_elementsym[element],atomname,2)) pos=5; }</a>
+<a name="ln570">      str_copy(&amp;buffer[pos],atomname);</a>
+<a name="ln571">      str_copy(&amp;buffer[8],(char*)res-&gt;GetName().c_str());</a>
+<a name="ln572">      snprintf(&amp;buffer[12], 4, &quot;%4d&quot;,res-&gt;GetNum()); }</a>
+<a name="ln573">    else</a>
+<a name="ln574">    { str_copy(&amp;buffer[4],OBElements::GetSymbol(element));</a>
+<a name="ln575">      str_copy(&amp;buffer[8],&quot;UNK    1&quot;); }</a>
+<a name="ln576">    for (j=4;j&lt;16;j++) if (!buffer[j]) buffer[j]=' ';</a>
+<a name="ln577">    ofs.write(buffer,16); }</a>
+<a name="ln578">  return(true); }</a>
+<a name="ln579"> </a>
+<a name="ln580">}</a>
+
+</code></pre>
+<div class="balloon" rel="63"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always false.</p></div>
+<div class="balloon" rel="419"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1032/" target="_blank">V1032</a> The pointer 'resname' is cast to a more strictly aligned pointer type.</p></div>
+<div class="balloon" rel="437"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1032/" target="_blank">V1032</a> The pointer 'atomname' is cast to a more strictly aligned pointer type.</p></div>
+<div class="balloon" rel="440"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v743/" target="_blank">V743</a> The memory areas must not overlap. Use 'memmove' function.</p></div>
+<div class="balloon" rel="510"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v512/" target="_blank">V512</a> A call of the 'memset' function will lead to underflow of the buffer 'buffer'.</p></div>
+<div class="balloon" rel="440"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v666/" target="_blank">V666</a> Consider inspecting second argument of the function 'IsOption'. It is possible that the value does not correspond with the length of a string which was passed with the first argument.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

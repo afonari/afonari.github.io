@@ -1,0 +1,310 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>griddata.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">griddata.cpp - Store grids of data linked to a molecule (e.g. Gaussian cube)</a>
+<a name="ln3"> </a>
+<a name="ln4">// Molekel - Molecular Visualization Program</a>
+<a name="ln5">// Copyright (C) 2006, 2007 Swiss National Supercomputing Centre (CSCS)</a>
+<a name="ln6"> </a>
+<a name="ln7"> Some Portions Copyright (c) 2007 by Geoffrey R. Hutchison</a>
+<a name="ln8"> Some Portions Copyright (C) 2008 by Marcus D. Hanwell</a>
+<a name="ln9"> </a>
+<a name="ln10">This file is part of the Open Babel project.</a>
+<a name="ln11">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln12"> </a>
+<a name="ln13">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln14">it under the terms of the GNU General Public License as published by</a>
+<a name="ln15">the Free Software Foundation version 2 of the License.</a>
+<a name="ln16"> </a>
+<a name="ln17">This program is distributed in the hope that it will be useful,</a>
+<a name="ln18">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln19">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln20">GNU General Public License for more details.</a>
+<a name="ln21">***********************************************************************/</a>
+<a name="ln22"> </a>
+<a name="ln23">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln24"> </a>
+<a name="ln25">#include &lt;openbabel/griddata.h&gt;</a>
+<a name="ln26">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln27">#include &lt;openbabel/grid.h&gt;</a>
+<a name="ln28"> </a>
+<a name="ln29">#include &lt;vector&gt;</a>
+<a name="ln30">#include &lt;algorithm&gt;</a>
+<a name="ln31">#include &lt;limits&gt;</a>
+<a name="ln32"> </a>
+<a name="ln33">using namespace std;</a>
+<a name="ln34"> </a>
+<a name="ln35">namespace OpenBabel {</a>
+<a name="ln36"> </a>
+<a name="ln37">  class GridDataPrivate {</a>
+<a name="ln38">  public:</a>
+<a name="ln39">    GridDataPrivate() {    }</a>
+<a name="ln40"> </a>
+<a name="ln41">    OBFloatGrid  floatGrid;</a>
+<a name="ln42">    OBGridData::Unit _unit;</a>
+<a name="ln43"> </a>
+<a name="ln44">    double           _max;</a>
+<a name="ln45">    double           _min;</a>
+<a name="ln46"> </a>
+<a name="ln47">    bool             _unrestricted;</a>
+<a name="ln48">    int              _symmetries;</a>
+<a name="ln49">  };</a>
+<a name="ln50"> </a>
+<a name="ln51">  /** \class OBGridData griddata.h &lt;openbabel/griddata.h&gt;</a>
+<a name="ln52">    \brief Store values for numeric grids such as orbitals or electrostatic potential</a>
+<a name="ln53">    \since version 2.2</a>
+<a name="ln54">    \sa OBFloatGrid</a>
+<a name="ln55"> </a>
+<a name="ln56">    OBGridData facilitates attaching grids and cubes to molecular data. A &quot;grid&quot; is</a>
+<a name="ln57">    data representing some function f(x,y,z), such as a molecule's electrostatic potential</a>
+<a name="ln58">    or molecular orbitals. This need not be a &quot;cube&quot; even though this file format from Gaussian</a>
+<a name="ln59">    is frequently used. Axes need not be identical, and indeed do not need to be orthogonal.</a>
+<a name="ln60"> </a>
+<a name="ln61">    Open Babel supports reading several types of grid file formats, including Gaussian cube,</a>
+<a name="ln62">    and OpenDX. The latter is notably used by the APBS program for numeric evaluation of molecular</a>
+<a name="ln63">    and protein electrostatic potential.</a>
+<a name="ln64"> </a>
+<a name="ln65">    \code</a>
+<a name="ln66">    OBGridData *gd = new OBGridData;</a>
+<a name="ln67">    gd-&gt;SetAttribute(&quot;Example Grid&quot;); // the title of the grid -- e.g., for user display</a>
+<a name="ln68">    vector&lt;int&gt; voxels(3); // the number of voxels in each direction</a>
+<a name="ln69">    vector3 origin; // the beginning x, y, z coordinate of the grid</a>
+<a name="ln70">    vector&lt;vector3&gt; axes; // the xyz displacements for each of the grid axes</a>
+<a name="ln71">    ...</a>
+<a name="ln72">    gd-&gt;SetNumberOfPoints(voxels[0], voxels[1], voxels[2]);</a>
+<a name="ln73">    gd-&gt;SetLimits(origin, axes[0], axes[1], axes[2]);</a>
+<a name="ln74">    gd-&gt;SetUnit(OBGridData::ANGSTROM);</a>
+<a name="ln75">    gd-&gt;SetOrigin(fileformatInput); // i.e., is this data from a file or determined by Open Babel</a>
+<a name="ln76"> </a>
+<a name="ln77">    for (int k = 0; k &lt; voxels[2]; ++k)</a>
+<a name="ln78">      for (int j = 0; j &lt; voxels[1]; ++j)</a>
+<a name="ln79">        for (int i = 0; i &lt; voxels[0]; ++i)</a>
+<a name="ln80">          {</a>
+<a name="ln81">            gd-&gt;SetValue(i, j, k,</a>
+<a name="ln82">                         grid[k*voxels[0]*voxels[1] + j*voxels[0] + i]);</a>
+<a name="ln83">          }</a>
+<a name="ln84"> </a>
+<a name="ln85">    mol-&gt;SetData(gd);</a>
+<a name="ln86">    \endcode</a>
+<a name="ln87"> </a>
+<a name="ln88">    \code</a>
+<a name="ln89">    if (mol-&gt;HasData(OBGenericDataType::GridData)) {</a>
+<a name="ln90">      vector&lt;OBGenericData*&gt; grids = mol-&gt;GetAllData(OBGenericDataType::GridData)</a>
+<a name="ln91">      // Output the name of the grid</a>
+<a name="ln92">      if (grids[0] != nullptr)</a>
+<a name="ln93">        cout &lt;&lt; grids[0]-&gt;GetAttribute();</a>
+<a name="ln94">    }</a>
+<a name="ln95">    \endcode</a>
+<a name="ln96"> </a>
+<a name="ln97">  */</a>
+<a name="ln98"> </a>
+<a name="ln99">  OBGridData::OBGridData() : OBGenericData(&quot;GridData&quot;, OBGenericDataType::GridData),</a>
+<a name="ln100">    d(new GridDataPrivate)</a>
+<a name="ln101">  {</a>
+<a name="ln102">  }</a>
+<a name="ln103"> </a>
+<a name="ln104">  OBGridData::~OBGridData()</a>
+<a name="ln105">  {</a>
+<a name="ln106">    delete d;</a>
+<a name="ln107">  }</a>
+<a name="ln108"> </a>
+<a name="ln109">  void OBGridData::GetAxes( double x[3], double y[3], double z[3] ) const</a>
+<a name="ln110">  {</a>
+<a name="ln111">    vector3 v1, v2, v3;</a>
+<a name="ln112">    v1 = d-&gt;floatGrid.GetXAxis();</a>
+<a name="ln113">    v2 = d-&gt;floatGrid.GetYAxis();</a>
+<a name="ln114">    v3 = d-&gt;floatGrid.GetZAxis();</a>
+<a name="ln115"> </a>
+<a name="ln116">    x[0] = v1.x(); x[1] = v1.y(), x[2] = v1.z();</a>
+<a name="ln117">    y[0] = v2.x(); y[1] = v2.y(), y[2] = v2.z();</a>
+<a name="ln118">    z[0] = v3.x(); z[1] = v3.y(), z[2] = v3.z();</a>
+<a name="ln119">  }</a>
+<a name="ln120"> </a>
+<a name="ln121">  vector3 OBGridData::GetXAxis() const</a>
+<a name="ln122">  {</a>
+<a name="ln123">    return d-&gt;floatGrid.GetXAxis();</a>
+<a name="ln124">  }</a>
+<a name="ln125"> </a>
+<a name="ln126">  vector3 OBGridData::GetYAxis() const</a>
+<a name="ln127">  {</a>
+<a name="ln128">    return d-&gt;floatGrid.GetYAxis();</a>
+<a name="ln129">  }</a>
+<a name="ln130"> </a>
+<a name="ln131">  vector3 OBGridData::GetZAxis() const</a>
+<a name="ln132">  {</a>
+<a name="ln133">    return d-&gt;floatGrid.GetZAxis();</a>
+<a name="ln134">  }</a>
+<a name="ln135"> </a>
+<a name="ln136">  void OBGridData::GetAxes( vector3 &amp;v1, vector3 &amp;v2, vector3 &amp;v3 ) const</a>
+<a name="ln137">  {</a>
+<a name="ln138">    v1 = d-&gt;floatGrid.GetXAxis();</a>
+<a name="ln139">    v2 = d-&gt;floatGrid.GetYAxis();</a>
+<a name="ln140">    v3 = d-&gt;floatGrid.GetZAxis();</a>
+<a name="ln141">  }</a>
+<a name="ln142"> </a>
+<a name="ln143">  void OBGridData::GetNumberOfPoints( int &amp;nx, int &amp;ny, int &amp;nz) const</a>
+<a name="ln144">  {</a>
+<a name="ln145">    nx = d-&gt;floatGrid.GetXdim();</a>
+<a name="ln146">    ny = d-&gt;floatGrid.GetYdim();</a>
+<a name="ln147">    nz = d-&gt;floatGrid.GetZdim();</a>
+<a name="ln148">  }</a>
+<a name="ln149"> </a>
+<a name="ln150">  int OBGridData::GetNumberOfPoints() const</a>
+<a name="ln151">  {</a>
+<a name="ln152">    return d-&gt;floatGrid.GetXdim() * d-&gt;floatGrid.GetYdim() * d-&gt;floatGrid.GetZdim();</a>
+<a name="ln153">  }</a>
+<a name="ln154"> </a>
+<a name="ln155">  void OBGridData::GetNumberOfSteps( int steps[ 3 ] ) const</a>
+<a name="ln156">  {</a>
+<a name="ln157">    steps[0] = d-&gt;floatGrid.GetXdim() - 1;</a>
+<a name="ln158">    steps[1] = d-&gt;floatGrid.GetYdim() - 1;</a>
+<a name="ln159">    steps[2] = d-&gt;floatGrid.GetZdim() - 1;</a>
+<a name="ln160">  }</a>
+<a name="ln161"> </a>
+<a name="ln162">  std::vector&lt; double &gt; OBGridData::GetValues() const</a>
+<a name="ln163">  {</a>
+<a name="ln164">    return d-&gt;floatGrid.GetDataVector();</a>
+<a name="ln165">  }</a>
+<a name="ln166"> </a>
+<a name="ln167">  double OBGridData::GetValue( int i, int j, int k ) const</a>
+<a name="ln168">  {</a>
+<a name="ln169">    return d-&gt;floatGrid.GetValue(i, j, k);</a>
+<a name="ln170">  }</a>
+<a name="ln171"> </a>
+<a name="ln172">  double OBGridData::GetValue(vector3 pos) const</a>
+<a name="ln173">  {</a>
+<a name="ln174">    return d-&gt;floatGrid.Interpolate(pos.x(), pos.y(), pos.z());</a>
+<a name="ln175">  }</a>
+<a name="ln176"> </a>
+<a name="ln177">  OBGridData::Unit OBGridData::GetUnit() const</a>
+<a name="ln178">  {</a>
+<a name="ln179">    return d-&gt;_unit;</a>
+<a name="ln180">  }</a>
+<a name="ln181"> </a>
+<a name="ln182">  double OBGridData::GetMinValue() const</a>
+<a name="ln183">  {</a>
+<a name="ln184">    return d-&gt;_min;</a>
+<a name="ln185">  }</a>
+<a name="ln186"> </a>
+<a name="ln187">  double OBGridData::GetMaxValue() const</a>
+<a name="ln188">  {</a>
+<a name="ln189">    return d-&gt;_max;</a>
+<a name="ln190">  }</a>
+<a name="ln191"> </a>
+<a name="ln192">  void OBGridData::GetOriginVector( double o[ 3 ] ) const</a>
+<a name="ln193">  {</a>
+<a name="ln194">    d-&gt;floatGrid.GetMin(o);</a>
+<a name="ln195">  }</a>
+<a name="ln196"> </a>
+<a name="ln197">  vector3 OBGridData::GetOriginVector() const</a>
+<a name="ln198">  {</a>
+<a name="ln199">    return d-&gt;floatGrid.GetMin();</a>
+<a name="ln200">  }</a>
+<a name="ln201"> </a>
+<a name="ln202">  vector3 OBGridData::GetMaxVector() const</a>
+<a name="ln203">  {</a>
+<a name="ln204">    return d-&gt;floatGrid.GetMax();</a>
+<a name="ln205">  }</a>
+<a name="ln206"> </a>
+<a name="ln207">  bool OBGridData::GetUnrestricted() const</a>
+<a name="ln208">  {</a>
+<a name="ln209">    return d-&gt;_unrestricted;</a>
+<a name="ln210">  }</a>
+<a name="ln211"> </a>
+<a name="ln212">  int OBGridData::GetNumSymmetries() const</a>
+<a name="ln213">  {</a>
+<a name="ln214">    return d-&gt;_symmetries;</a>
+<a name="ln215">  }</a>
+<a name="ln216"> </a>
+<a name="ln217">  void OBGridData::SetUnrestricted( bool u )</a>
+<a name="ln218">  {</a>
+<a name="ln219">    d-&gt;_unrestricted = u;</a>
+<a name="ln220">  }</a>
+<a name="ln221"> </a>
+<a name="ln222">  void OBGridData::SetNumSymmetries( int s )</a>
+<a name="ln223">  {</a>
+<a name="ln224">    d-&gt;_symmetries = s;</a>
+<a name="ln225">  }</a>
+<a name="ln226"> </a>
+<a name="ln227">  void OBGridData::SetNumberOfPoints( int nx, int ny, int nz )</a>
+<a name="ln228">  {</a>
+<a name="ln229">    d-&gt;floatGrid.SetNumberOfPoints(nx, ny, nz);</a>
+<a name="ln230">  }</a>
+<a name="ln231"> </a>
+<a name="ln232">  void OBGridData::SetLimits(const double origin [3], const double x[3],</a>
+<a name="ln233">                             const double y[3], const double z[3])</a>
+<a name="ln234">  {</a>
+<a name="ln235">    d-&gt;floatGrid.SetLimits(origin, x, y, z);</a>
+<a name="ln236">  }</a>
+<a name="ln237"> </a>
+<a name="ln238">  void OBGridData::SetLimits(const vector3 &amp;origin, const vector3 &amp;x,</a>
+<a name="ln239">                             const vector3 &amp;y, const vector3 &amp;z)</a>
+<a name="ln240">  {</a>
+<a name="ln241">    d-&gt;floatGrid.SetLimits(origin, x, y, z);</a>
+<a name="ln242">  }</a>
+<a name="ln243"> </a>
+<a name="ln244">  bool OBGridData::SetValue(int i, int j, int k, double val)</a>
+<a name="ln245">  {</a>
+<a name="ln246">    return d-&gt;floatGrid.SetValue(i, j, k, val);</a>
+<a name="ln247">  }</a>
+<a name="ln248"> </a>
+<a name="ln249">  void OBGridData::SetValues( const std::vector&lt; double &gt;&amp; v )</a>
+<a name="ln250">  {</a>
+<a name="ln251">    d-&gt;floatGrid.SetVals(v);</a>
+<a name="ln252">    d-&gt;_min = *std::min_element( v.begin(), v.end() );</a>
+<a name="ln253">    d-&gt;_max = *std::max_element( v.begin(), v.end() );</a>
+<a name="ln254">  }</a>
+<a name="ln255"> </a>
+<a name="ln256">  void OBGridData::SetUnit( OBGridData::Unit u )</a>
+<a name="ln257">  {</a>
+<a name="ln258">    d-&gt;_unit = u;</a>
+<a name="ln259">  }</a>
+<a name="ln260"> </a>
+<a name="ln261">} // end namespace</a>
+<a name="ln262"> </a>
+<a name="ln263">//! \file griddata.cpp</a>
+<a name="ln264">//! \brief OBGenericData class to connect numeric grids (e.g., orbitals, electrostatic potential) to molecules</a>
+
+</code></pre>
+<div class="balloon" rel="39"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v730/" target="_blank">V730</a> Not all members of a class are initialized inside the constructor. Consider inspecting: _unit, _max, _min, _unrestricted, _symmetries.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

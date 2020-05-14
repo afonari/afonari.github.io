@@ -1,0 +1,443 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>qchemformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Copyright (C) 2000-2007 by Geoffrey Hutchison</a>
+<a name="ln3">Some portions Copyright (C) 2004 by Michael Banck</a>
+<a name="ln4">Some portions Copyright (C) 2004 by Chris Morley</a>
+<a name="ln5"> </a>
+<a name="ln6">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln7">it under the terms of the GNU General Public License as published by</a>
+<a name="ln8">the Free Software Foundation version 2 of the License.</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is distributed in the hope that it will be useful,</a>
+<a name="ln11">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln12">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln13">GNU General Public License for more details.</a>
+<a name="ln14">***********************************************************************/</a>
+<a name="ln15">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln16">#include &lt;iostream&gt;</a>
+<a name="ln17"> </a>
+<a name="ln18">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln24">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln25">#include &lt;cstdlib&gt;</a>
+<a name="ln26"> </a>
+<a name="ln27">using namespace std;</a>
+<a name="ln28">namespace OpenBabel</a>
+<a name="ln29">{</a>
+<a name="ln30"> </a>
+<a name="ln31">  class QChemOutputFormat : public OBMoleculeFormat</a>
+<a name="ln32">  {</a>
+<a name="ln33">  public:</a>
+<a name="ln34">    //Register this format type ID</a>
+<a name="ln35">    QChemOutputFormat()</a>
+<a name="ln36">    {</a>
+<a name="ln37">      OBConversion::RegisterFormat(&quot;qcout&quot;,this);</a>
+<a name="ln38">    }</a>
+<a name="ln39"> </a>
+<a name="ln40">    virtual const char* Description() //required</a>
+<a name="ln41">    {</a>
+<a name="ln42">      return</a>
+<a name="ln43">        &quot;Q-Chem output format\n&quot;</a>
+<a name="ln44">        &quot;Read Options e.g. -as\n&quot;</a>
+<a name="ln45">        &quot;  s  Output single bonds only\n&quot;</a>
+<a name="ln46">        &quot;  b  Disable bonding entirely\n\n&quot;;</a>
+<a name="ln47">    };</a>
+<a name="ln48"> </a>
+<a name="ln49">    virtual const char* SpecificationURL()</a>
+<a name="ln50">    {return &quot;http://www.q-chem.com/&quot;;}; //optional</a>
+<a name="ln51"> </a>
+<a name="ln52">    //Flags() can return be any the following combined by | or be omitted if none apply</a>
+<a name="ln53">    // NOTREADABLE  READONEONLY  NOTWRITABLE  WRITEONEONLY</a>
+<a name="ln54">    virtual unsigned int Flags()</a>
+<a name="ln55">    {</a>
+<a name="ln56">      return READONEONLY | NOTWRITABLE;</a>
+<a name="ln57">    };</a>
+<a name="ln58"> </a>
+<a name="ln59">    /// The &quot;API&quot; interface functions</a>
+<a name="ln60">    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln61">  };</a>
+<a name="ln62">  //***</a>
+<a name="ln63"> </a>
+<a name="ln64">  //Make an instance of the format class</a>
+<a name="ln65">  QChemOutputFormat theQChemOutputFormat;</a>
+<a name="ln66"> </a>
+<a name="ln67"> </a>
+<a name="ln68">  class QChemInputFormat : public OBMoleculeFormat</a>
+<a name="ln69">  {</a>
+<a name="ln70">  public:</a>
+<a name="ln71">    //Register this format type ID</a>
+<a name="ln72">    QChemInputFormat()</a>
+<a name="ln73">    {</a>
+<a name="ln74">      OBConversion::RegisterFormat(&quot;qcin&quot;,this);</a>
+<a name="ln75">    }</a>
+<a name="ln76"> </a>
+<a name="ln77">    virtual const char* Description() //required</a>
+<a name="ln78">    {</a>
+<a name="ln79">      return</a>
+<a name="ln80">        &quot;Q-Chem input format\n&quot;</a>
+<a name="ln81">        &quot;Write Options e.g. -xk\n&quot;</a>
+<a name="ln82">        &quot;  k  \&quot;keywords\&quot; Use the specified keywords for input\n&quot;</a>
+<a name="ln83">        &quot;  f    &lt;file&gt;     Read the file specified for input keywords\n\n&quot;;</a>
+<a name="ln84">    };</a>
+<a name="ln85"> </a>
+<a name="ln86">    virtual const char* SpecificationURL()</a>
+<a name="ln87">    {return &quot;http://www.q-chem.com/&quot;;}; //optional</a>
+<a name="ln88"> </a>
+<a name="ln89">    //Flags() can return be any the following combined by | or be omitted if none apply</a>
+<a name="ln90">    // NOTREADABLE  READONEONLY  NOTWRITABLE  WRITEONEONLY</a>
+<a name="ln91">    virtual unsigned int Flags()</a>
+<a name="ln92">    {</a>
+<a name="ln93">      return WRITEONEONLY | NOTREADABLE;</a>
+<a name="ln94">    };</a>
+<a name="ln95"> </a>
+<a name="ln96">    ////////////////////////////////////////////////////</a>
+<a name="ln97">    /// The &quot;API&quot; interface functions</a>
+<a name="ln98">    virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln99"> </a>
+<a name="ln100">  };</a>
+<a name="ln101"> </a>
+<a name="ln102">  //Make an instance of the format class</a>
+<a name="ln103">  QChemInputFormat theQChemInputFormat;</a>
+<a name="ln104"> </a>
+<a name="ln105">  /////////////////////////////////////////////////////////////////</a>
+<a name="ln106">  bool QChemOutputFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln107">  {</a>
+<a name="ln108"> </a>
+<a name="ln109">    OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln110">    if (pmol == nullptr)</a>
+<a name="ln111">      return false;</a>
+<a name="ln112"> </a>
+<a name="ln113">    //Define some references so we can use the old parameter names</a>
+<a name="ln114">    istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln115">    OBMol &amp;mol = *pmol;</a>
+<a name="ln116">    const char* title = pConv-&gt;GetTitle();</a>
+<a name="ln117"> </a>
+<a name="ln118">    char buffer[BUFF_SIZE], tag[BUFF_SIZE];</a>
+<a name="ln119">    string str,str1;</a>
+<a name="ln120">    double x,y,z;</a>
+<a name="ln121">    OBAtom *atom;</a>
+<a name="ln122">    //  OBInternalCoord *coord; CM</a>
+<a name="ln123">    vector&lt;string&gt; vs;</a>
+<a name="ln124">    vector&lt;OBInternalCoord *&gt; internals; // If we get a z-matrix</a>
+<a name="ln125">    int charge = 0;</a>
+<a name="ln126">    unsigned int spin = 1;</a>
+<a name="ln127">    bool hasPartialCharges = false;</a>
+<a name="ln128">    bool hasDipoleMoment = false;</a>
+<a name="ln129">    vector3 dipoleMoment;</a>
+<a name="ln130">    bool hasVibData = false;</a>
+<a name="ln131">    vector&lt;double&gt; frequencies;</a>
+<a name="ln132">    vector&lt;double&gt; intensities;</a>
+<a name="ln133">    vector&lt; vector&lt;vector3&gt; &gt; displacements;</a>
+<a name="ln134"> </a>
+<a name="ln135">    mol.BeginModify();</a>
+<a name="ln136"> </a>
+<a name="ln137">    while	(ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln138">      {</a>
+<a name="ln139">        if (strstr(buffer, &quot;Standard Nuclear Orientation&quot;) != nullptr)</a>
+<a name="ln140">          {</a>
+<a name="ln141">            // mol.EndModify();</a>
+<a name="ln142">            mol.Clear();</a>
+<a name="ln143">            mol.BeginModify();</a>
+<a name="ln144">            ifs.getline(buffer,BUFF_SIZE);	// column headings</a>
+<a name="ln145">            ifs.getline(buffer,BUFF_SIZE);	// ---------------</a>
+<a name="ln146">            ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln147">            tokenize(vs,buffer);</a>
+<a name="ln148">            while (vs.size() == 5)</a>
+<a name="ln149">              {</a>
+<a name="ln150">                atom = mol.NewAtom();</a>
+<a name="ln151">                atom-&gt;SetAtomicNum(OBElements::GetAtomicNum(vs[1].c_str()));</a>
+<a name="ln152">                x = atof((char*)vs[2].c_str());</a>
+<a name="ln153">                y = atof((char*)vs[3].c_str());</a>
+<a name="ln154">                z = atof((char*)vs[4].c_str());</a>
+<a name="ln155">                atom-&gt;SetVector(x,y,z);</a>
+<a name="ln156"> </a>
+<a name="ln157">                if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln158">                  break;</a>
+<a name="ln159">                tokenize(vs,buffer);</a>
+<a name="ln160">              }</a>
+<a name="ln161">          }</a>
+<a name="ln162">        else if (strstr(buffer, &quot;Dipole Moment&quot;) != nullptr)</a>
+<a name="ln163">          {</a>
+<a name="ln164">            ifs.getline(buffer,BUFF_SIZE); // actual components   X ###  Y #### Z ###</a>
+<a name="ln165">            tokenize(vs,buffer);</a>
+<a name="ln166">            if (vs.size() &gt;= 6)</a>
+<a name="ln167">              {</a>
+<a name="ln168">                x = atof(vs[1].c_str());</a>
+<a name="ln169">                y = atof(vs[3].c_str());</a>
+<a name="ln170">                z = atof(vs[5].c_str());</a>
+<a name="ln171">                dipoleMoment.Set(x, y, z);</a>
+<a name="ln172">              }</a>
+<a name="ln173">            if (!ifs.getline(buffer,BUFF_SIZE)) break;</a>
+<a name="ln174">          }</a>
+<a name="ln175">        else if (strstr(buffer, &quot;Mulliken Net Atomic Charges&quot;) != nullptr)</a>
+<a name="ln176">          {</a>
+<a name="ln177">            hasPartialCharges = true;</a>
+<a name="ln178">            ifs.getline(buffer,BUFF_SIZE);	// (blank)</a>
+<a name="ln179">            ifs.getline(buffer,BUFF_SIZE);	// column headings</a>
+<a name="ln180">            ifs.getline(buffer,BUFF_SIZE);	// -----------------</a>
+<a name="ln181">            ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln182">            tokenize(vs,buffer);</a>
+<a name="ln183">            int nbAtomRead = 0;</a>
+<a name="ln184">            while (vs.size() &gt;= 3)</a>
+<a name="ln185">              {</a>
+<a name="ln186">                atom = mol.GetAtom(atoi(vs[0].c_str()));</a>
+<a name="ln187">                ++nbAtomRead;</a>
+<a name="ln188">                if (atom)</a>
+<a name="ln189">                  atom-&gt;SetPartialCharge(atof(vs[2].c_str()));</a>
+<a name="ln190">                if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln191">                  break;</a>
+<a name="ln192">                tokenize(vs,buffer);</a>
+<a name="ln193">              }</a>
+<a name="ln194">            if (nbAtomRead != mol.NumAtoms())</a>
+<a name="ln195">            {</a>
+<a name="ln196">              std::cerr &lt;&lt; &quot;Error: a Standard Nuclear Orientation paragraph contains &quot; &lt;&lt; mol.NumAtoms()</a>
+<a name="ln197">                 &lt;&lt; &quot; whereas the following Mulliken paragraph contains &quot; &lt;&lt; nbAtomRead &lt;&lt; &quot; atoms\n&quot;;</a>
+<a name="ln198">              return false;</a>
+<a name="ln199">            }</a>
+<a name="ln200">          }</a>
+<a name="ln201">        else if (strstr(buffer, &quot;ISOTROPIC&quot;) != nullptr &amp;&amp;</a>
+<a name="ln202">                 strstr(buffer, &quot;ATOM&quot;) != nullptr) // NMR summary</a>
+<a name="ln203">          {</a>
+<a name="ln204">            ifs.getline(buffer, BUFF_SIZE); // -------</a>
+<a name="ln205">            ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln206">            tokenize(vs,buffer);</a>
+<a name="ln207">            while (vs.size() &gt;= 5)</a>
+<a name="ln208">              {</a>
+<a name="ln209">                atom = mol.GetAtom(atoi(vs[2].c_str()));</a>
+<a name="ln210">                OBPairData *nmrShift = new OBPairData();</a>
+<a name="ln211">                nmrShift-&gt;SetAttribute(&quot;NMR Isotropic Shift&quot;);</a>
+<a name="ln212"> </a>
+<a name="ln213">                // We want to round this to 2 decimals</a>
+<a name="ln214">                // So convert to a float and print it as a new string</a>
+<a name="ln215">                float shift = static_cast&lt;float&gt; (atof(vs[3].c_str()));</a>
+<a name="ln216">                snprintf(tag, BUFF_SIZE, &quot;%7.2f&quot;, shift);</a>
+<a name="ln217"> </a>
+<a name="ln218">                nmrShift-&gt;SetValue(tag);</a>
+<a name="ln219">                atom-&gt;SetData(nmrShift);</a>
+<a name="ln220"> </a>
+<a name="ln221">                if (!ifs.getline(buffer, BUFF_SIZE))</a>
+<a name="ln222">                  break;</a>
+<a name="ln223">                tokenize(vs, buffer);</a>
+<a name="ln224">              }</a>
+<a name="ln225">          }</a>
+<a name="ln226">        else if (strstr(buffer,&quot;Frequency:&quot;) != nullptr)</a>
+<a name="ln227">          {</a>
+<a name="ln228">            hasVibData = true;</a>
+<a name="ln229">            // We'll only see this data once -- several modes per &quot;section&quot;</a>
+<a name="ln230">            // (e.g., 2 or 3 across)</a>
+<a name="ln231">            tokenize(vs,buffer);</a>
+<a name="ln232">            for(unsigned int i=1; i &lt; vs.size(); ++i)</a>
+<a name="ln233">              frequencies.push_back(atof(vs[i].c_str()));</a>
+<a name="ln234"> </a>
+<a name="ln235">            ifs.getline(buffer,BUFF_SIZE); // IR active or force constant</a>
+<a name="ln236">            if (strstr(buffer, &quot;Force Cnst:&quot;) != nullptr) {</a>
+<a name="ln237">              ifs.getline(buffer, BUFF_SIZE); // now reduced mass</a>
+<a name="ln238">              ifs.getline(buffer, BUFF_SIZE); // now IR active</a>
+<a name="ln239">            }</a>
+<a name="ln240">            ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln241">            tokenize(vs,buffer); // Remember: &quot;IR Intens&quot; is two tokens</a>
+<a name="ln242">            for(unsigned int i=2; i &lt; vs.size(); ++i)</a>
+<a name="ln243">              intensities.push_back(atof(vs[i].c_str()));</a>
+<a name="ln244"> </a>
+<a name="ln245">            ifs.getline(buffer,BUFF_SIZE);	// Raman active</a>
+<a name="ln246">            ifs.getline(buffer,BUFF_SIZE);	// column headings</a>
+<a name="ln247">            ifs.getline(buffer,BUFF_SIZE);	// actual displacement data</a>
+<a name="ln248">            tokenize(vs, buffer);</a>
+<a name="ln249">            vector&lt;vector3&gt; vib1, vib2, vib3;</a>
+<a name="ln250">            while (vs.size() &gt; 3) {</a>
+<a name="ln251">              if (strstr(buffer, &quot;TransDip&quot;) != nullptr) {</a>
+<a name="ln252">                ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln253">                break;</a>
+<a name="ln254">              }</a>
+<a name="ln255">              for (unsigned int i = 1; i+2 &lt; vs.size(); i += 3) {</a>
+<a name="ln256">                x = atof(vs[i].c_str());</a>
+<a name="ln257">                y = atof(vs[i+1].c_str());</a>
+<a name="ln258">                z = atof(vs[i+2].c_str());</a>
+<a name="ln259"> </a>
+<a name="ln260">                if (i == 1)</a>
+<a name="ln261">                  vib1.push_back(vector3(x, y, z));</a>
+<a name="ln262">                else if (i == 4)</a>
+<a name="ln263">                  vib2.push_back(vector3(x, y, z));</a>
+<a name="ln264">                else if (i == 7)</a>
+<a name="ln265">                  vib3.push_back(vector3(x, y, z));</a>
+<a name="ln266">              }</a>
+<a name="ln267"> </a>
+<a name="ln268">              if (!ifs.getline(buffer, BUFF_SIZE))</a>
+<a name="ln269">                break;</a>
+<a name="ln270">              tokenize(vs,buffer);</a>
+<a name="ln271">            }</a>
+<a name="ln272">            displacements.push_back(vib1);</a>
+<a name="ln273">            if (vib2.size())</a>
+<a name="ln274">              displacements.push_back(vib2);</a>
+<a name="ln275">            if (vib3.size())</a>
+<a name="ln276">              displacements.push_back(vib3);</a>
+<a name="ln277">          }</a>
+<a name="ln278"> </a>
+<a name="ln279">        // In principle, the final geometry in cartesians is exactly the same</a>
+<a name="ln280">        // as this geometry, so we shouldn't lose any information</a>
+<a name="ln281">        // but we grab the charge and spin from this $molecule block</a>
+<a name="ln282">        else if (strstr(buffer, &quot;OPTIMIZATION CONVERGED&quot;) != nullptr)</a>
+<a name="ln283">          {</a>
+<a name="ln284">            // Unfortunately this will come in a Z-matrix, which would</a>
+<a name="ln285">            // change our frame of reference -- we'll ignore this geometry</a>
+<a name="ln286">            ifs.getline(buffer,BUFF_SIZE); // *****</a>
+<a name="ln287">            ifs.getline(buffer,BUFF_SIZE); // blank</a>
+<a name="ln288">            ifs.getline(buffer,BUFF_SIZE); // Z-matrix Print:</a>
+<a name="ln289">            ifs.getline(buffer,BUFF_SIZE); // $molecule</a>
+<a name="ln290">            ifs.getline(buffer,BUFF_SIZE); // Charge,Spin</a>
+<a name="ln291">            tokenize(vs, buffer, &quot;, \t\n&quot;);</a>
+<a name="ln292">            if (vs.size() == 2)</a>
+<a name="ln293">              {</a>
+<a name="ln294">                charge = atoi(vs[0].c_str());</a>
+<a name="ln295">                spin = atoi(vs[1].c_str());</a>
+<a name="ln296">              }</a>
+<a name="ln297">          } // end (OPTIMIZATION CONVERGED)</a>
+<a name="ln298">      } // end while</a>
+<a name="ln299"> </a>
+<a name="ln300">    if (mol.NumAtoms() == 0) { // e.g., if we're at the end of a file PR#1737209</a>
+<a name="ln301">      mol.EndModify();</a>
+<a name="ln302">      return false;</a>
+<a name="ln303">    }</a>
+<a name="ln304"> </a>
+<a name="ln305">    if (!pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln306">      mol.ConnectTheDots();</a>
+<a name="ln307">    if (!pConv-&gt;IsOption(&quot;s&quot;,OBConversion::INOPTIONS) &amp;&amp; !pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln308">      mol.PerceiveBondOrders();</a>
+<a name="ln309"> </a>
+<a name="ln310">    mol.EndModify();</a>
+<a name="ln311"> </a>
+<a name="ln312">    if (hasPartialCharges) {</a>
+<a name="ln313">      mol.SetPartialChargesPerceived();</a>
+<a name="ln314">      // Annotate that partial charges come from Q-Chem Mulliken</a>
+<a name="ln315">      OBPairData *dp = new OBPairData;</a>
+<a name="ln316">      dp-&gt;SetAttribute(&quot;PartialCharges&quot;);</a>
+<a name="ln317">      dp-&gt;SetValue(&quot;Mulliken&quot;);</a>
+<a name="ln318">      dp-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln319">      mol.SetData(dp);</a>
+<a name="ln320">    }</a>
+<a name="ln321">    if (hasDipoleMoment) {</a>
+<a name="ln322">      OBVectorData *dmData = new OBVectorData;</a>
+<a name="ln323">      dmData-&gt;SetAttribute(&quot;Dipole Moment&quot;);</a>
+<a name="ln324">      dmData-&gt;SetData(dipoleMoment);</a>
+<a name="ln325">      dmData-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln326">      mol.SetData(dmData);</a>
+<a name="ln327">    }</a>
+<a name="ln328">    if (hasVibData) {</a>
+<a name="ln329">      OBVibrationData *vd = new OBVibrationData;</a>
+<a name="ln330">      vd-&gt;SetData(displacements, frequencies, intensities);</a>
+<a name="ln331">      mol.SetData(vd);</a>
+<a name="ln332">    }</a>
+<a name="ln333">    mol.SetTotalCharge(charge);</a>
+<a name="ln334">    mol.SetTotalSpinMultiplicity(spin);</a>
+<a name="ln335"> </a>
+<a name="ln336">    mol.SetTitle(title);</a>
+<a name="ln337">    return(true);</a>
+<a name="ln338">  }</a>
+<a name="ln339"> </a>
+<a name="ln340">  ////////////////////////////////////////////////////////////////</a>
+<a name="ln341"> </a>
+<a name="ln342">  bool QChemInputFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln343">  {</a>
+<a name="ln344">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln345">    if (pmol == nullptr)</a>
+<a name="ln346">      return false;</a>
+<a name="ln347"> </a>
+<a name="ln348">    //Define some references so we can use the old parameter names</a>
+<a name="ln349">    ostream &amp;ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln350">    OBMol &amp;mol = *pmol;</a>
+<a name="ln351"> </a>
+<a name="ln352">    //    unsigned int i;</a>
+<a name="ln353">    //    OBAtom *atom;</a>
+<a name="ln354"> </a>
+<a name="ln355">    ofs &lt;&lt; &quot;$comment&quot; &lt;&lt; endl;</a>
+<a name="ln356">    ofs &lt;&lt; mol.GetTitle() &lt;&lt; endl;</a>
+<a name="ln357">    ofs &lt;&lt; &quot;$end&quot; &lt;&lt; endl;</a>
+<a name="ln358"> </a>
+<a name="ln359">    ofs &lt;&lt; endl &lt;&lt; &quot;$molecule&quot; &lt;&lt; endl;</a>
+<a name="ln360">    ofs &lt;&lt; mol.GetTotalCharge() &lt;&lt; &quot; &quot; &lt;&lt; mol.GetTotalSpinMultiplicity() &lt;&lt; endl;</a>
+<a name="ln361"> </a>
+<a name="ln362">    FOR_ATOMS_OF_MOL(atom, mol)</a>
+<a name="ln363">      {</a>
+<a name="ln364">        ofs &lt;&lt; atom-&gt;GetAtomicNum() &lt;&lt; &quot; &quot;</a>
+<a name="ln365">            &lt;&lt; atom-&gt;GetX() &lt;&lt; &quot; &quot; &lt;&lt; atom-&gt;GetY() &lt;&lt; &quot; &quot; &lt;&lt; atom-&gt;GetZ() &lt;&lt; endl;</a>
+<a name="ln366">      }</a>
+<a name="ln367">    ofs &lt;&lt; &quot;$end&quot; &lt;&lt; endl;</a>
+<a name="ln368">    ofs &lt;&lt; endl &lt;&lt; &quot;$rem&quot; &lt;&lt; endl;</a>
+<a name="ln369"> </a>
+<a name="ln370">    const char *keywords = pConv-&gt;IsOption(&quot;k&quot;,OBConversion::OUTOPTIONS);</a>
+<a name="ln371">    const char *keywordFile = pConv-&gt;IsOption(&quot;f&quot;,OBConversion::OUTOPTIONS);</a>
+<a name="ln372">    string defaultKeywords = &quot;&quot;;</a>
+<a name="ln373"> </a>
+<a name="ln374">    if(keywords)</a>
+<a name="ln375">      {</a>
+<a name="ln376">        defaultKeywords = keywords;</a>
+<a name="ln377">      }</a>
+<a name="ln378"> </a>
+<a name="ln379">    if (keywordFile)</a>
+<a name="ln380">      {</a>
+<a name="ln381">        ifstream kfstream(keywordFile);</a>
+<a name="ln382">        string keyBuffer;</a>
+<a name="ln383">        if (kfstream)</a>
+<a name="ln384">          {</a>
+<a name="ln385">            while (getline(kfstream, keyBuffer))</a>
+<a name="ln386">              ofs &lt;&lt; keyBuffer &lt;&lt; endl;</a>
+<a name="ln387">          }</a>
+<a name="ln388">      }</a>
+<a name="ln389">    else</a>
+<a name="ln390">      ofs &lt;&lt; defaultKeywords &lt;&lt; endl;</a>
+<a name="ln391"> </a>
+<a name="ln392">    ofs &lt;&lt; &quot;$end&quot; &lt;&lt; endl;</a>
+<a name="ln393"> </a>
+<a name="ln394">    return(true);</a>
+<a name="ln395">  }</a>
+<a name="ln396"> </a>
+<a name="ln397">} //namespace OpenBabel</a>
+
+</code></pre>
+<div class="balloon" rel="321"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'hasDipoleMoment' is always false.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

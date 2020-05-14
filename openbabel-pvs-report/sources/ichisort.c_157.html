@@ -1,0 +1,620 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>ichisort.c</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/*</a>
+<a name="ln2"> * International Chemical Identifier (InChI)</a>
+<a name="ln3"> * Version 1</a>
+<a name="ln4"> * Software version 1.04</a>
+<a name="ln5"> * September 9, 2011</a>
+<a name="ln6"> *</a>
+<a name="ln7"> * The InChI library and programs are free software developed under the</a>
+<a name="ln8"> * auspices of the International Union of Pure and Applied Chemistry (IUPAC).</a>
+<a name="ln9"> * Originally developed at NIST. Modifications and additions by IUPAC </a>
+<a name="ln10"> * and the InChI Trust.</a>
+<a name="ln11"> *</a>
+<a name="ln12"> * IUPAC/InChI-Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln13"> * Software version 1.0.</a>
+<a name="ln14"> * Copyright (C) IUPAC and InChI Trust Limited</a>
+<a name="ln15"> * </a>
+<a name="ln16"> * This library is free software; you can redistribute it and/or modify it under the </a>
+<a name="ln17"> * terms of the IUPAC/InChI Trust Licence for the International Chemical Identifier </a>
+<a name="ln18"> * (InChI) Software version 1.0; either version 1.0 of the License, or </a>
+<a name="ln19"> * (at your option) any later version.</a>
+<a name="ln20"> * </a>
+<a name="ln21"> * This library is distributed in the hope that it will be useful, </a>
+<a name="ln22"> * but WITHOUT ANY WARRANTY; without even the implied warranty of </a>
+<a name="ln23"> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  </a>
+<a name="ln24"> * See the IUPAC/InChI Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln25"> * Software version 1.0 for more details.</a>
+<a name="ln26"> * </a>
+<a name="ln27"> * You should have received a copy of the IUPAC/InChI Trust Licence for the </a>
+<a name="ln28"> * International Chemical Identifier (InChI) Software version 1.0 along with </a>
+<a name="ln29"> * this library; if not, write to:</a>
+<a name="ln30"> * </a>
+<a name="ln31"> * The InChI Trust</a>
+<a name="ln32"> * c/o FIZ CHEMIE Berlin</a>
+<a name="ln33"> * Franklinstrasse 11</a>
+<a name="ln34"> * 10587 Berlin</a>
+<a name="ln35"> * GERMANY</a>
+<a name="ln36"> * </a>
+<a name="ln37"> */</a>
+<a name="ln38"> </a>
+<a name="ln39"> </a>
+<a name="ln40">#include &lt;stdio.h&gt;</a>
+<a name="ln41">#include &lt;stdlib.h&gt;</a>
+<a name="ln42">#include &lt;string.h&gt;</a>
+<a name="ln43"> </a>
+<a name="ln44">#include &quot;mode.h&quot;</a>
+<a name="ln45"> </a>
+<a name="ln46">#include &quot;incomdef.h&quot;</a>
+<a name="ln47">#include &quot;extr_ct.h&quot;</a>
+<a name="ln48">#include &quot;ichitaut.h&quot;</a>
+<a name="ln49">#include &quot;ichicant.h&quot;</a>
+<a name="ln50">#include &quot;ichicomn.h&quot;</a>
+<a name="ln51"> </a>
+<a name="ln52">#include &quot;ichicomp.h&quot;</a>
+<a name="ln53"> </a>
+<a name="ln54">#define RET_MAX 32767</a>
+<a name="ln55"> </a>
+<a name="ln56">/**********************************************************************************/</a>
+<a name="ln57">void inchi_swap ( char *a, char *b, size_t width )</a>
+<a name="ln58">{</a>
+<a name="ln59">    char tmp;</a>
+<a name="ln60">    if ( a != b )</a>
+<a name="ln61">        while ( width-- ) {</a>
+<a name="ln62">            tmp = *a;</a>
+<a name="ln63">            *a++ = *b;</a>
+<a name="ln64">            *b++ = tmp;</a>
+<a name="ln65">        }</a>
+<a name="ln66">}</a>
+<a name="ln67">/**********************************************************************************/</a>
+<a name="ln68">/*  Sort by insertions */</a>
+<a name="ln69">int insertions_sort( void *base, size_t num, size_t width, int ( *compare )(const void *e1, const void *e2 ) )</a>
+<a name="ln70">{</a>
+<a name="ln71">  char *i, *j, *pk = (char*)base;</a>
+<a name="ln72">  int  num_trans = 0;</a>
+<a name="ln73">  size_t k;</a>
+<a name="ln74">  for( k=1; k &lt; num; k++, pk += width ) {</a>
+<a name="ln75">     /*for( i = pk, j = pk + width; j &gt; (char*)base &amp;&amp; (*compare)(i,j) &gt; 0; j=i, i -= width )*/</a>
+<a name="ln76">     for( i = j = pk + width; j &gt; (char*)base &amp;&amp; (i -= width,(*compare)(i,j)) &gt; 0; j=i ) /* changed to keep BoundsChecker happy 2007-09-24 DT */</a>
+<a name="ln77">     {</a>
+<a name="ln78">        inchi_swap( i, j, width );</a>
+<a name="ln79">        num_trans ++;</a>
+<a name="ln80">     }</a>
+<a name="ln81">  }</a>
+<a name="ln82">  return num_trans;</a>
+<a name="ln83">}</a>
+<a name="ln84">/**********************************************************************************/</a>
+<a name="ln85">/*  Sort by insertions */</a>
+<a name="ln86">int insertions_sort_AT_NUMBERS( AT_NUMB *base, int num, int ( *compare )(const void *e1, const void *e2 ) )</a>
+<a name="ln87">{</a>
+<a name="ln88">  AT_NUMB *i, *j, *pk, tmp;</a>
+<a name="ln89">  int  k, num_trans = 0;</a>
+<a name="ln90">  for( k=1, pk = base; k &lt; num; k++, pk ++ ) {</a>
+<a name="ln91">     for( j = (i = pk) + 1, tmp = *j; j &gt; base &amp;&amp; (*compare)(i,&amp;tmp) &gt; 0; j=i, i -- ) {</a>
+<a name="ln92">        *j = *i;</a>
+<a name="ln93">        num_trans ++;</a>
+<a name="ln94">     }</a>
+<a name="ln95">     *j = tmp;</a>
+<a name="ln96">  }</a>
+<a name="ln97">  return num_trans;</a>
+<a name="ln98">}</a>
+<a name="ln99">/**********************************************************************************/</a>
+<a name="ln100">/*  Sort neighbors according to ranks in ascending order */</a>
+<a name="ln101">void insertions_sort_NeighList_AT_NUMBERS( NEIGH_LIST base, AT_RANK *nRank )</a>
+<a name="ln102">{</a>
+<a name="ln103">  AT_NUMB *i, *j, *pk, tmp;</a>
+<a name="ln104">  AT_RANK rj; /* optimization */</a>
+<a name="ln105">  int k, num = (int)*base++;</a>
+<a name="ln106">  for( k=1, pk = base; k &lt; num; k++, pk ++ ) {</a>
+<a name="ln107">     for( j = (i = pk) + 1, rj=nRank[(int)*j]; j &gt; base &amp;&amp; nRank[(int)*i] &gt; rj; j=i, i -- ) {</a>
+<a name="ln108">         tmp = *i;</a>
+<a name="ln109">         *i = *j;</a>
+<a name="ln110">         *j = tmp;</a>
+<a name="ln111">     }</a>
+<a name="ln112">  }</a>
+<a name="ln113">}</a>
+<a name="ln114">/**********************************************************************************/</a>
+<a name="ln115">/*  Sort neighbors according to ranks in ascending order */</a>
+<a name="ln116">int insertions_sort_AT_RANK( AT_RANK *base, int num )</a>
+<a name="ln117">{</a>
+<a name="ln118">  AT_RANK *i, *j, *pk, tmp;</a>
+<a name="ln119">  int  k, num_trans = 0;</a>
+<a name="ln120">  for( k=1, pk = base; k &lt; num; k++, pk ++ ) {</a>
+<a name="ln121">     for( j = (i = pk) + 1, tmp = *j; j &gt; base &amp;&amp; *i &gt; tmp; j=i, i -- ) {</a>
+<a name="ln122">        *j = *i;</a>
+<a name="ln123">        num_trans ++;</a>
+<a name="ln124">     }</a>
+<a name="ln125">     *j = tmp;</a>
+<a name="ln126">  }</a>
+<a name="ln127">  return num_trans;</a>
+<a name="ln128">}</a>
+<a name="ln129">/**********************************************************************************/</a>
+<a name="ln130">/*  Sort neighbors according to ranks in ascending order */</a>
+<a name="ln131">int insertions_sort_NeighList_AT_NUMBERS3( NEIGH_LIST base, AT_RANK *nRank )</a>
+<a name="ln132">{</a>
+<a name="ln133">  AT_NUMB *i, *j, *pk, tmp;</a>
+<a name="ln134">  AT_RANK rj;</a>
+<a name="ln135">  int k, n, num = (int)*base++;</a>
+<a name="ln136">  for( k=1, pk = base, n=0; k &lt; num; k++, pk ++ ) {</a>
+<a name="ln137">     for( j = (i = pk) + 1, rj=nRank[(int)(tmp=*j)]; j &gt; base &amp;&amp; nRank[(int)*i] &gt; rj; j=i, i -- ) {</a>
+<a name="ln138">         *j = *i;</a>
+<a name="ln139">         n ++;</a>
+<a name="ln140">     }</a>
+<a name="ln141">     *j = tmp;</a>
+<a name="ln142">  }</a>
+<a name="ln143">  return n;</a>
+<a name="ln144">}</a>
+<a name="ln145"> </a>
+<a name="ln146">/**********************************************************************************/</a>
+<a name="ln147">/*  Sort neighbors according to symm. ranks (primary key) and canon. ranks (secondary key), in descending order */</a>
+<a name="ln148">void insertions_sort_NeighListBySymmAndCanonRank( NEIGH_LIST base, const AT_RANK *nSymmRank, const AT_RANK *nCanonRank )</a>
+<a name="ln149">{</a>
+<a name="ln150">  AT_NUMB *i, *j, *pk, tmp;</a>
+<a name="ln151">  int  diff;</a>
+<a name="ln152">  int k, num = (int)*base++;</a>
+<a name="ln153">  for( k=1, pk = base; k &lt; num; k++, pk ++ ) {</a>
+<a name="ln154">     for( j = (i = pk) + 1; j &gt; base &amp;&amp;  /*  always j &gt; i */</a>
+<a name="ln155">          ( 0 &gt; (diff = (int)nSymmRank[(int)*i] - (int)nSymmRank[(int)*j]) ||</a>
+<a name="ln156">            (!diff &amp;&amp; nCanonRank[(int)*i] &lt; nCanonRank[(int)*j])); j=i, i -- ) {</a>
+<a name="ln157">         tmp = *i;</a>
+<a name="ln158">         *i = *j;</a>
+<a name="ln159">         *j = tmp;</a>
+<a name="ln160">     }</a>
+<a name="ln161">  }</a>
+<a name="ln162">}</a>
+<a name="ln163"> </a>
+<a name="ln164">/*********************************************************************************************</a>
+<a name="ln165"> *</a>
+<a name="ln166"> *  Comparison functions</a>
+<a name="ln167"> *</a>
+<a name="ln168"> *********************************************************************************************/</a>
+<a name="ln169">int CompNeighborsAT_NUMBER( const void* a1, const void* a2)</a>
+<a name="ln170">{</a>
+<a name="ln171">#ifdef CT_NEIGH_INCREASE</a>
+<a name="ln172">    return (int)pn_RankForSort[pNeighborsForSort[(int)*(const AT_NUMB*)a1]] -</a>
+<a name="ln173">           (int)pn_RankForSort[pNeighborsForSort[(int)*(const AT_NUMB*)a2]];</a>
+<a name="ln174">#else</a>
+<a name="ln175">    return (int)pn_RankForSort[pNeighborsForSort[(int)*(const AT_NUMB*)a2]] -</a>
+<a name="ln176">           (int)pn_RankForSort[pNeighborsForSort[(int)*(const AT_NUMB*)a1]];</a>
+<a name="ln177">#endif</a>
+<a name="ln178">}</a>
+<a name="ln179"> </a>
+<a name="ln180">/**********************************************************************************/</a>
+<a name="ln181">int comp_AT_RANK( const void* a1, const void* a2)</a>
+<a name="ln182">{</a>
+<a name="ln183">    return (int)*(const AT_RANK*)a1 - (int)*(const AT_RANK*)a2;</a>
+<a name="ln184">}</a>
+<a name="ln185"> </a>
+<a name="ln186">/**********************************************************************************/</a>
+<a name="ln187">/*  Compare for sorting Ranks only */</a>
+<a name="ln188">int CompRank(const void* a1, const void* a2 )</a>
+<a name="ln189">{</a>
+<a name="ln190">    int ret = (int)pn_RankForSort[(int)*(const AT_RANK*)a1] -</a>
+<a name="ln191">              (int)pn_RankForSort[(int)*(const AT_RANK*)a2];</a>
+<a name="ln192">    return ret;</a>
+<a name="ln193">}</a>
+<a name="ln194">/**********************************************************************************/</a>
+<a name="ln195">int CompRanksOrd( const void* a1, const void* a2 )</a>
+<a name="ln196">{</a>
+<a name="ln197">    int ret;</a>
+<a name="ln198">    ret = (int)pn_RankForSort[(int)*(const AT_RANK*)a1] -</a>
+<a name="ln199">          (int)pn_RankForSort[(int)*(const AT_RANK*)a2];</a>
+<a name="ln200">    if ( !ret )</a>
+<a name="ln201">        ret = (int)*(const AT_RANK*)a1 - (int)*(const AT_RANK*)a2;</a>
+<a name="ln202">    return ret;</a>
+<a name="ln203">}</a>
+<a name="ln204">/**********************************************************************************/</a>
+<a name="ln205">int CompAtomInvariants2Only( const void* a1, const void* a2 )</a>
+<a name="ln206">{</a>
+<a name="ln207">    const ATOM_INVARIANT2 *pAI1 = pAtomInvariant2ForSort + (int)*(const AT_RANK*)a1;</a>
+<a name="ln208">    const ATOM_INVARIANT2 *pAI2 = pAtomInvariant2ForSort + (int)*(const AT_RANK*)a2;</a>
+<a name="ln209">    int i;</a>
+<a name="ln210">    for ( i = 0; i &lt; AT_INV_BREAK1; i ++ ) {</a>
+<a name="ln211">        if ( pAI1-&gt;val[i] == pAI2-&gt;val[i] )</a>
+<a name="ln212">            continue;</a>
+<a name="ln213">        return  (int)pAI1-&gt;val[i] - (int)pAI2-&gt;val[i];</a>
+<a name="ln214">    }</a>
+<a name="ln215">    if ( pAI1-&gt;iso_sort_key != pAI2-&gt;iso_sort_key ) {</a>
+<a name="ln216">        return ( pAI1-&gt;iso_sort_key &gt; pAI2-&gt;iso_sort_key )? 1 : -1;</a>
+<a name="ln217">    }</a>
+<a name="ln218">    for ( ; i &lt; AT_INV_LENGTH; i ++ ) {</a>
+<a name="ln219">        if ( pAI1-&gt;val[i] != pAI2-&gt;val[i] )</a>
+<a name="ln220">            continue;</a>
+<a name="ln221">        return  (int)pAI1-&gt;val[i] - (int)pAI2-&gt;val[i];</a>
+<a name="ln222">    }</a>
+<a name="ln223">    if ( pAI1-&gt;iso_aux_key != pAI2-&gt;iso_aux_key ) {</a>
+<a name="ln224">        return ( pAI1-&gt;iso_aux_key &gt; pAI2-&gt;iso_aux_key )? 1 : -1;</a>
+<a name="ln225">    }</a>
+<a name="ln226">    return 0;</a>
+<a name="ln227">}</a>
+<a name="ln228">/**********************************************************************************/</a>
+<a name="ln229">int CompAtomInvariants2( const void* a1, const void* a2 )</a>
+<a name="ln230">{</a>
+<a name="ln231">    /*  Warning: the following line may be compiler implementation dependent */</a>
+<a name="ln232">    int ret = CompAtomInvariants2Only( a1, a2 );</a>
+<a name="ln233">    if ( !ret )</a>
+<a name="ln234">        ret = (int)*(const AT_RANK*)a1 - (int)*(const AT_RANK*)a2;</a>
+<a name="ln235">    return ret;</a>
+<a name="ln236">}</a>
+<a name="ln237">/**********************************************************************************/</a>
+<a name="ln238">/*  Compare two elements lexicographically */</a>
+<a name="ln239">int CompChemElemLex( const void *a1, const void *a2 )</a>
+<a name="ln240">{</a>
+<a name="ln241">    return memcmp( a1, a2, 2);</a>
+<a name="ln242">}</a>
+<a name="ln243">/**********************************************************************************/</a>
+<a name="ln244">/*  lexicographic compare */</a>
+<a name="ln245">int CompareNeighListLex( NEIGH_LIST pp1, NEIGH_LIST pp2, const AT_RANK *nRank)</a>
+<a name="ln246">{</a>
+<a name="ln247">    int len1 = (int)*pp1++;</a>
+<a name="ln248">    int len2 = (int)*pp2++;</a>
+<a name="ln249">    int len  = inchi_min( len1, len2 );</a>
+<a name="ln250">    int diff = 0;</a>
+<a name="ln251">    while ( len -- &gt; 0 &amp;&amp; !( diff = (int)nRank[*pp1++] - (int)nRank[*pp2++] ) )</a>
+<a name="ln252">        ;</a>
+<a name="ln253">    return diff? diff : (len1 - len2);</a>
+<a name="ln254"> </a>
+<a name="ln255">}</a>
+<a name="ln256">/**********************************************************************************/</a>
+<a name="ln257">/*  lexicographic compare */</a>
+<a name="ln258">int CompareNeighListLexUpToMaxRank( NEIGH_LIST pp1, NEIGH_LIST pp2, const AT_RANK *nRank, AT_RANK nMaxAtNeighRank )</a>
+<a name="ln259">{</a>
+<a name="ln260">    int len1 = (int)*pp1++;</a>
+<a name="ln261">    int len2 = (int)*pp2++;</a>
+<a name="ln262">    int diff = 0;</a>
+<a name="ln263">    int len;</a>
+<a name="ln264">    while( 0 &lt; len1 &amp;&amp; nRank[pp1[len1-1]] &gt; nMaxAtNeighRank ) {</a>
+<a name="ln265">        len1 --;</a>
+<a name="ln266">    }</a>
+<a name="ln267">    while( 0 &lt; len2 &amp;&amp; nRank[pp2[len2-1]] &gt; nMaxAtNeighRank ) {</a>
+<a name="ln268">        len2 --;</a>
+<a name="ln269">    }</a>
+<a name="ln270">    len  = inchi_min( len1, len2 );</a>
+<a name="ln271">    while ( len -- &gt; 0 &amp;&amp; !( diff = (int)nRank[*pp1++] - (int)nRank[*pp2++] ) )</a>
+<a name="ln272">        ;</a>
+<a name="ln273">    return diff? diff : (len1 - len2);</a>
+<a name="ln274"> </a>
+<a name="ln275">}</a>
+<a name="ln276">/**********************************************************************************/</a>
+<a name="ln277">int compare_NeighLists( const NEIGH_LIST *op1,  const NEIGH_LIST *op2 )</a>
+<a name="ln278">{</a>
+<a name="ln279">    return CompareNeighListLex( *op1, *op2, pn_RankForSort);</a>
+<a name="ln280">}</a>
+<a name="ln281">/**********************************************************************************/</a>
+<a name="ln282">int CompNeighListRanks( const void* a1, const void* a2 )</a>
+<a name="ln283">{</a>
+<a name="ln284">    int ret;</a>
+<a name="ln285">    ret = (int)pn_RankForSort[*((const AT_RANK*)a1)] -</a>
+<a name="ln286">          (int)pn_RankForSort[*((const AT_RANK*)a2)];</a>
+<a name="ln287">    if ( !ret )</a>
+<a name="ln288">        ret = compare_NeighLists( pNeighList_RankForSort + *((const AT_RANK*)a1),</a>
+<a name="ln289">                                  pNeighList_RankForSort + *((const AT_RANK*)a2) );</a>
+<a name="ln290">    return ret;</a>
+<a name="ln291">}</a>
+<a name="ln292">/**********************************************************************************/</a>
+<a name="ln293">int CompNeighLists( const void* a1, const void* a2 )</a>
+<a name="ln294">{</a>
+<a name="ln295">    int ret;</a>
+<a name="ln296">        ret = compare_NeighLists( pNeighList_RankForSort + *((const AT_RANK*)a1),</a>
+<a name="ln297">                                  pNeighList_RankForSort + *((const AT_RANK*)a2) );</a>
+<a name="ln298">    return ret;</a>
+<a name="ln299">}</a>
+<a name="ln300">/**********************************************************************************/</a>
+<a name="ln301">int CompNeighListsUpToMaxRank( const void* a1, const void* a2 )</a>
+<a name="ln302">{</a>
+<a name="ln303">    int ret;</a>
+<a name="ln304">        ret = CompareNeighListLexUpToMaxRank( pNeighList_RankForSort[*((const AT_RANK*)a1)],</a>
+<a name="ln305">                                              pNeighList_RankForSort[*((const AT_RANK*)a2)],</a>
+<a name="ln306">                                              pn_RankForSort, nMaxAtNeighRankForSort );</a>
+<a name="ln307">    return ret;</a>
+<a name="ln308">}</a>
+<a name="ln309">/**********************************************************************************/</a>
+<a name="ln310">int CompNeighListRanksOrd( const void* a1, const void* a2 )</a>
+<a name="ln311">{</a>
+<a name="ln312">    int ret = CompNeighListRanks( a1, a2 );</a>
+<a name="ln313">    if ( !ret )</a>
+<a name="ln314">        ret = (int)*((const AT_RANK*)a1) - (int)*((const AT_RANK*)a2); /*  keep original order if identical */</a>
+<a name="ln315">    return ret;</a>
+<a name="ln316">}</a>
+<a name="ln317">/**********************************************************************************/</a>
+<a name="ln318">int CompRanksInvOrd( const void* a1, const void* a2 )</a>
+<a name="ln319">{</a>
+<a name="ln320">    return (int)*(const AT_RANK*)a2 - (int)*(const AT_RANK*)a1;</a>
+<a name="ln321">}</a>
+<a name="ln322">/**********************************************************************************/</a>
+<a name="ln323">int CompNeighborsRanksCountEql( const void* a1, const void* a2 )</a>
+<a name="ln324">{</a>
+<a name="ln325">#ifdef CT_NEIGH_INCREASE</a>
+<a name="ln326">    int ret = (int)pn_RankForSort[(int)*(const AT_RANK*)a1] -</a>
+<a name="ln327">              (int)pn_RankForSort[(int)*(const AT_RANK*)a2];</a>
+<a name="ln328">#else</a>
+<a name="ln329">    int ret = (int)pn_RankForSort[(int)*(const AT_RANK*)a2] -</a>
+<a name="ln330">              (int)pn_RankForSort[(int)*(const AT_RANK*)a1];</a>
+<a name="ln331">#endif</a>
+<a name="ln332">    nNumCompNeighborsRanksCountEql += !ret;</a>
+<a name="ln333">    return ret;</a>
+<a name="ln334">}</a>
+<a name="ln335">/****************************************************************************************</a>
+<a name="ln336"> *</a>
+<a name="ln337"> * In this neighbor list the (vertex number) = (canonical number) - 1</a>
+<a name="ln338"> * Since LinearCT is sorted so that parents are in ascending order</a>
+<a name="ln339"> * and all neighbors of a parent are smaller than the parent and are</a>
+<a name="ln340"> * in ascending order, the neighbors in the NEIGH_LIST are automatically</a>
+<a name="ln341"> * sorted in ascending order</a>
+<a name="ln342"> */</a>
+<a name="ln343">NEIGH_LIST *CreateNeighListFromLinearCT( AT_NUMB *LinearCT, int nLenCT, int num_atoms )</a>
+<a name="ln344">{</a>
+<a name="ln345">    /* atom numbers in LinearCT are canonical numbers</a>
+<a name="ln346">     * order: parent[i] &gt; neigh[i][0] &lt; neigh[i][1]...&lt;neigh[i][n] &lt; parent[i+1] &gt; neigh[i+1][0] &lt; ...</a>
+<a name="ln347">     *        parent[i] &lt; parent[i+1]</a>
+<a name="ln348">     */</a>
+<a name="ln349">    int i, j;</a>
+<a name="ln350">    S_CHAR     *valence  = NULL;</a>
+<a name="ln351">    NEIGH_LIST *pp = NULL;</a>
+<a name="ln352">    AT_NUMB    *pAtList = NULL;</a>
+<a name="ln353">    AT_RANK     n_vertex, n_neigh;</a>
+<a name="ln354">    int err = 1, num_bonds;</a>
+<a name="ln355">    int length, start;</a>
+<a name="ln356">    if ( (int)LinearCT[0] &gt; num_atoms ) {</a>
+<a name="ln357">        goto exit_function;</a>
+<a name="ln358">    }</a>
+<a name="ln359">    if ( !(valence = (S_CHAR*)inchi_calloc( num_atoms+1, sizeof(valence[0]) ) ) ) {</a>
+<a name="ln360">        goto exit_function;</a>
+<a name="ln361">    }</a>
+<a name="ln362">    for ( i = 1, num_bonds = 0, n_vertex = LinearCT[0]; i &lt; nLenCT; i ++ ) {</a>
+<a name="ln363">        if ( (n_neigh = LinearCT[i]) &lt; n_vertex ) {</a>
+<a name="ln364">            valence[n_neigh] ++;</a>
+<a name="ln365">            valence[n_vertex] ++;</a>
+<a name="ln366">            num_bonds += 2;</a>
+<a name="ln367">        } else</a>
+<a name="ln368">        if ( (int)(n_vertex = n_neigh) &gt; num_atoms ) {</a>
+<a name="ln369">            goto exit_function;</a>
+<a name="ln370">        }</a>
+<a name="ln371">    }</a>
+<a name="ln372">    if ( (int)n_vertex != num_atoms ) {</a>
+<a name="ln373">        goto exit_function;</a>
+<a name="ln374">    }</a>
+<a name="ln375">    length = num_bonds + num_atoms + 1;</a>
+<a name="ln376">    if ( (pp = (NEIGH_LIST *) inchi_calloc((num_atoms+1), sizeof(NEIGH_LIST))) ) {</a>
+<a name="ln377">        if ( (pAtList = (AT_NUMB *) inchi_malloc(length*sizeof(*pAtList))) ) {</a>
+<a name="ln378">            /*  create empty connection table */</a>
+<a name="ln379">            for ( i = 1, length = 0; i &lt;= num_atoms; i ++ ) {</a>
+<a name="ln380">                start = length;</a>
+<a name="ln381">                length += (valence[i]+1);</a>
+<a name="ln382">                pp[i-1] = pAtList + start;</a>
+<a name="ln383">                pp[i-1][0] = 0;</a>
+<a name="ln384">            }</a>
+<a name="ln385">            /*  fill out the CT */</a>
+<a name="ln386">            for ( i = 1, n_vertex = LinearCT[0]-1; i &lt; nLenCT; i ++ ) {</a>
+<a name="ln387">                if ( (n_neigh = LinearCT[i]-1) &lt; n_vertex ) {</a>
+<a name="ln388">                    /*  vertex - neighbor connection */</a>
+<a name="ln389">                    j = (int)(++pp[(int)n_vertex][0]);</a>
+<a name="ln390">                    pp[(int)n_vertex][j] = n_neigh;</a>
+<a name="ln391">                    /*  neighbor - vertex connection */</a>
+<a name="ln392">                    j = (int)(++pp[(int)n_neigh][0]);</a>
+<a name="ln393">                    pp[(int)n_neigh][j] = n_vertex;</a>
+<a name="ln394"> </a>
+<a name="ln395">                } else</a>
+<a name="ln396">                if ( (int)(n_vertex = n_neigh) &gt;= num_atoms ) {</a>
+<a name="ln397">                    goto exit_function;</a>
+<a name="ln398">                }</a>
+<a name="ln399">            }</a>
+<a name="ln400">            err = 0;</a>
+<a name="ln401">        }</a>
+<a name="ln402">    }</a>
+<a name="ln403">exit_function:</a>
+<a name="ln404">    if ( valence ) {</a>
+<a name="ln405">        inchi_free( valence );</a>
+<a name="ln406">    }</a>
+<a name="ln407">    if ( err ) {</a>
+<a name="ln408">        if ( pAtList )</a>
+<a name="ln409">            inchi_free( pAtList );</a>
+<a name="ln410">        if ( pp ) {</a>
+<a name="ln411">            inchi_free( pp );</a>
+<a name="ln412">            pp = NULL;</a>
+<a name="ln413">        }</a>
+<a name="ln414">    }</a>
+<a name="ln415">    return pp;</a>
+<a name="ln416">}</a>
+<a name="ln417"> </a>
+<a name="ln418">/***********************************************************************************</a>
+<a name="ln419"> * NEIGH_LIST pp[] is an array of pointers to the lists of neighboring atoms numbers</a>
+<a name="ln420"> *  The first number in each list is a number of neighbors.</a>
+<a name="ln421"> *  In case of bDoubleBondSquare != 0 neighbors connected by the double bond appear 2 times</a>
+<a name="ln422"> * The first element pp[0] is a pointer to be deallocated to free all the lists.</a>
+<a name="ln423"> */</a>
+<a name="ln424">NEIGH_LIST *CreateNeighList( int num_atoms, int num_at_tg, sp_ATOM* at,</a>
+<a name="ln425">                             int bDoubleBondSquare, T_GROUP_INFO *t_group_info )</a>
+<a name="ln426">{</a>
+<a name="ln427">    /*  +1 to add NULL termination */</a>
+<a name="ln428">    NEIGH_LIST *pp = (NEIGH_LIST *) inchi_calloc((num_at_tg+1), sizeof(NEIGH_LIST));</a>
+<a name="ln429">    T_GROUP   *t_group             = NULL;</a>
+<a name="ln430">    AT_NUMB   *nEndpointAtomNumber = NULL;</a>
+<a name="ln431">    int        num_t_groups        = 0;</a>
+<a name="ln432">    int        nFirstEndpointAtNoPos;</a>
+<a name="ln433"> </a>
+<a name="ln434">    AT_NUMB   *pAtList = NULL;</a>
+<a name="ln435">    int        length, start, val, i, j;</a>
+<a name="ln436">    if ( pp ) {</a>
+<a name="ln437">        if ( num_at_tg &gt; num_atoms ) {</a>
+<a name="ln438">            t_group             = t_group_info-&gt;t_group;</a>
+<a name="ln439">            num_t_groups        = t_group_info-&gt;num_t_groups;</a>
+<a name="ln440">            nEndpointAtomNumber = t_group_info-&gt;nEndpointAtomNumber;</a>
+<a name="ln441">        }</a>
+<a name="ln442"> </a>
+<a name="ln443">        if ( !bDoubleBondSquare ) {</a>
+<a name="ln444">            for ( i = 0, length = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln445">                length += (int)at[i].valence + (num_t_groups &amp;&amp; at[i].endpoint);</a>
+<a name="ln446">            }</a>
+<a name="ln447">            length += num_atoms;</a>
+<a name="ln448">            for ( i = 0; i &lt; num_t_groups; i ++ ) {</a>
+<a name="ln449">                length += (int)t_group[i].nNumEndpoints;</a>
+<a name="ln450">            }</a>
+<a name="ln451">            length += num_t_groups;</a>
+<a name="ln452"> </a>
+<a name="ln453">        } else {</a>
+<a name="ln454">            for ( i = 0, length = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln455">                val = (int)at[i].valence;</a>
+<a name="ln456">                for ( j = 0; j &lt; val; j ++ ) {</a>
+<a name="ln457">                    length += 1 + (bDoubleBondSquare &amp;&amp; BOND_DOUBLE == at[i].bond_type[j]);</a>
+<a name="ln458">                }</a>
+<a name="ln459">                length += (num_t_groups &amp;&amp; at[i].endpoint);</a>
+<a name="ln460">            }</a>
+<a name="ln461">            length += num_atoms;</a>
+<a name="ln462">            for ( i = 0; i &lt; num_t_groups; i ++ ) {</a>
+<a name="ln463">                length += (int)t_group[i].nNumEndpoints;</a>
+<a name="ln464">            }</a>
+<a name="ln465">            length += num_t_groups;</a>
+<a name="ln466">        }</a>
+<a name="ln467">        length ++; /*  +1 to save number of neighbors */</a>
+<a name="ln468">        if ( (pAtList = (AT_NUMB *) inchi_malloc( length*sizeof(*pAtList) )) ) {</a>
+<a name="ln469">            if ( !bDoubleBondSquare ) {</a>
+<a name="ln470">                for ( i = 0, length = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln471">                    val = at[i].valence;</a>
+<a name="ln472">                    start = length ++;</a>
+<a name="ln473">                    for ( j = 0; j &lt; val; j ++ ) {</a>
+<a name="ln474">                        pAtList[length ++] = at[i].neighbor[j];</a>
+<a name="ln475">                    }</a>
+<a name="ln476">                    /*  add endpoint */</a>
+<a name="ln477">                    if (num_t_groups &amp;&amp; at[i].endpoint) {</a>
+<a name="ln478">                        pAtList[length ++] = num_atoms + (int)at[i].endpoint - 1;</a>
+<a name="ln479">                    }</a>
+<a name="ln480">                    pAtList[start] = length - start - 1;  /*  number of neighbors before the list of neighbors */</a>
+<a name="ln481">                    pp[i] = pAtList + start;              /*  pointer to the &lt;num.neigh.&gt;&lt;list of neigh&gt; */</a>
+<a name="ln482">                }</a>
+<a name="ln483"> </a>
+<a name="ln484">            } else {</a>
+<a name="ln485">                for ( i = 0, length = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln486">                    val = at[i].valence;</a>
+<a name="ln487">                    start = length ++;</a>
+<a name="ln488">                    for ( j = 0; j &lt; val; j ++ ) {</a>
+<a name="ln489">                        pAtList[length ++] = at[i].neighbor[j];</a>
+<a name="ln490">                        if ( bDoubleBondSquare &amp;&amp; BOND_DOUBLE == at[i].bond_type[j] ) {</a>
+<a name="ln491">                            pAtList[length ++] = at[i].neighbor[j]; /*  a list of neighbor orig. numbers */</a>
+<a name="ln492">                        }</a>
+<a name="ln493">                    }</a>
+<a name="ln494">                    /*  add endpoint */</a>
+<a name="ln495">                    if (num_t_groups &amp;&amp; at[i].endpoint) {</a>
+<a name="ln496">                        pAtList[length ++] = num_atoms + (int)at[i].endpoint - 1;</a>
+<a name="ln497">                    }</a>
+<a name="ln498">                    pAtList[start] = length - start - 1;  /*  number of neighbors before the list of neighbors */</a>
+<a name="ln499">                    pp[i] = pAtList + start;              /*  pointer to the &lt;num.neigh.&gt;&lt;list of neigh&gt; */</a>
+<a name="ln500">                }</a>
+<a name="ln501">            }</a>
+<a name="ln502"> </a>
+<a name="ln503">            /*  add t-groups */</a>
+<a name="ln504">            for ( i = 0; i &lt; num_t_groups; i ++ ) {</a>
+<a name="ln505">                val = (int)t_group[i].nNumEndpoints;</a>
+<a name="ln506">                start = length ++;</a>
+<a name="ln507">                nFirstEndpointAtNoPos = (int)t_group[i].nFirstEndpointAtNoPos;</a>
+<a name="ln508">                for ( j = 0; j &lt; val; j ++ ) {</a>
+<a name="ln509">                    pAtList[length ++] = nEndpointAtomNumber[nFirstEndpointAtNoPos+j];</a>
+<a name="ln510">                }</a>
+<a name="ln511">                pAtList[start] = length - start - 1;  /*  number of neighbors before the list of neighbors */</a>
+<a name="ln512">                pp[num_atoms+i] = pAtList + start;    /*  pointer to the &lt;num.neigh.&gt;&lt;list of neigh&gt; */</a>
+<a name="ln513">            }</a>
+<a name="ln514">        } else {</a>
+<a name="ln515">            inchi_free ( pp );</a>
+<a name="ln516">            return NULL;</a>
+<a name="ln517">        }</a>
+<a name="ln518">    }</a>
+<a name="ln519">    return pp;</a>
+<a name="ln520">}</a>
+<a name="ln521">/**********************************************************************************/</a>
+<a name="ln522">void FreeNeighList( NEIGH_LIST *pp )</a>
+<a name="ln523">{</a>
+<a name="ln524">    if ( pp ) {</a>
+<a name="ln525">        if ( pp[0] ) {</a>
+<a name="ln526">            inchi_free( pp[0] );</a>
+<a name="ln527">        }</a>
+<a name="ln528">        inchi_free( pp );</a>
+<a name="ln529">    }</a>
+<a name="ln530">}</a>
+<a name="ln531"> </a>
+<a name="ln532">/**********************************************************************************/</a>
+<a name="ln533">int BreakAllTies( int num_atoms, int num_max, AT_RANK **pRankStack,</a>
+<a name="ln534">                     NEIGH_LIST *NeighList, AT_RANK *nTempRank, CANON_STAT *pCS)</a>
+<a name="ln535">{</a>
+<a name="ln536">    int i, nRet = -1, nNumRanks=1 /* value does not matter*/;</a>
+<a name="ln537">    </a>
+<a name="ln538">    AT_RANK *nPrevRank       = *pRankStack ++;</a>
+<a name="ln539">    AT_RANK *nPrevAtomNumber = *pRankStack ++;</a>
+<a name="ln540"> </a>
+<a name="ln541">    AT_RANK *nNewRank        = NULL;</a>
+<a name="ln542">    AT_RANK *nNewAtomNumber  = NULL;</a>
+<a name="ln543">        </a>
+<a name="ln544">    if ( !pRankStack[0] ) {</a>
+<a name="ln545">        pRankStack[0] = (AT_RANK *) inchi_malloc(num_max*sizeof(*nNewRank));</a>
+<a name="ln546">    }</a>
+<a name="ln547">    if ( !pRankStack[1] ) {</a>
+<a name="ln548">        pRankStack[1] = (AT_RANK *) inchi_malloc(num_max*sizeof(*nNewAtomNumber));</a>
+<a name="ln549">    }</a>
+<a name="ln550">    if ( !pRankStack[0] || !pRankStack[1] )</a>
+<a name="ln551">        return CT_OUT_OF_RAM;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln552">    nNewRank       = pRankStack[0];</a>
+<a name="ln553">    nNewAtomNumber = pRankStack[1];</a>
+<a name="ln554"> </a>
+<a name="ln555">    if ( nNewRank &amp;&amp; nNewAtomNumber ) {</a>
+<a name="ln556">        memcpy( nNewAtomNumber, nPrevAtomNumber, num_atoms*sizeof(nNewAtomNumber[0]));</a>
+<a name="ln557">        memcpy( nNewRank, nPrevRank, num_atoms*sizeof(nNewRank[0]));</a>
+<a name="ln558">     </a>
+<a name="ln559">        for ( i = 1, nRet=0; i &lt; num_atoms; i ++ ) { /*  12-12-2001: replaced Prev... with New... */</a>
+<a name="ln560">            if ( nNewRank[(int)nNewAtomNumber[i-1]] == nNewRank[(int)nNewAtomNumber[i]] ) {</a>
+<a name="ln561">                nNewRank[nNewAtomNumber[i-1]] = (AT_RANK)i;</a>
+<a name="ln562">                nNumRanks = DifferentiateRanks2( num_atoms, NeighList,</a>
+<a name="ln563">                                                 nNumRanks, nNewRank, nTempRank,</a>
+<a name="ln564">                                                 nNewAtomNumber, &amp;pCS-&gt;lNumNeighListIter, 1 );</a>
+<a name="ln565">                pCS-&gt;lNumBreakTies ++;</a>
+<a name="ln566">                nRet ++;</a>
+<a name="ln567">            }</a>
+<a name="ln568">        }</a>
+<a name="ln569">    }</a>
+<a name="ln570">    return nRet;</a>
+<a name="ln571">}</a>
+
+</code></pre>
+<div class="balloon" rel="457"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: bDoubleBondSquare.</p></div>
+<div class="balloon" rel="490"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: bDoubleBondSquare.</p></div>
+<div class="balloon" rel="555"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: nNewRank.</p></div>
+<div class="balloon" rel="555"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: nNewAtomNumber.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

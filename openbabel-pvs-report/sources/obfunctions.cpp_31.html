@@ -1,0 +1,1008 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>obfunctions.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Copyright (C) 2017 by Noel O'Boyle</a>
+<a name="ln3"> </a>
+<a name="ln4">This file is part of the Open Babel project.</a>
+<a name="ln5">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln6"> </a>
+<a name="ln7">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln8">it under the terms of the GNU General Public License as published by</a>
+<a name="ln9">the Free Software Foundation version 2 of the License.</a>
+<a name="ln10"> </a>
+<a name="ln11">This program is distributed in the hope that it will be useful,</a>
+<a name="ln12">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln13">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln14">GNU General Public License for more details.</a>
+<a name="ln15">***********************************************************************/  </a>
+<a name="ln16"> </a>
+<a name="ln17">#include &lt;openbabel/obfunctions.h&gt;</a>
+<a name="ln18">#include &lt;openbabel/bitvec.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln22"> </a>
+<a name="ln23">namespace OpenBabel</a>
+<a name="ln24">{</a>
+<a name="ln25">  unsigned int OBBondGetSmallestRingSize(OBBond *bond, unsigned int bound)</a>
+<a name="ln26">  {</a>
+<a name="ln27">    // A bounded BFS from one side of a bond trying to find the other side.</a>
+<a name="ln28">    //   - The required queue is implemented using a std::vector for efficiency</a>
+<a name="ln29">    //   - Note that items are never popped from the queue, I just move a pointer</a>
+<a name="ln30">    //     along to mark the left hand side</a>
+<a name="ln31">    //   - A potential improvement would be to BFS from both sides at the same time</a>
+<a name="ln32"> </a>
+<a name="ln33">    if (!bond-&gt;IsInRing()) return 0;</a>
+<a name="ln34">    OBAtom* start = bond-&gt;GetBeginAtom();</a>
+<a name="ln35">    OBAtom* end = bond-&gt;GetEndAtom();</a>
+<a name="ln36">    std::vector&lt;OBAtom*&gt; qatoms;</a>
+<a name="ln37">    unsigned int numatoms = bond-&gt;GetParent()-&gt;NumAtoms();</a>
+<a name="ln38">    qatoms.reserve(numatoms &lt; 42 ? numatoms : 42); // Value chosen by inspection on ChEMBL when using bound of 8</a>
+<a name="ln39">    OBBitVec seen(numatoms + 1);</a>
+<a name="ln40">    seen.SetBitOn(start-&gt;GetIdx());</a>
+<a name="ln41">    FOR_BONDS_OF_ATOM(nbond, start) {</a>
+<a name="ln42">      if (&amp;*nbond == bond) continue;</a>
+<a name="ln43">      if (!nbond-&gt;IsInRing()) continue;</a>
+<a name="ln44">      OBAtom* nbr = nbond-&gt;GetNbrAtom(start);</a>
+<a name="ln45">      qatoms.push_back(nbr);</a>
+<a name="ln46">    }</a>
+<a name="ln47">    unsigned int depthmarker = qatoms.size(); // when qstart reaches this, increment the depth</a>
+<a name="ln48">    unsigned int qstart = 0;</a>
+<a name="ln49">    unsigned int depth = 2;</a>
+<a name="ln50">    while (qatoms.size() - qstart) { // While queue not empty</a>
+<a name="ln51">      OBAtom* curr = qatoms[qstart];</a>
+<a name="ln52">      if (qstart == depthmarker) {</a>
+<a name="ln53">        depth++;</a>
+<a name="ln54">        depthmarker = qatoms.size();</a>
+<a name="ln55">      }</a>
+<a name="ln56">      qstart++;</a>
+<a name="ln57">      if (seen.BitIsSet(curr-&gt;GetIdx()))</a>
+<a name="ln58">        continue;</a>
+<a name="ln59">      seen.SetBitOn(curr-&gt;GetIdx());</a>
+<a name="ln60">      if (depth &lt; bound) {</a>
+<a name="ln61">        FOR_BONDS_OF_ATOM(nbond, curr) {</a>
+<a name="ln62">          if (!nbond-&gt;IsInRing()) continue;</a>
+<a name="ln63">          OBAtom* nbr = nbond-&gt;GetNbrAtom(curr);</a>
+<a name="ln64">          if (nbr == end)</a>
+<a name="ln65">            return depth + 1;</a>
+<a name="ln66">          if (!seen.BitIsSet(nbr-&gt;GetIdx())) {</a>
+<a name="ln67">            qatoms.push_back(nbr);</a>
+<a name="ln68">          }</a>
+<a name="ln69">        }</a>
+<a name="ln70">      }</a>
+<a name="ln71">    }</a>
+<a name="ln72">    return 0;</a>
+<a name="ln73">  }</a>
+<a name="ln74"> </a>
+<a name="ln75"> </a>
+<a name="ln76">  // Return the typical valence for an atom of specified element, bond order sum and formal charge</a>
+<a name="ln77">  unsigned int GetTypicalValence(unsigned int element, unsigned int bosum, int charge)</a>
+<a name="ln78">  {</a>
+<a name="ln79">    switch (element) {</a>
+<a name="ln80">    case 1:</a>
+<a name="ln81">      switch (charge) {</a>
+<a name="ln82">      case 0:</a>
+<a name="ln83">        if (bosum &lt;= 1) return 1;</a>
+<a name="ln84">        break;</a>
+<a name="ln85">      case 1:</a>
+<a name="ln86">        if (bosum == 0) return 0;</a>
+<a name="ln87">        break;</a>
+<a name="ln88">      }</a>
+<a name="ln89">      break;</a>
+<a name="ln90">    case 2:</a>
+<a name="ln91">      if (charge == 0) {</a>
+<a name="ln92">        if (bosum == 0) return 0;</a>
+<a name="ln93">      }</a>
+<a name="ln94">      break;</a>
+<a name="ln95">    case 3:</a>
+<a name="ln96">      switch (charge) {</a>
+<a name="ln97">      case 0:</a>
+<a name="ln98">        if (bosum &lt;= 1) return 1;</a>
+<a name="ln99">        break;</a>
+<a name="ln100">      case 1:</a>
+<a name="ln101">        if (bosum == 0) return 0;</a>
+<a name="ln102">        break;</a>
+<a name="ln103">      }</a>
+<a name="ln104">      break;</a>
+<a name="ln105">    case 4:</a>
+<a name="ln106">      switch (charge) {</a>
+<a name="ln107">      case 0:</a>
+<a name="ln108">        if (bosum &lt;= 2) return 2;</a>
+<a name="ln109">        break;</a>
+<a name="ln110">      case 1:</a>
+<a name="ln111">        if (bosum &lt;= 1) return 1;</a>
+<a name="ln112">        break;</a>
+<a name="ln113">      case 2:</a>
+<a name="ln114">        if (bosum == 0) return 0;</a>
+<a name="ln115">        break;</a>
+<a name="ln116">      }</a>
+<a name="ln117">      break;</a>
+<a name="ln118">    case 5:</a>
+<a name="ln119">      switch (charge) {</a>
+<a name="ln120">      case -2:</a>
+<a name="ln121">        if (bosum &lt;= 3) return 3;</a>
+<a name="ln122">        break;</a>
+<a name="ln123">      case -1:</a>
+<a name="ln124">        if (bosum &lt;= 4) return 4;</a>
+<a name="ln125">        break;</a>
+<a name="ln126">      case 0:</a>
+<a name="ln127">        if (bosum &lt;= 3) return 3;</a>
+<a name="ln128">        break;</a>
+<a name="ln129">      case 1:</a>
+<a name="ln130">        if (bosum &lt;= 2) return 2;</a>
+<a name="ln131">        break;</a>
+<a name="ln132">      case 2:</a>
+<a name="ln133">        if (bosum &lt;= 1) return 1;</a>
+<a name="ln134">        break;</a>
+<a name="ln135">      }</a>
+<a name="ln136">      break;</a>
+<a name="ln137">    case 6:</a>
+<a name="ln138">      switch (charge) {</a>
+<a name="ln139">      case -2:</a>
+<a name="ln140">        if (bosum &lt;= 2) return 2;</a>
+<a name="ln141">        break;</a>
+<a name="ln142">      case -1:</a>
+<a name="ln143">        if (bosum &lt;= 3) return 3;</a>
+<a name="ln144">        break;</a>
+<a name="ln145">      case 0:</a>
+<a name="ln146">        if (bosum &lt;= 4) return 4;</a>
+<a name="ln147">        break;</a>
+<a name="ln148">      case 1:</a>
+<a name="ln149">        if (bosum &lt;= 3) return 3;</a>
+<a name="ln150">        break;</a>
+<a name="ln151">      case 2:</a>
+<a name="ln152">        if (bosum &lt;= 2) return 2;</a>
+<a name="ln153">        break;</a>
+<a name="ln154">      }</a>
+<a name="ln155">      break;</a>
+<a name="ln156">    case 7:</a>
+<a name="ln157">      // Note that while N can have valence 5, it doesn't make sense</a>
+<a name="ln158">      // to round up to 5 when adding hydrogens</a>
+<a name="ln159">      switch (charge) {</a>
+<a name="ln160">      case -2:</a>
+<a name="ln161">        if (bosum &lt;= 1) return 1;</a>
+<a name="ln162">        break;</a>
+<a name="ln163">      case -1:</a>
+<a name="ln164">        if (bosum &lt;= 2) return 2;</a>
+<a name="ln165">        break;</a>
+<a name="ln166">      case 0:</a>
+<a name="ln167">        switch (bosum) {</a>
+<a name="ln168">        case 0: case 1: case 2: case 3: return 3;</a>
+<a name="ln169">        case 4: return 4; // don't round up to 5 for nitrogen</a>
+<a name="ln170">        case 5: return 5;</a>
+<a name="ln171">        }</a>
+<a name="ln172">        break;</a>
+<a name="ln173">      case 1:</a>
+<a name="ln174">        if (bosum &lt;= 4) return 4;</a>
+<a name="ln175">        break;</a>
+<a name="ln176">      case 2:</a>
+<a name="ln177">        if (bosum &lt;= 3) return 3;</a>
+<a name="ln178">        break;</a>
+<a name="ln179">      }</a>
+<a name="ln180">      break;</a>
+<a name="ln181">    case 8:</a>
+<a name="ln182">      switch (charge) {</a>
+<a name="ln183">      case -2:</a>
+<a name="ln184">        if (bosum == 0) return 0;</a>
+<a name="ln185">        break;</a>
+<a name="ln186">      case -1:</a>
+<a name="ln187">        if (bosum &lt;= 1) return 1;</a>
+<a name="ln188">        break;</a>
+<a name="ln189">      case 0:</a>
+<a name="ln190">        if (bosum &lt;= 2) return 2;</a>
+<a name="ln191">        break;</a>
+<a name="ln192">      case 1:</a>
+<a name="ln193">        switch (bosum) {</a>
+<a name="ln194">        case 0: case 1: case 2: case 3: return 3;</a>
+<a name="ln195">        case 4: case 5: return 5;</a>
+<a name="ln196">        }</a>
+<a name="ln197">        break;</a>
+<a name="ln198">      }</a>
+<a name="ln199">      break;</a>
+<a name="ln200">    case 9:</a>
+<a name="ln201">      switch (charge) {</a>
+<a name="ln202">      case -1:</a>
+<a name="ln203">        if (bosum == 0) return 0;</a>
+<a name="ln204">        break;</a>
+<a name="ln205">      case 0:</a>
+<a name="ln206">        if (bosum &lt;= 1) return 1;</a>
+<a name="ln207">        break;</a>
+<a name="ln208">      case 1:</a>
+<a name="ln209">        if (bosum &lt;= 2) return 2;</a>
+<a name="ln210">        break;</a>
+<a name="ln211">      case 2:</a>
+<a name="ln212">        switch (bosum) {</a>
+<a name="ln213">        case 0: case 1: case 2: case 3: return 3;</a>
+<a name="ln214">        case 4: case 5: return 5;</a>
+<a name="ln215">        }</a>
+<a name="ln216">        break;</a>
+<a name="ln217">      }</a>
+<a name="ln218">      break;</a>
+<a name="ln219">    case 10:</a>
+<a name="ln220">      if (charge == 0) {</a>
+<a name="ln221">        if (bosum == 0) return 0;</a>
+<a name="ln222">      }</a>
+<a name="ln223">      break;</a>
+<a name="ln224">    case 11:</a>
+<a name="ln225">      switch (charge) {</a>
+<a name="ln226">      case -1:</a>
+<a name="ln227">        if (bosum == 0) return 0;</a>
+<a name="ln228">        break;</a>
+<a name="ln229">      case 0:</a>
+<a name="ln230">        if (bosum &lt;= 1) return 1;</a>
+<a name="ln231">        break;</a>
+<a name="ln232">      case 1:</a>
+<a name="ln233">        if (bosum == 0) return 0;</a>
+<a name="ln234">        break;</a>
+<a name="ln235">      }</a>
+<a name="ln236">      break;</a>
+<a name="ln237">    case 12:</a>
+<a name="ln238">      switch (charge) {</a>
+<a name="ln239">      case 0:</a>
+<a name="ln240">        if (bosum &lt;= 2) return 2;</a>
+<a name="ln241">        break;</a>
+<a name="ln242">      case 2:</a>
+<a name="ln243">        if (bosum == 0) return 0;</a>
+<a name="ln244">        break;</a>
+<a name="ln245">      }</a>
+<a name="ln246">      break;</a>
+<a name="ln247">    case 13:</a>
+<a name="ln248">      switch (charge) {</a>
+<a name="ln249">      case -2:</a>
+<a name="ln250">        switch (bosum) {</a>
+<a name="ln251">        case 0: case 1: case 2: case 3: return 3;</a>
+<a name="ln252">        case 4: case 5: return 5;</a>
+<a name="ln253">        }</a>
+<a name="ln254">        break;</a>
+<a name="ln255">      case -1:</a>
+<a name="ln256">        if (bosum &lt;= 4) return 4;</a>
+<a name="ln257">        break;</a>
+<a name="ln258">      case 0:</a>
+<a name="ln259">        if (bosum &lt;= 3) return 3;</a>
+<a name="ln260">        break;</a>
+<a name="ln261">      case 1:</a>
+<a name="ln262">        if (bosum &lt;= 2) return 2;</a>
+<a name="ln263">        break;</a>
+<a name="ln264">      case 2:</a>
+<a name="ln265">        if (bosum &lt;= 1) return 1;</a>
+<a name="ln266">        break;</a>
+<a name="ln267">      case 3:</a>
+<a name="ln268">        if (bosum == 0) return 0;</a>
+<a name="ln269">        break;</a>
+<a name="ln270">      }</a>
+<a name="ln271">      break;</a>
+<a name="ln272">    case 14:</a>
+<a name="ln273">      switch (charge) {</a>
+<a name="ln274">      case -2:</a>
+<a name="ln275">        if (bosum &lt;= 2) return 2;</a>
+<a name="ln276">        break;</a>
+<a name="ln277">      case -1:</a>
+<a name="ln278">        switch (bosum) {</a>
+<a name="ln279">        case 0: case 1: case 2: case 3: return 3;</a>
+<a name="ln280">        case 4: case 5: return 5;</a>
+<a name="ln281">        }</a>
+<a name="ln282">        break;</a>
+<a name="ln283">      case 0:</a>
+<a name="ln284">        if (bosum &lt;= 4) return 4;</a>
+<a name="ln285">        break;</a>
+<a name="ln286">      case 1:</a>
+<a name="ln287">        if (bosum &lt;= 3) return 3;</a>
+<a name="ln288">        break;</a>
+<a name="ln289">      case 2:</a>
+<a name="ln290">        if (bosum &lt;= 2) return 2;</a>
+<a name="ln291">        break;</a>
+<a name="ln292">      }</a>
+<a name="ln293">      break;</a>
+<a name="ln294">    case 15:</a>
+<a name="ln295">      switch (charge) {</a>
+<a name="ln296">      case -2:</a>
+<a name="ln297">        switch (bosum) {</a>
+<a name="ln298">        case 0: case 1: return 1;</a>
+<a name="ln299">        case 2: case 3: return 3;</a>
+<a name="ln300">        case 4: case 5: return 5;</a>
+<a name="ln301">        case 6: case 7: return 7;</a>
+<a name="ln302">        }</a>
+<a name="ln303">        break;</a>
+<a name="ln304">      case -1:</a>
+<a name="ln305">        switch (bosum) {</a>
+<a name="ln306">        case 0: case 1: case 2: return 2;</a>
+<a name="ln307">        case 3: case 4: return 4;</a>
+<a name="ln308">        case 5: case 6: return 6;</a>
+<a name="ln309">        }</a>
+<a name="ln310">        break;</a>
+<a name="ln311">      case 0:</a>
+<a name="ln312">        switch (bosum) {</a>
+<a name="ln313">        case 0: case 1: case 2: case 3: return 3;</a>
+<a name="ln314">        case 4: case 5: return 5;</a>
+<a name="ln315">        }</a>
+<a name="ln316">        break;</a>
+<a name="ln317">      case 1:</a>
+<a name="ln318">        if (bosum &lt;= 4) return 4;</a>
+<a name="ln319">        break;</a>
+<a name="ln320">      case 2:</a>
+<a name="ln321">        if (bosum &lt;= 3) return 3;</a>
+<a name="ln322">        break;</a>
+<a name="ln323">      }</a>
+<a name="ln324">      break;</a>
+<a name="ln325">    case 16:</a>
+<a name="ln326">      switch (charge) {</a>
+<a name="ln327">      case -2:</a>
+<a name="ln328">        if (bosum == 0) return 0;</a>
+<a name="ln329">        break;</a>
+<a name="ln330">      case -1:</a>
+<a name="ln331">        switch (bosum) {</a>
+<a name="ln332">        case 0: case 1: return 1;</a>
+<a name="ln333">        case 2: case 3: return 3;</a>
+<a name="ln334">        case 4: case 5: return 5;</a>
+<a name="ln335">        case 6: case 7: return 7;</a>
+<a name="ln336">        }</a>
+<a name="ln337">        break;</a>
+<a name="ln338">      case 0:</a>
+<a name="ln339">        switch (bosum) {</a>
+<a name="ln340">        case 0: case 1: case 2: return 2;</a>
+<a name="ln341">        case 3: case 4: return 4;</a>
+<a name="ln342">        case 5: case 6: return 6;</a>
+<a name="ln343">        }</a>
+<a name="ln344">        break;</a>
+<a name="ln345">      case 1:</a>
+<a name="ln346">        switch (bosum) {</a>
+<a name="ln347">        case 0: case 1: case 2: case 3: return 3;</a>
+<a name="ln348">        case 4: case 5: return 5;</a>
+<a name="ln349">        }</a>
+<a name="ln350">        break;</a>
+<a name="ln351">      case 2:</a>
+<a name="ln352">        if (bosum &lt;= 4) return 4;</a>
+<a name="ln353">        break;</a>
+<a name="ln354">      }</a>
+<a name="ln355">      break;</a>
+<a name="ln356">    case 17:</a>
+<a name="ln357">      switch (charge) {</a>
+<a name="ln358">      case -1:</a>
+<a name="ln359">        if (bosum == 0) return 0;</a>
+<a name="ln360">        break;</a>
+<a name="ln361">      case 0:</a>
+<a name="ln362">        switch (bosum) {</a>
+<a name="ln363">        case 0: case 1: return 1;</a>
+<a name="ln364">        case 2: case 3: return 3;</a>
+<a name="ln365">        case 4: case 5: return 5;</a>
+<a name="ln366">        case 6: case 7: return 7;</a>
+<a name="ln367">        }</a>
+<a name="ln368">        break;</a>
+<a name="ln369">      case 1:</a>
+<a name="ln370">        switch (bosum) {</a>
+<a name="ln371">        case 0: case 1: case 2: return 2;</a>
+<a name="ln372">        case 3: case 4: return 4;</a>
+<a name="ln373">        case 5: case 6: return 6;</a>
+<a name="ln374">        }</a>
+<a name="ln375">        break;</a>
+<a name="ln376">      case 2:</a>
+<a name="ln377">        switch (bosum) {</a>
+<a name="ln378">        case 0: case 1: case 2: case 3: return 3;</a>
+<a name="ln379">        case 4: case 5: return 5;</a>
+<a name="ln380">        }</a>
+<a name="ln381">        break;</a>
+<a name="ln382">      }</a>
+<a name="ln383">      break;</a>
+<a name="ln384">    case 18:</a>
+<a name="ln385">      if (charge == 0) {</a>
+<a name="ln386">        if (bosum == 0) return 0;</a>
+<a name="ln387">      }</a>
+<a name="ln388">      break;</a>
+<a name="ln389">    case 19:</a>
+<a name="ln390">      switch (charge) {</a>
+<a name="ln391">      case -1:</a>
+<a name="ln392">        if (bosum == 0) return 0;</a>
+<a name="ln393">        break;</a>
+<a name="ln394">      case 0:</a>
+<a name="ln395">        if (bosum &lt;= 1) return 1;</a>
+<a name="ln396">        break;</a>
+<a name="ln397">      case 1:</a>
+<a name="ln398">        if (bosum == 0) return 0;</a>
+<a name="ln399">        break;</a>
+<a name="ln400">      }</a>
+<a name="ln401">      break;</a>
+<a name="ln402">    case 20:</a>
+<a name="ln403">      switch (charge) {</a>
+<a name="ln404">      case 0:</a>
+<a name="ln405">        if (bosum &lt;= 2) return 2;</a>
+<a name="ln406">        break;</a>
+<a name="ln407">      case 1:</a>
+<a name="ln408">        if (bosum &lt;= 1) return 1;</a>
+<a name="ln409">        break;</a>
+<a name="ln410">      case 2:</a>
+<a name="ln411">        if (bosum == 0) return 0;</a>
+<a name="ln412">        break;</a>
+<a name="ln413">      }</a>
+<a name="ln414">      break;</a>
+<a name="ln415">    case 31:</a>
+<a name="ln416">      switch (charge) {</a>
+<a name="ln417">      case -2:</a>
+<a name="ln418">        switch (bosum) {</a>
+<a name="ln419">        case 0: case 1: case 2: case 3: return 3;</a>
+<a name="ln420">        case 4: case 5: return 5;</a>
+<a name="ln421">        }</a>
+<a name="ln422">        break;</a>
+<a name="ln423">      case -1:</a>
+<a name="ln424">        if (bosum &lt;= 4) return 4;</a>
+<a name="ln425">        break;</a>
+<a name="ln426">      case 0:</a>
+<a name="ln427">        if (bosum &lt;= 3) return 3;</a>
+<a name="ln428">        break;</a>
+<a name="ln429">      case 1:</a>
+<a name="ln430">        if (bosum == 0) return 0;</a>
+<a name="ln431">        break;</a>
+<a name="ln432">      case 2:</a>
+<a name="ln433">        if (bosum &lt;= 1) return 1;</a>
+<a name="ln434">        break;</a>
+<a name="ln435">      case 3:</a>
+<a name="ln436">        if (bosum == 0) return 0;</a>
+<a name="ln437">        break;</a>
+<a name="ln438">      }</a>
+<a name="ln439">      break;</a>
+<a name="ln440">    case 32:</a>
+<a name="ln441">      switch (charge) {</a>
+<a name="ln442">      case -2:</a>
+<a name="ln443">        switch (bosum) {</a>
+<a name="ln444">        case 0: case 1: case 2: return 2;</a>
+<a name="ln445">        case 3: case 4: return 4;</a>
+<a name="ln446">        case 5: case 6: return 6;</a>
+<a name="ln447">        }</a>
+<a name="ln448">        break;</a>
+<a name="ln449">      case -1:</a>
+<a name="ln450">        switch (bosum) {</a>
+<a name="ln451">        case 0: case 1: case 2: case 3: return 3;</a>
+<a name="ln452">        case 4: case 5: return 5;</a>
+<a name="ln453">        }</a>
+<a name="ln454">        break;</a>
+<a name="ln455">      case 0:</a>
+<a name="ln456">        if (bosum &lt;= 4) return 4;</a>
+<a name="ln457">        break;</a>
+<a name="ln458">      case 1:</a>
+<a name="ln459">        if (bosum &lt;= 3) return 3;</a>
+<a name="ln460">        break;</a>
+<a name="ln461">      case 4:</a>
+<a name="ln462">        if (bosum == 0) return 0;</a>
+<a name="ln463">        break;</a>
+<a name="ln464">      }</a>
+<a name="ln465">      break;</a>
+<a name="ln466">    case 33:</a>
+<a name="ln467">      switch (charge) {</a>
+<a name="ln468">      case -3:</a>
+<a name="ln469">        if (bosum == 0) return 0;</a>
+<a name="ln470">        break;</a>
+<a name="ln471">      case -2:</a>
+<a name="ln472">        switch (bosum) {</a>
+<a name="ln473">        case 0: case 1: return 1;</a>
+<a name="ln474">        case 2: case 3: return 3;</a>
+<a name="ln475">        case 4: case 5: return 5;</a>
+<a name="ln476">        case 6: case 7: return 7;</a>
+<a name="ln477">        }</a>
+<a name="ln478">        break;</a>
+<a name="ln479">      case -1:</a>
+<a name="ln480">        switch (bosum) {</a>
+<a name="ln481">        case 0: case 1: case 2: return 2;</a>
+<a name="ln482">        case 3: case 4: return 4;</a>
+<a name="ln483">        case 5: case 6: return 6;</a>
+<a name="ln484">        }</a>
+<a name="ln485">        break;</a>
+<a name="ln486">      case 0:</a>
+<a name="ln487">        switch (bosum) {</a>
+<a name="ln488">        case 0: case 1: case 2: case 3: return 3;</a>
+<a name="ln489">        case 4: case 5: return 5;</a>
+<a name="ln490">        }</a>
+<a name="ln491">        break;</a>
+<a name="ln492">      case 1:</a>
+<a name="ln493">        if (bosum &lt;= 4) return 4;</a>
+<a name="ln494">        break;</a>
+<a name="ln495">      case 2:</a>
+<a name="ln496">        if (bosum &lt;= 3) return 3;</a>
+<a name="ln497">        break;</a>
+<a name="ln498">      }</a>
+<a name="ln499">      break;</a>
+<a name="ln500">    case 34:</a>
+<a name="ln501">      switch (charge) {</a>
+<a name="ln502">      case -2:</a>
+<a name="ln503">        if (bosum == 0) return 0;</a>
+<a name="ln504">        break;</a>
+<a name="ln505">      case -1:</a>
+<a name="ln506">        switch (bosum) {</a>
+<a name="ln507">        case 0: case 1: return 1;</a>
+<a name="ln508">        case 2: case 3: return 3;</a>
+<a name="ln509">        case 4: case 5: return 5;</a>
+<a name="ln510">        case 6: case 7: return 7;</a>
+<a name="ln511">        }</a>
+<a name="ln512">        break;</a>
+<a name="ln513">      case 0:</a>
+<a name="ln514">        switch (bosum) {</a>
+<a name="ln515">        case 0: case 1: case 2: return 2;</a>
+<a name="ln516">        case 3: case 4: return 4;</a>
+<a name="ln517">        case 5: case 6: return 6;</a>
+<a name="ln518">        }</a>
+<a name="ln519">        break;</a>
+<a name="ln520">      case 1:</a>
+<a name="ln521">        switch (bosum) {</a>
+<a name="ln522">        case 0: case 1: case 2: case 3: return 3;</a>
+<a name="ln523">        case 4: case 5: return 5;</a>
+<a name="ln524">        }</a>
+<a name="ln525">        break;</a>
+<a name="ln526">      case 2:</a>
+<a name="ln527">        if (bosum &lt;= 4) return 4;</a>
+<a name="ln528">        break;</a>
+<a name="ln529">      }</a>
+<a name="ln530">      break;</a>
+<a name="ln531">    case 35:</a>
+<a name="ln532">      switch (charge) {</a>
+<a name="ln533">      case -1:</a>
+<a name="ln534">        if (bosum == 0) return 0;</a>
+<a name="ln535">        break;</a>
+<a name="ln536">      case 0:</a>
+<a name="ln537">        switch (bosum) {</a>
+<a name="ln538">        case 0: case 1: return 1;</a>
+<a name="ln539">        case 2: case 3: return 3;</a>
+<a name="ln540">        case 4: case 5: return 5;</a>
+<a name="ln541">        case 6: case 7: return 7;</a>
+<a name="ln542">        }</a>
+<a name="ln543">        break;</a>
+<a name="ln544">      case 1:</a>
+<a name="ln545">        switch (bosum) {</a>
+<a name="ln546">        case 0: case 1: case 2: return 2;</a>
+<a name="ln547">        case 3: case 4: return 4;</a>
+<a name="ln548">        case 5: case 6: return 6;</a>
+<a name="ln549">        }</a>
+<a name="ln550">        break;</a>
+<a name="ln551">      case 2:</a>
+<a name="ln552">        switch (bosum) {</a>
+<a name="ln553">        case 0: case 1: case 2: case 3: return 3;</a>
+<a name="ln554">        case 4: case 5: return 5;</a>
+<a name="ln555">        }</a>
+<a name="ln556">        break;</a>
+<a name="ln557">      }</a>
+<a name="ln558">      break;</a>
+<a name="ln559">    case 36:</a>
+<a name="ln560">      if (charge == 0) {</a>
+<a name="ln561">        switch (bosum) {</a>
+<a name="ln562">        case 0: return 0;</a>
+<a name="ln563">        case 1: case 2: return 2;</a>
+<a name="ln564">        }</a>
+<a name="ln565">      }</a>
+<a name="ln566">      break;</a>
+<a name="ln567">    case 37:</a>
+<a name="ln568">      switch (charge) {</a>
+<a name="ln569">      case -1:</a>
+<a name="ln570">        if (bosum == 0) return 0;</a>
+<a name="ln571">        break;</a>
+<a name="ln572">      case 0:</a>
+<a name="ln573">        if (bosum &lt;= 1) return 1;</a>
+<a name="ln574">        break;</a>
+<a name="ln575">      case 1:</a>
+<a name="ln576">        if (bosum == 0) return 0;</a>
+<a name="ln577">        break;</a>
+<a name="ln578">      }</a>
+<a name="ln579">      break;</a>
+<a name="ln580">    case 38:</a>
+<a name="ln581">      switch (charge) {</a>
+<a name="ln582">      case 0:</a>
+<a name="ln583">        if (bosum &lt;= 2) return 2;</a>
+<a name="ln584">        break;</a>
+<a name="ln585">      case 1:</a>
+<a name="ln586">        if (bosum &lt;= 1) return 1;</a>
+<a name="ln587">        break;</a>
+<a name="ln588">      case 2:</a>
+<a name="ln589">        if (bosum == 0) return 0;</a>
+<a name="ln590">        break;</a>
+<a name="ln591">      }</a>
+<a name="ln592">      break;</a>
+<a name="ln593">    case 49:</a>
+<a name="ln594">      switch (charge) {</a>
+<a name="ln595">      case -2:</a>
+<a name="ln596">        switch (bosum) {</a>
+<a name="ln597">        case 0: case 1: case 2: case 3: return 3;</a>
+<a name="ln598">        case 4: case 5: return 5;</a>
+<a name="ln599">        }</a>
+<a name="ln600">        break;</a>
+<a name="ln601">      case -1:</a>
+<a name="ln602">        switch (bosum) {</a>
+<a name="ln603">        case 0: case 1: case 2: return 2;</a>
+<a name="ln604">        case 3: case 4: return 4;</a>
+<a name="ln605">        }</a>
+<a name="ln606">        break;</a>
+<a name="ln607">      case 0:</a>
+<a name="ln608">        if (bosum &lt;= 3) return 3;</a>
+<a name="ln609">        break;</a>
+<a name="ln610">      case 1:</a>
+<a name="ln611">        if (bosum == 0) return 0;</a>
+<a name="ln612">        break;</a>
+<a name="ln613">      case 2:</a>
+<a name="ln614">        if (bosum &lt;= 1) return 1;</a>
+<a name="ln615">        break;</a>
+<a name="ln616">      case 3:</a>
+<a name="ln617">        if (bosum == 0) return 0;</a>
+<a name="ln618">        break;</a>
+<a name="ln619">      }</a>
+<a name="ln620">      break;</a>
+<a name="ln621">    case 50:</a>
+<a name="ln622">      switch (charge) {</a>
+<a name="ln623">      case -2:</a>
+<a name="ln624">        switch (bosum) {</a>
+<a name="ln625">        case 0: case 1: case 2: return 2;</a>
+<a name="ln626">        case 3: case 4: return 4;</a>
+<a name="ln627">        case 5: case 6: return 6;</a>
+<a name="ln628">        }</a>
+<a name="ln629">        break;</a>
+<a name="ln630">      case -1:</a>
+<a name="ln631">        switch (bosum) {</a>
+<a name="ln632">        case 0: case 1: case 2: case 3: return 3;</a>
+<a name="ln633">        case 4: case 5: return 5;</a>
+<a name="ln634">        }</a>
+<a name="ln635">        break;</a>
+<a name="ln636">      case 0:</a>
+<a name="ln637">        switch (bosum) {</a>
+<a name="ln638">        case 0: case 1: case 2: return 2;</a>
+<a name="ln639">        case 3: case 4: return 4;</a>
+<a name="ln640">        }</a>
+<a name="ln641">        break;</a>
+<a name="ln642">      case 1:</a>
+<a name="ln643">        if (bosum &lt;= 3) return 3;</a>
+<a name="ln644">        break;</a>
+<a name="ln645">      case 2:</a>
+<a name="ln646">        if (bosum == 0) return 0;</a>
+<a name="ln647">        break;</a>
+<a name="ln648">      case 4:</a>
+<a name="ln649">        if (bosum == 0) return 0;</a>
+<a name="ln650">        break;</a>
+<a name="ln651">      }</a>
+<a name="ln652">      break;</a>
+<a name="ln653">    case 51:</a>
+<a name="ln654">      switch (charge) {</a>
+<a name="ln655">      case -2:</a>
+<a name="ln656">        switch (bosum) {</a>
+<a name="ln657">        case 0: case 1: return 1;</a>
+<a name="ln658">        case 2: case 3: return 3;</a>
+<a name="ln659">        case 4: case 5: return 5;</a>
+<a name="ln660">        case 6: case 7: return 7;</a>
+<a name="ln661">        }</a>
+<a name="ln662">        break;</a>
+<a name="ln663">      case -1:</a>
+<a name="ln664">        switch (bosum) {</a>
+<a name="ln665">        case 0: case 1: case 2: return 2;</a>
+<a name="ln666">        case 3: case 4: return 4;</a>
+<a name="ln667">        case 5: case 6: return 6;</a>
+<a name="ln668">        }</a>
+<a name="ln669">        break;</a>
+<a name="ln670">      case 0:</a>
+<a name="ln671">        switch (bosum) {</a>
+<a name="ln672">        case 0: case 1: case 2: case 3: return 3;</a>
+<a name="ln673">        case 4: case 5: return 5;</a>
+<a name="ln674">        }</a>
+<a name="ln675">        break;</a>
+<a name="ln676">      case 1:</a>
+<a name="ln677">        switch (bosum) {</a>
+<a name="ln678">        case 0: case 1: case 2: return 2;</a>
+<a name="ln679">        case 3: case 4: return 4;</a>
+<a name="ln680">        }</a>
+<a name="ln681">        break;</a>
+<a name="ln682">      case 2:</a>
+<a name="ln683">        if (bosum &lt;= 3) return 3;</a>
+<a name="ln684">        break;</a>
+<a name="ln685">      case 3:</a>
+<a name="ln686">        if (bosum == 0) return 0;</a>
+<a name="ln687">        break;</a>
+<a name="ln688">      }</a>
+<a name="ln689">      break;</a>
+<a name="ln690">    case 52:</a>
+<a name="ln691">      switch (charge) {</a>
+<a name="ln692">      case -2:</a>
+<a name="ln693">        if (bosum == 0) return 0;</a>
+<a name="ln694">        break;</a>
+<a name="ln695">      case -1:</a>
+<a name="ln696">        switch (bosum) {</a>
+<a name="ln697">        case 0: case 1: return 1;</a>
+<a name="ln698">        case 2: case 3: return 3;</a>
+<a name="ln699">        case 4: case 5: return 5;</a>
+<a name="ln700">        case 6: case 7: return 7;</a>
+<a name="ln701">        }</a>
+<a name="ln702">        break;</a>
+<a name="ln703">      case 0:</a>
+<a name="ln704">        switch (bosum) {</a>
+<a name="ln705">        case 0: case 1: case 2: return 2;</a>
+<a name="ln706">        case 3: case 4: return 4;</a>
+<a name="ln707">        case 5: case 6: return 6;</a>
+<a name="ln708">        }</a>
+<a name="ln709">        break;</a>
+<a name="ln710">      case 1:</a>
+<a name="ln711">        switch (bosum) {</a>
+<a name="ln712">        case 0: case 1: case 2: case 3: return 3;</a>
+<a name="ln713">        case 4: case 5: return 5;</a>
+<a name="ln714">        }</a>
+<a name="ln715">        break;</a>
+<a name="ln716">      case 2:</a>
+<a name="ln717">        switch (bosum) {</a>
+<a name="ln718">        case 0: case 1: case 2: return 2;</a>
+<a name="ln719">        case 3: case 4: return 4;</a>
+<a name="ln720">        }</a>
+<a name="ln721">        break;</a>
+<a name="ln722">      }</a>
+<a name="ln723">      break;</a>
+<a name="ln724">    case 53:</a>
+<a name="ln725">      switch (charge) {</a>
+<a name="ln726">      case -1:</a>
+<a name="ln727">        if (bosum == 0) return 0;</a>
+<a name="ln728">        break;</a>
+<a name="ln729">      case 0:</a>
+<a name="ln730">        switch (bosum) {</a>
+<a name="ln731">        case 0: case 1: return 1;</a>
+<a name="ln732">        case 2: case 3: return 3;</a>
+<a name="ln733">        case 4: case 5: return 5;</a>
+<a name="ln734">        case 6: case 7: return 7;</a>
+<a name="ln735">        }</a>
+<a name="ln736">        break;</a>
+<a name="ln737">      case 1:</a>
+<a name="ln738">        switch (bosum) {</a>
+<a name="ln739">        case 0: case 1: case 2: return 2;</a>
+<a name="ln740">        case 3: case 4: return 4;</a>
+<a name="ln741">        case 5: case 6: return 6;</a>
+<a name="ln742">        }</a>
+<a name="ln743">        break;</a>
+<a name="ln744">      case 2:</a>
+<a name="ln745">        switch (bosum) {</a>
+<a name="ln746">        case 0: case 1: case 2: case 3: return 3;</a>
+<a name="ln747">        case 4: case 5: return 5;</a>
+<a name="ln748">        }</a>
+<a name="ln749">        break;</a>
+<a name="ln750">      }</a>
+<a name="ln751">      break;</a>
+<a name="ln752">    case 54:</a>
+<a name="ln753">      if (charge == 0) {</a>
+<a name="ln754">        switch (bosum) {</a>
+<a name="ln755">        case 0: return 0;</a>
+<a name="ln756">        case 1: case 2: return 2;</a>
+<a name="ln757">        case 3: case 4: return 4;</a>
+<a name="ln758">        case 5: case 6: return 6;</a>
+<a name="ln759">        case 7: case 8: return 8;</a>
+<a name="ln760">        }</a>
+<a name="ln761">      }</a>
+<a name="ln762">      break;</a>
+<a name="ln763">    case 55:</a>
+<a name="ln764">      switch (charge) {</a>
+<a name="ln765">      case -1:</a>
+<a name="ln766">        if (bosum == 0) return 0;</a>
+<a name="ln767">        break;</a>
+<a name="ln768">      case 0:</a>
+<a name="ln769">        if (bosum &lt;= 1) return 1;</a>
+<a name="ln770">        break;</a>
+<a name="ln771">      case 1:</a>
+<a name="ln772">        if (bosum == 0) return 0;</a>
+<a name="ln773">        break;</a>
+<a name="ln774">      }</a>
+<a name="ln775">      break;</a>
+<a name="ln776">    case 56:</a>
+<a name="ln777">      switch (charge) {</a>
+<a name="ln778">      case 0:</a>
+<a name="ln779">        if (bosum &lt;= 2) return 2;</a>
+<a name="ln780">        break;</a>
+<a name="ln781">      case 1:</a>
+<a name="ln782">        if (bosum &lt;= 1) return 1;</a>
+<a name="ln783">        break;</a>
+<a name="ln784">      case 2:</a>
+<a name="ln785">        if (bosum == 0) return 0;</a>
+<a name="ln786">        break;</a>
+<a name="ln787">      }</a>
+<a name="ln788">      break;</a>
+<a name="ln789">    case 81:</a>
+<a name="ln790">      if (charge == 0) {</a>
+<a name="ln791">        switch (bosum) {</a>
+<a name="ln792">        case 0: case 1: return 1;</a>
+<a name="ln793">        case 2: case 3: return 3;</a>
+<a name="ln794">        }</a>
+<a name="ln795">      }</a>
+<a name="ln796">      break;</a>
+<a name="ln797">    case 82:</a>
+<a name="ln798">      switch (charge) {</a>
+<a name="ln799">      case -2:</a>
+<a name="ln800">        switch (bosum) {</a>
+<a name="ln801">        case 0: case 1: case 2: return 2;</a>
+<a name="ln802">        case 3: case 4: return 4;</a>
+<a name="ln803">        case 5: case 6: return 6;</a>
+<a name="ln804">        }</a>
+<a name="ln805">        break;</a>
+<a name="ln806">      case -1:</a>
+<a name="ln807">        switch (bosum) {</a>
+<a name="ln808">        case 0: case 1: case 2: case 3: return 3;</a>
+<a name="ln809">        case 4: case 5: return 5;</a>
+<a name="ln810">        }</a>
+<a name="ln811">        break;</a>
+<a name="ln812">      case 0:</a>
+<a name="ln813">        switch (bosum) {</a>
+<a name="ln814">        case 0: case 1: case 2: return 2;</a>
+<a name="ln815">        case 3: case 4: return 4;</a>
+<a name="ln816">        }</a>
+<a name="ln817">        break;</a>
+<a name="ln818">      case 1:</a>
+<a name="ln819">        if (bosum &lt;= 3) return 3;</a>
+<a name="ln820">        break;</a>
+<a name="ln821">      case 2:</a>
+<a name="ln822">        if (bosum == 0) return 0;</a>
+<a name="ln823">        break;</a>
+<a name="ln824">      }</a>
+<a name="ln825">      break;</a>
+<a name="ln826">    case 83:</a>
+<a name="ln827">      switch (charge) {</a>
+<a name="ln828">      case -2:</a>
+<a name="ln829">        switch (bosum) {</a>
+<a name="ln830">        case 0: case 1: return 1;</a>
+<a name="ln831">        case 2: case 3: return 3;</a>
+<a name="ln832">        case 4: case 5: return 5;</a>
+<a name="ln833">        case 6: case 7: return 7;</a>
+<a name="ln834">        }</a>
+<a name="ln835">        break;</a>
+<a name="ln836">      case -1:</a>
+<a name="ln837">        switch (bosum) {</a>
+<a name="ln838">        case 0: case 1: case 2: return 2;</a>
+<a name="ln839">        case 3: case 4: return 4;</a>
+<a name="ln840">        case 5: case 6: return 6;</a>
+<a name="ln841">        }</a>
+<a name="ln842">        break;</a>
+<a name="ln843">      case 0:</a>
+<a name="ln844">        switch (bosum) {</a>
+<a name="ln845">        case 0: case 1: case 2: case 3: return 3;</a>
+<a name="ln846">        case 4: case 5: return 5;</a>
+<a name="ln847">        }</a>
+<a name="ln848">        break;</a>
+<a name="ln849">      case 1:</a>
+<a name="ln850">        switch (bosum) {</a>
+<a name="ln851">        case 0: case 1: case 2: return 2;</a>
+<a name="ln852">        case 3: case 4: return 4;</a>
+<a name="ln853">        }</a>
+<a name="ln854">        break;</a>
+<a name="ln855">      case 2:</a>
+<a name="ln856">        if (bosum &lt;= 3) return 3;</a>
+<a name="ln857">        break;</a>
+<a name="ln858">      case 3:</a>
+<a name="ln859">        if (bosum == 0) return 0;</a>
+<a name="ln860">        break;</a>
+<a name="ln861">      }</a>
+<a name="ln862">      break;</a>
+<a name="ln863">    case 84:</a>
+<a name="ln864">      if (charge == 0) {</a>
+<a name="ln865">        switch (bosum) {</a>
+<a name="ln866">        case 0: case 1: case 2: return 2;</a>
+<a name="ln867">        case 3: case 4: return 4;</a>
+<a name="ln868">        case 5: case 6: return 6;</a>
+<a name="ln869">        }</a>
+<a name="ln870">      }</a>
+<a name="ln871">      break;</a>
+<a name="ln872">    case 85:</a>
+<a name="ln873">      switch (charge) {</a>
+<a name="ln874">      case -1:</a>
+<a name="ln875">        if (bosum == 0) return 0;</a>
+<a name="ln876">        break;</a>
+<a name="ln877">      case 0:</a>
+<a name="ln878">        switch (bosum) {</a>
+<a name="ln879">        case 0: case 1: return 1;</a>
+<a name="ln880">        case 2: case 3: return 3;</a>
+<a name="ln881">        case 4: case 5: return 5;</a>
+<a name="ln882">        case 6: case 7: return 7;</a>
+<a name="ln883">        }</a>
+<a name="ln884">        break;</a>
+<a name="ln885">      case 1:</a>
+<a name="ln886">        switch (bosum) {</a>
+<a name="ln887">        case 0: case 1: case 2: return 2;</a>
+<a name="ln888">        case 3: case 4: return 4;</a>
+<a name="ln889">        case 5: case 6: return 6;</a>
+<a name="ln890">        }</a>
+<a name="ln891">        break;</a>
+<a name="ln892">      case 2:</a>
+<a name="ln893">        switch (bosum) {</a>
+<a name="ln894">        case 0: case 1: case 2: case 3: return 3;</a>
+<a name="ln895">        case 4: case 5: return 5;</a>
+<a name="ln896">        }</a>
+<a name="ln897">        break;</a>
+<a name="ln898">      }</a>
+<a name="ln899">      break;</a>
+<a name="ln900">    case 86:</a>
+<a name="ln901">      if (charge == 0) {</a>
+<a name="ln902">        switch (bosum) {</a>
+<a name="ln903">        case 0: return 0;</a>
+<a name="ln904">        case 1: case 2: return 2;</a>
+<a name="ln905">        case 3: case 4: return 4;</a>
+<a name="ln906">        case 5: case 6: return 6;</a>
+<a name="ln907">        case 7: case 8: return 8;</a>
+<a name="ln908">        }</a>
+<a name="ln909">      }</a>
+<a name="ln910">      break;</a>
+<a name="ln911">    case 87:</a>
+<a name="ln912">      switch (charge) {</a>
+<a name="ln913">      case 0:</a>
+<a name="ln914">        if (bosum &lt;= 1) return 1;</a>
+<a name="ln915">        break;</a>
+<a name="ln916">      case 1:</a>
+<a name="ln917">        if (bosum == 0) return 0;</a>
+<a name="ln918">        break;</a>
+<a name="ln919">      }</a>
+<a name="ln920">      break;</a>
+<a name="ln921">    case 88:</a>
+<a name="ln922">      switch (charge) {</a>
+<a name="ln923">      case 0:</a>
+<a name="ln924">        if (bosum &lt;= 2) return 2;</a>
+<a name="ln925">        break;</a>
+<a name="ln926">      case 1:</a>
+<a name="ln927">        if (bosum &lt;= 1) return 1;</a>
+<a name="ln928">        break;</a>
+<a name="ln929">      case 2:</a>
+<a name="ln930">        if (bosum == 0) return 0;</a>
+<a name="ln931">        break;</a>
+<a name="ln932">      }</a>
+<a name="ln933">      break;</a>
+<a name="ln934">    }</a>
+<a name="ln935"> </a>
+<a name="ln936">    return bosum;</a>
+<a name="ln937">  }</a>
+<a name="ln938"> </a>
+<a name="ln939">  // Set the count of implicit hydrogens according to typical valences.</a>
+<a name="ln940">  void OBAtomAssignTypicalImplicitHydrogens(OBAtom* atom)</a>
+<a name="ln941">  {</a>
+<a name="ln942">    unsigned int bosum = atom-&gt;GetExplicitValence();</a>
+<a name="ln943">    unsigned int valence = GetTypicalValence(atom-&gt;GetAtomicNum(), bosum, atom-&gt;GetFormalCharge());</a>
+<a name="ln944">    atom-&gt;SetImplicitHCount(valence - bosum);</a>
+<a name="ln945">  }</a>
+<a name="ln946"> </a>
+<a name="ln947">} // end of namespace OpenBabel</a>
+
+</code></pre>
+<div class="balloon" rel="121"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 121, 127</p></div>
+<div class="balloon" rel="140"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 140, 152</p></div>
+<div class="balloon" rel="143"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 143, 149</p></div>
+<div class="balloon" rel="227"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 227, 233</p></div>
+<div class="balloon" rel="275"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 275, 290</p></div>
+<div class="balloon" rel="392"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 392, 398</p></div>
+<div class="balloon" rel="430"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 430, 436</p></div>
+<div class="balloon" rel="570"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 570, 576</p></div>
+<div class="balloon" rel="611"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 611, 617</p></div>
+<div class="balloon" rel="646"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 646, 649</p></div>
+<div class="balloon" rel="766"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 766, 772</p></div>
+<div class="balloon" rel="81"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 81, 96, 912</p></div>
+<div class="balloon" rel="753"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 753, 901</p></div>
+<div class="balloon" rel="654"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 654, 827</p></div>
+<div class="balloon" rel="326"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 326, 501</p></div>
+<div class="balloon" rel="91"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 91, 220, 385</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

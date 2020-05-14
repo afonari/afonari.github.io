@@ -1,0 +1,321 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>ringtest.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">ringtest.cpp - Test ring perception algorithms.</a>
+<a name="ln3"> </a>
+<a name="ln4">This file is part of the Open Babel project.</a>
+<a name="ln5">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln6"> </a>
+<a name="ln7">Copyright (C) 1998-2001 by OpenEye Scientific Software, Inc.</a>
+<a name="ln8">Some portions Copyright (C) 2001-2005 Geoffrey R. Hutchison</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln11">it under the terms of the GNU General Public License as published by</a>
+<a name="ln12">the Free Software Foundation version 2 of the License.</a>
+<a name="ln13"> </a>
+<a name="ln14">This program is distributed in the hope that it will be useful,</a>
+<a name="ln15">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln16">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln17">GNU General Public License for more details.</a>
+<a name="ln18">***********************************************************************/</a>
+<a name="ln19"> </a>
+<a name="ln20">// used to set import/export for Cygwin DLLs</a>
+<a name="ln21">#ifdef WIN32</a>
+<a name="ln22">#define USING_OBDLL</a>
+<a name="ln23">#endif</a>
+<a name="ln24"> </a>
+<a name="ln25">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln26"> </a>
+<a name="ln27">#include &lt;fstream&gt;</a>
+<a name="ln28"> </a>
+<a name="ln29">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln30">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln31">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln32">#include &lt;openbabel/ring.h&gt;</a>
+<a name="ln33">#include &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln34">#include &lt;openbabel/obutil.h&gt;</a>
+<a name="ln35"> </a>
+<a name="ln36">using namespace std;</a>
+<a name="ln37">using namespace OpenBabel;</a>
+<a name="ln38"> </a>
+<a name="ln39">void GenerateRingReference();</a>
+<a name="ln40"> </a>
+<a name="ln41">#ifdef TESTDATADIR</a>
+<a name="ln42">  string ltestdatadir = TESTDATADIR;</a>
+<a name="ln43">  string lresults_file = ltestdatadir + &quot;ringresults.txt&quot;;</a>
+<a name="ln44">  string lsmilestypes_file = ltestdatadir + &quot;attype.00.smi&quot;;</a>
+<a name="ln45">#else</a>
+<a name="ln46">  string lresults_file = &quot;files/ringresults.txt&quot;;</a>
+<a name="ln47">  string lsmilestypes_file = &quot;files/attype.00.smi&quot;;</a>
+<a name="ln48">#endif</a>
+<a name="ln49"> </a>
+<a name="ln50">int ringtest(int argc, char* argv[])</a>
+<a name="ln51">{</a>
+<a name="ln52">  int defaultchoice = 1;</a>
+<a name="ln53">  </a>
+<a name="ln54">  int choice = defaultchoice;</a>
+<a name="ln55"> </a>
+<a name="ln56">  if (argc &gt; 1) {</a>
+<a name="ln57">    if(sscanf(argv[1], &quot;%d&quot;, &amp;choice) != 1) {</a>
+<a name="ln58">      printf(&quot;Couldn't parse that input as a number\n&quot;);</a>
+<a name="ln59">      return -1;</a>
+<a name="ln60">    }</a>
+<a name="ln61">  }</a>
+<a name="ln62"> </a>
+<a name="ln63">  // Define location of file formats for testing</a>
+<a name="ln64">  #ifdef FORMATDIR</a>
+<a name="ln65">    char env[BUFF_SIZE];</a>
+<a name="ln66">    snprintf(env, BUFF_SIZE, &quot;BABEL_LIBDIR=%s&quot;, FORMATDIR);</a>
+<a name="ln67">    putenv(env);</a>
+<a name="ln68">  #endif</a>
+<a name="ln69"> </a>
+<a name="ln70">    if (choice==99)</a>
+<a name="ln71">    {</a>
+<a name="ln72">          GenerateRingReference();</a>
+<a name="ln73">          return 0;</a>
+<a name="ln74">    }</a>
+<a name="ln75"> </a>
+<a name="ln76">  cout &lt;&lt; &quot;# Testing ring perception...&quot; &lt;&lt; endl;</a>
+<a name="ln77"> </a>
+<a name="ln78">  std::ifstream mifs;</a>
+<a name="ln79">  if (!SafeOpen(mifs, lsmilestypes_file.c_str()))</a>
+<a name="ln80">    {</a>
+<a name="ln81">      cout &lt;&lt; &quot;Bail out! Cannot read file &quot; &lt;&lt; lsmilestypes_file &lt;&lt; endl;</a>
+<a name="ln82">      return -1; // test failed</a>
+<a name="ln83">    }</a>
+<a name="ln84"> </a>
+<a name="ln85">  std::ifstream rifs;</a>
+<a name="ln86">  if (!SafeOpen(rifs, lresults_file.c_str()))</a>
+<a name="ln87">    {</a>
+<a name="ln88">      cout &lt;&lt; &quot;Bail out! Cannot read file &quot; &lt;&lt; lresults_file &lt;&lt; endl;</a>
+<a name="ln89">      return -1; // test failed</a>
+<a name="ln90">    }</a>
+<a name="ln91"> </a>
+<a name="ln92">  unsigned int size;</a>
+<a name="ln93">  OBBond *bond;</a>
+<a name="ln94">  OBAtom *atom;</a>
+<a name="ln95">  int count;</a>
+<a name="ln96">  char buffer[BUFF_SIZE];</a>
+<a name="ln97">  vector&lt;string&gt; vs;</a>
+<a name="ln98">  vector&lt;OBRing*&gt; vr;</a>
+<a name="ln99">  vector&lt;bool&gt; vb;</a>
+<a name="ln100">  vector&lt;int&gt; vi;</a>
+<a name="ln101">  OBMol mol;</a>
+<a name="ln102">  vector&lt;string&gt;::iterator i;</a>
+<a name="ln103">  vector&lt;OBBond*&gt;::iterator j;</a>
+<a name="ln104">  vector&lt;OBAtom*&gt;::iterator k;</a>
+<a name="ln105">  vector&lt;OBRing*&gt;::iterator m;</a>
+<a name="ln106">  OBConversion conv(&amp;mifs, &amp;cout);</a>
+<a name="ln107">  unsigned int currentTest = 0;</a>
+<a name="ln108"> </a>
+<a name="ln109">  if(! conv.SetInAndOutFormats(&quot;SMI&quot;,&quot;SMI&quot;))</a>
+<a name="ln110">    {</a>
+<a name="ln111">      cout &lt;&lt; &quot;Bail out! SMILES format is not loaded&quot; &lt;&lt; endl;</a>
+<a name="ln112">      return -1;</a>
+<a name="ln113">    }</a>
+<a name="ln114"> </a>
+<a name="ln115">  for (;mifs;)</a>
+<a name="ln116">    {</a>
+<a name="ln117">      mol.Clear();</a>
+<a name="ln118">      conv.Read(&amp;mol);</a>
+<a name="ln119">      if (mol.Empty())</a>
+<a name="ln120">        continue;</a>
+<a name="ln121">      if (!rifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln122">        {</a>
+<a name="ln123">          cout &lt;&lt; &quot;Bail out! error reading reference data&quot; &lt;&lt; endl;</a>
+<a name="ln124">          return -1; // test failed</a>
+<a name="ln125">        }</a>
+<a name="ln126"> </a>
+<a name="ln127">      vb.clear();</a>
+<a name="ln128">      vb.resize(mol.NumBonds(),false);</a>
+<a name="ln129">      //check ring bonds</a>
+<a name="ln130">      tokenize(vs,buffer);</a>
+<a name="ln131">      for (i = vs.begin();i != vs.end();++i)</a>
+<a name="ln132">        vb[atoi(i-&gt;c_str())] = true;</a>
+<a name="ln133"> </a>
+<a name="ln134">      for (bond = mol.BeginBond(j);bond;bond = mol.NextBond(j))</a>
+<a name="ln135">        {</a>
+<a name="ln136">          if (vb[bond-&gt;GetIdx()] != bond-&gt;IsInRing())</a>
+<a name="ln137">            {</a>
+<a name="ln138">              cout &lt;&lt; &quot;not ok &quot; &lt;&lt; ++currentTest</a>
+<a name="ln139">                   &lt;&lt; &quot; # ring bond data different than reference\n&quot;;</a>
+<a name="ln140">              cout &lt;&lt; &quot;# Molecule: &quot; &lt;&lt; mol.GetTitle() &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln141">            }</a>
+<a name="ln142">          else</a>
+<a name="ln143">            cout &lt;&lt; &quot;ok &quot; &lt;&lt; ++currentTest</a>
+<a name="ln144">                 &lt;&lt; &quot; # correct ring bond data\n&quot;;</a>
+<a name="ln145">        }</a>
+<a name="ln146"> </a>
+<a name="ln147">      vr = mol.GetSSSR();</a>
+<a name="ln148">      if (!rifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln149">        {</a>
+<a name="ln150">          cout &lt;&lt; &quot;Bail out! error reading reference data\n&quot;;</a>
+<a name="ln151">          return -1; // test failed</a>
+<a name="ln152">        }</a>
+<a name="ln153">      sscanf(buffer,&quot;%d&quot;,&amp;size);</a>
+<a name="ln154">      if (vr.size() != size) //check SSSR size</a>
+<a name="ln155">        {</a>
+<a name="ln156">          cout &lt;&lt; &quot;not ok &quot; &lt;&lt; ++currentTest </a>
+<a name="ln157">               &lt;&lt; &quot; # SSSR size different than reference\n&quot;;</a>
+<a name="ln158">          cout &lt;&lt; &quot;# Molecule: &quot; &lt;&lt; mol.GetTitle() &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln159">        }</a>
+<a name="ln160">      else</a>
+<a name="ln161">        cout &lt;&lt; &quot;ok &quot; &lt;&lt; ++currentTest</a>
+<a name="ln162">             &lt;&lt; &quot; # SSSR size matches reference\n&quot;;</a>
+<a name="ln163"> </a>
+<a name="ln164">      if (!rifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln165">        {</a>
+<a name="ln166">          cout &lt;&lt; &quot;Bail out! error reading reference data&quot; &lt;&lt; endl;</a>
+<a name="ln167">          return -1; // test failed</a>
+<a name="ln168">        }</a>
+<a name="ln169"> </a>
+<a name="ln170">      tokenize(vs,buffer);</a>
+<a name="ln171">      i = vs.begin();</a>
+<a name="ln172">      for (atom = mol.BeginAtom(k);atom;atom = mol.NextAtom(k))</a>
+<a name="ln173">        {</a>
+<a name="ln174">          if (i == vs.end())</a>
+<a name="ln175">            {</a>
+<a name="ln176">              cout &lt;&lt; &quot;not ok &quot; &lt;&lt; ++currentTest &lt;&lt; &quot; # error in SSSR count\n&quot;;</a>
+<a name="ln177">              cout &lt;&lt; &quot;# Molecule: &quot; &lt;&lt; mol.GetTitle() &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln178">            }</a>
+<a name="ln179">          else</a>
+<a name="ln180">            cout &lt;&lt; &quot;ok &quot; &lt;&lt; ++currentTest &lt;&lt; &quot; # correct SSSR count\n&quot;;</a>
+<a name="ln181"> </a>
+<a name="ln182">          count = 0;</a>
+<a name="ln183">          for (m = vr.begin();m != vr.end();++m)</a>
+<a name="ln184">            if ((*m)-&gt;_pathset[atom-&gt;GetIdx()])</a>
+<a name="ln185">              count++;</a>
+<a name="ln186"> </a>
+<a name="ln187">          if (atoi(i-&gt;c_str()) != count)</a>
+<a name="ln188">            {</a>
+<a name="ln189">              cout &lt;&lt; &quot;not ok &quot; &lt;&lt; ++currentTest &lt;&lt; &quot;# ring membership test failed\n&quot;;</a>
+<a name="ln190">              cout &lt;&lt; &quot;# Molecule: &quot; &lt;&lt; mol.GetTitle() &lt;&lt; &quot;\n&quot;;</a>
+<a name="ln191">            }</a>
+<a name="ln192">          else</a>
+<a name="ln193">            cout &lt;&lt; &quot;ok &quot; &lt;&lt; ++currentTest &lt;&lt; &quot; # ring membership passed\n&quot;;</a>
+<a name="ln194"> </a>
+<a name="ln195">          ++i;</a>
+<a name="ln196">        }</a>
+<a name="ln197"> </a>
+<a name="ln198"> </a>
+<a name="ln199">    }</a>
+<a name="ln200"> </a>
+<a name="ln201">  // return number of tests run</a>
+<a name="ln202">  cout &lt;&lt; &quot;1..&quot; &lt;&lt; currentTest &lt;&lt; endl;</a>
+<a name="ln203"> </a>
+<a name="ln204">  // Passed tests</a>
+<a name="ln205">  return 0;</a>
+<a name="ln206">}</a>
+<a name="ln207"> </a>
+<a name="ln208">void GenerateRingReference()</a>
+<a name="ln209">{</a>
+<a name="ln210">  std::ifstream ifs;</a>
+<a name="ln211"> </a>
+<a name="ln212">  if (!SafeOpen(ifs,lsmilestypes_file.c_str()))</a>
+<a name="ln213">    return;</a>
+<a name="ln214"> </a>
+<a name="ln215">  std::ofstream ofs;</a>
+<a name="ln216">  if (!SafeOpen(ofs,lresults_file.c_str()))</a>
+<a name="ln217">    return;</a>
+<a name="ln218"> </a>
+<a name="ln219">  int count;</a>
+<a name="ln220">  OBAtom *atom;</a>
+<a name="ln221">  OBBond *bond;</a>
+<a name="ln222">  char buffer[BUFF_SIZE];</a>
+<a name="ln223">  vector&lt;OBRing*&gt; vr;</a>
+<a name="ln224">  vector&lt;OBBond*&gt;::iterator i;</a>
+<a name="ln225">  vector&lt;OBNodeBase*&gt;::iterator j;</a>
+<a name="ln226">  vector&lt;OBRing*&gt;::iterator k;</a>
+<a name="ln227">  OBMol mol;</a>
+<a name="ln228">  OBConversion conv(&amp;ifs, &amp;cout);</a>
+<a name="ln229"> </a>
+<a name="ln230">  if(! conv.SetInAndOutFormats(&quot;SMI&quot;,&quot;SMI&quot;))</a>
+<a name="ln231">    {</a>
+<a name="ln232">      cerr &lt;&lt; &quot; SMILES format is not loaded&quot; &lt;&lt; endl;</a>
+<a name="ln233">      return;</a>
+<a name="ln234">    }</a>
+<a name="ln235"> </a>
+<a name="ln236">  for (;ifs;)</a>
+<a name="ln237">    {</a>
+<a name="ln238">      mol.Clear();</a>
+<a name="ln239">      conv.Read(&amp;mol);</a>
+<a name="ln240">      if (mol.Empty())</a>
+<a name="ln241">        continue;</a>
+<a name="ln242"> </a>
+<a name="ln243">      //write out ring bonds</a>
+<a name="ln244">      for (bond = mol.BeginBond(i);bond;bond = mol.NextBond(i))</a>
+<a name="ln245">        if (bond-&gt;IsInRing())</a>
+<a name="ln246">          {</a>
+<a name="ln247">            sprintf(buffer,&quot;%3d&quot;,bond-&gt;GetIdx());</a>
+<a name="ln248">            ofs &lt;&lt; buffer;</a>
+<a name="ln249">          }</a>
+<a name="ln250">      ofs &lt;&lt; endl;</a>
+<a name="ln251"> </a>
+<a name="ln252">      vr = mol.GetSSSR();</a>
+<a name="ln253">      //write the total number of rings</a>
+<a name="ln254">      ofs &lt;&lt; vr.size() &lt;&lt; endl;</a>
+<a name="ln255"> </a>
+<a name="ln256">      //write the number of rings that each atom is a member of</a>
+<a name="ln257">      for (atom = mol.BeginAtom(j);atom;atom = mol.NextAtom(j))</a>
+<a name="ln258">        {</a>
+<a name="ln259">          count = 0;</a>
+<a name="ln260">          for (k = vr.begin();k != vr.end();++k)</a>
+<a name="ln261">            if ((*k)-&gt;_pathset[atom-&gt;GetIdx()])</a>
+<a name="ln262">              count++;</a>
+<a name="ln263"> </a>
+<a name="ln264">          sprintf(buffer,&quot;%3d&quot;,count);</a>
+<a name="ln265">          ofs &lt;&lt; buffer;</a>
+<a name="ln266">        }</a>
+<a name="ln267">      ofs &lt;&lt; endl;</a>
+<a name="ln268"> </a>
+<a name="ln269">    }</a>
+<a name="ln270"> </a>
+<a name="ln271">  cerr &lt;&lt; &quot; Ring perception test results written successfully&quot; &lt;&lt; endl;</a>
+<a name="ln272">  return;</a>
+<a name="ln273">}</a>
+<a name="ln274"> </a>
+
+</code></pre>
+<div class="balloon" rel="153"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v576/" target="_blank">V576</a> Incorrect format. Consider checking the third actual argument of the 'sscanf' function. A pointer to the signed int type is expected.</p></div>
+<div class="balloon" rel="236"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1044/" target="_blank">V1044</a> Loop break conditions do not depend on the number of iterations.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,1285 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>adfformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">//</a>
+<a name="ln2">// Copyright (C) 2010 David C. Lonie</a>
+<a name="ln3">// Copyright (C) 2018 Patrick Avery</a>
+<a name="ln4">//</a>
+<a name="ln5">// Molekel - Molecular Visualization Program</a>
+<a name="ln6">// Copyright (C) 2006, 2007 Swiss National Supercomputing Centre (CSCS)</a>
+<a name="ln7">//</a>
+<a name="ln8">// This program is free software; you can redistribute it and/or</a>
+<a name="ln9">// modify it under the terms of the GNU General Public License</a>
+<a name="ln10">// as published by the Free Software Foundation; either version 2</a>
+<a name="ln11">// of the License, or (at your option) any later version.</a>
+<a name="ln12"> </a>
+<a name="ln13">// This program is distributed in the hope that it will be useful,</a>
+<a name="ln14">// but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln15">// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln16">// GNU General Public License for more details.</a>
+<a name="ln17">//</a>
+<a name="ln18">// You should have received a copy of the GNU General Public License</a>
+<a name="ln19">// along with this program; if not, write to the Free Software</a>
+<a name="ln20">// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,</a>
+<a name="ln21">// MA  02110-1301, USA.</a>
+<a name="ln22">//</a>
+<a name="ln23">// $Author$</a>
+<a name="ln24">// $Date$</a>
+<a name="ln25">// $Revision$</a>
+<a name="ln26">//</a>
+<a name="ln27"> </a>
+<a name="ln28">// STD</a>
+<a name="ln29">#include &lt;fstream&gt;</a>
+<a name="ln30">#include &lt;string&gt;</a>
+<a name="ln31">#include &lt;vector&gt;</a>
+<a name="ln32">#include &lt;sstream&gt;</a>
+<a name="ln33">#include &lt;cstring&gt;</a>
+<a name="ln34"> </a>
+<a name="ln35">#include &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln36">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln37">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln38">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln39">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln40">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln41">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln42">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln43">#include &lt;cstdlib&gt;</a>
+<a name="ln44"> </a>
+<a name="ln45"> </a>
+<a name="ln46">#include &lt;openbabel/griddata.h&gt;</a>
+<a name="ln47"> </a>
+<a name="ln48">#define EV_TO_KCAL_PER_MOL 23.060538</a>
+<a name="ln49"> </a>
+<a name="ln50">using namespace std;</a>
+<a name="ln51">using namespace OpenBabel;</a>
+<a name="ln52"> </a>
+<a name="ln53"> </a>
+<a name="ln54">static const double BOHR_TO_ANGSTROM = 0.529177249;</a>
+<a name="ln55"> </a>
+<a name="ln56">namespace OpenBabel {</a>
+<a name="ln57"> </a>
+<a name="ln58">  class ADFOutputFormat : public OBMoleculeFormat</a>
+<a name="ln59">  {</a>
+<a name="ln60">  public:</a>
+<a name="ln61">    //Register this format type ID</a>
+<a name="ln62">    ADFOutputFormat()</a>
+<a name="ln63">    {</a>
+<a name="ln64">      OBConversion::RegisterFormat(&quot;adfout&quot;,this);</a>
+<a name="ln65">    }</a>
+<a name="ln66"> </a>
+<a name="ln67">    virtual const char* Description() //required</a>
+<a name="ln68">    {</a>
+<a name="ln69">      return</a>
+<a name="ln70">        &quot;ADF output format\n&quot;</a>
+<a name="ln71">        &quot;Read Options e.g. -as\n&quot;</a>
+<a name="ln72">        &quot;  s  Output single bonds only\n&quot;</a>
+<a name="ln73">        &quot;  b  Disable bonding entirely\n\n&quot;;</a>
+<a name="ln74">    };</a>
+<a name="ln75"> </a>
+<a name="ln76">    virtual const char* SpecificationURL()</a>
+<a name="ln77">    {return &quot;http://www.scm.com/&quot;;}; //optional</a>
+<a name="ln78"> </a>
+<a name="ln79">    //Flags() can return be any the following combined by | or be omitted if none apply</a>
+<a name="ln80">    // NOTREADABLE  READONEONLY  NOTWRITABLE  WRITEONEONLY</a>
+<a name="ln81">    virtual unsigned int Flags()</a>
+<a name="ln82">    {</a>
+<a name="ln83">      return READONEONLY | NOTWRITABLE;</a>
+<a name="ln84">    };</a>
+<a name="ln85"> </a>
+<a name="ln86">    /// The &quot;API&quot; interface functions</a>
+<a name="ln87">    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln88">  };</a>
+<a name="ln89">  //***</a>
+<a name="ln90"> </a>
+<a name="ln91">  //Make an instance of the format class</a>
+<a name="ln92">  ADFOutputFormat theADFOutputFormat;</a>
+<a name="ln93"> </a>
+<a name="ln94">  /////////////////////////////////////////////////////////////////</a>
+<a name="ln95">  bool ADFOutputFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln96">  {</a>
+<a name="ln97"> </a>
+<a name="ln98">    OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln99">    if (pmol == nullptr)</a>
+<a name="ln100">      return false;</a>
+<a name="ln101"> </a>
+<a name="ln102">    //Define some references so we can use the old parameter names</a>
+<a name="ln103">    istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln104">    OBMol &amp;mol = *pmol;</a>
+<a name="ln105">    const char* title = pConv-&gt;GetTitle();</a>
+<a name="ln106"> </a>
+<a name="ln107">    char buffer[BUFF_SIZE];</a>
+<a name="ln108">    string str,str1;</a>
+<a name="ln109">    double x,y,z;</a>
+<a name="ln110">    OBAtom *atom;</a>
+<a name="ln111">    vector&lt;string&gt; vs;</a>
+<a name="ln112"> </a>
+<a name="ln113">    int charge = 0;</a>
+<a name="ln114">    unsigned int spin = 1;</a>
+<a name="ln115">    bool hasPartialCharges = false;</a>
+<a name="ln116"> </a>
+<a name="ln117">    mol.BeginModify();</a>
+<a name="ln118"> </a>
+<a name="ln119">    while	(ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln120">      {</a>
+<a name="ln121">        if (strstr(buffer, &quot;Coordinates (Cartesian)&quot;) != nullptr)</a>
+<a name="ln122">          {</a>
+<a name="ln123">            mol.Clear();</a>
+<a name="ln124">            mol.BeginModify();</a>
+<a name="ln125">            ifs.getline(buffer,BUFF_SIZE);	// =========</a>
+<a name="ln126">            ifs.getline(buffer,BUFF_SIZE);	// blank line</a>
+<a name="ln127">            ifs.getline(buffer,BUFF_SIZE);  // Column headings (Atom, etc.)</a>
+<a name="ln128">            ifs.getline(buffer,BUFF_SIZE);  // Column headings 2nd line (X Y Z)</a>
+<a name="ln129">            ifs.getline(buffer,BUFF_SIZE);  // ---------</a>
+<a name="ln130"> </a>
+<a name="ln131">            ifs.getline(buffer,BUFF_SIZE);  // actual data</a>
+<a name="ln132">            tokenize(vs,buffer);</a>
+<a name="ln133">            while (strstr(buffer, &quot;----&quot;) == nullptr &amp;&amp; vs.size() &gt;= 8)</a>
+<a name="ln134">              {</a>
+<a name="ln135">                atom = mol.NewAtom();</a>
+<a name="ln136">                atom-&gt;SetAtomicNum(OBElements::GetAtomicNum(vs[1].c_str())); // atom number, then symbol</a>
+<a name="ln137">                // columns 2, 3, 4 = coordinates in bohr</a>
+<a name="ln138">                x = atof((char*)vs[5].c_str());</a>
+<a name="ln139">                y = atof((char*)vs[6].c_str());</a>
+<a name="ln140">                z = atof((char*)vs[7].c_str());</a>
+<a name="ln141">                atom-&gt;SetVector(x,y,z);</a>
+<a name="ln142"> </a>
+<a name="ln143">                if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln144">                  break;</a>
+<a name="ln145">                tokenize(vs,buffer);</a>
+<a name="ln146">              }</a>
+<a name="ln147">          }</a>
+<a name="ln148">        else if (strstr(buffer, &quot;Dipole Moment  ***&quot;) != nullptr)</a>
+<a name="ln149">          {</a>
+<a name="ln150">            ifs.getline(buffer,BUFF_SIZE);	// =========</a>
+<a name="ln151">            ifs.getline(buffer,BUFF_SIZE);	// blank line</a>
+<a name="ln152">            ifs.getline(buffer,BUFF_SIZE); // actual components  Vector: ###  #### ###</a>
+<a name="ln153">            tokenize(vs,buffer);</a>
+<a name="ln154">            if (vs.size() &gt;= 5)</a>
+<a name="ln155">              {</a>
+<a name="ln156">                OBVectorData *dipoleMoment = new OBVectorData;</a>
+<a name="ln157">                dipoleMoment-&gt;SetAttribute(&quot;Dipole Moment&quot;);</a>
+<a name="ln158">                double x, y, z;</a>
+<a name="ln159">                x = atof(vs[2].c_str());</a>
+<a name="ln160">                y = atof(vs[3].c_str());</a>
+<a name="ln161">                z = atof(vs[4].c_str());</a>
+<a name="ln162">                dipoleMoment-&gt;SetData(x, y, z);</a>
+<a name="ln163">                dipoleMoment-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln164">                mol.SetData(dipoleMoment);</a>
+<a name="ln165">              }</a>
+<a name="ln166">            if (!ifs.getline(buffer,BUFF_SIZE)) break;</a>
+<a name="ln167">          }</a>
+<a name="ln168">          else if(strstr(buffer, &quot;M U L L I K E N&quot;) != nullptr)</a>
+<a name="ln169">            {</a>
+<a name="ln170">              ifs.getline(buffer,BUFF_SIZE);	// ========</a>
+<a name="ln171">              ifs.getline(buffer,BUFF_SIZE);	// (blank)</a>
+<a name="ln172">              ifs.getline(buffer,BUFF_SIZE);	// The survey below</a>
+<a name="ln173">              ifs.getline(buffer,BUFF_SIZE);	// a)</a>
+<a name="ln174">              ifs.getline(buffer,BUFF_SIZE);	// b)</a>
+<a name="ln175">              ifs.getline(buffer,BUFF_SIZE);	// c)</a>
+<a name="ln176">              ifs.getline(buffer,BUFF_SIZE);	//</a>
+<a name="ln177">              ifs.getline(buffer,BUFF_SIZE);	// Atom (column headings)</a>
+<a name="ln178">              ifs.getline(buffer,BUFF_SIZE);  // ---</a>
+<a name="ln179"> </a>
+<a name="ln180">              ifs.getline(buffer,BUFF_SIZE); // Actual data!</a>
+<a name="ln181">              tokenize(vs,buffer);</a>
+<a name="ln182">              while (vs.size() &gt;= 3)</a>
+<a name="ln183">                {</a>
+<a name="ln184">                  atom = mol.GetAtom(atoi(vs[0].c_str()));</a>
+<a name="ln185">                  if (atom) {</a>
+<a name="ln186">                    atom-&gt;SetPartialCharge(atof(vs[2].c_str()));</a>
+<a name="ln187">                    hasPartialCharges = true;</a>
+<a name="ln188">                  }</a>
+<a name="ln189"> </a>
+<a name="ln190">                  if (!ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln191">                    break;</a>
+<a name="ln192">                  tokenize(vs,buffer);</a>
+<a name="ln193">                }</a>
+<a name="ln194">            }</a>
+<a name="ln195">        else if (strstr(buffer, &quot;Net Charge&quot;) != nullptr)</a>
+<a name="ln196">          {</a>
+<a name="ln197">            tokenize(vs, buffer);</a>
+<a name="ln198">            if (vs.size() &gt; 3) // Net Charge: ##</a>
+<a name="ln199">              {</a>
+<a name="ln200">                charge = atoi(vs[2].c_str());</a>
+<a name="ln201">              }</a>
+<a name="ln202">          }</a>
+<a name="ln203">        else if (strstr(buffer, &quot;Bond Energy&quot;) != nullptr)</a>
+<a name="ln204">          {</a>
+<a name="ln205">            double energy = 0;</a>
+<a name="ln206">            for (;;) {</a>
+<a name="ln207">              if (strstr(buffer, &quot;a.u.&quot;)) {</a>
+<a name="ln208">                ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln209">                continue;</a>
+<a name="ln210">              }</a>
+<a name="ln211">              else if (strstr(buffer, &quot;eV&quot;)) {</a>
+<a name="ln212">                tokenize(vs, buffer);</a>
+<a name="ln213">                // The energies have a variable number of</a>
+<a name="ln214">                // prefixes...rather than check each possible case,</a>
+<a name="ln215">                // just try to convert tokens 1 thru vs.size() to</a>
+<a name="ln216">                // double and keep the last one that works.</a>
+<a name="ln217">                for (unsigned int i = 1; i &lt; vs.size(); i++) {</a>
+<a name="ln218">                  if (double d = atof(vs.at(i).c_str())) {</a>
+<a name="ln219">                    energy = d;</a>
+<a name="ln220">                  }</a>
+<a name="ln221">                }</a>
+<a name="ln222">                ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln223">              }</a>
+<a name="ln224">              else break;</a>
+<a name="ln225">            }</a>
+<a name="ln226">            mol.SetEnergy(energy * EV_TO_KCAL_PER_MOL);</a>
+<a name="ln227">          }</a>
+<a name="ln228"> </a>
+<a name="ln229">      } // end while</a>
+<a name="ln230"> </a>
+<a name="ln231">    if (mol.NumAtoms() == 0) { // e.g., if we're at the end of a file PR#1737209</a>
+<a name="ln232">      mol.EndModify();</a>
+<a name="ln233">      return false;</a>
+<a name="ln234">    }</a>
+<a name="ln235"> </a>
+<a name="ln236">    if (!pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln237">      mol.ConnectTheDots();</a>
+<a name="ln238">    if (!pConv-&gt;IsOption(&quot;s&quot;,OBConversion::INOPTIONS) &amp;&amp; !pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln239">      mol.PerceiveBondOrders();</a>
+<a name="ln240"> </a>
+<a name="ln241">    mol.EndModify();</a>
+<a name="ln242"> </a>
+<a name="ln243">    if (hasPartialCharges) {</a>
+<a name="ln244">      mol.SetPartialChargesPerceived();</a>
+<a name="ln245">      // Annotate that partial charges come from Q-Chem Mulliken</a>
+<a name="ln246">      OBPairData *dp = new OBPairData;</a>
+<a name="ln247">      dp-&gt;SetAttribute(&quot;PartialCharges&quot;);</a>
+<a name="ln248">      dp-&gt;SetValue(&quot;Mulliken&quot;);</a>
+<a name="ln249">      dp-&gt;SetOrigin(perceived);</a>
+<a name="ln250">      mol.SetData(dp);</a>
+<a name="ln251">    }</a>
+<a name="ln252">    mol.SetTotalCharge(charge);</a>
+<a name="ln253">    mol.SetTotalSpinMultiplicity(spin);</a>
+<a name="ln254"> </a>
+<a name="ln255">    mol.SetTitle(title);</a>
+<a name="ln256">    return(true);</a>
+<a name="ln257">  }</a>
+<a name="ln258"> </a>
+<a name="ln259">  class ADFInputFormat : public OBMoleculeFormat</a>
+<a name="ln260">  {</a>
+<a name="ln261">  public:</a>
+<a name="ln262">    //Register this format type ID</a>
+<a name="ln263">    ADFInputFormat()</a>
+<a name="ln264">    {</a>
+<a name="ln265">      OBConversion::RegisterFormat(&quot;adf&quot;, this);</a>
+<a name="ln266">    }</a>
+<a name="ln267"> </a>
+<a name="ln268">    virtual const char* Description() //required</a>
+<a name="ln269">    {</a>
+<a name="ln270">      return</a>
+<a name="ln271">        &quot;ADF cartesian input format\n&quot;</a>
+<a name="ln272">        &quot;Read Options e.g. -as\n&quot;</a>
+<a name="ln273">        &quot;  s  Output single bonds only\n&quot;</a>
+<a name="ln274">        &quot;  b  Disable bonding entirely\n\n&quot;;</a>
+<a name="ln275">    };</a>
+<a name="ln276"> </a>
+<a name="ln277">    virtual const char* SpecificationURL()</a>
+<a name="ln278">    {return &quot;http://www.scm.com/Doc/Doc2007.01/ADF/ADFUsersGuide/page32.html&quot;;}; //optional</a>
+<a name="ln279"> </a>
+<a name="ln280">    //*** This section identical for most OBMol conversions ***</a>
+<a name="ln281">    ////////////////////////////////////////////////////</a>
+<a name="ln282">    /// The &quot;API&quot; interface functions</a>
+<a name="ln283">    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln284">      { return false; }</a>
+<a name="ln285">    virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln286"> </a>
+<a name="ln287">    virtual unsigned int Flags()</a>
+<a name="ln288">    {</a>
+<a name="ln289">      return NOTREADABLE | WRITEONEONLY;</a>
+<a name="ln290">    };</a>
+<a name="ln291">  };</a>
+<a name="ln292">  //***</a>
+<a name="ln293"> </a>
+<a name="ln294">  //Make an instance of the format class</a>
+<a name="ln295">  ADFInputFormat theADFInputFormat;</a>
+<a name="ln296"> </a>
+<a name="ln297">  bool ADFInputFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln298">  {</a>
+<a name="ln299">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln300">    if (pmol == nullptr)</a>
+<a name="ln301">      return false;</a>
+<a name="ln302"> </a>
+<a name="ln303">    //Define some references so we can use the old parameter names</a>
+<a name="ln304">    ostream &amp;ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln305">    OBMol &amp;mol = *pmol;</a>
+<a name="ln306"> </a>
+<a name="ln307">    char buffer[BUFF_SIZE];</a>
+<a name="ln308"> </a>
+<a name="ln309">    snprintf(buffer, BUFF_SIZE, &quot;TITLE %s\n\n&quot;, mol.GetTitle());</a>
+<a name="ln310">    ofs &lt;&lt; buffer;</a>
+<a name="ln311"> </a>
+<a name="ln312">    // Output CHARGE and spin</a>
+<a name="ln313">    // Note that ADF expects the spin parameter to be the # of unpaired spins</a>
+<a name="ln314">    // (i.e., singlet = 0, doublet = 1, etc.)</a>
+<a name="ln315">    snprintf(buffer, BUFF_SIZE, &quot;CHARGE %d  %d\n\n&quot;,</a>
+<a name="ln316">             mol.GetTotalCharge(),</a>
+<a name="ln317">             mol.GetTotalSpinMultiplicity() - 1);</a>
+<a name="ln318">    ofs &lt;&lt; buffer;</a>
+<a name="ln319"> </a>
+<a name="ln320">    // Cartesian input -- change this if you want a z-matrix format</a>
+<a name="ln321">    snprintf(buffer, BUFF_SIZE, &quot;Number of atoms\n %d\n\n&quot;, mol.NumAtoms());</a>
+<a name="ln322">    ofs &lt;&lt; buffer;</a>
+<a name="ln323"> </a>
+<a name="ln324">    ofs &lt;&lt; &quot;ATOMS Cartesian\n&quot;;</a>
+<a name="ln325">    FOR_ATOMS_OF_MOL(atom, mol)</a>
+<a name="ln326">      {</a>
+<a name="ln327">        snprintf(buffer, BUFF_SIZE, &quot;%-3s%15.5f%15.5f%15.5f\n&quot;,</a>
+<a name="ln328">                 OBElements::GetSymbol(atom-&gt;GetAtomicNum()),</a>
+<a name="ln329">                 atom-&gt;GetX(),</a>
+<a name="ln330">                 atom-&gt;GetY(),</a>
+<a name="ln331">                 atom-&gt;GetZ());</a>
+<a name="ln332">        ofs &lt;&lt; buffer;</a>
+<a name="ln333">      }</a>
+<a name="ln334">    ofs &lt;&lt; &quot;End\n\n&quot;;</a>
+<a name="ln335"> </a>
+<a name="ln336">    // command-line keywords (-xk &quot;blah&quot;)</a>
+<a name="ln337">    const char *keywords = pConv-&gt;IsOption(&quot;k&quot;,OBConversion::OUTOPTIONS);</a>
+<a name="ln338">    const char *keywordFile = pConv-&gt;IsOption(&quot;f&quot;,OBConversion::OUTOPTIONS);</a>
+<a name="ln339"> </a>
+<a name="ln340">    // If the user specified a full file, pick that over anything else</a>
+<a name="ln341">    if (keywordFile) {</a>
+<a name="ln342">        ifstream kfstream(keywordFile);</a>
+<a name="ln343">        string keyBuffer;</a>
+<a name="ln344">        if (kfstream)</a>
+<a name="ln345">          {</a>
+<a name="ln346">            while (getline(kfstream, keyBuffer))</a>
+<a name="ln347">              ofs &lt;&lt; keyBuffer &lt;&lt; endl;</a>
+<a name="ln348">          }</a>
+<a name="ln349">      }</a>
+<a name="ln350">    else if (keywords) {</a>
+<a name="ln351">      ofs &lt;&lt; keywords &lt;&lt; endl;</a>
+<a name="ln352">    }</a>
+<a name="ln353">    else {</a>
+<a name="ln354">      ofs &lt;&lt; &quot;Basis\n&quot;;</a>
+<a name="ln355">      ofs &lt;&lt; &quot;End\n\n&quot;;</a>
+<a name="ln356"> </a>
+<a name="ln357">      ofs &lt;&lt; &quot;Geometry\n&quot;;</a>
+<a name="ln358">      ofs &lt;&lt; &quot;End\n\n&quot;;</a>
+<a name="ln359">    }</a>
+<a name="ln360"> </a>
+<a name="ln361">    ofs &lt;&lt; endl; // one final blank line</a>
+<a name="ln362"> </a>
+<a name="ln363">    return true;</a>
+<a name="ln364">  }</a>
+<a name="ln365"> </a>
+<a name="ln366">  class ADFBandFormat : public OBMoleculeFormat</a>
+<a name="ln367">  {</a>
+<a name="ln368">  public:</a>
+<a name="ln369">    //Register this format type ID</a>
+<a name="ln370">    ADFBandFormat()</a>
+<a name="ln371">    {</a>
+<a name="ln372">      OBConversion::RegisterFormat(&quot;adfband&quot;,this);</a>
+<a name="ln373">    }</a>
+<a name="ln374"> </a>
+<a name="ln375">    virtual const char* Description() //required</a>
+<a name="ln376">    {</a>
+<a name="ln377">      return &quot;ADF Band output format\n&quot;;</a>
+<a name="ln378">    };</a>
+<a name="ln379"> </a>
+<a name="ln380">    virtual const char* SpecificationURL()</a>
+<a name="ln381">    {return &quot;https://www.scm.com/product/band_periodicdft/&quot;;}; //optional</a>
+<a name="ln382"> </a>
+<a name="ln383">    //Flags() can return be any the following combined by | or be omitted if none apply</a>
+<a name="ln384">    // NOTREADABLE  READONEONLY  NOTWRITABLE  WRITEONEONLY</a>
+<a name="ln385">    virtual unsigned int Flags()</a>
+<a name="ln386">    {</a>
+<a name="ln387">      return READONEONLY | NOTWRITABLE;</a>
+<a name="ln388">    };</a>
+<a name="ln389"> </a>
+<a name="ln390">    /// The &quot;API&quot; interface functions</a>
+<a name="ln391">    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln392">  };</a>
+<a name="ln393">  //***</a>
+<a name="ln394"> </a>
+<a name="ln395">  //Make an instance of the format class</a>
+<a name="ln396">  ADFBandFormat theADFBandFormat;</a>
+<a name="ln397"> </a>
+<a name="ln398">  /////////////////////////////////////////////////////////////////</a>
+<a name="ln399">  bool ADFBandFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln400">  {</a>
+<a name="ln401">    OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln402">    if (!pmol)</a>
+<a name="ln403">      return false;</a>
+<a name="ln404"> </a>
+<a name="ln405">    //Define some references so we can use the old parameter names</a>
+<a name="ln406">    istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln407">    OBMol &amp;mol = *pmol;</a>
+<a name="ln408">    const char* title = pConv-&gt;GetTitle();</a>
+<a name="ln409"> </a>
+<a name="ln410">    char buffer[BUFF_SIZE];</a>
+<a name="ln411">    vector&lt;string&gt; vs;</a>
+<a name="ln412"> </a>
+<a name="ln413">    // This will remain as 1.0 if we have units of Angstroms</a>
+<a name="ln414">    double lengthConversion = 1.0;</a>
+<a name="ln415"> </a>
+<a name="ln416">    mol.BeginModify();</a>
+<a name="ln417"> </a>
+<a name="ln418">    while (ifs.getline(buffer, BUFF_SIZE)) {</a>
+<a name="ln419">      if (strstr(buffer, &quot;length Bohr&quot;) || strstr(buffer, &quot;length BOHR&quot;) ||</a>
+<a name="ln420">          strstr(buffer, &quot;length bohr&quot;)) {</a>
+<a name="ln421">        // We have units of Bohr!</a>
+<a name="ln422">        lengthConversion = BOHR_TO_ANGSTROM;</a>
+<a name="ln423">      }</a>
+<a name="ln424">      else if (strstr(buffer,</a>
+<a name="ln425">                      &quot;G E O M E T R Y    I N    X - Y - Z    F O R M A T&quot;)) {</a>
+<a name="ln426">        // We need to clear the atoms before proceeding. Since this comes</a>
+<a name="ln427">        // before all the other data, we can just clear the whole molecule</a>
+<a name="ln428">        mol.Clear();</a>
+<a name="ln429">        mol.BeginModify();</a>
+<a name="ln430"> </a>
+<a name="ln431">        ifs.getline(buffer, BUFF_SIZE); // ===========</a>
+<a name="ln432">        ifs.getline(buffer, BUFF_SIZE); // *blank line*</a>
+<a name="ln433">        while (ifs.getline(buffer, BUFF_SIZE)) {</a>
+<a name="ln434">          tokenize(vs, buffer);</a>
+<a name="ln435">          if (vs.size() &lt; 4 || vs[0] == &quot;VEC1&quot;)</a>
+<a name="ln436">            break;</a>
+<a name="ln437"> </a>
+<a name="ln438">          OBAtom* atom = mol.NewAtom();</a>
+<a name="ln439">          atom-&gt;SetAtomicNum(OBElements::GetAtomicNum(vs[0].c_str()));</a>
+<a name="ln440">          double x = atof(vs[1].c_str()) * lengthConversion;</a>
+<a name="ln441">          double y = atof(vs[2].c_str()) * lengthConversion;</a>
+<a name="ln442">          double z = atof(vs[3].c_str()) * lengthConversion;</a>
+<a name="ln443">          atom-&gt;SetVector(x, y, z);</a>
+<a name="ln444">        }</a>
+<a name="ln445">      }</a>
+<a name="ln446">      else if (strstr(buffer, &quot;REAL SPACE LATTICE VECTORS&quot;)) {</a>
+<a name="ln447">        ifs.getline(buffer, BUFF_SIZE); // ------------</a>
+<a name="ln448"> </a>
+<a name="ln449">        std::vector&lt;vector3&gt; vectors;</a>
+<a name="ln450">        for (int i = 0; i &lt; 3; ++i) {</a>
+<a name="ln451">          ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln452">          tokenize(vs, buffer);</a>
+<a name="ln453">          if (vs.size() &lt; 5)</a>
+<a name="ln454">            break;</a>
+<a name="ln455"> </a>
+<a name="ln456">          // These are in Bohrs</a>
+<a name="ln457">          double x = atof(vs[1].c_str()) * BOHR_TO_ANGSTROM;</a>
+<a name="ln458">          double y = atof(vs[2].c_str()) * BOHR_TO_ANGSTROM;</a>
+<a name="ln459">          double z = atof(vs[3].c_str()) * BOHR_TO_ANGSTROM;</a>
+<a name="ln460">          vectors.push_back(vector3(x, y, z));</a>
+<a name="ln461">        }</a>
+<a name="ln462"> </a>
+<a name="ln463">        while (vectors.size() &lt; 3)</a>
+<a name="ln464">          vectors.push_back(vector3(0.0, 0.0, 0.0));</a>
+<a name="ln465"> </a>
+<a name="ln466">        // Build unit cell</a>
+<a name="ln467">        OBUnitCell* cell = new OBUnitCell;</a>
+<a name="ln468">        cell-&gt;SetData(vectors[0], vectors[1], vectors[2]);</a>
+<a name="ln469">        cell-&gt;SetSpaceGroup(1);</a>
+<a name="ln470">        pmol-&gt;SetData(cell);</a>
+<a name="ln471">      }</a>
+<a name="ln472">      else if (strstr(buffer, &quot;E N E R G Y   A N A L Y S I S&quot;)) {</a>
+<a name="ln473">        // Final bond energy line looks like this:</a>
+<a name="ln474">        //  Final bond energy (LDA)                                      -1.09942745     -29.9169     -689.90</a>
+<a name="ln475">        while (ifs.getline(buffer, BUFF_SIZE)) {</a>
+<a name="ln476">          if (strstr(buffer, &quot;Final bond energy&quot;)) {</a>
+<a name="ln477">            tokenize(vs, buffer);</a>
+<a name="ln478"> </a>
+<a name="ln479">            // Line should be of size 7</a>
+<a name="ln480">            if (vs.size() != 7)</a>
+<a name="ln481">              break;</a>
+<a name="ln482"> </a>
+<a name="ln483">            // Units of the final column should be in kcal/mol</a>
+<a name="ln484">            mol.SetEnergy(atof(vs[6].c_str()));</a>
+<a name="ln485">            break;</a>
+<a name="ln486">          }</a>
+<a name="ln487">        }</a>
+<a name="ln488">      }</a>
+<a name="ln489">    }</a>
+<a name="ln490"> </a>
+<a name="ln491">    if (mol.NumAtoms() == 0) { // e.g., if we're at the end of a file</a>
+<a name="ln492">      mol.EndModify();</a>
+<a name="ln493">      return false;</a>
+<a name="ln494">    }</a>
+<a name="ln495"> </a>
+<a name="ln496">    mol.EndModify();</a>
+<a name="ln497"> </a>
+<a name="ln498">    mol.SetTitle(title);</a>
+<a name="ln499">    return true;</a>
+<a name="ln500">  }</a>
+<a name="ln501"> </a>
+<a name="ln502">  class ADFDftbFormat : public OBMoleculeFormat</a>
+<a name="ln503">  {</a>
+<a name="ln504">  public:</a>
+<a name="ln505">    //Register this format type ID</a>
+<a name="ln506">    ADFDftbFormat()</a>
+<a name="ln507">    {</a>
+<a name="ln508">      OBConversion::RegisterFormat(&quot;adfdftb&quot;,this);</a>
+<a name="ln509">    }</a>
+<a name="ln510"> </a>
+<a name="ln511">    virtual const char* Description() //required</a>
+<a name="ln512">    {</a>
+<a name="ln513">      return &quot;ADF DFTB output format\n&quot;;</a>
+<a name="ln514">    };</a>
+<a name="ln515"> </a>
+<a name="ln516">    virtual const char* SpecificationURL()</a>
+<a name="ln517">    {return &quot;https://www.scm.com/product/dftb/&quot;;}; //optional</a>
+<a name="ln518"> </a>
+<a name="ln519">    //Flags() can return be any the following combined by | or be omitted if none apply</a>
+<a name="ln520">    // NOTREADABLE  READONEONLY  NOTWRITABLE  WRITEONEONLY</a>
+<a name="ln521">    virtual unsigned int Flags()</a>
+<a name="ln522">    {</a>
+<a name="ln523">      return READONEONLY | NOTWRITABLE;</a>
+<a name="ln524">    };</a>
+<a name="ln525"> </a>
+<a name="ln526">    /// The &quot;API&quot; interface functions</a>
+<a name="ln527">    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln528">  };</a>
+<a name="ln529">  //***</a>
+<a name="ln530"> </a>
+<a name="ln531">  //Make an instance of the format class</a>
+<a name="ln532">  ADFDftbFormat theADFDftbFormat;</a>
+<a name="ln533"> </a>
+<a name="ln534">  /////////////////////////////////////////////////////////////////</a>
+<a name="ln535">  bool ADFDftbFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln536">  {</a>
+<a name="ln537">    OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln538">    if (!pmol)</a>
+<a name="ln539">      return false;</a>
+<a name="ln540"> </a>
+<a name="ln541">    //Define some references so we can use the old parameter names</a>
+<a name="ln542">    istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln543">    OBMol &amp;mol = *pmol;</a>
+<a name="ln544">    const char* title = pConv-&gt;GetTitle();</a>
+<a name="ln545"> </a>
+<a name="ln546">    char buffer[BUFF_SIZE];</a>
+<a name="ln547">    vector&lt;string&gt; vs;</a>
+<a name="ln548"> </a>
+<a name="ln549">    mol.BeginModify();</a>
+<a name="ln550"> </a>
+<a name="ln551">    while (ifs.getline(buffer, BUFF_SIZE)) {</a>
+<a name="ln552">      if (strcmp(buffer, &quot;Geometry&quot;) == 0) {</a>
+<a name="ln553">        // We need to clear the atoms before proceeding. Since this comes</a>
+<a name="ln554">        // before all the other data, we can just clear the whole molecule</a>
+<a name="ln555">        mol.Clear();</a>
+<a name="ln556">        mol.BeginModify();</a>
+<a name="ln557"> </a>
+<a name="ln558">        ifs.getline(buffer, BUFF_SIZE); // ------------</a>
+<a name="ln559">        ifs.getline(buffer, BUFF_SIZE); // Atoms</a>
+<a name="ln560">        ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln561"> </a>
+<a name="ln562">        // Make sure it is the correct line</a>
+<a name="ln563">        if (strstr(buffer, &quot;Index&quot;) &amp;&amp; strstr(buffer, &quot;Symbol&quot;)) {</a>
+<a name="ln564">          double lengthConversion = 1.0;</a>
+<a name="ln565">          // Check the units</a>
+<a name="ln566">          if (strstr(buffer, &quot;bohr&quot;))</a>
+<a name="ln567">            lengthConversion = BOHR_TO_ANGSTROM;</a>
+<a name="ln568"> </a>
+<a name="ln569">          while (ifs.getline(buffer, BUFF_SIZE)) {</a>
+<a name="ln570">            tokenize(vs, buffer);</a>
+<a name="ln571">            // Should be of size 5</a>
+<a name="ln572">            if (vs.size() &lt; 5)</a>
+<a name="ln573">              break;</a>
+<a name="ln574"> </a>
+<a name="ln575">            OBAtom* atom = mol.NewAtom();</a>
+<a name="ln576">            atom-&gt;SetAtomicNum(OBElements::GetAtomicNum(vs[1].c_str()));</a>
+<a name="ln577">            double x = atof(vs[2].c_str()) * lengthConversion;</a>
+<a name="ln578">            double y = atof(vs[3].c_str()) * lengthConversion;</a>
+<a name="ln579">            double z = atof(vs[4].c_str()) * lengthConversion;</a>
+<a name="ln580">            atom-&gt;SetVector(x, y, z);</a>
+<a name="ln581">          }</a>
+<a name="ln582">        }</a>
+<a name="ln583"> </a>
+<a name="ln584">        // Now read the lattice vectors</a>
+<a name="ln585">        ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln586">        if (strstr(buffer, &quot;Lattice vectors&quot;)) {</a>
+<a name="ln587">          double lengthConversion = 1.0;</a>
+<a name="ln588">          // Check the units</a>
+<a name="ln589">          if (strstr(buffer, &quot;bohr&quot;))</a>
+<a name="ln590">            lengthConversion = BOHR_TO_ANGSTROM;</a>
+<a name="ln591"> </a>
+<a name="ln592">          std::vector&lt;vector3&gt; vectors;</a>
+<a name="ln593">          for (short i = 0; i &lt; 3; ++i) {</a>
+<a name="ln594">            ifs.getline(buffer, BUFF_SIZE);</a>
+<a name="ln595">            tokenize(vs, buffer);</a>
+<a name="ln596">            if (vs.size() != 4)</a>
+<a name="ln597">              break;</a>
+<a name="ln598"> </a>
+<a name="ln599">            double x = atof(vs[1].c_str()) * lengthConversion;</a>
+<a name="ln600">            double y = atof(vs[2].c_str()) * lengthConversion;</a>
+<a name="ln601">            double z = atof(vs[3].c_str()) * lengthConversion;</a>
+<a name="ln602">            vectors.push_back(vector3(x, y, z));</a>
+<a name="ln603">          }</a>
+<a name="ln604"> </a>
+<a name="ln605">          while (vectors.size() &lt; 3)</a>
+<a name="ln606">            vectors.push_back(vector3(0.0, 0.0, 0.0));</a>
+<a name="ln607"> </a>
+<a name="ln608">          // Build unit cell</a>
+<a name="ln609">          OBUnitCell* cell = new OBUnitCell;</a>
+<a name="ln610">          cell-&gt;SetData(vectors[0], vectors[1], vectors[2]);</a>
+<a name="ln611">          cell-&gt;SetSpaceGroup(1);</a>
+<a name="ln612">          pmol-&gt;SetData(cell);</a>
+<a name="ln613">        }</a>
+<a name="ln614">      }</a>
+<a name="ln615">      else if (strcmp(buffer, &quot;Energies&quot;) == 0 ||</a>
+<a name="ln616">               strcmp(buffer, &quot;Energy Decomposition&quot;) == 0) {</a>
+<a name="ln617">        // Final energy line looks like this:</a>
+<a name="ln618">        // Total Energy (eV)                   -220.34976964</a>
+<a name="ln619">        while (ifs.getline(buffer, BUFF_SIZE)) {</a>
+<a name="ln620">          if (strstr(buffer, &quot;Total Energy (eV)&quot;)) {</a>
+<a name="ln621">            tokenize(vs, buffer);</a>
+<a name="ln622"> </a>
+<a name="ln623">            // Line should be of size 4</a>
+<a name="ln624">            if (vs.size() != 4)</a>
+<a name="ln625">              break;</a>
+<a name="ln626"> </a>
+<a name="ln627">            mol.SetEnergy(atof(vs[3].c_str()) * EV_TO_KCAL_PER_MOL);</a>
+<a name="ln628">            break;</a>
+<a name="ln629">          }</a>
+<a name="ln630">        }</a>
+<a name="ln631">      }</a>
+<a name="ln632">    }</a>
+<a name="ln633"> </a>
+<a name="ln634">    if (mol.NumAtoms() == 0) { // e.g., if we're at the end of a file</a>
+<a name="ln635">      mol.EndModify();</a>
+<a name="ln636">      return false;</a>
+<a name="ln637">    }</a>
+<a name="ln638"> </a>
+<a name="ln639">    mol.EndModify();</a>
+<a name="ln640"> </a>
+<a name="ln641">    mol.SetTitle(title);</a>
+<a name="ln642">    return true;</a>
+<a name="ln643">  }</a>
+<a name="ln644"> </a>
+<a name="ln645"> </a>
+<a name="ln646">class OBT41Format : public OBMoleculeFormat</a>
+<a name="ln647">{</a>
+<a name="ln648">public:</a>
+<a name="ln649">    /// Constructor: register 't41' and &quot;T41&quot; format.</a>
+<a name="ln650">    OBT41Format()</a>
+<a name="ln651">    {</a>
+<a name="ln652">        OBConversion::RegisterFormat( &quot;t41&quot;, this );</a>
+<a name="ln653">        OBConversion::RegisterFormat( &quot;T41&quot;, this );</a>
+<a name="ln654">    }</a>
+<a name="ln655"> </a>
+<a name="ln656">    /// Return description.</a>
+<a name="ln657">    virtual const char* Description() //required</a>
+<a name="ln658">    {</a>
+<a name="ln659">        return</a>
+<a name="ln660">        &quot;ADF TAPE41 format\n\n&quot;</a>
+<a name="ln661"> </a>
+<a name="ln662">        &quot;Currently the ADF Tape41 support reads grids from\n&quot;</a>
+<a name="ln663">        &quot;TAPE41 text files. To generate an ASCII version from\n&quot;</a>
+<a name="ln664">        &quot;the default binary, use the dmpkf program.\n\n&quot;</a>
+<a name="ln665"> </a>
+<a name="ln666">        &quot;Read Options e.g. -as\n&quot;</a>
+<a name="ln667">        &quot;  s  Output single bonds only\n&quot;</a>
+<a name="ln668">        &quot;  b  Disable bonding entirely\n\n&quot;;</a>
+<a name="ln669">    }</a>
+<a name="ln670"> </a>
+<a name="ln671">    /// Return a specification url, not really a specification since</a>
+<a name="ln672">    /// I couldn't find it but close enough.</a>
+<a name="ln673">    virtual const char* SpecificationURL()</a>
+<a name="ln674">    {</a>
+<a name="ln675">        return &quot;http://www.scm.com/Doc/Doc2006.01/ADF/Analysis/page8.html&quot;;</a>
+<a name="ln676">    }</a>
+<a name="ln677"> </a>
+<a name="ln678">    /// Return MIME type, NULL in this case.</a>
+<a name="ln679">    virtual const char* GetMIMEType() { return nullptr; }</a>
+<a name="ln680"> </a>
+<a name="ln681">      /// Return read/write flag: read only.</a>
+<a name="ln682">    virtual unsigned int Flags()</a>
+<a name="ln683">    {</a>
+<a name="ln684">        return READONEONLY | READBINARY | NOTWRITABLE;</a>
+<a name="ln685">    };</a>
+<a name="ln686"> </a>
+<a name="ln687">    /// Skip to object: used for multi-object file formats.</a>
+<a name="ln688">    virtual int SkipObjects( int n, OBConversion* pConv ) { return 0; }</a>
+<a name="ln689"> </a>
+<a name="ln690">    /// Read.</a>
+<a name="ln691">    virtual bool ReadMolecule( OBBase* pOb, OBConversion* pConv );</a>
+<a name="ln692"> </a>
+<a name="ln693">    bool ReadASCII( OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln694">    bool ReadBinary( OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln695"> </a>
+<a name="ln696">    /// Write: always returns false.</a>
+<a name="ln697">    virtual bool WriteMolecule( OBBase* , OBConversion* )</a>
+<a name="ln698">    { return false; }</a>
+<a name="ln699"> </a>
+<a name="ln700">private:</a>
+<a name="ln701">    ///Utility function that eats all the remaining characters on the current and next line.</a>
+<a name="ln702">    void eol( istream&amp; is ) const { string s; getline( is, s ); getline( is, s ); }</a>
+<a name="ln703"> </a>
+<a name="ln704">    ///Advance to next tag.</a>
+<a name="ln705">    bool NextTag( istream&amp; is, const std::string&amp; tag ) const</a>
+<a name="ln706">    {</a>
+<a name="ln707">        string buf = &quot;&quot;;</a>
+<a name="ln708">        while( is &gt;&gt; buf ) if( buf == tag ) return true;</a>
+<a name="ln709">        return false;</a>
+<a name="ln710">    }</a>
+<a name="ln711"> </a>
+<a name="ln712">    /// 3x3 Matrix - 3d vector inplace multiply.</a>
+<a name="ln713">    void MatVecMul( const double xColumn[ 3 ],</a>
+<a name="ln714">                    const double yColumn[ 3 ],</a>
+<a name="ln715">                    const double zColumn[ 3 ],</a>
+<a name="ln716">                    double v[ 3 ] )</a>
+<a name="ln717">    {</a>
+<a name="ln718">        double t[ 3 ];</a>
+<a name="ln719">        t[ 0 ] = v[ 0 ];</a>
+<a name="ln720">        t[ 1 ] = v[ 1 ];</a>
+<a name="ln721">        t[ 2 ] = v[ 2 ];</a>
+<a name="ln722">        v[ 0 ] = xColumn[ 0 ] * t[ 0 ] + yColumn[ 0 ] * t[ 1 ] + zColumn[ 0 ] * t[ 2 ];</a>
+<a name="ln723">        v[ 1 ] = xColumn[ 1 ] * t[ 0 ] + yColumn[ 1 ] * t[ 1 ] + zColumn[ 1 ] * t[ 2 ];</a>
+<a name="ln724">        v[ 2 ] = xColumn[ 2 ] * t[ 0 ] + yColumn[ 2 ] * t[ 1 ] + zColumn[ 2 ] * t[ 2 ];</a>
+<a name="ln725">    }</a>
+<a name="ln726"> </a>
+<a name="ln727"> </a>
+<a name="ln728">    /// Add grids from SCF</a>
+<a name="ln729">    void AddSCFGrids( istream&amp; is, OBGridData&amp; t41 ) {}</a>
+<a name="ln730"> </a>
+<a name="ln731">    ///Inner class used to hold atomic number, coordinate, charge data</a>
+<a name="ln732">    struct AtomData</a>
+<a name="ln733">    {</a>
+<a name="ln734">        int atomicNum;</a>
+<a name="ln735">        double coord[ 3 ];</a>
+<a name="ln736">        double charge;</a>
+<a name="ln737">        AtomData() : atomicNum( 0 ), charge( 0. ) {}</a>
+<a name="ln738">        AtomData( int an ) : atomicNum( an ) {}</a>
+<a name="ln739">        AtomData( int an, const double ac[ 3 ], double c ) : atomicNum( an ), charge( c )</a>
+<a name="ln740">        {</a>
+<a name="ln741">            coord[ 0 ] = ac[ 0 ];</a>
+<a name="ln742">            coord[ 1 ] = ac[ 1 ];</a>
+<a name="ln743">            coord[ 2 ] = ac[ 2 ];</a>
+<a name="ln744">        }</a>
+<a name="ln745">    };</a>
+<a name="ln746"> </a>
+<a name="ln747">    ///Inner class used to store grid data info before adding it</a>
+<a name="ln748">    ///into an OBMol instance.</a>
+<a name="ln749">    struct T41GridData</a>
+<a name="ln750">    {</a>
+<a name="ln751">        bool valid;</a>
+<a name="ln752">        double startPoint[ 3 ];</a>
+<a name="ln753">        int numPoints[ 3 ];</a>
+<a name="ln754">        double xAxis[ 3 ];</a>
+<a name="ln755">        double yAxis[ 3 ];</a>
+<a name="ln756">        double zAxis[ 3 ];</a>
+<a name="ln757">        int numSymmetries;</a>
+<a name="ln758">        std::vector&lt; std::string &gt; labels;</a>
+<a name="ln759">        bool unrestricted;</a>
+<a name="ln760">        T41GridData() : valid( false ) {}</a>
+<a name="ln761">        operator bool() const { return valid; }</a>
+<a name="ln762">    };</a>
+<a name="ln763"> </a>
+<a name="ln764">    typedef T41GridData GridData;</a>
+<a name="ln765"> </a>
+<a name="ln766">    ///Read grid data.</a>
+<a name="ln767">    GridData ReadGridData( istream&amp; is ) const;</a>
+<a name="ln768"> </a>
+<a name="ln769">    ///Read SCF grids.</a>
+<a name="ln770">    bool ReadSCFGrid( istream&amp; is, OBGridData&amp; t41Data ) const;</a>
+<a name="ln771"> </a>
+<a name="ln772">    ///Read SCF orbital grids.</a>
+<a name="ln773">    bool ReadSCFOrbitalGrid( istream&amp; is, OBGridData&amp; t41Data ) const;</a>
+<a name="ln774"> </a>
+<a name="ln775">    ///Read SumFrag grids.</a>
+<a name="ln776">    bool ReadSumFragGrid( istream&amp; is, OBGridData&amp; t41Data ) const;</a>
+<a name="ln777"> </a>
+<a name="ln778">                OBGridData *NewData(const GridData &amp;gd);</a>
+<a name="ln779">};</a>
+<a name="ln780"> </a>
+<a name="ln781">//------------------------------------------------------------------------------</a>
+<a name="ln782"> </a>
+<a name="ln783">// Global variable used to register Tape41 format.</a>
+<a name="ln784">OBT41Format t41Format__;</a>
+<a name="ln785"> </a>
+<a name="ln786">//------------------------------------------------------------------------------</a>
+<a name="ln787"> </a>
+<a name="ln788"> </a>
+<a name="ln789">//==============================================================================</a>
+<a name="ln790"> </a>
+<a name="ln791">OBGridData *OBT41Format::NewData(const T41GridData &amp;gd)</a>
+<a name="ln792">{</a>
+<a name="ln793">        OBGridData *t41Data = new OBGridData;</a>
+<a name="ln794">  t41Data-&gt;SetNumberOfPoints( gd.numPoints[ 0 ], gd.numPoints[ 1 ], gd.numPoints[ 2 ] );</a>
+<a name="ln795">        t41Data-&gt;SetLimits( gd.startPoint, gd.xAxis, gd.yAxis, gd.zAxis );</a>
+<a name="ln796">  t41Data-&gt;SetUnrestricted( gd.unrestricted );</a>
+<a name="ln797">  t41Data-&gt;SetNumSymmetries( gd.numSymmetries );</a>
+<a name="ln798"> </a>
+<a name="ln799">        return t41Data;</a>
+<a name="ln800">}</a>
+<a name="ln801"> </a>
+<a name="ln802">//------------------------------------------------------------------------------</a>
+<a name="ln803">bool OBT41Format::ReadMolecule( OBBase* pOb, OBConversion* pConv )</a>
+<a name="ln804">{</a>
+<a name="ln805">  istream&amp; ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln806">  // Check if the file is ASCII or Binary</a>
+<a name="ln807">  // Binary TAPE41 files start with &quot;SUPERINDEX&quot;</a>
+<a name="ln808">  if (ifs.peek() == 'S')</a>
+<a name="ln809">    return ReadBinary(pOb, pConv);</a>
+<a name="ln810">  else</a>
+<a name="ln811">    return ReadASCII(pOb, pConv);</a>
+<a name="ln812">}</a>
+<a name="ln813"> </a>
+<a name="ln814">bool OBT41Format::ReadBinary( OBBase* pOb, OBConversion* pConv )</a>
+<a name="ln815">{</a>
+<a name="ln816">  obErrorLog.ThrowError( __FUNCTION__, &quot;OpenBabel does not currently support the TAPE41 binary format. Please use dmpkf to convert to ASCII.&quot;, obError );</a>
+<a name="ln817">  return false;</a>
+<a name="ln818">}</a>
+<a name="ln819"> </a>
+<a name="ln820">bool OBT41Format::ReadASCII( OBBase* pOb, OBConversion* pConv )</a>
+<a name="ln821">{</a>
+<a name="ln822">      OBMol* pmol = dynamic_cast&lt; OBMol* &gt;(pOb);</a>
+<a name="ln823">      if (pmol == nullptr) return false;</a>
+<a name="ln824"> </a>
+<a name="ln825">      istream&amp; ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln826"> </a>
+<a name="ln827">      GridData gd;</a>
+<a name="ln828">      gd = ReadGridData( ifs );</a>
+<a name="ln829"> </a>
+<a name="ln830">      OBGridData* t41Data = nullptr;</a>
+<a name="ln831">      if( gd )</a>
+<a name="ln832">      {</a>
+<a name="ln833">         streampos current = ifs.tellg();</a>
+<a name="ln834"> </a>
+<a name="ln835">         // We create new data for each grid</a>
+<a name="ln836">         // If we don't find any legitimate data, we'll end and still have &quot;OBGridData&quot;</a>
+<a name="ln837">         // rather than a legitimate label</a>
+<a name="ln838">                         t41Data = NewData(gd);</a>
+<a name="ln839">         while( ReadSCFOrbitalGrid( ifs, *t41Data ) );</a>
+<a name="ln840">         if (t41Data-&gt;GetAttribute() == &quot;GridData&quot;) {</a>
+<a name="ln841">           delete t41Data;</a>
+<a name="ln842">         } else</a>
+<a name="ln843">           pmol-&gt;SetData( t41Data );</a>
+<a name="ln844"> </a>
+<a name="ln845">         ifs.clear();</a>
+<a name="ln846">         ifs.seekg( current, ios::beg );</a>
+<a name="ln847"> </a>
+<a name="ln848">                         t41Data = NewData(gd);</a>
+<a name="ln849">         while( ReadSCFGrid( ifs, *t41Data ) );</a>
+<a name="ln850">         if (t41Data-&gt;GetAttribute() == &quot;GridData&quot;) {</a>
+<a name="ln851">           delete t41Data;</a>
+<a name="ln852">         } else</a>
+<a name="ln853">           pmol-&gt;SetData( t41Data );</a>
+<a name="ln854"> </a>
+<a name="ln855">         ifs.clear();</a>
+<a name="ln856">         ifs.seekg( current, ios::beg );</a>
+<a name="ln857"> </a>
+<a name="ln858">                         t41Data = NewData(gd);</a>
+<a name="ln859">         while( ReadSumFragGrid( ifs, *t41Data ) );</a>
+<a name="ln860">         if (t41Data-&gt;GetAttribute() == &quot;GridData&quot;) {</a>
+<a name="ln861">           delete t41Data;</a>
+<a name="ln862">         } else</a>
+<a name="ln863">           pmol-&gt;SetData( t41Data );</a>
+<a name="ln864"> </a>
+<a name="ln865">         ifs.clear();</a>
+<a name="ln866">         ifs.seekg( current, ios::beg );</a>
+<a name="ln867">      }</a>
+<a name="ln868"> </a>
+<a name="ln869">      string buf;</a>
+<a name="ln870">      // nuuc</a>
+<a name="ln871">      while( buf != &quot;Geometry&quot; ) ifs &gt;&gt; buf; cout &lt;&lt; buf &lt;&lt; endl;</a>
+<a name="ln872">      ifs &gt;&gt; buf; cout &lt;&lt; buf &lt;&lt; endl;</a>
+<a name="ln873">      if( buf != &quot;nnuc&quot; )</a>
+<a name="ln874">      {</a>
+<a name="ln875">          obErrorLog.ThrowError( __FUNCTION__, &quot;no 'nuuc' after first Geometry tag&quot; );</a>
+<a name="ln876">          return false;</a>
+<a name="ln877">      }</a>
+<a name="ln878">      eol( ifs );</a>
+<a name="ln879">      unsigned int numAtoms = 0;</a>
+<a name="ln880">      ifs &gt;&gt; numAtoms; cout &lt;&lt; numAtoms &lt;&lt; endl;</a>
+<a name="ln881">      buf  = &quot;&quot;;</a>
+<a name="ln882"> </a>
+<a name="ln883">      // labels</a>
+<a name="ln884">      while( buf != &quot;Geometry&quot; ) ifs &gt;&gt; buf; cout &lt;&lt; buf &lt;&lt; endl;</a>
+<a name="ln885">      ifs &gt;&gt; buf; cout &lt;&lt; buf &lt;&lt; endl;</a>
+<a name="ln886">      if( buf != &quot;labels&quot; )</a>
+<a name="ln887">      {</a>
+<a name="ln888">          obErrorLog.ThrowError( __FUNCTION__, &quot;no 'labels' after second Geometry tag&quot; );</a>
+<a name="ln889">          return false;</a>
+<a name="ln890">      }</a>
+<a name="ln891">      eol( ifs );</a>
+<a name="ln892">      std::vector&lt; AtomData &gt; atoms;</a>
+<a name="ln893">      atoms.reserve( numAtoms );</a>
+<a name="ln894">      for (unsigned int i = 0; i != numAtoms; ++i)</a>
+<a name="ln895">      {</a>
+<a name="ln896">          ifs &gt;&gt; buf; cout &lt;&lt; buf &lt;&lt; endl;</a>
+<a name="ln897">          atoms.push_back( OBElements::GetAtomicNum( buf.c_str() ) );</a>
+<a name="ln898">      }</a>
+<a name="ln899">      if( atoms.size() != numAtoms )</a>
+<a name="ln900">      {</a>
+<a name="ln901">          obErrorLog.ThrowError( __FUNCTION__, &quot;wrong number of atoms&quot; );</a>
+<a name="ln902">          return false;</a>
+<a name="ln903">      }</a>
+<a name="ln904">      //coordinates</a>
+<a name="ln905">      buf = &quot;&quot;;</a>
+<a name="ln906">      while( buf != &quot;Geometry&quot; ) ifs &gt;&gt; buf; cout &lt;&lt; buf &lt;&lt; endl;</a>
+<a name="ln907">      ifs &gt;&gt; buf; cout &lt;&lt; buf &lt;&lt; endl;</a>
+<a name="ln908">      if( buf != &quot;xyznuc&quot; )</a>
+<a name="ln909">      {</a>
+<a name="ln910">          obErrorLog.ThrowError( __FUNCTION__, &quot;no 'xyznuc' after third Geometry tag&quot; );</a>
+<a name="ln911">          return false;</a>
+<a name="ln912">      }</a>
+<a name="ln913">      eol( ifs );</a>
+<a name="ln914">      for (unsigned int i = 0; i != numAtoms; ++i)</a>
+<a name="ln915">      {</a>
+<a name="ln916">          ifs &gt;&gt; atoms[ i ].coord[ 0 ] &gt;&gt; atoms[ i ].coord[ 1 ] &gt;&gt; atoms[ i ].coord[ 2 ];</a>
+<a name="ln917">          cout &lt;&lt; atoms[ i ].coord[ 0 ] &lt;&lt; ' ' &lt;&lt; atoms[ i ].coord[ 1 ] &lt;&lt; ' ' &lt;&lt; atoms[ i ].coord[ 2 ] &lt;&lt; endl;</a>
+<a name="ln918">      }</a>
+<a name="ln919">      //charge</a>
+<a name="ln920">      buf = &quot;&quot;;</a>
+<a name="ln921">      while( buf != &quot;Geometry&quot; ) ifs &gt;&gt; buf; cout &lt;&lt; buf &lt;&lt; endl;</a>
+<a name="ln922">      ifs &gt;&gt; buf; cout &lt;&lt; buf &lt;&lt; endl;</a>
+<a name="ln923">      if( buf != &quot;qtch&quot; )</a>
+<a name="ln924">      {</a>
+<a name="ln925">          obErrorLog.ThrowError( __FUNCTION__, &quot;no 'qtch' after fourth Geometry tag&quot; );</a>
+<a name="ln926">          return false;</a>
+<a name="ln927">      }</a>
+<a name="ln928">      eol( ifs );</a>
+<a name="ln929">      for (unsigned int i = 0; i != numAtoms; ++i)</a>
+<a name="ln930">      {</a>
+<a name="ln931">          ifs &gt;&gt; atoms[ i ].charge;</a>
+<a name="ln932">      }</a>
+<a name="ln933"> </a>
+<a name="ln934">      // unit of length</a>
+<a name="ln935">      buf = &quot;&quot;;</a>
+<a name="ln936">      while( buf != &quot;Geometry&quot; ) ifs &gt;&gt; buf; cout &lt;&lt; buf &lt;&lt; endl;</a>
+<a name="ln937">      ifs &gt;&gt; buf &gt;&gt; buf &gt;&gt; buf; cout &lt;&lt; buf &lt;&lt; endl;</a>
+<a name="ln938">      if( buf != &quot;length&quot; )</a>
+<a name="ln939">      {</a>
+<a name="ln940">          obErrorLog.ThrowError( __FUNCTION__, &quot;no 'unit of length' after fifth Geometry tag&quot; );</a>
+<a name="ln941">          return false;</a>
+<a name="ln942">      }</a>
+<a name="ln943">      eol( ifs );</a>
+<a name="ln944">      double scale = 1.0;</a>
+<a name="ln945">      ifs &gt;&gt; scale;</a>
+<a name="ln946">      /// @todo multply coordinates by axis length;</a>
+<a name="ln947">      for (unsigned int i = 0; i != numAtoms; ++i)</a>
+<a name="ln948">      {</a>
+<a name="ln949"> </a>
+<a name="ln950">          atoms[ i ].coord[ 0 ] *= BOHR_TO_ANGSTROM;</a>
+<a name="ln951">          atoms[ i ].coord[ 1 ] *= BOHR_TO_ANGSTROM;</a>
+<a name="ln952">          atoms[ i ].coord[ 2 ] *= BOHR_TO_ANGSTROM;</a>
+<a name="ln953">  //        atoms[ i ].coord[ 0 ] *= scale;</a>
+<a name="ln954">  //        atoms[ i ].coord[ 1 ] *= scale;</a>
+<a name="ln955">  //        atoms[ i ].coord[ 2 ] *= scale;</a>
+<a name="ln956">  //        MatVecMul( gd.xAxis, gd.yAxis, gd.zAxis, atoms[ i ].coord );</a>
+<a name="ln957">  //        atoms[ i ].coord[ 0 ] += gd.startPoint[ 0 ];</a>
+<a name="ln958">  //        atoms[ i ].coord[ 1 ] += gd.startPoint[ 1 ];</a>
+<a name="ln959">  //        atoms[ i ].coord[ 2 ] += gd.startPoint[ 2 ];</a>
+<a name="ln960">      }</a>
+<a name="ln961"> </a>
+<a name="ln962">      // build OB molecule</a>
+<a name="ln963"> </a>
+<a name="ln964">      pmol-&gt;BeginModify();</a>
+<a name="ln965"> </a>
+<a name="ln966">      pmol-&gt;SetDimension( 3 );</a>
+<a name="ln967"> </a>
+<a name="ln968">      pmol-&gt;ReserveAtoms( numAtoms );</a>
+<a name="ln969"> </a>
+<a name="ln970">      for (unsigned int i = 0; i &lt; numAtoms; ++i)</a>
+<a name="ln971">      {</a>
+<a name="ln972">          OBAtom *atom = pmol-&gt;NewAtom();</a>
+<a name="ln973">          atom-&gt;SetAtomicNum( atoms[ i ].atomicNum );</a>
+<a name="ln974">          atom-&gt;SetVector( atoms[ i ].coord[ 0 ],</a>
+<a name="ln975">                           atoms[ i ].coord[ 1 ],</a>
+<a name="ln976">                           atoms[ i ].coord[ 2 ] );</a>
+<a name="ln977">          atom-&gt;SetPartialCharge( atoms[ i ].charge );</a>
+<a name="ln978">      }</a>
+<a name="ln979"> </a>
+<a name="ln980">      if( !pConv-&gt;IsOption( &quot;b&quot;, OBConversion::INOPTIONS ) ) pmol-&gt;ConnectTheDots();</a>
+<a name="ln981">      if (!pConv-&gt;IsOption( &quot;s&quot;, OBConversion::INOPTIONS )</a>
+<a name="ln982">          &amp;&amp; !pConv-&gt;IsOption( &quot;b&quot;, OBConversion::INOPTIONS ) )</a>
+<a name="ln983">      {</a>
+<a name="ln984">          pmol-&gt;PerceiveBondOrders();</a>
+<a name="ln985">      }</a>
+<a name="ln986">      pmol-&gt;EndModify();</a>
+<a name="ln987"> </a>
+<a name="ln988">      return true;</a>
+<a name="ln989">}</a>
+<a name="ln990"> </a>
+<a name="ln991">//------------------------------------------------------------------------------</a>
+<a name="ln992">OBT41Format::GridData OBT41Format::ReadGridData( istream&amp; is ) const</a>
+<a name="ln993">{</a>
+<a name="ln994">    GridData gd;</a>
+<a name="ln995">    string buf;</a>
+<a name="ln996">    // Start_point</a>
+<a name="ln997">    if( !NextTag( is, &quot;Grid&quot; ) ) return gd;</a>
+<a name="ln998">    is &gt;&gt; buf;</a>
+<a name="ln999">    if( buf != &quot;Start_point&quot; ) return gd;</a>
+<a name="ln1000">    eol( is );</a>
+<a name="ln1001">    is &gt;&gt; gd.startPoint[ 0 ] &gt;&gt; gd.startPoint[ 1 ] &gt;&gt; gd.startPoint[ 2 ];</a>
+<a name="ln1002"> </a>
+<a name="ln1003">    gd.startPoint[ 0 ] *= BOHR_TO_ANGSTROM;</a>
+<a name="ln1004">    gd.startPoint[ 1 ] *= BOHR_TO_ANGSTROM;</a>
+<a name="ln1005">    gd.startPoint[ 2 ] *= BOHR_TO_ANGSTROM;</a>
+<a name="ln1006"> </a>
+<a name="ln1007">    // nr of points x</a>
+<a name="ln1008">    if( !NextTag( is, &quot;Grid&quot; ) ) return gd;</a>
+<a name="ln1009">    is &gt;&gt; buf &gt;&gt; buf &gt;&gt; buf &gt;&gt; buf;</a>
+<a name="ln1010">    if( buf != &quot;x&quot; ) return gd;</a>
+<a name="ln1011">    eol( is );</a>
+<a name="ln1012">    is &gt;&gt; gd.numPoints[ 0 ];</a>
+<a name="ln1013">    // nr of points y</a>
+<a name="ln1014">    if( !NextTag( is, &quot;Grid&quot; ) ) return gd;</a>
+<a name="ln1015">    is &gt;&gt; buf &gt;&gt; buf &gt;&gt; buf &gt;&gt; buf;</a>
+<a name="ln1016">    if( buf != &quot;y&quot; ) return gd;</a>
+<a name="ln1017">    eol( is );</a>
+<a name="ln1018">    is &gt;&gt; gd.numPoints[ 1 ];</a>
+<a name="ln1019">    // nr of points z</a>
+<a name="ln1020">    if( !NextTag( is, &quot;Grid&quot; ) ) return gd;</a>
+<a name="ln1021">    is &gt;&gt; buf &gt;&gt; buf &gt;&gt; buf &gt;&gt; buf;</a>
+<a name="ln1022">    if( buf != &quot;z&quot; ) return gd;</a>
+<a name="ln1023">    eol( is );</a>
+<a name="ln1024">    is &gt;&gt; gd.numPoints[ 2 ];</a>
+<a name="ln1025">    // total nr of points</a>
+<a name="ln1026">    if( !NextTag( is, &quot;Grid&quot; ) ) return gd;</a>
+<a name="ln1027">    is &gt;&gt; buf &gt;&gt; buf &gt;&gt; buf &gt;&gt; buf;</a>
+<a name="ln1028">    if( buf != &quot;points&quot; ) return gd;</a>
+<a name="ln1029">    eol( is );</a>
+<a name="ln1030">    int n = 0;</a>
+<a name="ln1031">    is &gt;&gt; n;</a>
+<a name="ln1032">    if( gd.numPoints[ 0 ] * gd.numPoints[ 1 ] * gd.numPoints[ 2 ] != n ) return gd;</a>
+<a name="ln1033">    //x-vector</a>
+<a name="ln1034">    if( !NextTag( is, &quot;Grid&quot; ) ) return gd;</a>
+<a name="ln1035">    is &gt;&gt; buf;</a>
+<a name="ln1036">    if( buf != &quot;x-vector&quot; ) return gd;</a>
+<a name="ln1037">    eol( is );</a>
+<a name="ln1038">    is &gt;&gt; gd.xAxis[ 0 ] &gt;&gt; gd.xAxis[ 1 ] &gt;&gt; gd.xAxis[ 2 ];</a>
+<a name="ln1039"> </a>
+<a name="ln1040">    gd.xAxis[ 0 ] *= BOHR_TO_ANGSTROM;</a>
+<a name="ln1041">    gd.xAxis[ 1 ] *= BOHR_TO_ANGSTROM;</a>
+<a name="ln1042">    gd.xAxis[ 2 ] *= BOHR_TO_ANGSTROM;</a>
+<a name="ln1043"> </a>
+<a name="ln1044">    //y-vector</a>
+<a name="ln1045">    if( !NextTag( is, &quot;Grid&quot; ) ) return gd;</a>
+<a name="ln1046">    is &gt;&gt; buf;</a>
+<a name="ln1047">    if( buf != &quot;y-vector&quot; ) return gd;</a>
+<a name="ln1048">    eol( is );</a>
+<a name="ln1049">    is &gt;&gt; gd.yAxis[ 0 ] &gt;&gt; gd.yAxis[ 1 ] &gt;&gt; gd.yAxis[ 2 ];</a>
+<a name="ln1050"> </a>
+<a name="ln1051">    gd.yAxis[ 0 ] *= BOHR_TO_ANGSTROM;</a>
+<a name="ln1052">    gd.yAxis[ 1 ] *= BOHR_TO_ANGSTROM;</a>
+<a name="ln1053">    gd.yAxis[ 2 ] *= BOHR_TO_ANGSTROM;</a>
+<a name="ln1054"> </a>
+<a name="ln1055">    //z-vector</a>
+<a name="ln1056">    if( !NextTag( is, &quot;Grid&quot; ) ) return gd;</a>
+<a name="ln1057">    is &gt;&gt; buf;</a>
+<a name="ln1058">    if( buf != &quot;z-vector&quot; ) return gd;</a>
+<a name="ln1059">    eol( is );</a>
+<a name="ln1060">    is &gt;&gt; gd.zAxis[ 0 ] &gt;&gt; gd.zAxis[ 1 ] &gt;&gt; gd.zAxis[ 2 ];</a>
+<a name="ln1061"> </a>
+<a name="ln1062">    gd.zAxis[ 0 ] *= BOHR_TO_ANGSTROM;</a>
+<a name="ln1063">    gd.zAxis[ 1 ] *= BOHR_TO_ANGSTROM;</a>
+<a name="ln1064">    gd.zAxis[ 2 ] *= BOHR_TO_ANGSTROM;</a>
+<a name="ln1065"> </a>
+<a name="ln1066">    //nr of symmetries</a>
+<a name="ln1067">    if( !NextTag( is, &quot;Grid&quot; ) ) return gd;</a>
+<a name="ln1068">    is &gt;&gt; buf &gt;&gt; buf &gt;&gt; buf;</a>
+<a name="ln1069">    if( buf != &quot;symmetries&quot; ) return gd;</a>
+<a name="ln1070">    eol( is );</a>
+<a name="ln1071">    is &gt;&gt; gd.numSymmetries;</a>
+<a name="ln1072">    //labels ///@warning only one label supported</a>
+<a name="ln1073">    if( !NextTag( is, &quot;Grid&quot; ) ) return gd;</a>
+<a name="ln1074">    is &gt;&gt; buf;</a>
+<a name="ln1075">    if( buf != &quot;labels&quot; ) return gd;</a>
+<a name="ln1076">    eol( is );</a>
+<a name="ln1077">    is &gt;&gt; buf; gd.labels.push_back( buf );</a>
+<a name="ln1078">    //unrestricted</a>
+<a name="ln1079">    if( !NextTag( is, &quot;Grid&quot; ) ) return gd;</a>
+<a name="ln1080">    is &gt;&gt; buf;</a>
+<a name="ln1081">    if( buf != &quot;unrestricted&quot; ) return gd;</a>
+<a name="ln1082">    eol( is );</a>
+<a name="ln1083">    char c;</a>
+<a name="ln1084">    is &gt;&gt; c;</a>
+<a name="ln1085">    gd.unrestricted = ( c == 'T' );</a>
+<a name="ln1086"> </a>
+<a name="ln1087">    gd.valid = true;</a>
+<a name="ln1088">    return gd;</a>
+<a name="ln1089">}</a>
+<a name="ln1090"> </a>
+<a name="ln1091">//------------------------------------------------------------------------------</a>
+<a name="ln1092">inline bool IsNum( const string&amp; s )</a>
+<a name="ln1093">{</a>
+<a name="ln1094">    bool isnum = true;</a>
+<a name="ln1095">    for (unsigned int i = 0; i != s.size(); ++i)</a>
+<a name="ln1096">    {</a>
+<a name="ln1097">        if( !isdigit( s[ i ] ) )</a>
+<a name="ln1098">        {</a>
+<a name="ln1099">            isnum = false;</a>
+<a name="ln1100">            break;</a>
+<a name="ln1101">        }</a>
+<a name="ln1102">    }</a>
+<a name="ln1103">    return isnum;</a>
+<a name="ln1104">}</a>
+<a name="ln1105"> </a>
+<a name="ln1106">bool OBT41Format::ReadSCFOrbitalGrid( istream&amp; is, OBGridData&amp; t41Data ) const</a>
+<a name="ln1107">{</a>
+<a name="ln1108">    //find next tag starting with 'SCF'</a>
+<a name="ln1109">    //if tag starts with SCF_ check next line</a>
+<a name="ln1110">    //  advance to next SCF_ tag until tag on next line is a number</a>
+<a name="ln1111">    //  read number = orbital id</a>
+<a name="ln1112">    //  skip line</a>
+<a name="ln1113">    //  read grid data</a>
+<a name="ln1114">    if( !is ) return false;</a>
+<a name="ln1115">    string buf;</a>
+<a name="ln1116">    while( is &gt;&gt; buf ) if( buf.find( &quot;SCF&quot;, 0 ) == 0 &amp;&amp; buf.size() &gt; 3 ) break;</a>
+<a name="ln1117">    if( !is ) return false;</a>
+<a name="ln1118">    // SCF_</a>
+<a name="ln1119">    const string scf = buf;</a>
+<a name="ln1120">    buf = &quot;&quot;;</a>
+<a name="ln1121">    is &gt;&gt; buf;</a>
+<a name="ln1122">    if( !IsNum( buf ) ) // number ?</a>
+<a name="ln1123">    {</a>
+<a name="ln1124">        while( is &gt;&gt; buf ) // not a number keep on reading</a>
+<a name="ln1125">        {</a>
+<a name="ln1126">            if( buf == scf ) // SCF_X_X</a>
+<a name="ln1127">            {</a>
+<a name="ln1128">                is &gt;&gt; buf; // read tag on next line</a>
+<a name="ln1129">                if( IsNum( buf ) ) break; // break if (orbital) number</a>
+<a name="ln1130">            }</a>
+<a name="ln1131">        }</a>
+<a name="ln1132">    }</a>
+<a name="ln1133">    if( !is ) return false; // eof -&gt; return</a>
+<a name="ln1134">    // if we get here it means we are past the orbital number so read</a>
+<a name="ln1135">    // read grid values</a>
+<a name="ln1136">    const string label = scf + ' ' + buf; cout &lt;&lt; label &lt;&lt; endl;</a>
+<a name="ln1137">    const int numPoints = t41Data.GetNumberOfPoints();</a>
+<a name="ln1138">    vector&lt; double &gt; grid( numPoints );</a>
+<a name="ln1139">    eol( is );</a>
+<a name="ln1140">    if( !is ) return false;</a>
+<a name="ln1141">    for( int i = 0; i != numPoints; ++i )</a>
+<a name="ln1142">    {</a>
+<a name="ln1143">        is &gt;&gt; grid[ i ];</a>
+<a name="ln1144">    }</a>
+<a name="ln1145"> </a>
+<a name="ln1146">    // Now to translate from a vector stored in z, y, x to one stored in xyz</a>
+<a name="ln1147">    // ADF format order to OpenBabel GridData order!</a>
+<a name="ln1148">    int voxels[3];</a>
+<a name="ln1149">    t41Data.GetNumberOfPoints(voxels[0], voxels[1], voxels[2]);</a>
+<a name="ln1150">    for (int k = 0; k &lt; voxels[2]; ++k)</a>
+<a name="ln1151">      for (int j = 0; j &lt; voxels[1]; ++j)</a>
+<a name="ln1152">        for (int i = 0; i &lt; voxels[0]; ++i)</a>
+<a name="ln1153">          {</a>
+<a name="ln1154">            t41Data.SetValue(i, j, k,</a>
+<a name="ln1155">                             grid[k*voxels[0]*voxels[1] + j*voxels[0] + i]);</a>
+<a name="ln1156">          }</a>
+<a name="ln1157"> </a>
+<a name="ln1158">                t41Data.SetAttribute( label );</a>
+<a name="ln1159">    return true;</a>
+<a name="ln1160">}</a>
+<a name="ln1161"> </a>
+<a name="ln1162">//------------------------------------------------------------------------------</a>
+<a name="ln1163">bool OBT41Format::ReadSCFGrid( istream&amp; is, OBGridData&amp; t41Data ) const</a>
+<a name="ln1164">{</a>
+<a name="ln1165">        if( !is ) return false;</a>
+<a name="ln1166">    string buf;</a>
+<a name="ln1167">    while( is &gt;&gt; buf ) if( buf.find( &quot;SCF&quot;, 0 ) == 0 &amp;&amp; buf.size() == 3 ) break;</a>
+<a name="ln1168">    if( !is ) return false;</a>
+<a name="ln1169">    // if tag = SCF read next line then skip line and read grid data</a>
+<a name="ln1170">    const string scf = buf; // SCF</a>
+<a name="ln1171">    is &gt;&gt; buf; // tag on line after SCF</a>
+<a name="ln1172">    const string label = scf + ' ' + buf; cout &lt;&lt; label &lt;&lt; endl;</a>
+<a name="ln1173">    eol( is );</a>
+<a name="ln1174">    if( !is ) return false;</a>
+<a name="ln1175">    // read grid data</a>
+<a name="ln1176">    const int numPoints = t41Data.GetNumberOfPoints();</a>
+<a name="ln1177">    vector&lt; double &gt; grid( numPoints );</a>
+<a name="ln1178">    int i = 0;</a>
+<a name="ln1179">    for( ; i != numPoints; ++i ) is &gt;&gt; grid[ i ];</a>
+<a name="ln1180"> </a>
+<a name="ln1181">    // Now to translate from a vector stored in z, y, x to one stored in xyz</a>
+<a name="ln1182">    // ADF format order to OpenBabel GridData order!</a>
+<a name="ln1183">    // Now to translate from a vector stored in z, y, x to one stored in xyz</a>
+<a name="ln1184">    // ADF format order to OpenBabel GridData order!</a>
+<a name="ln1185">    int voxels[3];</a>
+<a name="ln1186">    t41Data.GetNumberOfPoints(voxels[0], voxels[1], voxels[2]);</a>
+<a name="ln1187">    for (int k = 0; k &lt; voxels[2]; ++k)</a>
+<a name="ln1188">      for (int j = 0; j &lt; voxels[1]; ++j)</a>
+<a name="ln1189">        for (int i = 0; i &lt; voxels[0]; ++i)</a>
+<a name="ln1190">          {</a>
+<a name="ln1191">            t41Data.SetValue(i, j, k,</a>
+<a name="ln1192">                             grid[k*voxels[0]*voxels[1] + j*voxels[0] + i]);</a>
+<a name="ln1193">          }</a>
+<a name="ln1194"> </a>
+<a name="ln1195">                t41Data.SetAttribute( label );</a>
+<a name="ln1196">    return true;</a>
+<a name="ln1197">}</a>
+<a name="ln1198"> </a>
+<a name="ln1199"> </a>
+<a name="ln1200">//------------------------------------------------------------------------------</a>
+<a name="ln1201">bool OBT41Format::ReadSumFragGrid( istream&amp; is, OBGridData&amp; t41Data ) const</a>
+<a name="ln1202">{</a>
+<a name="ln1203">    if( !is ) return false;</a>
+<a name="ln1204">    string buf;</a>
+<a name="ln1205">    while( is &gt;&gt; buf ) if( buf == &quot;SumFrag&quot; ) break; // look for SumFrag string</a>
+<a name="ln1206">    if( !is ) return false; // not found -&gt; return</a>
+<a name="ln1207">    const string sumfrag = buf; // found read next line then skip one line and read data</a>
+<a name="ln1208">    is &gt;&gt; buf;</a>
+<a name="ln1209">    const string label = sumfrag + ' ' + buf; cout &lt;&lt; label &lt;&lt; endl;</a>
+<a name="ln1210">    eol( is );</a>
+<a name="ln1211">    if( !is ) return false;</a>
+<a name="ln1212">    const int numPoints = t41Data.GetNumberOfPoints();</a>
+<a name="ln1213">    vector&lt; double &gt; grid( numPoints );</a>
+<a name="ln1214">    int i = 0;</a>
+<a name="ln1215">    for( ; i != numPoints; ++i ) is &gt;&gt; grid[ i ];</a>
+<a name="ln1216"> </a>
+<a name="ln1217">    // Now to translate from a vector stored in z, y, x to one stored in xyz</a>
+<a name="ln1218">    // ADF format order to OpenBabel GridData order!</a>
+<a name="ln1219">    int voxels[3];</a>
+<a name="ln1220">    t41Data.GetNumberOfPoints(voxels[0], voxels[1], voxels[2]);</a>
+<a name="ln1221">    for (int k = 0; k &lt; voxels[2]; ++k)</a>
+<a name="ln1222">      for (int j = 0; j &lt; voxels[1]; ++j)</a>
+<a name="ln1223">        for (int i = 0; i &lt; voxels[0]; ++i)</a>
+<a name="ln1224">          {</a>
+<a name="ln1225">            t41Data.SetValue(i, j, k,</a>
+<a name="ln1226">                             grid[k*voxels[0]*voxels[1] + j*voxels[0] + i]);</a>
+<a name="ln1227">          }</a>
+<a name="ln1228"> </a>
+<a name="ln1229">                t41Data.SetAttribute( label );</a>
+<a name="ln1230">    return true;</a>
+<a name="ln1231">}</a>
+<a name="ln1232"> </a>
+<a name="ln1233">} // end namespace OpenBabel</a>
+
+</code></pre>
+<div class="balloon" rel="871"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v640/" target="_blank">V640</a> The code's operational logic does not correspond with its formatting. The second statement will always be executed. It is possible that curly brackets are missing.</p></div>
+<div class="balloon" rel="884"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v640/" target="_blank">V640</a> The code's operational logic does not correspond with its formatting. The second statement will always be executed. It is possible that curly brackets are missing.</p></div>
+<div class="balloon" rel="906"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v640/" target="_blank">V640</a> The code's operational logic does not correspond with its formatting. The second statement will always be executed. It is possible that curly brackets are missing.</p></div>
+<div class="balloon" rel="921"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v640/" target="_blank">V640</a> The code's operational logic does not correspond with its formatting. The second statement will always be executed. It is possible that curly brackets are missing.</p></div>
+<div class="balloon" rel="936"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v640/" target="_blank">V640</a> The code's operational logic does not correspond with its formatting. The second statement will always be executed. It is possible that curly brackets are missing.</p></div>
+<div class="balloon" rel="737"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v730/" target="_blank">V730</a> Not all members of a class are initialized inside the constructor. Consider inspecting: coord.</p></div>
+<div class="balloon" rel="738"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v730/" target="_blank">V730</a> Not all members of a class are initialized inside the constructor. Consider inspecting: coord, charge.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

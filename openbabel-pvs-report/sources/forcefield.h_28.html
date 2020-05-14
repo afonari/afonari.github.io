@@ -1,0 +1,1791 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <title>forcefield.h</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">forcefield.h - Handle OBForceField class.</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 2006-2007 by Tim Vandermeersch &lt;tim.vandermeersch@gmail.com&gt;</a>
+<a name="ln5"> </a>
+<a name="ln6">This file is part of the Open Babel project.</a>
+<a name="ln7">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln10">it under the terms of the GNU General Public License as published by</a>
+<a name="ln11">the Free Software Foundation version 2 of the License.</a>
+<a name="ln12"> </a>
+<a name="ln13">This program is distributed in the hope that it will be useful,</a>
+<a name="ln14">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln15">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln16">GNU General Public License for more details.</a>
+<a name="ln17">***********************************************************************/</a>
+<a name="ln18"> </a>
+<a name="ln19">#ifndef OB_FORCEFIELD_H</a>
+<a name="ln20">#define OB_FORCEFIELD_H</a>
+<a name="ln21"> </a>
+<a name="ln22">#include &lt;vector&gt;</a>
+<a name="ln23">#include &lt;string&gt;</a>
+<a name="ln24"> </a>
+<a name="ln25">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln26">#include &lt;openbabel/mol.h&gt;  // TODO: Move OBMol code out of the header (use OBMol*)</a>
+<a name="ln27">#include &lt;openbabel/atom.h&gt; // TODO: Move OBAtom code out of the header</a>
+<a name="ln28">#include &lt;openbabel/plugin.h&gt;</a>
+<a name="ln29">#include &lt;openbabel/bitvec.h&gt;</a>
+<a name="ln30">#include &lt;float.h&gt;</a>
+<a name="ln31"> </a>
+<a name="ln32">namespace OpenBabel</a>
+<a name="ln33">{</a>
+<a name="ln34">  class OBGridData;</a>
+<a name="ln35"> </a>
+<a name="ln36">  // log levels</a>
+<a name="ln37">#define OBFF_LOGLVL_NONE	0   //!&lt; no output</a>
+<a name="ln38">#define OBFF_LOGLVL_LOW		1   //!&lt; SteepestDescent progress... (no output from Energy())</a>
+<a name="ln39">#define OBFF_LOGLVL_MEDIUM	2   //!&lt; individual energy terms</a>
+<a name="ln40">#define OBFF_LOGLVL_HIGH	3   //!&lt; individual calculations and parameters</a>
+<a name="ln41"> </a>
+<a name="ln42">  // terms</a>
+<a name="ln43">#define OBFF_ENERGY		(1 &lt;&lt; 0)   //!&lt; all terms</a>
+<a name="ln44">#define OBFF_EBOND		(1 &lt;&lt; 1)   //!&lt; bond term</a>
+<a name="ln45">#define OBFF_EANGLE		(1 &lt;&lt; 2)   //!&lt; angle term</a>
+<a name="ln46">#define OBFF_ESTRBND		(1 &lt;&lt; 3)   //!&lt; strbnd term</a>
+<a name="ln47">#define OBFF_ETORSION		(1 &lt;&lt; 4)   //!&lt; torsion term</a>
+<a name="ln48">#define OBFF_EOOP		(1 &lt;&lt; 5)   //!&lt; oop term</a>
+<a name="ln49">#define OBFF_EVDW		(1 &lt;&lt; 6)   //!&lt; vdw term</a>
+<a name="ln50">#define OBFF_EELECTROSTATIC	(1 &lt;&lt; 7)   //!&lt; electrostatic term</a>
+<a name="ln51"> </a>
+<a name="ln52">  // constraint types</a>
+<a name="ln53">#define OBFF_CONST_IGNORE	(1 &lt;&lt; 0)   //!&lt; ignore the atom while setting up calculations</a>
+<a name="ln54">#define OBFF_CONST_ATOM		(1 &lt;&lt; 1)   //!&lt; fix the atom position</a>
+<a name="ln55">#define OBFF_CONST_ATOM_X	(1 &lt;&lt; 2)   //!&lt; fix the x coordinate of the atom position</a>
+<a name="ln56">#define OBFF_CONST_ATOM_Y	(1 &lt;&lt; 3)   //!&lt; fix the y coordinate of the atom position</a>
+<a name="ln57">#define OBFF_CONST_ATOM_Z	(1 &lt;&lt; 4)   //!&lt; fix the z coordinate of the atom position</a>
+<a name="ln58">#define OBFF_CONST_DISTANCE	(1 &lt;&lt; 5)   //!&lt; constrain distance length</a>
+<a name="ln59">#define OBFF_CONST_ANGLE	(1 &lt;&lt; 6)   //!&lt; constrain angle</a>
+<a name="ln60">#define OBFF_CONST_TORSION	(1 &lt;&lt; 7)   //!&lt; constrain torsion</a>
+<a name="ln61">#define OBFF_CONST_CHIRAL	(1 &lt;&lt; 8)   //!&lt; constrain chiral volume</a>
+<a name="ln62"> </a>
+<a name="ln63">  // mode arguments for SteepestDescent, ConjugateGradients, ...</a>
+<a name="ln64">#define OBFF_NUMERICAL_GRADIENT  	(1 &lt;&lt; 0)  //!&lt; use numerical gradients</a>
+<a name="ln65">#define OBFF_ANALYTICAL_GRADIENT	(1 &lt;&lt; 1)  //!&lt; use analytical gradients</a>
+<a name="ln66"> </a>
+<a name="ln67">const double KCAL_TO_KJ = 4.1868;</a>
+<a name="ln68">const double GAS_CONSTANT = 8.31446261815324e-3 / KCAL_TO_KJ;  //!&lt; kcal mol^-1 K^-1 (2018 CODATA recommended value)</a>
+<a name="ln69"> </a>
+<a name="ln70">  // inline if statements for logging.</a>
+<a name="ln71">#define IF_OBFF_LOGLVL_LOW    if(_loglvl &gt;= OBFF_LOGLVL_LOW)</a>
+<a name="ln72">#define IF_OBFF_LOGLVL_MEDIUM if(_loglvl &gt;= OBFF_LOGLVL_MEDIUM)</a>
+<a name="ln73">#define IF_OBFF_LOGLVL_HIGH   if(_loglvl &gt;= OBFF_LOGLVL_HIGH)</a>
+<a name="ln74"> </a>
+<a name="ln75">  //! The type of line search to be used for optimization -- simple or Newton numeric</a>
+<a name="ln76">  struct LineSearchType</a>
+<a name="ln77">  {</a>
+<a name="ln78">    enum {</a>
+<a name="ln79">      Simple, Newton2Num</a>
+<a name="ln80">    };</a>
+<a name="ln81">  };</a>
+<a name="ln82">  /*</a>
+<a name="ln83">  struct ConstraintType</a>
+<a name="ln84">  {</a>
+<a name="ln85">    enum {</a>
+<a name="ln86">      Ignore, Atom, AtomX, AtomY, AtomZ, Distance, Angle, Torsion, Chiral</a>
+<a name="ln87">    };</a>
+<a name="ln88">  };</a>
+<a name="ln89">  */</a>
+<a name="ln90"> </a>
+<a name="ln91">  //! \class OBFFParameter forcefield.h &lt;openbabel/forcefield.h&gt;</a>
+<a name="ln92">  //! \brief Internal class for OBForceField to hold forcefield parameters</a>
+<a name="ln93">  class OBFPRT OBFFParameter {</a>
+<a name="ln94">  public:</a>
+<a name="ln95">    //! Used to store integer atom types</a>
+<a name="ln96">    int         a, b, c, d;</a>
+<a name="ln97">    //! used to store string atom types</a>
+<a name="ln98">    std::string _a, _b, _c, _d;</a>
+<a name="ln99"> </a>
+<a name="ln100">    //! Used to store integer type parameters (bondtypes, multiplicity, ...)</a>
+<a name="ln101">    std::vector&lt;int&gt;    _ipar;</a>
+<a name="ln102">    //! Used to store double type parameters (force constants, bond lengths, angles, ...)</a>
+<a name="ln103">    std::vector&lt;double&gt; _dpar;</a>
+<a name="ln104"> </a>
+<a name="ln105">    //! Assignment</a>
+<a name="ln106">    OBFFParameter&amp; operator=(const OBFFParameter &amp;ai)</a>
+<a name="ln107">      {</a>
+<a name="ln108">        if (this != &amp;ai) {</a>
+<a name="ln109">          a = ai.a;</a>
+<a name="ln110">          b = ai.b;</a>
+<a name="ln111">          c = ai.c;</a>
+<a name="ln112">          d = ai.d;</a>
+<a name="ln113">          _a = ai._a;</a>
+<a name="ln114">          _b = ai._b;</a>
+<a name="ln115">          _c = ai._c;</a>
+<a name="ln116">          _d = ai._d;</a>
+<a name="ln117">          _ipar = ai._ipar;</a>
+<a name="ln118">          _dpar = ai._dpar;</a>
+<a name="ln119">        }</a>
+<a name="ln120"> </a>
+<a name="ln121">        return *this;</a>
+<a name="ln122">      }</a>
+<a name="ln123"> </a>
+<a name="ln124">    //! Reset the atom types and set all parameters to zero</a>
+<a name="ln125">    void clear ()</a>
+<a name="ln126">    {</a>
+<a name="ln127">      a = b = c = d = 0;</a>
+<a name="ln128">      _ipar.clear();</a>
+<a name="ln129">      _dpar.clear();</a>
+<a name="ln130">    }</a>
+<a name="ln131">  }; // class OBFFParameter</a>
+<a name="ln132"> </a>
+<a name="ln133">  // specific class introductions in forcefieldYYYY.cpp (for YYYY calculations)</a>
+<a name="ln134"> </a>
+<a name="ln135">  //! \class OBFFCalculation2 forcefield.h &lt;openbabel/forcefield.h&gt;</a>
+<a name="ln136">  //! \brief Internal class for OBForceField to hold energy and gradient calculations on specific force fields</a>
+<a name="ln137">  class OBFPRT OBFFCalculation2</a>
+<a name="ln138">  {</a>
+<a name="ln139">  public:</a>
+<a name="ln140">    //! Used to store the energy for this OBFFCalculation</a>
+<a name="ln141">    double energy;</a>
+<a name="ln142">    //! Used to store the atoms for this OBFFCalculation</a>
+<a name="ln143">    OBAtom *a, *b;</a>
+<a name="ln144">    //! Used to store the index of atoms for this OBFFCalculation</a>
+<a name="ln145">    int idx_a, idx_b;</a>
+<a name="ln146">    //! Pointer to atom coordinates as double[3]</a>
+<a name="ln147">    double *pos_a, *pos_b;</a>
+<a name="ln148">    //! Pointer to atom forces</a>
+<a name="ln149">    double force_a[3], force_b[3];</a>
+<a name="ln150">    //! Destructor</a>
+<a name="ln151">    virtual ~OBFFCalculation2()</a>
+<a name="ln152">    {</a>
+<a name="ln153">    }</a>
+<a name="ln154">    //! \return Setup pointers to atom positions and forces (To be called</a>
+<a name="ln155">    //!  while setting up calculations). Sets optimized to true.</a>
+<a name="ln156">    virtual void SetupPointers()</a>
+<a name="ln157">    {</a>
+<a name="ln158">      if (!a || !b) return;</a>
+<a name="ln159">      pos_a = a-&gt;GetCoordinate();</a>
+<a name="ln160">      idx_a = a-&gt;GetIdx();</a>
+<a name="ln161">      pos_b = b-&gt;GetCoordinate();</a>
+<a name="ln162">      idx_b = b-&gt;GetIdx();</a>
+<a name="ln163">    }</a>
+<a name="ln164">  };</a>
+<a name="ln165"> </a>
+<a name="ln166">  //! \class OBFFCalculation3 forcefield.h &lt;openbabel/forcefield.h&gt;</a>
+<a name="ln167">  //! \brief Internal class for OBForceField to hold energy and gradient calculations on specific force fields</a>
+<a name="ln168">  class OBFPRT OBFFCalculation3: public OBFFCalculation2</a>
+<a name="ln169">  {</a>
+<a name="ln170">  public:</a>
+<a name="ln171">    //! Used to store the atoms for this OBFFCalculation</a>
+<a name="ln172">    OBAtom *c;</a>
+<a name="ln173">    //! Used to store the index of atoms for this OBFFCalculation</a>
+<a name="ln174">    int idx_c;</a>
+<a name="ln175">    //! Pointer to atom coordinates as double[3]</a>
+<a name="ln176">    double *pos_c;</a>
+<a name="ln177">    //! Pointer to atom forces</a>
+<a name="ln178">    double force_c[3];</a>
+<a name="ln179">    //! Destructor</a>
+<a name="ln180">    virtual ~OBFFCalculation3()</a>
+<a name="ln181">    {</a>
+<a name="ln182">    }</a>
+<a name="ln183">    //! \return Setup pointers to atom positions and forces (To be called</a>
+<a name="ln184">    //!  while setting up calculations). Sets optimized to true.</a>
+<a name="ln185">    virtual void SetupPointers()</a>
+<a name="ln186">    {</a>
+<a name="ln187">      if (!a || !b || !c) return;</a>
+<a name="ln188">      pos_a = a-&gt;GetCoordinate();</a>
+<a name="ln189">      idx_a = a-&gt;GetIdx();</a>
+<a name="ln190">      pos_b = b-&gt;GetCoordinate();</a>
+<a name="ln191">      idx_b = b-&gt;GetIdx();</a>
+<a name="ln192">      pos_c = c-&gt;GetCoordinate();</a>
+<a name="ln193">      idx_c = c-&gt;GetIdx();</a>
+<a name="ln194">    }</a>
+<a name="ln195">  };</a>
+<a name="ln196"> </a>
+<a name="ln197">  //! \class OBFFCalculation4 forcefield.h &lt;openbabel/forcefield.h&gt;</a>
+<a name="ln198">  //! \brief Internal class for OBForceField to hold energy and gradient calculations on specific force fields</a>
+<a name="ln199">  class OBFPRT OBFFCalculation4: public OBFFCalculation3</a>
+<a name="ln200">  {</a>
+<a name="ln201">  public:</a>
+<a name="ln202">    //! Used to store the atoms for this OBFFCalculation</a>
+<a name="ln203">    OBAtom *d;</a>
+<a name="ln204">    //! Used to store the index of atoms for this OBFFCalculation</a>
+<a name="ln205">    int idx_d;</a>
+<a name="ln206">    //! Pointer to atom coordinates as double[3]</a>
+<a name="ln207">    double *pos_d;</a>
+<a name="ln208">    //! Pointer to atom forces</a>
+<a name="ln209">    double force_d[3];</a>
+<a name="ln210">    //! Destructor</a>
+<a name="ln211">    virtual ~OBFFCalculation4()</a>
+<a name="ln212">    {</a>
+<a name="ln213">    }</a>
+<a name="ln214">    //! \return Setup pointers to atom positions and forces (To be called</a>
+<a name="ln215">    //!  while setting up calculations). Sets optimized to true.</a>
+<a name="ln216">    void SetupPointers()</a>
+<a name="ln217">    {</a>
+<a name="ln218">      if (!a || !b || !c || !d) return;</a>
+<a name="ln219">      pos_a = a-&gt;GetCoordinate();</a>
+<a name="ln220">      idx_a = a-&gt;GetIdx();</a>
+<a name="ln221">      pos_b = b-&gt;GetCoordinate();</a>
+<a name="ln222">      idx_b = b-&gt;GetIdx();</a>
+<a name="ln223">      pos_c = c-&gt;GetCoordinate();</a>
+<a name="ln224">      idx_c = c-&gt;GetIdx();</a>
+<a name="ln225">      pos_d = d-&gt;GetCoordinate();</a>
+<a name="ln226">      idx_d = d-&gt;GetIdx();</a>
+<a name="ln227">    }</a>
+<a name="ln228">  };</a>
+<a name="ln229"> </a>
+<a name="ln230">  //! \class OBFFConstraint forcefield.h &lt;openbabel/forcefield.h&gt;</a>
+<a name="ln231">  //! \brief Internal class for OBForceField to hold constraints</a>
+<a name="ln232">  //! \since version 2.2</a>
+<a name="ln233">  class OBFPRT OBFFConstraint</a>
+<a name="ln234">  {</a>
+<a name="ln235">  public:</a>
+<a name="ln236">    //! Used to store the contraint energy for this OBFFConstraint</a>
+<a name="ln237">    double factor, constraint_value;</a>
+<a name="ln238">    double rab0, rbc0;</a>
+<a name="ln239">    //! Used to store the contraint type for this OBFFConstraint</a>
+<a name="ln240">    int type, ia, ib, ic, id;</a>
+<a name="ln241">    //! Used to store the atoms for this OBFFCostraint</a>
+<a name="ln242">    OBAtom *a, *b, *c, *d;</a>
+<a name="ln243">    //! Used to store the gradients for this OBFFCalculation</a>
+<a name="ln244">    vector3 grada, gradb, gradc, gradd;</a>
+<a name="ln245"> </a>
+<a name="ln246">    //! Constructor</a>
+<a name="ln247">    OBFFConstraint()</a>
+<a name="ln248">      {</a>
+<a name="ln249">        a = b = c = d = nullptr;</a>
+<a name="ln250">        ia = ib = ic = id = 0;</a>
+<a name="ln251">        constraint_value = 0.0;</a>
+<a name="ln252">        factor = 0.0;</a>
+<a name="ln253">      }</a>
+<a name="ln254">    //! Destructor</a>
+<a name="ln255">    ~OBFFConstraint()</a>
+<a name="ln256">      {</a>
+<a name="ln257">      }</a>
+<a name="ln258"> </a>
+<a name="ln259">    vector3 GetGradient(int a)</a>
+<a name="ln260">    {</a>
+<a name="ln261">      if (a == ia)</a>
+<a name="ln262">        return grada;</a>
+<a name="ln263">      else if (a == ib)</a>
+<a name="ln264">        return gradb;</a>
+<a name="ln265">      else if (a == ic)</a>
+<a name="ln266">        return gradc;</a>
+<a name="ln267">      else if (a == id)</a>
+<a name="ln268">        return gradd;</a>
+<a name="ln269">      else</a>
+<a name="ln270">        return  VZero;</a>
+<a name="ln271">    }</a>
+<a name="ln272">  };</a>
+<a name="ln273"> </a>
+<a name="ln274">  //! \class OBFFConstraints forcefield.h &lt;openbabel/forcefield.h&gt;</a>
+<a name="ln275">  //! \brief Internal class for OBForceField to handle constraints</a>
+<a name="ln276">  //! \since version 2.2</a>
+<a name="ln277">  class OBFPRT OBFFConstraints</a>
+<a name="ln278">  {</a>
+<a name="ln279">  public:</a>
+<a name="ln280">    //! Constructor</a>
+<a name="ln281">    OBFFConstraints();</a>
+<a name="ln282">    //! Destructor</a>
+<a name="ln283">    ~OBFFConstraints()</a>
+<a name="ln284">      {</a>
+<a name="ln285">        _constraints.clear();</a>
+<a name="ln286">        _ignored.Clear();</a>
+<a name="ln287">        _fixed.Clear();</a>
+<a name="ln288">        _Xfixed.Clear();</a>
+<a name="ln289">        _Yfixed.Clear();</a>
+<a name="ln290">        _Zfixed.Clear();</a>
+<a name="ln291">      }</a>
+<a name="ln292">    //! Clear all constraints</a>
+<a name="ln293">    void Clear();</a>
+<a name="ln294">    //! Get the constraint energy</a>
+<a name="ln295">    double GetConstraintEnergy();</a>
+<a name="ln296">    //! Get the constraint gradient for atom with index a</a>
+<a name="ln297">    vector3 GetGradient(int a);</a>
+<a name="ln298">    //! Get the constrain gradient for the atom</a>
+<a name="ln299">    OBFFConstraints&amp; operator=(const OBFFConstraints &amp;ai)</a>
+<a name="ln300">      {</a>
+<a name="ln301">        if (this != &amp;ai) {</a>
+<a name="ln302">          _constraints = ai._constraints;</a>
+<a name="ln303">          _ignored = ai._ignored;</a>
+<a name="ln304">          _fixed = ai._fixed;</a>
+<a name="ln305">          _Xfixed = ai._Xfixed;</a>
+<a name="ln306">          _Yfixed = ai._Yfixed;</a>
+<a name="ln307">          _Zfixed = ai._Zfixed;</a>
+<a name="ln308">        }</a>
+<a name="ln309">        return *this;</a>
+<a name="ln310">      }</a>
+<a name="ln311"> </a>
+<a name="ln312">    /*! Translate indices to OBAtom* objects, this function is called from OBForceField::Setup,</a>
+<a name="ln313">     *  this function doesn't have to be called from anywhere else.</a>
+<a name="ln314">     */</a>
+<a name="ln315">    void Setup(OBMol &amp;mol);</a>
+<a name="ln316"> </a>
+<a name="ln317">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln318">    // Set Constraints                                                     //</a>
+<a name="ln319">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln320">    //! \name Methods to set constraints</a>
+<a name="ln321">    //@{</a>
+<a name="ln322">    //! Set Constraint factor</a>
+<a name="ln323">    void SetFactor(double factor);</a>
+<a name="ln324">    //! Ignore the atom while setting up calculations</a>
+<a name="ln325">    void AddIgnore(int a);</a>
+<a name="ln326">    //! Fix the position of an atom</a>
+<a name="ln327">    void AddAtomConstraint(int a);</a>
+<a name="ln328">    //! Fix the x coordinate of the atom position</a>
+<a name="ln329">    void AddAtomXConstraint(int a);</a>
+<a name="ln330">    //! Fix the y coordinate of the atom position</a>
+<a name="ln331">    void AddAtomYConstraint(int a);</a>
+<a name="ln332">    //! Fix the z coordinate of the atom position</a>
+<a name="ln333">    void AddAtomZConstraint(int a);</a>
+<a name="ln334">    //! Constrain the bond length a-b</a>
+<a name="ln335">    void AddDistanceConstraint(int a, int b, double length);</a>
+<a name="ln336">    //! Constrain the angle a-b-c</a>
+<a name="ln337">    void AddAngleConstraint(int a, int b, int c, double angle);</a>
+<a name="ln338">    //! Constrain the torsion angle a-b-c-d</a>
+<a name="ln339">    void AddTorsionConstraint(int a, int b, int c, int d, double torsion);</a>
+<a name="ln340">    //! Delete a constraint</a>
+<a name="ln341">    //! \par index constraint index</a>
+<a name="ln342">    void DeleteConstraint(int index);</a>
+<a name="ln343">    //@}</a>
+<a name="ln344">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln345">    // Get Constraints                                                     //</a>
+<a name="ln346">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln347">    //! \name Methods to get information about set constraints</a>
+<a name="ln348">    //@{</a>
+<a name="ln349">    //! Get Constraint factor</a>
+<a name="ln350">    double GetFactor();</a>
+<a name="ln351">    //! \returns the number of set constraints</a>
+<a name="ln352">    int Size() const;</a>
+<a name="ln353">    /*! The following constraint types are known: OBFF_CONST_IGNORE (ignore</a>
+<a name="ln354">     *  the atom while setting up calculations, forcefield implementations</a>
+<a name="ln355">     *  need to check this value in their setup function), OBFF_CONST_ATOM</a>
+<a name="ln356">     *  (fix atom position), OBFF_CONST_ATOM_X (fix x coordinate),</a>
+<a name="ln357">     *  OBFF_CONST_ATOM_Y (fix y coordinate), OBFF_CONST_ATOM_Z (fix z</a>
+<a name="ln358">     *  coordinate), OBFF_CONST_BOND (constrain bond length), OBFF_CONST_ANGLE</a>
+<a name="ln359">     *  (constrain angle), OBFF_CONST_TORSION (constrain torsion angle)</a>
+<a name="ln360">     *  \return the constraint type</a>
+<a name="ln361">     */</a>
+<a name="ln362">    int GetConstraintType(int index) const;</a>
+<a name="ln363">    /*! \return The constraint value, this can be a bond length, angle or</a>
+<a name="ln364">     *   torsion angle depending on the constraint type.</a>
+<a name="ln365">     */</a>
+<a name="ln366">    double GetConstraintValue(int index) const;</a>
+<a name="ln367">    //! \return The constraint atom a (or fixed atom)</a>
+<a name="ln368">    //! \par index constraint index</a>
+<a name="ln369">    int GetConstraintAtomA(int index) const;</a>
+<a name="ln370">    //! \return The constraint atom b</a>
+<a name="ln371">    //! \par index constraint index</a>
+<a name="ln372">    int GetConstraintAtomB(int index) const;</a>
+<a name="ln373">    //! \return The constraint atom c</a>
+<a name="ln374">    //! \par index constraint index</a>
+<a name="ln375">    int GetConstraintAtomC(int index) const;</a>
+<a name="ln376">    //! \return The constraint atom d</a>
+<a name="ln377">    //! \par index constraint index</a>
+<a name="ln378">    int GetConstraintAtomD(int index) const;</a>
+<a name="ln379">    //! \return true if this atom is ignored</a>
+<a name="ln380">    //! \par a atom index</a>
+<a name="ln381">    bool IsIgnored(int a);</a>
+<a name="ln382">    //! \return true if this atom is fixed</a>
+<a name="ln383">    //! \par a atom index</a>
+<a name="ln384">    bool IsFixed(int a);</a>
+<a name="ln385">    //! \return true if the x coordinate for this atom is fixed</a>
+<a name="ln386">    //! \par a atom index</a>
+<a name="ln387">    bool IsXFixed(int a);</a>
+<a name="ln388">    //! \return true if the y coordinate for this atom is fixed</a>
+<a name="ln389">    //! \par a atom index</a>
+<a name="ln390">    bool IsYFixed(int a);</a>
+<a name="ln391">    //! \return true if the z coordinate for this atom is fixed</a>
+<a name="ln392">    //! \par a atom index</a>
+<a name="ln393">    bool IsZFixed(int a);</a>
+<a name="ln394">    //! \return the ignored atom indexes as bitvec. (used in</a>
+<a name="ln395">    //! OBForceField::Setup() to determine if a call to</a>
+<a name="ln396">    //! OBForceField::SetupCalculations() is needed)</a>
+<a name="ln397">    OBBitVec GetIgnoredBitVec() { return _ignored; }</a>
+<a name="ln398">    //! \return the fixed atom indexes as bitvec. (used in</a>
+<a name="ln399">    //! OBForceField::SystematicRotorSearch() and similar)</a>
+<a name="ln400">    OBBitVec GetFixedBitVec() { return _fixed; }</a>
+<a name="ln401">    //@}</a>
+<a name="ln402"> </a>
+<a name="ln403">  private:</a>
+<a name="ln404">    std::vector&lt;OBFFConstraint&gt; _constraints;</a>
+<a name="ln405">    OBBitVec	_ignored;</a>
+<a name="ln406">    OBBitVec	_fixed;</a>
+<a name="ln407">    OBBitVec	_Xfixed;</a>
+<a name="ln408">    OBBitVec	_Yfixed;</a>
+<a name="ln409">    OBBitVec	_Zfixed;</a>
+<a name="ln410">    double _factor;</a>
+<a name="ln411">  };</a>
+<a name="ln412"> </a>
+<a name="ln413">  // Class OBForceField</a>
+<a name="ln414">  // class introduction in forcefield.cpp</a>
+<a name="ln415">  class OBFPRT OBForceField : public OBPlugin</a>
+<a name="ln416">  {</a>
+<a name="ln417">    MAKE_PLUGIN(OBForceField)</a>
+<a name="ln418"> </a>
+<a name="ln419">    protected:</a>
+<a name="ln420"> </a>
+<a name="ln421">      /*!</a>
+<a name="ln422">      Get the correct OBFFParameter from a OBFFParameter vector.</a>
+<a name="ln423"> </a>
+<a name="ln424">      \code vector&lt;OBFFParameter&gt; parameters; \endcode</a>
+<a name="ln425"> </a>
+<a name="ln426">      this vector is filled with entries (as OBFFParameter) from</a>
+<a name="ln427">      a parameter file. This happens in the Setup() function.</a>
+<a name="ln428"> </a>
+<a name="ln429">      \code GetParameter(a, 0, 0, 0, parameters); \endcode</a>
+<a name="ln430"> </a>
+<a name="ln431">      returns the first OBFFParameter from vector&lt;OBFFParameter&gt;</a>
+<a name="ln432">      parameters where: pa = a (pa = parameter.a)</a>
+<a name="ln433"> </a>
+<a name="ln434">      use: vdw parameters, ...</a>
+<a name="ln435"> </a>
+<a name="ln436">      \code GetParameter(a, b, 0, 0, parameters); \endcode</a>
+<a name="ln437"> </a>
+<a name="ln438">      returns the first OBFFParameter from vector&lt;OBFFParameter&gt;</a>
+<a name="ln439">      parameters where: pa = a &amp; pb = b      (ab)</a>
+<a name="ln440">      or: pa = b &amp; pb = a      (ba)</a>
+<a name="ln441"> </a>
+<a name="ln442">      use: bond parameters, vdw parameters (pairs), ...</a>
+<a name="ln443"> </a>
+<a name="ln444">      \code GetParameter(a, b, c, 0, parameters); \endcode</a>
+<a name="ln445"> </a>
+<a name="ln446">      returns the first OBFFParameter from vector&lt;OBFFParameter&gt;</a>
+<a name="ln447">      parameters where: pa = a &amp; pb = b &amp; pc = c     (abc)</a>
+<a name="ln448">      or: pa = c &amp; pb = b &amp; pc = a     (cba)</a>
+<a name="ln449"> </a>
+<a name="ln450">      use: angle parameters, ...</a>
+<a name="ln451"> </a>
+<a name="ln452">      \code GetParameter(a, b, c, d, parameters); \endcode</a>
+<a name="ln453"> </a>
+<a name="ln454">      returns the first OBFFParameter from vector&lt;OBFFParameter&gt;</a>
+<a name="ln455">      parameters where: pa = a &amp; pb = b &amp; pc = c &amp; pd = d    (abcd)</a>
+<a name="ln456">      or: pa = d &amp; pb = b &amp; pc = c &amp; pd = a    (dbca)</a>
+<a name="ln457">      or: pa = a &amp; pb = c &amp; pc = b &amp; pd = d    (acbd)</a>
+<a name="ln458">      or: pa = d &amp; pb = c &amp; pc = b &amp; pd = a    (dcba)</a>
+<a name="ln459"> </a>
+<a name="ln460">      use: torsion parameters, ...</a>
+<a name="ln461">    */</a>
+<a name="ln462">    OBFFParameter* GetParameter(int a, int b, int c, int d, std::vector&lt;OBFFParameter&gt; &amp;parameter);</a>
+<a name="ln463">    //! see GetParameter(int a, int b, int c, int d, std::vector&lt;OBFFParameter&gt; &amp;parameter)</a>
+<a name="ln464">    OBFFParameter* GetParameter(const char* a, const char* b, const char* c, const char* d,</a>
+<a name="ln465">        std::vector&lt;OBFFParameter&gt; &amp;parameter);</a>
+<a name="ln466">    //! Get index for vector&lt;OBFFParameter&gt; ...</a>
+<a name="ln467">    int GetParameterIdx(int a, int b, int c, int d, std::vector&lt;OBFFParameter&gt; &amp;parameter);</a>
+<a name="ln468"> </a>
+<a name="ln469">    /*! Calculate the potential energy function derivative numerically with</a>
+<a name="ln470">     *  repect to the coordinates of atom with index a (this vector is the gradient)</a>
+<a name="ln471">     *</a>
+<a name="ln472">     * \param a  provides coordinates</a>
+<a name="ln473">     * \param terms OBFF_ENERGY, OBFF_EBOND, OBFF_EANGLE, OBFF_ESTRBND, OBFF_ETORSION,</a>
+<a name="ln474">     * OBFF_EOOP, OBFF_EVDW, OBFF_ELECTROSTATIC</a>
+<a name="ln475">     * \return the negative gradient of atom a</a>
+<a name="ln476">     */</a>
+<a name="ln477">    vector3 NumericalDerivative(OBAtom *a, int terms = OBFF_ENERGY);</a>
+<a name="ln478">    //! OB 3.0</a>
+<a name="ln479">    vector3 NumericalSecondDerivative(OBAtom *a, int terms = OBFF_ENERGY);</a>
+<a name="ln480"> </a>
+<a name="ln481">    /*</a>
+<a name="ln482">     *   NEW gradients functions</a>
+<a name="ln483">     */</a>
+<a name="ln484"> </a>
+<a name="ln485">    /*! Set the gradient for atom with index idx to grad</a>
+<a name="ln486">     */</a>
+<a name="ln487">    void SetGradient(double *grad, int idx)</a>
+<a name="ln488">    {</a>
+<a name="ln489">      const int coordIdx = (idx - 1) * 3;</a>
+<a name="ln490">      for (unsigned int i = 0; i &lt; 3; ++i) {</a>
+<a name="ln491">        _gradientPtr[coordIdx + i] = grad[i];</a>
+<a name="ln492">      }</a>
+<a name="ln493">    }</a>
+<a name="ln494"> </a>
+<a name="ln495">    /*! Add grad to the gradient for atom with index idx</a>
+<a name="ln496">     */</a>
+<a name="ln497">    void AddGradient(double *grad, int idx)</a>
+<a name="ln498">    {</a>
+<a name="ln499">      const int coordIdx = (idx - 1) * 3;</a>
+<a name="ln500">      for (unsigned int i = 0; i &lt; 3; ++i) {</a>
+<a name="ln501">        _gradientPtr[coordIdx + i] += grad[i];</a>
+<a name="ln502">      }</a>
+<a name="ln503">    }</a>
+<a name="ln504"> </a>
+<a name="ln505">    /*! Set all gradients to zero</a>
+<a name="ln506">     */</a>
+<a name="ln507">    virtual void ClearGradients()</a>
+<a name="ln508">    {</a>
+<a name="ln509">      // We cannot use memset because IEEE floating point representations</a>
+<a name="ln510">      // are not guaranteed by C/C++ standard, but this loop can be</a>
+<a name="ln511">      // unrolled or vectorized by compilers</a>
+<a name="ln512">      for (unsigned int i = 0; i &lt; _ncoords; ++i)</a>
+<a name="ln513">        _gradientPtr[i] = 0.0;</a>
+<a name="ln514">      //      memset(_gradientPtr, '\0', sizeof(double)*_ncoords);</a>
+<a name="ln515">    }</a>
+<a name="ln516"> </a>
+<a name="ln517">    /*! Check if two atoms are in the same ring. [NOTE: this function uses SSSR,</a>
+<a name="ln518">     *  this means that not all rings are found for bridged rings. This causes</a>
+<a name="ln519">     *  some problems with the MMFF94 validation.]</a>
+<a name="ln520">     *  \param a atom a</a>
+<a name="ln521">     *  \param b atom b</a>
+<a name="ln522">     *  \return true if atom a and b are in the same ring</a>
+<a name="ln523">     */</a>
+<a name="ln524">    bool IsInSameRing(OBAtom* a, OBAtom* b);</a>
+<a name="ln525"> </a>
+<a name="ln526">    // general variables</a>
+<a name="ln527">    OBMol 	_mol; //!&lt; Molecule to be evaluated or minimized</a>
+<a name="ln528">    bool 	_init; //!&lt; Used to make sure we only parse the parameter file once, when needed</a>
+<a name="ln529">    std::string	_parFile; //! &lt; parameter file name</a>
+<a name="ln530">    bool 	_validSetup; //!&lt; was the last call to Setup successful</a>
+<a name="ln531">    double	*_gradientPtr; //!&lt; pointer to the gradients (used by AddGradient(), minimization functions, ...)</a>
+<a name="ln532">    // logging variables</a>
+<a name="ln533">    std::ostream* _logos; //!&lt; Output for logfile</a>
+<a name="ln534">    char 	_logbuf[BUFF_SIZE+1]; //!&lt; Temporary buffer for logfile output</a>
+<a name="ln535">    int 	_loglvl; //!&lt; Log level for output</a>
+<a name="ln536">    int 	_origLogLevel;</a>
+<a name="ln537">    // conformer genereation (rotor search) variables</a>
+<a name="ln538">    int 	_current_conformer; //!&lt; used to hold i for current conformer (needed by UpdateConformers)</a>
+<a name="ln539">    std::vector&lt;double&gt; _energies; //!&lt; used to hold the energies for all conformers</a>
+<a name="ln540">    // minimization variables</a>
+<a name="ln541">    double 	_econv, _gconv, _e_n1; //!&lt; Used for conjugate gradients and steepest descent(Initialize and TakeNSteps)</a>
+<a name="ln542">    int 	_cstep, _nsteps; //!&lt; Used for conjugate gradients and steepest descent(Initialize and TakeNSteps)</a>
+<a name="ln543">    double 	*_grad1; //!&lt; Used for conjugate gradients and steepest descent(Initialize and TakeNSteps)</a>
+<a name="ln544">    unsigned int _ncoords; //!&lt; Number of coordinates for conjugate gradients</a>
+<a name="ln545">    int         _linesearch; //!&lt; LineSearch type</a>
+<a name="ln546">    // molecular dynamics variables</a>
+<a name="ln547">    double 	_timestep; //!&lt; Molecular dynamics time step in picoseconds</a>
+<a name="ln548">    double 	_temp; //!&lt; Molecular dynamics temperature in Kelvin</a>
+<a name="ln549">    double 	*_velocityPtr; //!&lt; pointer to the velocities</a>
+<a name="ln550">    // contraint varibles</a>
+<a name="ln551">    static OBFFConstraints _constraints; //!&lt; Constraints</a>
+<a name="ln552">    static unsigned int _fixAtom; //!&lt; SetFixAtom()/UnsetFixAtom()</a>
+<a name="ln553">    static unsigned int _ignoreAtom; //!&lt; SetIgnoreAtom()/UnsetIgnoreAtom()</a>
+<a name="ln554">    // cut-off variables</a>
+<a name="ln555">    bool 	_cutoff; //!&lt; true = cut-off enabled</a>
+<a name="ln556">    double 	_rvdw; //!&lt; VDW cut-off distance</a>
+<a name="ln557">    double 	_rele; //!&lt; Electrostatic cut-off distance</a>
+<a name="ln558">    double _epsilon; //!&lt; Dielectric constant for electrostatics</a>
+<a name="ln559">    OBBitVec	_vdwpairs; //!&lt; VDW pairs that should be calculated</a>
+<a name="ln560">    OBBitVec	_elepairs; //!&lt; Electrostatic pairs that should be calculated</a>
+<a name="ln561">    int 	_pairfreq; //!&lt; The frequence to update non-bonded pairs</a>
+<a name="ln562">    // group variables</a>
+<a name="ln563">    std::vector&lt;OBBitVec&gt; _intraGroup; //!&lt; groups for which intra-molecular interactions should be calculated</a>
+<a name="ln564">    std::vector&lt;OBBitVec&gt; _interGroup; //!&lt; groups for which intra-molecular interactions should be calculated</a>
+<a name="ln565">    std::vector&lt;std::pair&lt;OBBitVec, OBBitVec&gt; &gt; _interGroups; //!&lt; groups for which intra-molecular</a>
+<a name="ln566">                                                              //!&lt; interactions should be calculated</a>
+<a name="ln567">  public:</a>
+<a name="ln568">    /*! Clone the current instance. May be desirable in multithreaded environments,</a>
+<a name="ln569">     *  Should be deleted after use</a>
+<a name="ln570">     */</a>
+<a name="ln571">    virtual OBForceField* MakeNewInstance()=0;</a>
+<a name="ln572"> </a>
+<a name="ln573">    //! Destructor</a>
+<a name="ln574">    virtual ~OBForceField()</a>
+<a name="ln575">    {</a>
+<a name="ln576">      if (_grad1 != nullptr) {</a>
+<a name="ln577">        delete [] _grad1;</a>
+<a name="ln578">        _grad1 = nullptr;</a>
+<a name="ln579">      }</a>
+<a name="ln580">      if (_gradientPtr != nullptr) {</a>
+<a name="ln581">        delete [] _gradientPtr;</a>
+<a name="ln582">	_gradientPtr = nullptr;</a>
+<a name="ln583">      }</a>
+<a name="ln584">    }</a>
+<a name="ln585"> </a>
+<a name="ln586">    //! \return Plugin type (&quot;forcefields&quot;)</a>
+<a name="ln587">    const char* TypeID()</a>
+<a name="ln588">    {</a>
+<a name="ln589">      return &quot;forcefields&quot;;</a>
+<a name="ln590">    }</a>
+<a name="ln591"> </a>
+<a name="ln592">    /*! \param ID forcefield id (Ghemical, MMFF94, UFF, ...).</a>
+<a name="ln593">     *  \return A pointer to a forcefield (the default if ID is empty), or NULL if not available.</a>
+<a name="ln594">     */</a>
+<a name="ln595">    static OBForceField* FindForceField(const std::string&amp; ID)</a>
+<a name="ln596">    {</a>
+<a name="ln597">      return FindType(ID.c_str());</a>
+<a name="ln598">    }</a>
+<a name="ln599">    /*! \param ID forcefield id (Ghemical, MMFF94, UFF, ...).</a>
+<a name="ln600">     *  \return A pointer to a forcefield (the default if ID is empty), or NULL if not available.</a>
+<a name="ln601">     */</a>
+<a name="ln602">    static OBForceField* FindForceField(const char *ID)</a>
+<a name="ln603">    {</a>
+<a name="ln604">      return FindType(ID);</a>
+<a name="ln605">    }</a>
+<a name="ln606">    /*</a>
+<a name="ln607">     *</a>
+<a name="ln608">     */</a>
+<a name="ln609">    void SetParameterFile(const std::string &amp;filename)</a>
+<a name="ln610">    {</a>
+<a name="ln611">      _parFile = filename;</a>
+<a name="ln612">      _init = false;</a>
+<a name="ln613">    }</a>
+<a name="ln614">    /*! \return The unit (kcal/mol, kJ/mol, ...) in which the energy is expressed as std::string.</a>
+<a name="ln615">     */</a>
+<a name="ln616">    virtual std::string GetUnit() { return std::string(&quot;au&quot;); }</a>
+<a name="ln617">    /* Does this force field have analytical gradients defined for all</a>
+<a name="ln618">     * calculation components (bonds, angles, non-bonded, etc.)</a>
+<a name="ln619">     * If this is true, code should default to using OBFF_ANALYTICAL_GRADIENT</a>
+<a name="ln620">     * for SteepestDescent() or ConjugateGradients().</a>
+<a name="ln621">     * \return True if all analytical gradients are implemented.</a>
+<a name="ln622">     */</a>
+<a name="ln623">    virtual bool HasAnalyticalGradients() { return false; }</a>
+<a name="ln624">    /*! Setup the forcefield for mol (assigns atom types, charges, etc.). Keep current constraints.</a>
+<a name="ln625">     *  \param mol The OBMol object that contains the atoms and bonds.</a>
+<a name="ln626">     *  \return True if successful.</a>
+<a name="ln627">     */</a>
+<a name="ln628">    bool Setup(OBMol &amp;mol);</a>
+<a name="ln629">    /*! Setup the forcefield for mol (assigns atom types, charges, etc.). Use new constraints.</a>
+<a name="ln630">     *  \param mol The OBMol object that contains the atoms and bonds.</a>
+<a name="ln631">     *  \param constraints The OBFFConstraints object that contains the constraints.</a>
+<a name="ln632">     *  \return True if successful.</a>
+<a name="ln633">     */</a>
+<a name="ln634">    bool Setup(OBMol &amp;mol, OBFFConstraints &amp;constraints);</a>
+<a name="ln635">    /*! Load the parameters (this function is overloaded by the individual forcefields,</a>
+<a name="ln636">     *  and is called autoamically from OBForceField::Setup()).</a>
+<a name="ln637">     */</a>
+<a name="ln638">    // move to protected in future version</a>
+<a name="ln639">    virtual bool ParseParamFile() { return false; }</a>
+<a name="ln640">    /*! Set the atom types (this function is overloaded by the individual forcefields,</a>
+<a name="ln641">     *  and is called autoamically from OBForceField::Setup()).</a>
+<a name="ln642">     */</a>
+<a name="ln643">    // move to protected in future version</a>
+<a name="ln644">    virtual bool SetTypes() { return false; }</a>
+<a name="ln645">    /*! Set the formal charges (this function is overloaded by the individual forcefields,</a>
+<a name="ln646">     *  and is called autoamically from OBForceField::Setup()).</a>
+<a name="ln647">     */</a>
+<a name="ln648">    // move to protected in future version</a>
+<a name="ln649">    virtual bool SetFormalCharges() { return false; }</a>
+<a name="ln650">    /*! Set the partial charges (this function is overloaded by the individual forcefields,</a>
+<a name="ln651">     *  and is called autoamically from OBForceField::Setup()).</a>
+<a name="ln652">     */</a>
+<a name="ln653">    // move to protected in future version</a>
+<a name="ln654">    virtual bool SetPartialCharges() { return false; }</a>
+<a name="ln655">    /*! Setup the calculations (this function is overloaded by the individual forcefields,</a>
+<a name="ln656">     *  and is called autoamically from OBForceField::Setup()).</a>
+<a name="ln657">     */</a>
+<a name="ln658">    // move to protected in future version</a>
+<a name="ln659">    virtual bool SetupCalculations() { return false; }</a>
+<a name="ln660">    /*! Setup the pointers to the atom positions in the OBFFCalculation objects. This method</a>
+<a name="ln661">     *  will iterate over all the calculations and call SetupPointers for each one. (This</a>
+<a name="ln662">     *  function should be implemented by the individual force field implementations).</a>
+<a name="ln663">     */</a>
+<a name="ln664">    // move to protected in future version</a>
+<a name="ln665">    virtual bool SetupPointers() { return false; }</a>
+<a name="ln666">    /*! Compare the internal forcefield OBMol object to mol. If the two have the</a>
+<a name="ln667">     *  same number of atoms and bonds, and all atomic numbers are the same,</a>
+<a name="ln668">     *  this function returns false, and no call to Setup is needed.</a>
+<a name="ln669">     *  \return True if Setup needs to be called.</a>
+<a name="ln670">     */</a>
+<a name="ln671">    bool IsSetupNeeded(OBMol &amp;mol);</a>
+<a name="ln672">    /*! Get the force atom types. The atom types will be added to</a>
+<a name="ln673">     *  the atoms of mol as OBPairData. The attribute will be &quot;FFAtomType&quot;.</a>
+<a name="ln674">     *</a>
+<a name="ln675">     *  \code</a>
+<a name="ln676">     *  ...</a>
+<a name="ln677">     *  pFF-&gt;Setup(&amp;mol);</a>
+<a name="ln678">     *  pFF-&gt;GetAtomTypes(&amp;mol);</a>
+<a name="ln679">     *  FOR_ATOMS_OF_MOL (atom, mol) {</a>
+<a name="ln680">     *    OBPairData *type = (OBPairData*) atom-&gt;GetData(&quot;FFAtomType&quot;);</a>
+<a name="ln681">     *    if (type)</a>
+<a name="ln682">     *      cout &lt;&lt; &quot;atom &quot; &lt;&lt; atom-&gt;GetIdx() &lt;&lt; &quot; : &quot; &lt;&lt; type-&gt;GetValue() &lt;&lt; endl;</a>
+<a name="ln683">     *  }</a>
+<a name="ln684">     *  ...</a>
+<a name="ln685">     *  \endcode</a>
+<a name="ln686">     */</a>
+<a name="ln687">    bool GetAtomTypes(OBMol &amp;mol);</a>
+<a name="ln688">    /*! Get the force field formal charges. The formal charges will be added to</a>
+<a name="ln689">     *  the atoms of mol as OBPairData. The attribute will be &quot;FFPartialCharge&quot;.</a>
+<a name="ln690">     *</a>
+<a name="ln691">     *  \code</a>
+<a name="ln692">     *  ...</a>
+<a name="ln693">     *  pFF-&gt;Setup(&amp;mol);</a>
+<a name="ln694">     *  pFF-&gt;GetPartialCharges(&amp;mol);</a>
+<a name="ln695">     *  FOR_ATOMS_OF_MOL (atom, mol) {</a>
+<a name="ln696">     *    OBPairData *chg = (OBPairData*) atom-&gt;GetData(&quot;FFPartialCharge&quot;);</a>
+<a name="ln697">     *    if (chg)</a>
+<a name="ln698">     *      cout &lt;&lt; &quot;atom &quot; &lt;&lt; atom-&gt;GetIdx() &lt;&lt; &quot; : &quot; &lt;&lt; chg-&gt;GetValue() &lt;&lt; endl;</a>
+<a name="ln699">     *  }</a>
+<a name="ln700">     *  ...</a>
+<a name="ln701">     *  \endcode</a>
+<a name="ln702">     */</a>
+<a name="ln703">    bool GetPartialCharges(OBMol &amp;mol);</a>
+<a name="ln704"> </a>
+<a name="ln705"> </a>
+<a name="ln706"> </a>
+<a name="ln707">    /*! Get coordinates for current conformer and attach OBConformerData with energies, forces, ... to mol.</a>
+<a name="ln708">     *  \param mol The OBMol object to copy the coordinates to (from OBForceField::_mol).</a>
+<a name="ln709">     *  \return True if successful.</a>
+<a name="ln710">     */</a>
+<a name="ln711">    bool GetCoordinates(OBMol &amp;mol);</a>
+<a name="ln712">    //! \deprecated Use GetCooordinates instead.</a>
+<a name="ln713">    bool UpdateCoordinates(OBMol &amp;mol) {return GetCoordinates(mol); }</a>
+<a name="ln714">    /*! Get coordinates for all conformers and attach OBConformerData with energies, forces, ... to mol.</a>
+<a name="ln715">     *  \param mol The OBMol object to copy the coordinates to (from OBForceField::_mol).</a>
+<a name="ln716">     *  \return True if successful.</a>
+<a name="ln717">     */</a>
+<a name="ln718">    bool GetConformers(OBMol &amp;mol);</a>
+<a name="ln719">    //! \deprecated Use GetConformers instead.</a>
+<a name="ln720">    bool UpdateConformers(OBMol &amp;mol) { return GetConformers(mol); }</a>
+<a name="ln721">    /*! Set coordinates for current conformer.</a>
+<a name="ln722">     *  \param mol the OBMol object to copy the coordinates from (to OBForceField::_mol).</a>
+<a name="ln723">     *  \return true if successful.</a>
+<a name="ln724">     */</a>
+<a name="ln725">    bool SetCoordinates(OBMol &amp;mol);</a>
+<a name="ln726">    /*! Set coordinates for all conformers.</a>
+<a name="ln727">     *  \param mol The OBMol object to copy the coordinates from (to OBForceField::_mol).</a>
+<a name="ln728">     *  \return True if successful.</a>
+<a name="ln729">     */</a>
+<a name="ln730">    bool SetConformers(OBMol &amp;mol);</a>
+<a name="ln731">    /*! Create a grid with spacing @p step and @p padding. Place a probe atom of type probe at every grid point,</a>
+<a name="ln732">     *  calculate the energy and store it in the grid. These grids can then be used to create isosurfaces to</a>
+<a name="ln733">     *  identify locations where the probe atom has favourable interactions with the molecule.</a>
+<a name="ln734">     *  \param step The grid step size in A..</a>
+<a name="ln735">     *  \param padding The padding for the grid in A.</a>
+<a name="ln736">     *  \param type The force field atom type for the probe.</a>
+<a name="ln737">     *  \param pchg The partial charge for the probe atom.</a>
+<a name="ln738">     *  \return Pointer to the grid constaining the results.</a>
+<a name="ln739">     */</a>
+<a name="ln740">    OBGridData *GetGrid(double step, double padding, const char *type, double pchg);</a>
+<a name="ln741"> </a>
+<a name="ln742">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln743">    // Interacting groups                                                  //</a>
+<a name="ln744">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln745"> </a>
+<a name="ln746">    //! \name Methods for specifying interaction groups</a>
+<a name="ln747">    //@{</a>
+<a name="ln748">    /*! Enable intra-molecular interactions for group (bonds, angles, strbnd, torsions, oop).</a>
+<a name="ln749">     *  This function should be called before Setup().</a>
+<a name="ln750">     *  \param group OBBitVec with bits set for the indexes of the atoms which make up the group.</a>
+<a name="ln751">     */</a>
+<a name="ln752">    void AddIntraGroup(OBBitVec &amp;group);</a>
+<a name="ln753">    /*! Enable inter-molecular interactions for group (non-bonded: vdw &amp; ele).</a>
+<a name="ln754">     *  This function should be called before Setup().</a>
+<a name="ln755">     *  \param group OBBitVec with bits set for the indexes of the atoms which make up the group.</a>
+<a name="ln756">     */</a>
+<a name="ln757">    void AddInterGroup(OBBitVec &amp;group);</a>
+<a name="ln758">    /*! Enable inter-molecular interactions between group1 and group2 (non-bonded: vdw &amp; ele).</a>
+<a name="ln759">     *  Note that this function doesn't enable bonded interactions in either group. Non-bonded</a>
+<a name="ln760">     *  interactions in the groups itself are also not enabled.</a>
+<a name="ln761">     *  This function should be called before Setup().</a>
+<a name="ln762">     *  \param group1 OBBitVec with bits set for the indexes of the atoms which make up the first group.</a>
+<a name="ln763">     *  \param group2 OBBitVec with bits set for the indexes of the atoms which make up the second group.</a>
+<a name="ln764">     */</a>
+<a name="ln765">    void AddInterGroups(OBBitVec &amp;group1, OBBitVec &amp;group2);</a>
+<a name="ln766">    /*! Clear all previously specified groups.</a>
+<a name="ln767">     */</a>
+<a name="ln768">    void ClearGroups();</a>
+<a name="ln769">    /*! \return true if there are groups.</a>
+<a name="ln770">     */</a>
+<a name="ln771">    bool HasGroups();</a>
+<a name="ln772">    //@}</a>
+<a name="ln773"> </a>
+<a name="ln774">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln775">    // Cut-off                                                             //</a>
+<a name="ln776">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln777"> </a>
+<a name="ln778">    //! \name Methods for Cut-off distances</a>
+<a name="ln779">    //@{</a>
+<a name="ln780">    /*! Enable or disable Cut-offs. Cut-offs are disabled by default.</a>
+<a name="ln781">     *  \param enable Enable when true, disable when false.</a>
+<a name="ln782">     */</a>
+<a name="ln783">    void EnableCutOff(bool enable)</a>
+<a name="ln784">    {</a>
+<a name="ln785">      _cutoff = enable;</a>
+<a name="ln786">    }</a>
+<a name="ln787">    /*! \return True if Cut-off distances are used.</a>
+<a name="ln788">     */</a>
+<a name="ln789">    bool IsCutOffEnabled()</a>
+<a name="ln790">    {</a>
+<a name="ln791">      return _cutoff;</a>
+<a name="ln792">    }</a>
+<a name="ln793">    /*! Set the VDW cut-off distance to r. Note that this does not enable cut-off distances.</a>
+<a name="ln794">     *  \param r The VDW cut-off distance to be used in A.</a>
+<a name="ln795">     */</a>
+<a name="ln796">    void SetVDWCutOff(double r)</a>
+<a name="ln797">    {</a>
+<a name="ln798">      _rvdw = r;</a>
+<a name="ln799">    }</a>
+<a name="ln800">    /*! Get the VDW cut-off distance.</a>
+<a name="ln801">     *  \return The VDW cut-off distance in A.</a>
+<a name="ln802">     */</a>
+<a name="ln803">    double GetVDWCutOff()</a>
+<a name="ln804">    {</a>
+<a name="ln805">      return _rvdw;</a>
+<a name="ln806">    }</a>
+<a name="ln807">    /*! Set the Electrostatic cut-off distance to r. Note that this does not</a>
+<a name="ln808">     *  enable cut-off distances.</a>
+<a name="ln809">     *  \param r The electrostatic cut-off distance to be used in A.</a>
+<a name="ln810">     */</a>
+<a name="ln811">    void SetElectrostaticCutOff(double r)</a>
+<a name="ln812">    {</a>
+<a name="ln813">      _rele = r;</a>
+<a name="ln814">    }</a>
+<a name="ln815">    /*! Get the Electrostatic cut-off distance.</a>
+<a name="ln816">     *  \return The electrostatic cut-off distance in A.</a>
+<a name="ln817">     */</a>
+<a name="ln818">    double GetElectrostaticCutOff()</a>
+<a name="ln819">    {</a>
+<a name="ln820">      return _rele;</a>
+<a name="ln821">    }</a>
+<a name="ln822">    /*! Set the dielectric constant for electrostatic SetupCalculations</a>
+<a name="ln823">     * \param epsilon The relative permittivity to use (default = 1.0)</a>
+<a name="ln824">     */</a>
+<a name="ln825">     void SetDielectricConstant(double epsilon)</a>
+<a name="ln826">     {</a>
+<a name="ln827">       _epsilon = epsilon;</a>
+<a name="ln828">     }</a>
+<a name="ln829">     /* Get the dielectric permittivity used for electrostatic calculations</a>
+<a name="ln830">     * \rreturn The current relative permittivity</a>
+<a name="ln831">     */</a>
+<a name="ln832">     double GetDielectricConstant()</a>
+<a name="ln833">     {</a>
+<a name="ln834">       return _epsilon;</a>
+<a name="ln835">     }</a>
+<a name="ln836">    /*! Set the frequency by which non-bonded pairs are updated. Values from 10 to 20</a>
+<a name="ln837">     *  are recommended. Too low will decrease performance, too high will cause</a>
+<a name="ln838">     *  non-bonded interactions within cut-off not to be calculated.</a>
+<a name="ln839">     *  \param f The pair list update frequency.</a>
+<a name="ln840">     */</a>
+<a name="ln841">    void SetUpdateFrequency(int f)</a>
+<a name="ln842">    {</a>
+<a name="ln843">      _pairfreq = f;</a>
+<a name="ln844">    }</a>
+<a name="ln845">    /*! Get the frequency by which non-bonded pairs are updated.</a>
+<a name="ln846">     *  \return The pair list update frequency.</a>
+<a name="ln847">     */</a>
+<a name="ln848">    int GetUpdateFrequency()</a>
+<a name="ln849">    {</a>
+<a name="ln850">      return _pairfreq;</a>
+<a name="ln851">    }</a>
+<a name="ln852">    /*! Set the bits in _vdwpairs and _elepairs to 1 for interactions that</a>
+<a name="ln853">     *  are within cut-off distance. This function is called in minimizing</a>
+<a name="ln854">     *  algorithms such as SteepestDescent and ConjugateGradients.</a>
+<a name="ln855">     */</a>
+<a name="ln856">    void UpdatePairsSimple();</a>
+<a name="ln857"> </a>
+<a name="ln858">    //void UpdatePairsGroup(); TODO</a>
+<a name="ln859"> </a>
+<a name="ln860">    /*! Get the number of non-bonded pairs in _mol.</a>
+<a name="ln861">     *  \return The number of atom pairs (ignores cutoff)</a>
+<a name="ln862">     */</a>
+<a name="ln863">    unsigned int GetNumPairs();</a>
+<a name="ln864">    /*! Get the number of enabled electrostatic pairs in _mol.</a>
+<a name="ln865">     *  \return The number of pairs currently enabled (within cut-off distance)</a>
+<a name="ln866">     */</a>
+<a name="ln867">    unsigned int GetNumElectrostaticPairs();</a>
+<a name="ln868">    /*! Get the number of enabled VDW pairs in _mol.</a>
+<a name="ln869">     *  \return The number of pairs currently enabled (within cut-off distance)</a>
+<a name="ln870">     */</a>
+<a name="ln871">    unsigned int GetNumVDWPairs();</a>
+<a name="ln872">    /*! Set bits in range 0..._numpairs-1 to 1. Using this means there will</a>
+<a name="ln873">     *  be no cut-off. (not-working: see code for more information.</a>
+<a name="ln874">     */</a>
+<a name="ln875">    void EnableAllPairs()</a>
+<a name="ln876">    {</a>
+<a name="ln877">      // TODO: OBBitVec doesn't seem to be allocating it's memory correctly</a>
+<a name="ln878">      //_vdwpairs.SetRangeOn(0, _numpairs-1);</a>
+<a name="ln879">      //_elepairs.SetRangeOn(0, _numpairs-1);</a>
+<a name="ln880">    }</a>
+<a name="ln881">    //@}</a>
+<a name="ln882"> </a>
+<a name="ln883">    /*! Get the pointer to the gradients</a>
+<a name="ln884">     */</a>
+<a name="ln885">    virtual vector3 GetGradient(OBAtom *a, int /*terms*/ = OBFF_ENERGY)</a>
+<a name="ln886">    {</a>
+<a name="ln887">      const int coordIdx = (a-&gt;GetIdx() - 1) * 3;</a>
+<a name="ln888">      return _gradientPtr + coordIdx;</a>
+<a name="ln889">    }</a>
+<a name="ln890"> </a>
+<a name="ln891">    /*! Get the pointer to the gradients</a>
+<a name="ln892">     */</a>
+<a name="ln893">    double* GetGradientPtr()</a>
+<a name="ln894">    {</a>
+<a name="ln895">      return _gradientPtr;</a>
+<a name="ln896">    }</a>
+<a name="ln897"> </a>
+<a name="ln898">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln899">    // Energy Evaluation                                                   //</a>
+<a name="ln900">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln901"> </a>
+<a name="ln902">    //! \name Methods for energy evaluation</a>
+<a name="ln903">    //@{</a>
+<a name="ln904">    /*! \param gradients Set to true when the gradients need to be calculated</a>
+<a name="ln905">     *  (needs to be done before calling GetGradient()).</a>
+<a name="ln906">     *  \return Total energy.</a>
+<a name="ln907">     *   \par Output to log:</a>
+<a name="ln908">     *    OBFF_LOGLVL_NONE:   none \n</a>
+<a name="ln909">     *    OBFF_LOGLVL_LOW:    none \n</a>
+<a name="ln910">     *    OBFF_LOGLVL_MEDIUM: energy for individual energy terms \n</a>
+<a name="ln911">     *    OBFF_LOGLVL_HIGH:   energy for individual energy interactions \n</a>
+<a name="ln912">     */</a>
+<a name="ln913">    virtual double Energy(bool UNUSED(gradients) = true) { return 0.0f; }</a>
+<a name="ln914">    /*! \param gradients Set to true when the gradients need to be calculated</a>
+<a name="ln915">     *  (needs to be done before calling GetGradient()).</a>
+<a name="ln916">     *  \return Bond stretching energy.</a>
+<a name="ln917">     *   \par Output to log:</a>
+<a name="ln918">     *    see Energy()</a>
+<a name="ln919">     */</a>
+<a name="ln920">    virtual double E_Bond(bool UNUSED(gradients) = true) { return 0.0f; }</a>
+<a name="ln921">    /*! \param gradients Set to true when the gradients need to be calculated</a>
+<a name="ln922">     *  (needs to be done before calling GetGradient()).</a>
+<a name="ln923">     *  \return Angle bending energy.</a>
+<a name="ln924">     *  \par Output to log:</a>
+<a name="ln925">     *   see Energy()</a>
+<a name="ln926">     */</a>
+<a name="ln927">    virtual double E_Angle(bool UNUSED(gradients) = true) { return 0.0f; }</a>
+<a name="ln928">    /*! \param gradients Set to true when the gradients need to be calculated</a>
+<a name="ln929">     *  (needs to be done before calling GetGradient()).</a>
+<a name="ln930">     *  \return Stretch bending energy.</a>
+<a name="ln931">     *   \par Output to log:</a>
+<a name="ln932">     *    see Energy()</a>
+<a name="ln933">     */</a>
+<a name="ln934">    virtual double E_StrBnd(bool UNUSED(gradients) = true) { return 0.0f; }</a>
+<a name="ln935">    /*! \param gradients Set to true when the gradients need to be calculated</a>
+<a name="ln936">     *  (needs to be done before calling GetGradient()).</a>
+<a name="ln937">     *  \return Torsional energy.</a>
+<a name="ln938">     *    \par Output to log:</a>
+<a name="ln939">     *	  see Energy()</a>
+<a name="ln940">     */</a>
+<a name="ln941">    virtual double E_Torsion(bool UNUSED(gradients) = true) { return 0.0f; }</a>
+<a name="ln942">    /*! \param gradients Set to true when the gradients need to be calculated</a>
+<a name="ln943">     *  (needs to be done before calling GetGradient()).</a>
+<a name="ln944">     *  \return Out-Of-Plane bending energy.</a>
+<a name="ln945">     *   \par Output to log:</a>
+<a name="ln946">     *	  see Energy()</a>
+<a name="ln947">     */</a>
+<a name="ln948">    virtual double E_OOP(bool UNUSED(gradients) = true) { return 0.0f; }</a>
+<a name="ln949">    /*! \param gradients Set to true when the gradients need to be calculated</a>
+<a name="ln950">     *  (needs to be done before calling GetGradient()).</a>
+<a name="ln951">     *  \return Van der Waals energy.</a>
+<a name="ln952">     *   \par Output to log:</a>
+<a name="ln953">     *	  see Energy()</a>
+<a name="ln954">     */</a>
+<a name="ln955">    virtual double E_VDW(bool UNUSED(gradients) = true) { return 0.0f; }</a>
+<a name="ln956">    /*! \param gradients Set to true when the gradients need to be calculated</a>
+<a name="ln957">     *  (needs to be done before calling GetGradient()).</a>
+<a name="ln958">     *  \return Electrostatic energy.</a>
+<a name="ln959">     *   \par Output to log:</a>
+<a name="ln960">     *	  see Energy()</a>
+<a name="ln961">     */</a>
+<a name="ln962">    virtual double E_Electrostatic(bool UNUSED(gradients) = true) { return 0.0f; }</a>
+<a name="ln963">    //@}</a>
+<a name="ln964"> </a>
+<a name="ln965">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln966">    // Logging                                                             //</a>
+<a name="ln967">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln968"> </a>
+<a name="ln969">    //! \name Methods for logging</a>
+<a name="ln970">    //@{</a>
+<a name="ln971">    /*! Print the atom types to the log.</a>
+<a name="ln972">     */</a>
+<a name="ln973">    void PrintTypes();</a>
+<a name="ln974">    /*! Print the formal charges to the log (atom.GetPartialCharge(),</a>
+<a name="ln975">     *  MMFF94 FC's are not always int).</a>
+<a name="ln976">     */</a>
+<a name="ln977">    void PrintFormalCharges();</a>
+<a name="ln978">    /*! Print the partial charges to the log.</a>
+<a name="ln979">     */</a>
+<a name="ln980">    void PrintPartialCharges();</a>
+<a name="ln981">    /*! Print the velocities to the log.</a>
+<a name="ln982">     */</a>
+<a name="ln983">    void PrintVelocities();</a>
+<a name="ln984">    /*! Set the stream for logging (can also be &amp;cout for logging to screen).</a>
+<a name="ln985">     *  \param pos Stream (when pos is 0, std::cout wil be used).</a>
+<a name="ln986">     *  \return True if successful.</a>
+<a name="ln987">     */</a>
+<a name="ln988">    bool SetLogFile(std::ostream *pos);</a>
+<a name="ln989">    /*! Set the log level (OBFF_LOGLVL_NONE, OBFF_LOGLVL_LOW, OBFF_LOGLVL_MEDIUM, OBFF_LOGLVL_HIGH).</a>
+<a name="ln990">     *  Inline if statements for logging are available:</a>
+<a name="ln991">     *  \code</a>
+<a name="ln992">     *  #define IF_OBFF_LOGLVL_LOW    if(_loglvl &gt;= OBFF_LOGLVL_LOW)</a>
+<a name="ln993">     *  #define IF_OBFF_LOGLVL_MEDIUM if(_loglvl &gt;= OBFF_LOGLVL_MEDIUM)</a>
+<a name="ln994">     *  #define IF_OBFF_LOGLVL_HIGH   if(_loglvl &gt;= OBFF_LOGLVL_HIGH)</a>
+<a name="ln995">     *  \endcode</a>
+<a name="ln996">     *</a>
+<a name="ln997">     *  example:</a>
+<a name="ln998">     *  \code</a>
+<a name="ln999">     *  SetLogLevel(OBFF_LOGLVL_MEDIUM);</a>
+<a name="ln1000">     *  IF_OBFF_LOGLVL_HIGH {</a>
+<a name="ln1001">     *    OBFFLog(&quot;this text will NOT be logged...\n&quot;);</a>
+<a name="ln1002">     *  }</a>
+<a name="ln1003">     *</a>
+<a name="ln1004">     *  IF_OBFF_LOGLVL_LOW {</a>
+<a name="ln1005">     *    OBFFLog&quot;this text will be logged...\n&quot;);</a>
+<a name="ln1006">     *  }</a>
+<a name="ln1007">     *</a>
+<a name="ln1008">     *  IF_OBFF_LOGLVL_MEDIUM {</a>
+<a name="ln1009">     *    OBFFLog(&quot;this text will also be logged...\n&quot;);</a>
+<a name="ln1010">     *  }</a>
+<a name="ln1011">     *  \endcode</a>
+<a name="ln1012">     */</a>
+<a name="ln1013">    bool SetLogLevel(int level);</a>
+<a name="ln1014">    /*! \return The log level.</a>
+<a name="ln1015">     */</a>
+<a name="ln1016">    int GetLogLevel() { return _loglvl; }</a>
+<a name="ln1017">    /*! Print msg to the logfile.</a>
+<a name="ln1018">     *  \param msg The message to print.</a>
+<a name="ln1019">     */</a>
+<a name="ln1020">    void OBFFLog(std::string msg)</a>
+<a name="ln1021">    {</a>
+<a name="ln1022">      if (!_logos)</a>
+<a name="ln1023">        return;</a>
+<a name="ln1024"> </a>
+<a name="ln1025">      *_logos &lt;&lt; msg;</a>
+<a name="ln1026">    }</a>
+<a name="ln1027">    /*! Print msg to the logfile.</a>
+<a name="ln1028">     *  \param msg The message to print.</a>
+<a name="ln1029">     */</a>
+<a name="ln1030">    void OBFFLog(const char *msg)</a>
+<a name="ln1031">    {</a>
+<a name="ln1032">      if (!_logos)</a>
+<a name="ln1033">        return;</a>
+<a name="ln1034"> </a>
+<a name="ln1035">      *_logos &lt;&lt; msg;</a>
+<a name="ln1036">    }</a>
+<a name="ln1037">    //@}</a>
+<a name="ln1038"> </a>
+<a name="ln1039">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1040">    // Structure Generation                                                //</a>
+<a name="ln1041">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1042"> </a>
+<a name="ln1043">    //! \name Methods for structure generation</a>
+<a name="ln1044">    //@{</a>
+<a name="ln1045">    //! Generate coordinates for the molecule (distance geometry)</a>
+<a name="ln1046">    //! \deprecated Use OBDistanceGeometry class instead</a>
+<a name="ln1047">    void DistanceGeometry();</a>
+<a name="ln1048">    /*! Generate conformers for the molecule (systematicaly rotating torsions).</a>
+<a name="ln1049">     *</a>
+<a name="ln1050">     *  The initial starting structure here is important, this structure should be</a>
+<a name="ln1051">     *  minimized for the best results. SystematicRotorSearch works by rotating around</a>
+<a name="ln1052">     *  the rotatable bond in a molecule (see OBRotamerList class). This rotating generates</a>
+<a name="ln1053">     *  multiple conformers. The energy for all these conformers is then evaluated and the</a>
+<a name="ln1054">     *  lowest energy conformer is selected.</a>
+<a name="ln1055">     *</a>
+<a name="ln1056">     *  \param geomSteps The number of steps to take during geometry optimization.</a>
+<a name="ln1057">     *  \param sampleRingBonds Whether to sample ring torsions.</a>
+<a name="ln1058">     *</a>
+<a name="ln1059">     *	\par Output to log:</a>
+<a name="ln1060">     *  This function should only be called with the log level set to OBFF_LOGLVL_NONE or OBFF_LOGLVL_LOW. Otherwise</a>
+<a name="ln1061">     *	too much information about the energy calculations needed for this function will interfere with the output for</a>
+<a name="ln1062">     *	this function. \n\n</a>
+<a name="ln1063">     *  OBFF_LOGLVL_NONE:   None. \n</a>
+<a name="ln1064">     *  OBFF_LOGLVL_LOW:    Number of rotatable bonds, energies for the conformers, which one is the lowest, ... \n</a>
+<a name="ln1065">     *  OBFF_LOGLVL_MEDIUM: See note above. \n</a>
+<a name="ln1066">     *  OBFF_LOGLVL_HIGH:   See note above. \n</a>
+<a name="ln1067">     */</a>
+<a name="ln1068">    void SystematicRotorSearch(unsigned int geomSteps = 2500, bool sampleRingBonds = false);</a>
+<a name="ln1069">    /*! Generate conformers for the molecule by systematicaly rotating torsions. To be used in combination with</a>
+<a name="ln1070">     *  SystematicRotorSearchNexConformer().</a>
+<a name="ln1071">     *</a>
+<a name="ln1072">     *  example:</a>
+<a name="ln1073">     *  \code</a>
+<a name="ln1074">     *  // pFF is a pointer to a OBForceField class</a>
+<a name="ln1075">     *  pFF-&gt;SystematicRotorSearchInitialize(300);</a>
+<a name="ln1076">     *  while (pFF-&gt;SystematicRotorSearchNextConformer(300)) {</a>
+<a name="ln1077">     *    // do some updating in your program (show last generated conformer, ...)</a>
+<a name="ln1078">     *  }</a>
+<a name="ln1079">     *  \endcode</a>
+<a name="ln1080">     *</a>
+<a name="ln1081">     *  If you don't need any updating in your program, SystematicRotorSearch() is recommended.</a>
+<a name="ln1082">     *</a>
+<a name="ln1083">     *  \param geomSteps The number of steps to take during geometry optimization.</a>
+<a name="ln1084">     *  \param sampleRingBonds Whether to sample ring torsions.</a>
+<a name="ln1085">     *  \return The number of conformers.</a>
+<a name="ln1086">     */</a>
+<a name="ln1087">    int SystematicRotorSearchInitialize(unsigned int geomSteps = 2500, bool sampleRingBonds = false);</a>
+<a name="ln1088">    /*! Evaluate the next conformer.</a>
+<a name="ln1089">     *  \param geomSteps The number of steps to take during geometry optimization.</a>
+<a name="ln1090">     *  \return True if there are more conformers.</a>
+<a name="ln1091">     */</a>
+<a name="ln1092">    bool SystematicRotorSearchNextConformer(unsigned int geomSteps = 2500);</a>
+<a name="ln1093">    /*! Generate conformers for the molecule (randomly rotating torsions).</a>
+<a name="ln1094">     *</a>
+<a name="ln1095">     *  The initial starting structure here is important, this structure should be</a>
+<a name="ln1096">     *  minimized for the best results. RandomRotorSearch works by randomly rotating around</a>
+<a name="ln1097">     *  the rotatable bonds in a molecule (see OBRotamerList class). This rotating generates</a>
+<a name="ln1098">     *  multiple conformers. The energy for all these conformers is then evaluated and the</a>
+<a name="ln1099">     *  lowest energy conformer is selected.</a>
+<a name="ln1100">     *</a>
+<a name="ln1101">     *  \param conformers The number of random conformers to consider during the search.</a>
+<a name="ln1102">     *  \param geomSteps The number of steps to take during geometry optimization for each conformer.</a>
+<a name="ln1103">     *  \param sampleRingBonds Whether to sample ring torsions.</a>
+<a name="ln1104">     *</a>
+<a name="ln1105">     *	\par Output to log:</a>
+<a name="ln1106">     *  This function should only be called with the log level set to OBFF_LOGLVL_NONE or OBFF_LOGLVL_LOW. Otherwise</a>
+<a name="ln1107">     *	too much information about the energy calculations needed for this function will interfere with the output for</a>
+<a name="ln1108">     *	this function. \n\n</a>
+<a name="ln1109">     *  OBFF_LOGLVL_NONE:   None. \n</a>
+<a name="ln1110">     *  OBFF_LOGLVL_LOW:    Number of rotatable bonds, energies for the conformers, which one is the lowest, ... \n</a>
+<a name="ln1111">     *  OBFF_LOGLVL_MEDIUM: See note above. \n</a>
+<a name="ln1112">     *  OBFF_LOGLVL_HIGH:   See note above. \n</a>
+<a name="ln1113">     */</a>
+<a name="ln1114">    void RandomRotorSearch(unsigned int conformers, unsigned int geomSteps = 2500,</a>
+<a name="ln1115">                           bool sampleRingBonds = false);</a>
+<a name="ln1116">    /*! Generate conformers for the molecule by randomly rotating torsions. To be used in combination with</a>
+<a name="ln1117">     *  RandomRotorSearchNexConformer().</a>
+<a name="ln1118">     *</a>
+<a name="ln1119">     *  example:</a>
+<a name="ln1120">     *  \code</a>
+<a name="ln1121">     *  // pFF is a pointer to a OBForceField class</a>
+<a name="ln1122">     *  pFF-&gt;RandomRotorSearchInitialize(300);</a>
+<a name="ln1123">     *  while (pFF-&gt;RandomRotorSearchNextConformer(300)) {</a>
+<a name="ln1124">     *    // do some updating in your program (show last generated conformer, ...)</a>
+<a name="ln1125">     *  }</a>
+<a name="ln1126">     *  \endcode</a>
+<a name="ln1127">     *</a>
+<a name="ln1128">     *  If you don't need any updating in your program, RandomRotorSearch() is recommended.</a>
+<a name="ln1129">     *</a>
+<a name="ln1130">     *  \param conformers The number of random conformers to consider during the search</a>
+<a name="ln1131">     *  \param geomSteps The number of steps to take during geometry optimization</a>
+<a name="ln1132">     *  \param sampleRingBonds Whether to sample ring torsions.</a>
+<a name="ln1133">     */</a>
+<a name="ln1134">    void RandomRotorSearchInitialize(unsigned int conformers, unsigned int geomSteps = 2500,</a>
+<a name="ln1135">                                     bool sampleRingBonds = false);</a>
+<a name="ln1136">    /*! Evaluate the next conformer.</a>
+<a name="ln1137">     *  \param geomSteps The number of steps to take during geometry optimization.</a>
+<a name="ln1138">     *  \return True if there are more conformers.</a>
+<a name="ln1139">     */</a>
+<a name="ln1140">    bool RandomRotorSearchNextConformer(unsigned int geomSteps = 2500);</a>
+<a name="ln1141">    /*! Generate conformers for the molecule (randomly rotating torsions).</a>
+<a name="ln1142">     *</a>
+<a name="ln1143">     *  The initial starting structure here is important, this structure should be</a>
+<a name="ln1144">     *  minimized for the best results. WeightedRotorSearch works by randomly rotating around</a>
+<a name="ln1145">     *  the rotatable bonds in a molecule (see OBRotamerList class). Unlike RandomRotorSearch()</a>
+<a name="ln1146">     *  the random choice of torsions is reweighted based on the energy of the generated conformer.</a>
+<a name="ln1147">     *  Over time, the generated conformers for each step should become increasingly better.</a>
+<a name="ln1148">     *  The lowest energy conformer is selected.</a>
+<a name="ln1149">     *</a>
+<a name="ln1150">     * \param conformers The number of random conformers to consider during the search.</a>
+<a name="ln1151">     * \param geomSteps The number of steps to take during geometry optimization for each conformer.</a>
+<a name="ln1152">     *  \param sampleRingBonds Whether to sample ring torsions.</a>
+<a name="ln1153">     *</a>
+<a name="ln1154">     *	\par Output to log:</a>
+<a name="ln1155">     *  This function should only be called with the log level set to OBFF_LOGLVL_NONE or OBFF_LOGLVL_LOW. Otherwise</a>
+<a name="ln1156">     *	too much information about the energy calculations needed for this function will interfere with the output for</a>
+<a name="ln1157">     *	this function. \n\n</a>
+<a name="ln1158">     *  OBFF_LOGLVL_NONE:   None. \n</a>
+<a name="ln1159">     *  OBFF_LOGLVL_LOW:    Number of rotatable bonds, energies for the conformers, which one is the lowest, ... \n</a>
+<a name="ln1160">     *  OBFF_LOGLVL_MEDIUM: See note above. \n</a>
+<a name="ln1161">     *  OBFF_LOGLVL_HIGH:   See note above. \n</a>
+<a name="ln1162">     */</a>
+<a name="ln1163">    void WeightedRotorSearch(unsigned int conformers, unsigned int geomSteps,</a>
+<a name="ln1164">                             bool sampleRingBonds = false);</a>
+<a name="ln1165">    /**</a>
+<a name="ln1166">     * @brief A fast rotor search to find low energy conformations</a>
+<a name="ln1167">     *</a>
+<a name="ln1168">     * Iterate over each of the rotors, and set the</a>
+<a name="ln1169">     * torsion angle to that which minimizes the energy (while keeping the rest of the molecule</a>
+<a name="ln1170">     * fixed). In general (for molecules with more than</a>
+<a name="ln1171">     * one rotatable bond), this procedure will not find</a>
+<a name="ln1172">     * the global minimum, but it will at least get rid of any bad</a>
+<a name="ln1173">     * clashes, and it do so quickly.</a>
+<a name="ln1174">     *</a>
+<a name="ln1175">     * Torsions closer to the center</a>
+<a name="ln1176">     * of the molecule will be optimized first as these most likely</a>
+<a name="ln1177">     * to generate large clashes.</a>
+<a name="ln1178">     *</a>
+<a name="ln1179">     * One possible use of this procedure is to prepare a reasonable 3D structure</a>
+<a name="ln1180">     * of a molecule for viewing. Another is to prepare the starting structure</a>
+<a name="ln1181">     * for a more systematic rotor search (in which case you should geometry</a>
+<a name="ln1182">     * optimize the final structure).</a>
+<a name="ln1183">     *</a>
+<a name="ln1184">     * @param permute Whether or not to permute the order of the 4 most central rotors.</a>
+<a name="ln1185">     *                Default is true. This does a more thorough search, but takes 4! = 24 times</a>
+<a name="ln1186">     *                as long.</a>
+<a name="ln1187">     * @since version 2.4</a>
+<a name="ln1188">     */</a>
+<a name="ln1189">    int FastRotorSearch(bool permute = true);</a>
+<a name="ln1190"> </a>
+<a name="ln1191">#ifdef HAVE_EIGEN</a>
+<a name="ln1192">    //! \since version 2.4</a>
+<a name="ln1193">    int DiverseConfGen(double rmsd, unsigned int nconfs = 0, double energy_gap = 50, bool verbose = false);</a>
+<a name="ln1194">#endif</a>
+<a name="ln1195"> </a>
+<a name="ln1196">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1197">    // Energy Minimization                                                 //</a>
+<a name="ln1198">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1199"> </a>
+<a name="ln1200">    //! \name Methods for energy minimization</a>
+<a name="ln1201">    //@{</a>
+<a name="ln1202">    /*! Set the LineSearchType. The default type is LineSearchType::Newton2Num.</a>
+<a name="ln1203">     *  \param type The LineSearchType to be used in SteepestDescent and ConjugateGradients.</a>
+<a name="ln1204">     */</a>
+<a name="ln1205">    void SetLineSearchType(int type)</a>
+<a name="ln1206">    {</a>
+<a name="ln1207">      _linesearch = type;</a>
+<a name="ln1208">    }</a>
+<a name="ln1209">    /*! Get the LineSearchType.</a>
+<a name="ln1210">     *  \return The current LineSearchType.</a>
+<a name="ln1211">     */</a>
+<a name="ln1212">    int GetLineSearchType()</a>
+<a name="ln1213">    {</a>
+<a name="ln1214">      return _linesearch;</a>
+<a name="ln1215">    }</a>
+<a name="ln1216">    /*! Perform a linesearch starting at atom in direction direction.</a>
+<a name="ln1217">     * \deprecated Current code should use LineSearch(double *, double*) instead.</a>
+<a name="ln1218">     */</a>
+<a name="ln1219">    vector3 LineSearch(OBAtom *atom, vector3 &amp;direction);</a>
+<a name="ln1220">    /*! Perform a linesearch for the entire molecule in direction @p direction.</a>
+<a name="ln1221">     *  This function is called when using LineSearchType::Simple.</a>
+<a name="ln1222">     *</a>
+<a name="ln1223">     *  \param currentCoords Start coordinates.</a>
+<a name="ln1224">     *  \param direction The search direction.</a>
+<a name="ln1225">     *  \return alpha, The scale of the step we moved along the direction vector.</a>
+<a name="ln1226">     *</a>
+<a name="ln1227">     *  \par Output to log:</a>
+<a name="ln1228">     *  OBFF_LOGLVL_NONE:   none \n</a>
+<a name="ln1229">     *  OBFF_LOGLVL_LOW:    none \n</a>
+<a name="ln1230">     *  OBFF_LOGLVL_MEDIUM: none \n</a>
+<a name="ln1231">     *  OBFF_LOGLVL_HIGH:   none \n</a>
+<a name="ln1232">     */</a>
+<a name="ln1233">    double LineSearch(double *currentCoords, double *direction);</a>
+<a name="ln1234">    /*! Perform a linesearch for the entire molecule.</a>
+<a name="ln1235">     *  This function is called when using LineSearchType::Newton2Num.</a>
+<a name="ln1236">     *</a>
+<a name="ln1237">     *  \param direction The search direction.</a>
+<a name="ln1238">     *  \return alpha, The scale of the step we moved along the direction vector.</a>
+<a name="ln1239">     *</a>
+<a name="ln1240">     *  \par Output to log:</a>
+<a name="ln1241">     *  OBFF_LOGLVL_NONE:   none \n</a>
+<a name="ln1242">     *  OBFF_LOGLVL_LOW:    none \n</a>
+<a name="ln1243">     *  OBFF_LOGLVL_MEDIUM: none \n</a>
+<a name="ln1244">     *  OBFF_LOGLVL_HIGH:   none \n</a>
+<a name="ln1245">     */</a>
+<a name="ln1246">    double Newton2NumLineSearch(double *direction);</a>
+<a name="ln1247">    /*! Set the coordinates of the atoms to origCoord + step.</a>
+<a name="ln1248">     *  \param origCoords Start coordinates.</a>
+<a name="ln1249">     *  \param direction The search direction.</a>
+<a name="ln1250">     *  \param step The step to take.</a>
+<a name="ln1251">     */</a>
+<a name="ln1252">    void   LineSearchTakeStep(double *origCoords, double *direction, double step);</a>
+<a name="ln1253">    /*! Perform steepest descent optimalization for steps steps or until convergence criteria is reached.</a>
+<a name="ln1254">     *</a>
+<a name="ln1255">     *  \param steps The number of steps.</a>
+<a name="ln1256">     *  \param econv Energy convergence criteria. (defualt is 1e-6)</a>
+<a name="ln1257">     *  \param method Deprecated. (see HasAnalyticalGradients())</a>
+<a name="ln1258">     *</a>
+<a name="ln1259">     *  \par Output to log:</a>
+<a name="ln1260">     *  This function should only be called with the log level set to OBFF_LOGLVL_NONE or OBFF_LOGLVL_LOW. Otherwise</a>
+<a name="ln1261">     *  too much information about the energy calculations needed for the minimization will interfere with the list</a>
+<a name="ln1262">     *  of energies for succesive steps. \n\n</a>
+<a name="ln1263">     *  OBFF_LOGLVL_NONE:   none \n</a>
+<a name="ln1264">     *  OBFF_LOGLVL_LOW:    header including number of steps and first step \n</a>
+<a name="ln1265">     *  OBFF_LOGLVL_MEDIUM: see note above \n</a>
+<a name="ln1266">     *  OBFF_LOGLVL_HIGH:   see note above \n</a>
+<a name="ln1267">     */</a>
+<a name="ln1268">    void SteepestDescent(int steps, double econv = 1e-6f, int method = OBFF_ANALYTICAL_GRADIENT);</a>
+<a name="ln1269">    /*! Initialize steepest descent optimalization, to be used in combination with SteepestDescentTakeNSteps().</a>
+<a name="ln1270">     *</a>
+<a name="ln1271">     *  example:</a>
+<a name="ln1272">     *  \code</a>
+<a name="ln1273">     *  // pFF is a pointer to a OBForceField class</a>
+<a name="ln1274">     *  pFF-&gt;SteepestDescentInitialize(100, 1e-5f);</a>
+<a name="ln1275">     *  while (pFF-&gt;SteepestDescentTakeNSteps(5)) {</a>
+<a name="ln1276">     *    // do some updating in your program (redraw structure, ...)</a>
+<a name="ln1277">     *  }</a>
+<a name="ln1278">     *  \endcode</a>
+<a name="ln1279">     *</a>
+<a name="ln1280">     *  If you don't need any updating in your program, SteepestDescent() is recommended.</a>
+<a name="ln1281">     *</a>
+<a name="ln1282">     *  \param steps The number of steps.</a>
+<a name="ln1283">     *  \param econv Energy convergence criteria. (defualt is 1e-6)</a>
+<a name="ln1284">     *  \param method Deprecated. (see HasAnalyticalGradients())</a>
+<a name="ln1285">     *</a>
+<a name="ln1286">     *  \par Output to log:</a>
+<a name="ln1287">     *  This function should only be called with the log level set to OBFF_LOGLVL_NONE or OBFF_LOGLVL_LOW. Otherwise</a>
+<a name="ln1288">     *  too much information about the energy calculations needed for the minimization will interfere with the list</a>
+<a name="ln1289">     *  of energies for succesive steps. \n\n</a>
+<a name="ln1290">     *  OBFF_LOGLVL_NONE:   none \n</a>
+<a name="ln1291">     *  OBFF_LOGLVL_LOW:    header including number of steps \n</a>
+<a name="ln1292">     *  OBFF_LOGLVL_MEDIUM: see note above \n</a>
+<a name="ln1293">     *  OBFF_LOGLVL_HIGH:   see note above \n</a>
+<a name="ln1294">     */</a>
+<a name="ln1295">    void SteepestDescentInitialize(int steps = 1000, double econv = 1e-6f, int method = OBFF_ANALYTICAL_GRADIENT);</a>
+<a name="ln1296">    /*! Take n steps in a steepestdescent optimalization that was previously initialized with SteepestDescentInitialize().</a>
+<a name="ln1297">     *</a>
+<a name="ln1298">     *  \param n The number of steps to take.</a>
+<a name="ln1299">     *  \return False if convergence or the number of steps given by SteepestDescentInitialize() has been reached.</a>
+<a name="ln1300">     *</a>
+<a name="ln1301">     *  \par Output to log:</a>
+<a name="ln1302">     *  This function should only be called with the log level set to OBFF_LOGLVL_NONE or OBFF_LOGLVL_LOW. Otherwise</a>
+<a name="ln1303">     *  too much information about the energy calculations needed for the minimization will interfere with the list</a>
+<a name="ln1304">     *  of energies for succesive steps. \n\n</a>
+<a name="ln1305">     *  OBFF_LOGLVL_NONE:   none \n</a>
+<a name="ln1306">     *  OBFF_LOGLVL_LOW:    step number, energy and energy for the previous step \n</a>
+<a name="ln1307">     *  OBFF_LOGLVL_MEDIUM: see note above \n</a>
+<a name="ln1308">     *  OBFF_LOGLVL_HIGH:   see note above \n</a>
+<a name="ln1309">     */</a>
+<a name="ln1310">    bool SteepestDescentTakeNSteps(int n);</a>
+<a name="ln1311">    /*! Perform conjugate gradient optimalization for steps steps or until convergence criteria is reached.</a>
+<a name="ln1312">     *</a>
+<a name="ln1313">     *  \param steps The number of steps.</a>
+<a name="ln1314">     *  \param econv Energy convergence criteria. (defualt is 1e-6)</a>
+<a name="ln1315">     *  \param method Deprecated. (see HasAnalyticalGradients())</a>
+<a name="ln1316">     *</a>
+<a name="ln1317">     *  \par Output to log:</a>
+<a name="ln1318">     *  This function should only be called with the log level set to OBFF_LOGLVL_NONE or OBFF_LOGLVL_LOW. Otherwise</a>
+<a name="ln1319">     *  too much information about the energy calculations needed for the minimization will interfere with the list</a>
+<a name="ln1320">     *  of energies for succesive steps. \n\n</a>
+<a name="ln1321">     *  OBFF_LOGLVL_NONE:   none \n</a>
+<a name="ln1322">     *  OBFF_LOGLVL_LOW:    information about the progress of the minimization \n</a>
+<a name="ln1323">     *  OBFF_LOGLVL_MEDIUM: see note above \n</a>
+<a name="ln1324">     *  OBFF_LOGLVL_HIGH:   see note above \n</a>
+<a name="ln1325">     */</a>
+<a name="ln1326">    void ConjugateGradients(int steps, double econv = 1e-6f, int method = OBFF_ANALYTICAL_GRADIENT);</a>
+<a name="ln1327">    /*! Initialize conjugate gradient optimalization and take the first step, to be</a>
+<a name="ln1328">     *  used in combination with ConjugateGradientsTakeNSteps().</a>
+<a name="ln1329">     *</a>
+<a name="ln1330">     *  example:</a>
+<a name="ln1331">     *  \code</a>
+<a name="ln1332">     *  // pFF is a pointer to a OBForceField class</a>
+<a name="ln1333">     *  pFF-&gt;ConjugateGradientsInitialize(100, 1e-5f);</a>
+<a name="ln1334">     *  while (pFF-&gt;ConjugateGradientsTakeNSteps(5)) {</a>
+<a name="ln1335">     *    // do some updating in your program (redraw structure, ...)</a>
+<a name="ln1336">     *  }</a>
+<a name="ln1337">     *  \endcode</a>
+<a name="ln1338">     *</a>
+<a name="ln1339">     *  If you don't need any updating in your program, ConjugateGradients() is recommended.</a>
+<a name="ln1340">     *</a>
+<a name="ln1341">     *  \param steps The number of steps.</a>
+<a name="ln1342">     *  \param econv Energy convergence criteria. (defualt is 1e-6)</a>
+<a name="ln1343">     *  \param method Deprecated. (see HasAnalyticalGradients())</a>
+<a name="ln1344">     *</a>
+<a name="ln1345">     *  \par Output to log:</a>
+<a name="ln1346">     *  This function should only be called with the log level set to OBFF_LOGLVL_NONE or OBFF_LOGLVL_LOW. Otherwise</a>
+<a name="ln1347">     *  too much information about the energy calculations needed for the minimization will interfere with the list</a>
+<a name="ln1348">     *  of energies for succesive steps. \n\n</a>
+<a name="ln1349">     *  OBFF_LOGLVL_NONE:   none \n</a>
+<a name="ln1350">     *  OBFF_LOGLVL_LOW:    header including number of steps and first step \n</a>
+<a name="ln1351">     *  OBFF_LOGLVL_MEDIUM: see note above \n</a>
+<a name="ln1352">     *  OBFF_LOGLVL_HIGH:   see note above \n</a>
+<a name="ln1353">     */</a>
+<a name="ln1354">    void ConjugateGradientsInitialize(int steps = 1000, double econv = 1e-6f, int method = OBFF_ANALYTICAL_GRADIENT);</a>
+<a name="ln1355">    /*! Take n steps in a conjugate gradient optimalization that was previously</a>
+<a name="ln1356">     *  initialized with ConjugateGradientsInitialize().</a>
+<a name="ln1357">     *</a>
+<a name="ln1358">     *  \param n The number of steps to take.</a>
+<a name="ln1359">     *  \return False if convergence or the number of steps given by ConjugateGradientsInitialize() has been reached.</a>
+<a name="ln1360">     *</a>
+<a name="ln1361">     *  \par Output to log:</a>
+<a name="ln1362">     *  This function should only be called with the log level set to OBFF_LOGLVL_NONE or OBFF_LOGLVL_LOW. Otherwise</a>
+<a name="ln1363">     *  too much information about the energy calculations needed for the minimization will interfere with the list</a>
+<a name="ln1364">     *  of energies for succesive steps. \n\n</a>
+<a name="ln1365">     *  OBFF_LOGLVL_NONE:   none \n</a>
+<a name="ln1366">     *  OBFF_LOGLVL_LOW:    step number, energy and energy for the previous step \n</a>
+<a name="ln1367">     *  OBFF_LOGLVL_MEDIUM: see note above \n</a>
+<a name="ln1368">     *  OBFF_LOGLVL_HIGH:   see note above \n</a>
+<a name="ln1369">    */</a>
+<a name="ln1370">    bool ConjugateGradientsTakeNSteps(int n);</a>
+<a name="ln1371">    //@}</a>
+<a name="ln1372"> </a>
+<a name="ln1373">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1374">    // Molecular Dynamics                                                  //</a>
+<a name="ln1375">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1376"> </a>
+<a name="ln1377">    //! \name Methods for molecular dynamics</a>
+<a name="ln1378">    //@{</a>
+<a name="ln1379">    /*! Generate starting velocities with a Maxwellian distribution.</a>
+<a name="ln1380">     */</a>
+<a name="ln1381">    void GenerateVelocities();</a>
+<a name="ln1382">    /*! Correct the velocities so that the following is true:</a>
+<a name="ln1383">     *</a>
+<a name="ln1384">     *  \code</a>
+<a name="ln1385">     *        3N</a>
+<a name="ln1386">     *       ----</a>
+<a name="ln1387">     *  0.5  \    m_i * v_i^2 = 0.5 * Ndf * R * T = E_kin</a>
+<a name="ln1388">     *       /</a>
+<a name="ln1389">     *       ----</a>
+<a name="ln1390">     *       i=1</a>
+<a name="ln1391">     *</a>
+<a name="ln1392">     *  E_kin : kinetic energy</a>
+<a name="ln1393">     *  m_i : mass of atom i</a>
+<a name="ln1394">     *  v_i : velocity of atom i</a>
+<a name="ln1395">     *  Ndf : number of degrees of freedom (3 * number of atoms)</a>
+<a name="ln1396">     *  R : gas constant</a>
+<a name="ln1397">     *  T : temperature</a>
+<a name="ln1398">     *  \endcode</a>
+<a name="ln1399">     *</a>
+<a name="ln1400">     */</a>
+<a name="ln1401">    void CorrectVelocities();</a>
+<a name="ln1402">    /*! Take n steps at temperature T. If no velocities are set, they will be generated.</a>
+<a name="ln1403">     *</a>
+<a name="ln1404">     *  example:</a>
+<a name="ln1405">     *  \code</a>
+<a name="ln1406">     *  // pFF is a pointer to a OBForceField class</a>
+<a name="ln1407">     *  while (pFF-&gt;MolecularDynamicsTakeNSteps(5, 300)) {</a>
+<a name="ln1408">     *    // do some updating in your program (redraw structure, ...)</a>
+<a name="ln1409">     *  }</a>
+<a name="ln1410">     * \endcode</a>
+<a name="ln1411">     *</a>
+<a name="ln1412">     *  \param n The number of steps to take.</a>
+<a name="ln1413">     *  \param T Absolute temperature in Kelvin.</a>
+<a name="ln1414">     *  \param timestep The time step in picoseconds. (10e-12 s)</a>
+<a name="ln1415">     *  \param method OBFF_ANALYTICAL_GRADIENTS (default) or OBFF_NUMERICAL_GRADIENTS</a>
+<a name="ln1416">     */</a>
+<a name="ln1417">    void MolecularDynamicsTakeNSteps(int n, double T, double timestep = 0.001, int method = OBFF_ANALYTICAL_GRADIENT);</a>
+<a name="ln1418">    //@}</a>
+<a name="ln1419"> </a>
+<a name="ln1420">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1421">    // Constraints                                                         //</a>
+<a name="ln1422">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1423"> </a>
+<a name="ln1424">    //! \name Methods for constraints</a>
+<a name="ln1425">    //@{</a>
+<a name="ln1426">    /*! Get the current constraints.</a>
+<a name="ln1427">     *  \return The current constrains stored in the force field.</a>
+<a name="ln1428">     */</a>
+<a name="ln1429">    OBFFConstraints&amp; GetConstraints();</a>
+<a name="ln1430">    /*! Set the constraints.</a>
+<a name="ln1431">     *  \param constraints The new constraints to be used.</a>
+<a name="ln1432">     */</a>
+<a name="ln1433">    void SetConstraints(OBFFConstraints&amp; constraints);</a>
+<a name="ln1434">    /*! Fix the atom position until UnsetFixAtom() is called. This function</a>
+<a name="ln1435">     *  can be used in programs that allow the user to interact with a molecule</a>
+<a name="ln1436">     *  that is being minimized without having to check if the atom is already</a>
+<a name="ln1437">     *  fixed in the constraints set by Setup() or SetConstraints(). Using this</a>
+<a name="ln1438">     *  makes sure the selected atom follows the mouse cursur.</a>
+<a name="ln1439">     *  \param index The index for the atom to fix.</a>
+<a name="ln1440">     */</a>
+<a name="ln1441">    void SetFixAtom(int index);</a>
+<a name="ln1442">    /*! Undo last SetFixAtom. This function will not remove the fix atom</a>
+<a name="ln1443">     *  constraint for this atom if set by Setup() or SetConstraints().</a>
+<a name="ln1444">     */</a>
+<a name="ln1445">    void UnsetFixAtom();</a>
+<a name="ln1446">    /*! Ignore the atom until UnsetIgnoreAtom() is called. This function</a>
+<a name="ln1447">     *  can be used in programs that allow the user to interact with a molecule</a>
+<a name="ln1448">     *  that is being minimized without having to check if the atom is already</a>
+<a name="ln1449">     *  ignored in the constraints set by Setup() or SetConstraints(). Using this</a>
+<a name="ln1450">     *  makes sure, in drawing mode, you can close rings without your newly</a>
+<a name="ln1451">     *  created puching the other atoms away.</a>
+<a name="ln1452">     *  \param index The index for the atom to ignore.</a>
+<a name="ln1453">     */</a>
+<a name="ln1454">    void SetIgnoreAtom(int index);</a>
+<a name="ln1455">    /*! Undo last SetIgnoreAtom. This function will not remove the ignore atom</a>
+<a name="ln1456">     *  constraint for this atom if set by Setup() or SetConstraints().</a>
+<a name="ln1457">     */</a>
+<a name="ln1458">    void UnsetIgnoreAtom();</a>
+<a name="ln1459"> </a>
+<a name="ln1460">    //! internal function</a>
+<a name="ln1461">    static bool IgnoreCalculation(int a, int b);</a>
+<a name="ln1462">    //! internal function</a>
+<a name="ln1463">    static bool IgnoreCalculation(int a, int b, int c);</a>
+<a name="ln1464">    //! internal function</a>
+<a name="ln1465">    static bool IgnoreCalculation(int a, int b, int c, int d);</a>
+<a name="ln1466">    //@}</a>
+<a name="ln1467"> </a>
+<a name="ln1468"> </a>
+<a name="ln1469">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1470">    // Validation                                                          //</a>
+<a name="ln1471">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1472"> </a>
+<a name="ln1473">    //! \name Methods for forcefield validation</a>
+<a name="ln1474">    //@{</a>
+<a name="ln1475">    //! (debugging)</a>
+<a name="ln1476">    bool DetectExplosion();</a>
+<a name="ln1477">    //! (debugging)</a>
+<a name="ln1478">    vector3 ValidateLineSearch(OBAtom *atom, vector3 &amp;direction);</a>
+<a name="ln1479">    //! (debugging)</a>
+<a name="ln1480">    void ValidateSteepestDescent(int steps);</a>
+<a name="ln1481">    //! (debugging)</a>
+<a name="ln1482">    void ValidateConjugateGradients(int steps);</a>
+<a name="ln1483">    //! Validate the force field implementation (debugging)</a>
+<a name="ln1484">    virtual bool Validate() { return false; }</a>
+<a name="ln1485">    /*!</a>
+<a name="ln1486">      Validate the analytical gradients by comparing them to numerical ones. This function has to</a>
+<a name="ln1487">      be implemented force field specific. (debugging)</a>
+<a name="ln1488">    */</a>
+<a name="ln1489">    virtual bool ValidateGradients() { return false; }</a>
+<a name="ln1490">    /*!</a>
+<a name="ln1491">      Calculate the error of the analytical gradient (debugging)</a>
+<a name="ln1492">      \return  error = fabs(numgrad - anagrad) / anagrad * 100%</a>
+<a name="ln1493">    */</a>
+<a name="ln1494">    vector3 ValidateGradientError(vector3 &amp;numgrad, vector3 &amp;anagrad);</a>
+<a name="ln1495">    //@}</a>
+<a name="ln1496"> </a>
+<a name="ln1497">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1498">    // Vector Analysis                                                     //</a>
+<a name="ln1499">    /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1500"> </a>
+<a name="ln1501">    //! \name Methods for vector analysis (used by OBFFXXXXCalculationYYYY)</a>
+<a name="ln1502">    //@{</a>
+<a name="ln1503">    /*! Calculate the derivative of a vector length. The vector is given by a - b,</a>
+<a name="ln1504">     * the length of this vector rab = sqrt(ab.x^2 + ab.y^2 + ab.z^2).</a>
+<a name="ln1505">     * \param pos_a atom a (coordinates)</a>
+<a name="ln1506">     * \param pos_b atom b (coordinates)</a>
+<a name="ln1507">     * \param force_a - return value for the force on atom a</a>
+<a name="ln1508">     * \param force_b - return value for the force on atom b</a>
+<a name="ln1509">     * \return The distance between a and b (bondlength for bond stretching, separation for vdw, electrostatic)</a>
+<a name="ln1510">     */</a>
+<a name="ln1511">    static double VectorBondDerivative(double *pos_a, double *pos_b,</a>
+<a name="ln1512">                                       double *force_a, double *force_b);</a>
+<a name="ln1513">    /*! To be used for VDW or Electrostatic interactions. This</a>
+<a name="ln1514">     *  is faster than VectorBondDerivative, but does no error checking.</a>
+<a name="ln1515">     */</a>
+<a name="ln1516">    static double VectorDistanceDerivative(const double* const pos_i, const double* const pos_j,</a>
+<a name="ln1517">                                           double *force_i, double *force_j);</a>
+<a name="ln1518">    //! \deprecated</a>
+<a name="ln1519">    static double VectorLengthDerivative(vector3 &amp;a, vector3 &amp;b);</a>
+<a name="ln1520"> </a>
+<a name="ln1521">    /*! Calculate the derivative of a angle a-b-c. The angle is given by dot(ab,cb)/rab*rcb.</a>
+<a name="ln1522">     *  Used for harmonic (cubic) angle potentials.</a>
+<a name="ln1523">     * \param pos_a atom a (coordinates)</a>
+<a name="ln1524">     * \param pos_b atom b (coordinates)</a>
+<a name="ln1525">     * \param pos_c atom c (coordinates)</a>
+<a name="ln1526">     * \param force_a - return value for the force on atom a</a>
+<a name="ln1527">     * \param force_b - return value for the force on atom b</a>
+<a name="ln1528">     * \param force_c - return value for the force on atom c</a>
+<a name="ln1529">     * \return The angle between a-b-c</a>
+<a name="ln1530">     */</a>
+<a name="ln1531">    static double VectorAngleDerivative(double *pos_a, double *pos_b, double *pos_c,</a>
+<a name="ln1532">                                        double *force_a, double *force_b, double *force_c);</a>
+<a name="ln1533">    //! \deprecated</a>
+<a name="ln1534">    static double VectorAngleDerivative(vector3 &amp;a, vector3 &amp;b, vector3 &amp;c);</a>
+<a name="ln1535">    /*! Calculate the derivative of a OOP angle a-b-c-d. b is the central atom, and a-b-c is the plane.</a>
+<a name="ln1536">     * The OOP angle is given by 90° - arccos(dot(corss(ab,cb),db)/rabbc*rdb).</a>
+<a name="ln1537">     * \param pos_a atom a (coordinates)</a>
+<a name="ln1538">     * \param pos_b atom b (coordinates)</a>
+<a name="ln1539">     * \param pos_c atom c (coordinates)</a>
+<a name="ln1540">     * \param pos_d atom d (coordinates)</a>
+<a name="ln1541">     * \param force_a - return value for the force on atom a</a>
+<a name="ln1542">     * \param force_b - return value for the force on atom b</a>
+<a name="ln1543">     * \param force_c - return value for the force on atom c</a>
+<a name="ln1544">     * \param force_d - return value for the force on atom d</a>
+<a name="ln1545">     * \return The OOP angle for a-b-c-d</a>
+<a name="ln1546">     */</a>
+<a name="ln1547">    static double VectorOOPDerivative(double *pos_a, double *pos_b, double *pos_c, double *pos_d,</a>
+<a name="ln1548">                                      double *force_a, double *force_b, double *force_c, double *force_d);</a>
+<a name="ln1549">    //! \deprecated</a>
+<a name="ln1550">    static double VectorOOPDerivative(vector3 &amp;a, vector3 &amp;b, vector3 &amp;c, vector3 &amp;d);</a>
+<a name="ln1551">    /*! Calculate the derivative of a torsion angle a-b-c-d. The torsion angle is given by arccos(dot(corss(ab,bc),cross(bc,cd))/rabbc*rbccd).</a>
+<a name="ln1552">     * \param pos_a atom a (coordinates)</a>
+<a name="ln1553">     * \param pos_b atom b (coordinates)</a>
+<a name="ln1554">     * \param pos_c atom c (coordinates)</a>
+<a name="ln1555">     * \param pos_d atom d (coordinates)</a>
+<a name="ln1556">     * \param force_a - return value for the force on atom a</a>
+<a name="ln1557">     * \param force_b - return value for the force on atom b</a>
+<a name="ln1558">     * \param force_c - return value for the force on atom c</a>
+<a name="ln1559">     * \param force_d - return value for the force on atom d</a>
+<a name="ln1560">     * \return The tosion angle for a-b-c-d</a>
+<a name="ln1561">     */</a>
+<a name="ln1562">    static double VectorTorsionDerivative(double *pos_a, double *pos_b, double *pos_c, double *pos_d,</a>
+<a name="ln1563">                                          double *force_a, double *force_b, double *force_c, double *force_d);</a>
+<a name="ln1564">    //! \deprecated</a>
+<a name="ln1565">    static double VectorTorsionDerivative(vector3 &amp;a, vector3 &amp;b, vector3 &amp;c, vector3 &amp;d);</a>
+<a name="ln1566"> </a>
+<a name="ln1567">    /*! inline fuction to speed up minimization speed</a>
+<a name="ln1568">     * \param i pointer to i[3]</a>
+<a name="ln1569">     * \param j pointer to j[3]</a>
+<a name="ln1570">     * \param result pointer to result[3], will be set to i - j</a>
+<a name="ln1571">     */</a>
+<a name="ln1572">    static void VectorSubtract(double *i, double *j, double *result)</a>
+<a name="ln1573">    {</a>
+<a name="ln1574">      for (unsigned int c = 0; c &lt; 3; ++c)</a>
+<a name="ln1575">        result[c] = i[c] - j[c];</a>
+<a name="ln1576">    }</a>
+<a name="ln1577"> </a>
+<a name="ln1578">    static void VectorSubtract(const double* const i, const double* const j, double *result)</a>
+<a name="ln1579">    {</a>
+<a name="ln1580">      for (unsigned int c = 0; c &lt; 3; ++c)</a>
+<a name="ln1581">        result[c] = i[c] - j[c];</a>
+<a name="ln1582">    }</a>
+<a name="ln1583"> </a>
+<a name="ln1584">    /*! inline fuction to speed up minimization speed</a>
+<a name="ln1585">     * \param i pointer to i[3]</a>
+<a name="ln1586">     * \param j pointer to j[3]</a>
+<a name="ln1587">     * \param result pointer to result[3], will be set to i + j</a>
+<a name="ln1588">     */</a>
+<a name="ln1589">    static void VectorAdd(double *i, double *j, double *result)</a>
+<a name="ln1590">    {</a>
+<a name="ln1591">      for (unsigned int c = 0; c &lt; 3; ++c)</a>
+<a name="ln1592">        result[c] = i[c] + j[c];</a>
+<a name="ln1593">    }</a>
+<a name="ln1594"> </a>
+<a name="ln1595">    /*! inline fuction to speed up minimization speed</a>
+<a name="ln1596">     * \param i pointer to i[3]</a>
+<a name="ln1597">     * \param n divide x,y,z with n</a>
+<a name="ln1598">     * \param result pointer to result[3]</a>
+<a name="ln1599">     */</a>
+<a name="ln1600">    static void VectorDivide(double *i, double n, double *result)</a>
+<a name="ln1601">    {</a>
+<a name="ln1602">      for (unsigned int c = 0; c &lt; 3; ++c)</a>
+<a name="ln1603">        result[c] = i[c] / n;</a>
+<a name="ln1604">    }</a>
+<a name="ln1605"> </a>
+<a name="ln1606">    /*! inline fuction to speed up minimization speed</a>
+<a name="ln1607">     * \param i pointer to i[3]</a>
+<a name="ln1608">     * \param n multiply x,y,z with n</a>
+<a name="ln1609">     * \param result pointer to result[3]</a>
+<a name="ln1610">     */</a>
+<a name="ln1611">    static void VectorMultiply(double *i, double n, double *result)</a>
+<a name="ln1612">    {</a>
+<a name="ln1613">      for (unsigned int c = 0; c &lt; 3; ++c)</a>
+<a name="ln1614">        result[c] = i[c] * n;</a>
+<a name="ln1615">    }</a>
+<a name="ln1616"> </a>
+<a name="ln1617">    static void VectorMultiply(const double* const i, const double n, double *result)</a>
+<a name="ln1618">    {</a>
+<a name="ln1619">      for (unsigned int c = 0; c &lt; 3; ++c)</a>
+<a name="ln1620">        result[c] = i[c] * n;</a>
+<a name="ln1621">    }</a>
+<a name="ln1622"> </a>
+<a name="ln1623">    /*! inline fuction to speed up minimization speed</a>
+<a name="ln1624">     * \param i pointer to i[3], multiply this vector by n and set this vector to the result.</a>
+<a name="ln1625">     * \param n the scalar value to be multipled</a>
+<a name="ln1626">     */</a>
+<a name="ln1627">    static void VectorSelfMultiply(double *i, double n)</a>
+<a name="ln1628">    {</a>
+<a name="ln1629">      for (unsigned int c = 0; c &lt; 3; ++c)</a>
+<a name="ln1630">        i[c] *= n;</a>
+<a name="ln1631">    }</a>
+<a name="ln1632"> </a>
+<a name="ln1633">    /*! inline fuction to speed up minimization speed</a>
+<a name="ln1634">     * \param i pointer to i[3] to be normalized</a>
+<a name="ln1635">     */</a>
+<a name="ln1636">    static void VectorNormalize(double *i)</a>
+<a name="ln1637">    {</a>
+<a name="ln1638">      double length = VectorLength(i);</a>
+<a name="ln1639">      for (unsigned int c = 0; c &lt; 3; ++c)</a>
+<a name="ln1640">        i[c] /= length;</a>
+<a name="ln1641">    }</a>
+<a name="ln1642"> </a>
+<a name="ln1643">    /*! inline fuction to speed up minimization speed</a>
+<a name="ln1644">     * \param from pointer to i[3] to be copied from</a>
+<a name="ln1645">     * \param to pointer to j[3] to be copied to</a>
+<a name="ln1646">     */</a>
+<a name="ln1647">    static void VectorCopy(double *from, double *to)</a>
+<a name="ln1648">    {</a>
+<a name="ln1649">      for (unsigned int c = 0; c &lt; 3; ++c)</a>
+<a name="ln1650">        to[c] = from[c];</a>
+<a name="ln1651">    }</a>
+<a name="ln1652"> </a>
+<a name="ln1653">    /*! inline fuction to speed up minimization speed</a>
+<a name="ln1654">     * \param i pointer to i[3]</a>
+<a name="ln1655">     * \return the vector length</a>
+<a name="ln1656">     */</a>
+<a name="ln1657">    static double VectorLength(double *i)</a>
+<a name="ln1658">    {</a>
+<a name="ln1659">      return sqrt( i[0]*i[0] + i[1]*i[1] + i[2]*i[2] );</a>
+<a name="ln1660">    }</a>
+<a name="ln1661"> </a>
+<a name="ln1662">    static double VectorDistance(double *pos_i, double *pos_j)</a>
+<a name="ln1663">    {</a>
+<a name="ln1664">      double ij[3];</a>
+<a name="ln1665">      VectorSubtract(pos_i, pos_j, ij);</a>
+<a name="ln1666">      const double rij = VectorLength(ij);</a>
+<a name="ln1667">      return rij;</a>
+<a name="ln1668">    }</a>
+<a name="ln1669"> </a>
+<a name="ln1670">    /*! inline fuction to speed up minimization speed</a>
+<a name="ln1671">     * \param i pointer to i[3]</a>
+<a name="ln1672">     * \param j pointer to j[3]</a>
+<a name="ln1673">     * \param k pointer to k[3]</a>
+<a name="ln1674">     * \return the vector angle ijk (deg)</a>
+<a name="ln1675">     */</a>
+<a name="ln1676">    static double VectorAngle(double *i, double *j, double *k);</a>
+<a name="ln1677"> </a>
+<a name="ln1678">    /*! inline fuction to speed up minimization speed</a>
+<a name="ln1679">     * \param i pointer to i[3]</a>
+<a name="ln1680">     * \param j pointer to j[3]</a>
+<a name="ln1681">     * \param k pointer to k[3]</a>
+<a name="ln1682">     * \param l pointer to l[3]</a>
+<a name="ln1683">     * \return the vector torson ijkl (deg)</a>
+<a name="ln1684">     */</a>
+<a name="ln1685">    static double VectorTorsion(double *i, double *j, double *k, double *l);</a>
+<a name="ln1686"> </a>
+<a name="ln1687">    /*! inline fuction to speed up minimization speed</a>
+<a name="ln1688">     * \param i pointer to i[3]</a>
+<a name="ln1689">     * \param j pointer to j[3]</a>
+<a name="ln1690">     * \param k pointer to k[3]</a>
+<a name="ln1691">     * \param l pointer to l[3]</a>
+<a name="ln1692">     * \return the vector torson ijkl (deg)</a>
+<a name="ln1693">     */</a>
+<a name="ln1694">    static double VectorOOP(double *i, double *j, double *k, double *l);</a>
+<a name="ln1695"> </a>
+<a name="ln1696">    /*! inline fuction to speed up minimization speed</a>
+<a name="ln1697">     * \param i pointer to i[3], will set x,y,z to 0,0,0</a>
+<a name="ln1698">     */</a>
+<a name="ln1699">    static void VectorClear(double *i)</a>
+<a name="ln1700">    {</a>
+<a name="ln1701">      for (unsigned int c = 0; c &lt; 3; ++c)</a>
+<a name="ln1702">        i[c] = 0.0;</a>
+<a name="ln1703">    }</a>
+<a name="ln1704"> </a>
+<a name="ln1705">    /*! inline fuction to speed up minimization speed</a>
+<a name="ln1706">     * \param i pointer to i[3]</a>
+<a name="ln1707">     * \param j pointer to j[3]</a>
+<a name="ln1708">     * \return the dot product</a>
+<a name="ln1709">     */</a>
+<a name="ln1710">    static double VectorDot(double *i, double *j)</a>
+<a name="ln1711">    {</a>
+<a name="ln1712">      double result = 0.0;</a>
+<a name="ln1713">      // Written as a loop for vectorization</a>
+<a name="ln1714">      // Loop will be unrolled by compiler otherwise</a>
+<a name="ln1715">      for (unsigned int c = 0; c &lt; 3; ++c)</a>
+<a name="ln1716">        result += i[c]*j[c];</a>
+<a name="ln1717">      return result;</a>
+<a name="ln1718">    }</a>
+<a name="ln1719"> </a>
+<a name="ln1720">    /*! inline fuction to speed up minimization speed</a>
+<a name="ln1721">     * \param i pointer to i[3]</a>
+<a name="ln1722">     * \param j pointer to j[3]</a>
+<a name="ln1723">     * \param result the dot product (as a return value double[3])</a>
+<a name="ln1724">     */</a>
+<a name="ln1725">    static void VectorCross(double *i, double *j, double *result)</a>
+<a name="ln1726">    {</a>
+<a name="ln1727">      result[0] =   i[1]*j[2] - i[2]*j[1];</a>
+<a name="ln1728">      result[1] = - i[0]*j[2] + i[2]*j[0];</a>
+<a name="ln1729">      result[2] =   i[0]*j[1] - i[1]*j[0];</a>
+<a name="ln1730">    }</a>
+<a name="ln1731"> </a>
+<a name="ln1732">    static void PrintVector(double *i)</a>
+<a name="ln1733">    {</a>
+<a name="ln1734">      std::cout &lt;&lt; &quot;&lt;&quot; &lt;&lt; i[0] &lt;&lt; &quot;, &quot; &lt;&lt; i[1] &lt;&lt; &quot;, &quot; &lt;&lt; i[2] &lt;&lt; &quot;&gt;&quot; &lt;&lt; std::endl;</a>
+<a name="ln1735">    }</a>
+<a name="ln1736">    //@}</a>
+<a name="ln1737"> </a>
+<a name="ln1738">  }; // class OBForceField</a>
+<a name="ln1739"> </a>
+<a name="ln1740">}// namespace OpenBabel</a>
+<a name="ln1741"> </a>
+<a name="ln1742">#endif   // OB_FORCEFIELD_H</a>
+<a name="ln1743"> </a>
+<a name="ln1744">//! \file forcefield.h</a>
+<a name="ln1745">//! \brief Handle forcefields</a>
+
+</code></pre>
+<div class="balloon" rel="247"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v730/" target="_blank">V730</a> Not all members of a class are initialized inside the constructor. Consider inspecting: rab0, rbc0, type.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

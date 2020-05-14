@@ -1,0 +1,796 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>fingerprint.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">fingerprint.cpp - Implementation of fingerpring base class and fastsearching</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 2005 by Chris Morley</a>
+<a name="ln5"> </a>
+<a name="ln6">This file is part of the Open Babel project.</a>
+<a name="ln7">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln10">it under the terms of the GNU General Public License as published by</a>
+<a name="ln11">the Free Software Foundation version 2 of the License.</a>
+<a name="ln12"> </a>
+<a name="ln13">This program is distributed in the hope that it will be useful,</a>
+<a name="ln14">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln15">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln16">GNU General Public License for more details.</a>
+<a name="ln17">***********************************************************************/</a>
+<a name="ln18"> </a>
+<a name="ln19">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln20"> </a>
+<a name="ln21">#include &lt;vector&gt;</a>
+<a name="ln22">#include &lt;algorithm&gt;</a>
+<a name="ln23">#include &lt;iosfwd&gt;</a>
+<a name="ln24">#include &lt;cstring&gt;</a>
+<a name="ln25">#include &lt;fstream&gt;</a>
+<a name="ln26"> </a>
+<a name="ln27">#include &lt;openbabel/fingerprint.h&gt;</a>
+<a name="ln28">#include &lt;openbabel/oberror.h&gt;</a>
+<a name="ln29"> </a>
+<a name="ln30">using namespace std;</a>
+<a name="ln31">namespace OpenBabel</a>
+<a name="ln32">{</a>
+<a name="ln33">#if defined(__CYGWIN__) || defined(__MINGW32__)</a>
+<a name="ln34">  // macro to implement static OBPlugin::PluginMapType&amp; Map()</a>
+<a name="ln35">  PLUGIN_CPP_FILE(OBFingerprint)</a>
+<a name="ln36">#endif</a>
+<a name="ln37"> </a>
+<a name="ln38">  const unsigned int OBFingerprint::bitsperint = 8 * sizeof(unsigned int);</a>
+<a name="ln39"> </a>
+<a name="ln40">  void OBFingerprint::SetBit(vector&lt;unsigned int&gt;&amp; vec, const unsigned int n)</a>
+<a name="ln41">  {</a>
+<a name="ln42">    vec[n/Getbitsperint()] |= (1 &lt;&lt; (n % Getbitsperint()));</a>
+<a name="ln43">  }</a>
+<a name="ln44"> </a>
+<a name="ln45">  bool OBFingerprint::GetBit(const vector&lt;unsigned int&gt;&amp; vec, const unsigned int n)</a>
+<a name="ln46">  {</a>
+<a name="ln47">    unsigned int word =vec[n/Getbitsperint()];</a>
+<a name="ln48">    return (word &amp;= (1 &lt;&lt; (n % Getbitsperint())))!=0;</a>
+<a name="ln49">  }</a>
+<a name="ln50"> </a>
+<a name="ln51">  ////////////////////////////////////////</a>
+<a name="ln52">  void OBFingerprint::Fold(vector&lt;unsigned int&gt;&amp; vec, unsigned int nbits)</a>
+<a name="ln53">  {</a>
+<a name="ln54">    if(nbits&lt;Getbitsperint())</a>
+<a name="ln55">    {</a>
+<a name="ln56">      stringstream ss;</a>
+<a name="ln57">      ss &lt;&lt; &quot;Can't fold to less than &quot; &lt;&lt; Getbitsperint() &lt;&lt; &quot;bits&quot;;</a>
+<a name="ln58">      obErrorLog.ThrowError(__FUNCTION__, ss.str(), obError);</a>
+<a name="ln59">      return;</a>
+<a name="ln60">    }</a>
+<a name="ln61">    // &quot;folding&quot; to a larger # of bits</a>
+<a name="ln62">    if (nbits &gt; vec.size()*Getbitsperint()) {</a>
+<a name="ln63">      vec.resize(nbits/Getbitsperint(), 0);</a>
+<a name="ln64">    }</a>
+<a name="ln65">    else {</a>
+<a name="ln66">      // normal folding to smaller vector sizes</a>
+<a name="ln67">      while(vec.size()*Getbitsperint()/2 &gt;= nbits)</a>
+<a name="ln68">        vec.erase(transform(vec.begin(),vec.begin()+vec.size()/2,</a>
+<a name="ln69">                            vec.begin()+vec.size()/2, vec.begin(), bit_or()), vec.end());</a>
+<a name="ln70">    }</a>
+<a name="ln71">  }</a>
+<a name="ln72"> </a>
+<a name="ln73">  ////////////////////////////////////////</a>
+<a name="ln74">/*  bool OBFingerprint::GetNextFPrt(std::string&amp; id, OBFingerprint*&amp; pFPrt)</a>
+<a name="ln75">  {</a>
+<a name="ln76">    Fptpos iter;</a>
+<a name="ln77">    if(id.empty())</a>
+<a name="ln78">      iter=FPtsMap().begin();</a>
+<a name="ln79">    else</a>
+<a name="ln80">      {</a>
+<a name="ln81">        iter=FPtsMap().find(id);</a>
+<a name="ln82">        if(iter!=FPtsMap().end())</a>
+<a name="ln83">          ++iter;</a>
+<a name="ln84">      }</a>
+<a name="ln85">    if(iter==FPtsMap().end())</a>
+<a name="ln86">      return false;</a>
+<a name="ln87">    id    = iter-&gt;first;</a>
+<a name="ln88">    pFPrt = iter-&gt;second;</a>
+<a name="ln89">    return true;</a>
+<a name="ln90">  }</a>
+<a name="ln91"> </a>
+<a name="ln92">  OBFingerprint* OBFingerprint::FindFingerprint(const string&amp; ID)</a>
+<a name="ln93">  {</a>
+<a name="ln94">    if(ID.empty())</a>
+<a name="ln95">      return _pDefault;</a>
+<a name="ln96">    Fptpos iter = FPtsMap().find(ID);</a>
+<a name="ln97">    if(iter==FPtsMap().end())</a>
+<a name="ln98">      return NULL;</a>
+<a name="ln99">    else</a>
+<a name="ln100">      return iter-&gt;second;</a>
+<a name="ln101">  }</a>
+<a name="ln102">*/</a>
+<a name="ln103">  double OBFingerprint::Tanimoto(const vector&lt;unsigned int&gt;&amp; vec1, const vector&lt;unsigned int&gt;&amp; vec2)</a>
+<a name="ln104">  {</a>
+<a name="ln105">    //Independent of sizeof(unsigned int)</a>
+<a name="ln106">    if(vec1.size()!=vec2.size())</a>
+<a name="ln107">      return -1; //different number of bits</a>
+<a name="ln108">    int andbits=0, orbits=0;</a>
+<a name="ln109">    for (unsigned i=0;i&lt;vec1.size();++i)</a>
+<a name="ln110">      {</a>
+<a name="ln111">        int andfp = vec1[i] &amp; vec2[i];</a>
+<a name="ln112">        int orfp = vec1[i] | vec2[i];</a>
+<a name="ln113">        //Count bits</a>
+<a name="ln114">      /* GCC 3.4 supports a &quot;population count&quot; builtin, which on many targets is</a>
+<a name="ln115">         implemented with a single instruction.  There is a fallback definition</a>
+<a name="ln116">         in libgcc in case a target does not have one, which should be just as</a>
+<a name="ln117">         good as the static function below.  */</a>
+<a name="ln118">#if __GNUC__ &gt; 3 || (__GNUC__ == 3 &amp;&amp; __GNUC_MINOR__ &gt;= 4)</a>
+<a name="ln119">        andbits += __builtin_popcount(andfp);</a>
+<a name="ln120">        orbits += __builtin_popcount(orfp);</a>
+<a name="ln121">#else</a>
+<a name="ln122">        for(;andfp;andfp=andfp&lt;&lt;1)</a>
+<a name="ln123">          if(andfp&lt;0) ++andbits;</a>
+<a name="ln124">        for(;orfp;orfp=orfp&lt;&lt;1)</a>
+<a name="ln125">          if(orfp&lt;0) ++orbits;</a>
+<a name="ln126">#endif</a>
+<a name="ln127">      }</a>
+<a name="ln128">    if(orbits==0)</a>
+<a name="ln129">      return 0.0;</a>
+<a name="ln130">    return((double)andbits/(double)orbits);</a>
+<a name="ln131">  }</a>
+<a name="ln132"> </a>
+<a name="ln133">  //*****************************************************************</a>
+<a name="ln134">  bool FastSearch::Find(OBBase* pOb, vector&lt;unsigned long&gt;&amp; SeekPositions,</a>
+<a name="ln135">                        unsigned int MaxCandidates)</a>
+<a name="ln136">  {</a>
+<a name="ln137">    ///Finds chemical objects in datafilename (which must previously have been indexed)</a>
+<a name="ln138">    ///that have all the same bits set in their fingerprints as in the fingerprint of</a>
+<a name="ln139">    ///a pattern object. (Usually a substructure search in molecules.)</a>
+<a name="ln140">    ///The type of fingerprint and its degree of folding does not have to be specified</a>
+<a name="ln141">    ///here because the values in the index file are used.</a>
+<a name="ln142">    ///The positions of the candidate matching molecules in the original datafile are returned.</a>
+<a name="ln143"> </a>
+<a name="ln144">    vector&lt;unsigned int&gt; vecwords;</a>
+<a name="ln145">    _pFP-&gt;GetFingerprint(pOb,vecwords, _index.header.words * OBFingerprint::Getbitsperint());</a>
+<a name="ln146"> </a>
+<a name="ln147">    vector&lt;unsigned int&gt;candidates; //indices of matches from fingerprint screen</a>
+<a name="ln148">    candidates.reserve(MaxCandidates);</a>
+<a name="ln149"> </a>
+<a name="ln150">    unsigned int dataSize = _index.header.nEntries;</a>
+<a name="ln151">    //	GetFingerprint(mol, vecwords, _index.header.words, _index.header.fptype);</a>
+<a name="ln152"> </a>
+<a name="ln153">    unsigned int words = _index.header.words;</a>
+<a name="ln154">    unsigned int* nextp = &amp;_index.fptdata[0];</a>
+<a name="ln155">    unsigned int* ppat0 = &amp;vecwords[0];</a>
+<a name="ln156">    unsigned int* p;</a>
+<a name="ln157">    unsigned int* ppat;</a>
+<a name="ln158">    unsigned int i;</a>
+<a name="ln159">    for(i=0;i&lt;dataSize; ++i) //speed critical section</a>
+<a name="ln160">      {</a>
+<a name="ln161">        p=nextp;</a>
+<a name="ln162">        nextp += words;</a>
+<a name="ln163">        ppat=ppat0;</a>
+<a name="ln164">        bool ppat_has_additional_bits = false;</a>
+<a name="ln165">        while(p&lt;nextp)</a>
+<a name="ln166">          {</a>
+<a name="ln167">            if ((*ppat &amp; *p) ^ *ppat) { // any bits in ppat that are not in p?</a>
+<a name="ln168">              ppat_has_additional_bits = true;</a>
+<a name="ln169">              break;</a>
+<a name="ln170">            }</a>
+<a name="ln171">            p++;</a>
+<a name="ln172">            ppat++;</a>
+<a name="ln173">          }</a>
+<a name="ln174">        if(!ppat_has_additional_bits)</a>
+<a name="ln175">          {</a>
+<a name="ln176">            candidates.push_back(i);</a>
+<a name="ln177">            if(candidates.size()&gt;=MaxCandidates)</a>
+<a name="ln178">              break;</a>
+<a name="ln179">          }</a>
+<a name="ln180">      }</a>
+<a name="ln181"> </a>
+<a name="ln182">    if(i&lt;_index.header.nEntries) //premature end to search</a>
+<a name="ln183">      {</a>
+<a name="ln184">        stringstream errorMsg;</a>
+<a name="ln185">        errorMsg &lt;&lt; &quot;Stopped looking after &quot; &lt;&lt; i &lt;&lt; &quot; molecules.&quot; &lt;&lt; endl;</a>
+<a name="ln186">        obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obWarning);</a>
+<a name="ln187">      }</a>
+<a name="ln188"> </a>
+<a name="ln189">    vector&lt;unsigned int&gt;::iterator itr;</a>
+<a name="ln190">    for(itr=candidates.begin();itr!=candidates.end();++itr)</a>
+<a name="ln191">      {</a>
+<a name="ln192">        SeekPositions.push_back(_index.seekdata[*itr]);</a>
+<a name="ln193">      }</a>
+<a name="ln194">    return true;</a>
+<a name="ln195">  }</a>
+<a name="ln196"> </a>
+<a name="ln197">////////////////////////////////////////////////////////////</a>
+<a name="ln198"> bool FastSearch::FindMatch(OBBase* pOb, vector&lt;unsigned long&gt;&amp; SeekPositions,</a>
+<a name="ln199">                            unsigned int MaxCandidates)</a>
+<a name="ln200">{</a>
+<a name="ln201">//Similar to FastSearch::Find() except that successful candidates have all bits the same as the target</a>
+<a name="ln202">  vector&lt;unsigned int&gt; vecwords;</a>
+<a name="ln203">  _pFP-&gt;GetFingerprint(pOb,vecwords, _index.header.words * OBFingerprint::Getbitsperint());</a>
+<a name="ln204"> </a>
+<a name="ln205">  vector&lt;unsigned int&gt;candidates; //indices of matches from fingerprint screen</a>
+<a name="ln206"> </a>
+<a name="ln207">  unsigned int dataSize = _index.header.nEntries;</a>
+<a name="ln208">  unsigned int words = _index.header.words;</a>
+<a name="ln209">  unsigned int* nextp = &amp;_index.fptdata[0]; // start of next FP in index</a>
+<a name="ln210">  unsigned int* ppat0 = &amp;vecwords[0];       // start of target FP</a>
+<a name="ln211">  unsigned int* p;                          // current position in index</a>
+<a name="ln212">  unsigned int* ppat;                       // current position in target FP</a>
+<a name="ln213">  unsigned int i; // need address of this, can't be register</a>
+<a name="ln214">  for(i=0;i&lt;dataSize; ++i) //speed critical section</a>
+<a name="ln215">  {</a>
+<a name="ln216">    p=nextp;</a>
+<a name="ln217">    nextp += words;</a>
+<a name="ln218">    ppat=ppat0;</a>
+<a name="ln219"> </a>
+<a name="ln220">    while((*p++ == *ppat++ ) &amp;&amp; (p&lt;nextp));</a>
+<a name="ln221"> </a>
+<a name="ln222">    if(p==nextp)</a>
+<a name="ln223">    {</a>
+<a name="ln224">      candidates.push_back(i);</a>
+<a name="ln225">      if(candidates.size()&gt;=MaxCandidates)</a>
+<a name="ln226">        break;</a>
+<a name="ln227">    }</a>
+<a name="ln228">  }</a>
+<a name="ln229"> </a>
+<a name="ln230">  vector&lt;unsigned int&gt;::iterator itr;</a>
+<a name="ln231">  for(itr=candidates.begin();itr!=candidates.end();++itr)</a>
+<a name="ln232">    {</a>
+<a name="ln233">      SeekPositions.push_back(_index.seekdata[*itr]);</a>
+<a name="ln234">    }</a>
+<a name="ln235">  return true;</a>
+<a name="ln236">}</a>
+<a name="ln237"> </a>
+<a name="ln238">  /////////////////////////////////////////////////////////</a>
+<a name="ln239">  bool FastSearch::FindSimilar(OBBase* pOb, multimap&lt;double, unsigned long&gt;&amp; SeekposMap,</a>
+<a name="ln240">                               double MinTani, double MaxTani)</a>
+<a name="ln241">  {</a>
+<a name="ln242">    vector&lt;unsigned int&gt; targetfp;</a>
+<a name="ln243">    _pFP-&gt;GetFingerprint(pOb,targetfp, _index.header.words * OBFingerprint::Getbitsperint());</a>
+<a name="ln244"> </a>
+<a name="ln245">    unsigned int words = _index.header.words;</a>
+<a name="ln246">    unsigned int dataSize = _index.header.nEntries;</a>
+<a name="ln247">    unsigned int* nextp = &amp;_index.fptdata[0];</a>
+<a name="ln248">    unsigned int* p;</a>
+<a name="ln249">    unsigned int i;</a>
+<a name="ln250">    for(i=0;i&lt;dataSize; ++i) //speed critical section</a>
+<a name="ln251">      {</a>
+<a name="ln252">        p=nextp;</a>
+<a name="ln253">        nextp += words;</a>
+<a name="ln254">        double tani = OBFingerprint::Tanimoto(targetfp,p);</a>
+<a name="ln255">        if(tani&gt;MinTani &amp;&amp; tani &lt; MaxTani)</a>
+<a name="ln256">          SeekposMap.insert(pair&lt;const double, unsigned long&gt;(tani,_index.seekdata[i]));</a>
+<a name="ln257">      }</a>
+<a name="ln258">    return true;</a>
+<a name="ln259">  }</a>
+<a name="ln260"> </a>
+<a name="ln261">  /////////////////////////////////////////////////////////</a>
+<a name="ln262">  bool FastSearch::FindSimilar(OBBase* pOb, multimap&lt;double, unsigned long&gt;&amp; SeekposMap,</a>
+<a name="ln263">                               int nCandidates)</a>
+<a name="ln264">  {</a>
+<a name="ln265">    ///If nCandidates is zero or omitted the original size of the multimap is used</a>
+<a name="ln266">    if(nCandidates)</a>
+<a name="ln267">      {</a>
+<a name="ln268">        //initialise the multimap with nCandidate zero entries</a>
+<a name="ln269">        SeekposMap.clear();</a>
+<a name="ln270">        int i;</a>
+<a name="ln271">        for(i=0;i&lt;nCandidates;++i)</a>
+<a name="ln272">          SeekposMap.insert(pair&lt;const double, unsigned long&gt;(0,0));</a>
+<a name="ln273">      }</a>
+<a name="ln274">    else if(SeekposMap.size()==0)</a>
+<a name="ln275">      return false;</a>
+<a name="ln276"> </a>
+<a name="ln277">    vector&lt;unsigned int&gt; targetfp;</a>
+<a name="ln278">    _pFP-&gt;GetFingerprint(pOb,targetfp, _index.header.words * OBFingerprint::Getbitsperint());</a>
+<a name="ln279"> </a>
+<a name="ln280">    unsigned int words = _index.header.words;</a>
+<a name="ln281">    unsigned int dataSize = _index.header.nEntries;</a>
+<a name="ln282">    unsigned int* nextp = &amp;_index.fptdata[0];</a>
+<a name="ln283">    unsigned int* p;</a>
+<a name="ln284">    unsigned int i;</a>
+<a name="ln285">    for(i=0;i&lt;dataSize; ++i) //speed critical section</a>
+<a name="ln286">      {</a>
+<a name="ln287">        p=nextp;</a>
+<a name="ln288">        nextp += words;</a>
+<a name="ln289">        double tani = OBFingerprint::Tanimoto(targetfp,p);</a>
+<a name="ln290">        if(tani&gt;SeekposMap.begin()-&gt;first)</a>
+<a name="ln291">          {</a>
+<a name="ln292">            SeekposMap.insert(pair&lt;const double, unsigned long&gt;(tani,_index.seekdata[i]));</a>
+<a name="ln293">            SeekposMap.erase(SeekposMap.begin());</a>
+<a name="ln294">          }</a>
+<a name="ln295">      }</a>
+<a name="ln296">    return true;</a>
+<a name="ln297">  }</a>
+<a name="ln298"> </a>
+<a name="ln299">  /////////////////////////////////////////////////////////</a>
+<a name="ln300">  string FastSearch::ReadIndex(istream* pIndexstream)</a>
+<a name="ln301">  {</a>
+<a name="ln302">    //Reads fs index from istream into member variables</a>
+<a name="ln303">    _index.Read(pIndexstream);</a>
+<a name="ln304"> </a>
+<a name="ln305">    _pFP = _index.CheckFP();</a>
+<a name="ln306">    if(!_pFP)</a>
+<a name="ln307">      *(_index.header.datafilename) = '\0';</a>
+<a name="ln308"> </a>
+<a name="ln309">    return _index.header.datafilename; //will be empty on error</a>
+<a name="ln310">  }</a>
+<a name="ln311"> </a>
+<a name="ln312">  //////////////////////////////////////////////////////////</a>
+<a name="ln313">  string FastSearch::ReadIndexFile(string IndexFilename)</a>
+<a name="ln314">  {</a>
+<a name="ln315">    ifstream ifs(IndexFilename.c_str(),ios::binary);</a>
+<a name="ln316">    if(ifs)</a>
+<a name="ln317">      return ReadIndex(&amp;ifs);</a>
+<a name="ln318">    else</a>
+<a name="ln319">    {</a>
+<a name="ln320">      string dum;</a>
+<a name="ln321">      return dum;</a>
+<a name="ln322">    }</a>
+<a name="ln323">  }</a>
+<a name="ln324"> </a>
+<a name="ln325">  //////////////////////////////////////////////////////////</a>
+<a name="ln326">  bool FptIndex::Read(istream* pIndexstream)</a>
+<a name="ln327">  {</a>
+<a name="ln328">//    pIndexstream-&gt;read((char*)&amp;(header), sizeof(FptIndexHeader));</a>
+<a name="ln329">//    pIndexstream-&gt;seekg(header.headerlength);//allows header length to be changed</a>
+<a name="ln330"> </a>
+<a name="ln331">    if(!ReadHeader(pIndexstream))</a>
+<a name="ln332">      {</a>
+<a name="ln333">        *(header.datafilename) = '\0';</a>
+<a name="ln334">        return false;</a>
+<a name="ln335">      }</a>
+<a name="ln336"> </a>
+<a name="ln337">    unsigned long nwords = header.nEntries * header.words;</a>
+<a name="ln338">    fptdata.resize(nwords);</a>
+<a name="ln339">    seekdata.resize(header.nEntries);</a>
+<a name="ln340"> </a>
+<a name="ln341">    pIndexstream-&gt;read((char*)&amp;(fptdata[0]), sizeof(unsigned int) * nwords);</a>
+<a name="ln342">    if(header.seek64) </a>
+<a name="ln343">      {</a>
+<a name="ln344">    	pIndexstream-&gt;read((char*)&amp;(seekdata[0]), sizeof(unsigned long) * header.nEntries);</a>
+<a name="ln345">      }</a>
+<a name="ln346">    else </a>
+<a name="ln347">      { //legacy format</a>
+<a name="ln348">	 vector&lt;unsigned int&gt; tmp(header.nEntries);</a>
+<a name="ln349">         pIndexstream-&gt;read((char*)&amp;(tmp[0]), sizeof(unsigned int) * header.nEntries);</a>
+<a name="ln350">	 std::copy(tmp.begin(),tmp.end(),seekdata.begin());</a>
+<a name="ln351">      }</a>
+<a name="ln352"> </a>
+<a name="ln353">    if(pIndexstream-&gt;fail())</a>
+<a name="ln354">      {</a>
+<a name="ln355">        *(header.datafilename) = '\0';</a>
+<a name="ln356">        return false;</a>
+<a name="ln357">      }</a>
+<a name="ln358">    return true;</a>
+<a name="ln359">  }</a>
+<a name="ln360"> </a>
+<a name="ln361">  //////////////////////////////////////////////////////////</a>
+<a name="ln362">  bool FptIndex::ReadHeader(istream* pIndexstream)</a>
+<a name="ln363">  {</a>
+<a name="ln364">    pIndexstream-&gt;read( (char*)&amp;header.headerlength, sizeof(unsigned) );</a>
+<a name="ln365">    pIndexstream-&gt;read( (char*)&amp;header.nEntries,     sizeof(unsigned) );</a>
+<a name="ln366">    pIndexstream-&gt;read( (char*)&amp;header.words,        sizeof(unsigned) );</a>
+<a name="ln367">    pIndexstream-&gt;read( (char*)&amp;header.fpid,         sizeof(header.fpid) );</a>
+<a name="ln368">    pIndexstream-&gt;read( (char*)&amp;header.seek64,       sizeof(header.seek64) );</a>
+<a name="ln369">    pIndexstream-&gt;read( (char*)&amp;header.datafilename, sizeof(header.datafilename) );</a>
+<a name="ln370">    return !pIndexstream-&gt;fail();</a>
+<a name="ln371"> }</a>
+<a name="ln372"> </a>
+<a name="ln373">  //////////////////////////////////////////////////////////</a>
+<a name="ln374">  OBFingerprint* FptIndex::CheckFP()</a>
+<a name="ln375">  {</a>
+<a name="ln376">    //check that fingerprint type is available</a>
+<a name="ln377">    OBFingerprint* pFP = OBFingerprint::FindFingerprint(header.fpid);</a>
+<a name="ln378">    if(!pFP)</a>
+<a name="ln379">      {</a>
+<a name="ln380">        stringstream errorMsg;</a>
+<a name="ln381">        errorMsg &lt;&lt; &quot;Index has Fingerprints of type '&quot; &lt;&lt; header.fpid</a>
+<a name="ln382">                 &lt;&lt; &quot; which is not currently loaded.&quot; &lt;&lt; endl;</a>
+<a name="ln383">        obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obError);</a>
+<a name="ln384">      }</a>
+<a name="ln385">    return pFP; //NULL if not available</a>
+<a name="ln386">  }</a>
+<a name="ln387"> </a>
+<a name="ln388">  //*******************************************************</a>
+<a name="ln389">  FastSearchIndexer::FastSearchIndexer(string&amp; datafilename, ostream* os,</a>
+<a name="ln390">                                       std::string&amp; fpid, int FptBits, int nmols)</a>
+<a name="ln391">  {</a>
+<a name="ln392">    ///Starts indexing process</a>
+<a name="ln393">    _indexstream = os;</a>
+<a name="ln394">    _nbits=FptBits;</a>
+<a name="ln395">    _pindex= new FptIndex;</a>
+<a name="ln396">    _pindex-&gt;header.headerlength = 3*sizeof(unsigned)+sizeof(_pindex-&gt;header.fpid)</a>
+<a name="ln397">                                    +sizeof(_pindex-&gt;header.datafilename);</a>
+<a name="ln398">    strncpy(_pindex-&gt;header.fpid,fpid.c_str(),15);</a>
+<a name="ln399">    _pindex-&gt;header.fpid[14]='\0'; //ensure fpid is terminated at 14 characters.</a>
+<a name="ln400">    _pindex-&gt;header.seek64 = 1;</a>
+<a name="ln401">    strncpy(_pindex-&gt;header.datafilename, datafilename.c_str(), 255);</a>
+<a name="ln402"> </a>
+<a name="ln403">    //just a hint to reserve size of vectors; definitive value set in destructor</a>
+<a name="ln404">    _pindex-&gt;header.nEntries = nmols;</a>
+<a name="ln405"> </a>
+<a name="ln406">    //check that fingerprint type is available</a>
+<a name="ln407">    _pFP = _pindex-&gt;CheckFP();</a>
+<a name="ln408">    if(fpid.empty()) // add id of default FP</a>
+<a name="ln409">      strcpy(_pindex-&gt;header.fpid, _pFP-&gt;GetID());</a>
+<a name="ln410"> </a>
+<a name="ln411">    //Save a small amount of time by not generating info (FP2 currently)</a>
+<a name="ln412">    _pFP-&gt;SetFlags(_pFP-&gt;Flags() | OBFingerprint::FPT_NOINFO);</a>
+<a name="ln413">  }</a>
+<a name="ln414"> </a>
+<a name="ln415">  /////////////////////////////////////////////////////////////</a>
+<a name="ln416">  FastSearchIndexer::FastSearchIndexer(FptIndex* pindex, std::ostream* os, int nmols)</a>
+<a name="ln417">  {</a>
+<a name="ln418">    //nmols is new total number of molecules</a>
+<a name="ln419">    _indexstream = os;</a>
+<a name="ln420">    _pindex = pindex;</a>
+<a name="ln421">    _nbits  = _pindex-&gt;header.words * OBFingerprint::Getbitsperint();</a>
+<a name="ln422"> </a>
+<a name="ln423">    //just a hint to reserve size of vectors; definitive value set in destructor</a>
+<a name="ln424">    _pindex-&gt;header.nEntries = nmols;</a>
+<a name="ln425"> </a>
+<a name="ln426">    //check that fingerprint type is available</a>
+<a name="ln427">    _pFP = _pindex-&gt;CheckFP();</a>
+<a name="ln428">  }</a>
+<a name="ln429"> </a>
+<a name="ln430">  /////////////////////////////////////////////////////////////</a>
+<a name="ln431">  FastSearchIndexer::~FastSearchIndexer()</a>
+<a name="ln432">  {</a>
+<a name="ln433">    ///Saves index file</a>
+<a name="ln434">    FptIndexHeader&amp; hdr = _pindex-&gt;header;</a>
+<a name="ln435">    hdr.nEntries = _pindex-&gt;seekdata.size();</a>
+<a name="ln436">    //Write header</a>
+<a name="ln437">    //_indexstream-&gt;write((const char*)&amp;hdr, sizeof(FptIndexHeader));</a>
+<a name="ln438">    _indexstream-&gt;write( (const char*)&amp;hdr.headerlength, sizeof(unsigned) );</a>
+<a name="ln439">    _indexstream-&gt;write( (const char*)&amp;hdr.nEntries,     sizeof(unsigned) );</a>
+<a name="ln440">    _indexstream-&gt;write( (const char*)&amp;hdr.words,        sizeof(unsigned) );</a>
+<a name="ln441">    _indexstream-&gt;write( (const char*)&amp;hdr.fpid,         sizeof(hdr.fpid) );</a>
+<a name="ln442">    _indexstream-&gt;write( (const char*)&amp;hdr.seek64,         sizeof(hdr.seek64) );</a>
+<a name="ln443">    _indexstream-&gt;write( (const char*)&amp;hdr.datafilename, sizeof(hdr.datafilename) );</a>
+<a name="ln444"> </a>
+<a name="ln445">    _indexstream-&gt;write((const char*)&amp;_pindex-&gt;fptdata[0], _pindex-&gt;fptdata.size()*sizeof(unsigned int));</a>
+<a name="ln446">    _indexstream-&gt;write((const char*)&amp;_pindex-&gt;seekdata[0], _pindex-&gt;seekdata.size()*sizeof(unsigned long));</a>
+<a name="ln447">    if(!_indexstream)</a>
+<a name="ln448">      obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln449">                            &quot;Difficulty writing index&quot;, obWarning);</a>
+<a name="ln450">    delete _pindex;</a>
+<a name="ln451"> </a>
+<a name="ln452">    _pFP-&gt;SetFlags(_pFP-&gt;Flags() &amp; ~OBFingerprint::FPT_NOINFO); //Clear</a>
+<a name="ln453">  }</a>
+<a name="ln454"> </a>
+<a name="ln455">  ///////////////////////////////////////////////////////////////</a>
+<a name="ln456">  bool FastSearchIndexer::Add(OBBase* pOb, std::streampos seekpos)</a>
+<a name="ln457">  {</a>
+<a name="ln458">    ///Adds a fingerprint</a>
+<a name="ln459"> </a>
+<a name="ln460">    vector&lt;unsigned int&gt; vecwords;</a>
+<a name="ln461">    if(!_pFP)</a>
+<a name="ln462">      return false;</a>
+<a name="ln463">    if(_pFP-&gt;GetFingerprint(pOb, vecwords, _nbits))</a>
+<a name="ln464">      {</a>
+<a name="ln465">        _pindex-&gt;header.words = vecwords.size(); //Use size as returned from fingerprint</a>
+<a name="ln466">        if(_pindex-&gt;fptdata.empty() &amp;&amp; _pindex-&gt;header.nEntries!=0)</a>
+<a name="ln467">        {</a>
+<a name="ln468">          //Reserve size of vectors at start to avoid multiple realloction and copying later.</a>
+<a name="ln469">          //Done here rather than in constructor because needs the size of the fingerprint.</a>
+<a name="ln470">          _pindex-&gt;fptdata.reserve(_pindex-&gt;header.nEntries * _pindex-&gt;header.words);</a>
+<a name="ln471">          _pindex-&gt;seekdata.reserve(_pindex-&gt;header.nEntries);</a>
+<a name="ln472">        }</a>
+<a name="ln473">        for(unsigned int i=0;i&lt;_pindex-&gt;header.words;++i)</a>
+<a name="ln474">          _pindex-&gt;fptdata.push_back(vecwords[i]);</a>
+<a name="ln475">        _pindex-&gt;seekdata.push_back(seekpos);</a>
+<a name="ln476">        return true;</a>
+<a name="ln477">      }</a>
+<a name="ln478">    obErrorLog.ThrowError(__FUNCTION__, &quot;Failed to make a fingerprint&quot;, obWarning);</a>
+<a name="ln479">    return false;</a>
+<a name="ln480">  }</a>
+<a name="ln481"> </a>
+<a name="ln482">  /*!</a>
+<a name="ln483">    \class OBFingerprint fingerprint.h &lt;openbabel/fingerprint.h&gt;</a>
+<a name="ln484">    These fingerprints are condensed representation of molecules (or other objects)</a>
+<a name="ln485">    as a list of boolean values (actually bits in a vector&lt;unsigned&gt;) with length</a>
+<a name="ln486">    of a power of 2. The main motivation is for fast searching of data sources</a>
+<a name="ln487">    containing large numbers of molecules (up to several million). Open Babel</a>
+<a name="ln488">    provides some routines which can search text files containing lists of molecules</a>
+<a name="ln489">    in any format. See the documentation on the class FastSearch.</a>
+<a name="ln490"> </a>
+<a name="ln491">    There are descriptions of molecular fingerprints at &lt;br&gt;</a>
+<a name="ln492">    http://www.daylight.com/dayhtml/doc/theory/theory.finger.html) and &lt;br&gt;</a>
+<a name="ln493">    http://www.mesaac.com/Fingerprint.htm &lt;br&gt;</a>
+<a name="ln494">    Many methods of preparing fingerprints have been described, but the type supported</a>
+<a name="ln495">    currently in OpenBabel has each bit representing a substructure (or other</a>
+<a name="ln496">    molecular property). If a substructure is present in the molecule, then a</a>
+<a name="ln497">    particular bit is set to 1. But because the hashing method may also map other</a>
+<a name="ln498">    substructures to the same bit, a match does not guarantee that a particular</a>
+<a name="ln499">    substructure is present; there may be false positives.  However, with proper design,</a>
+<a name="ln500">    a large fraction of irrelevant molecules in a data set can be eliminated in a</a>
+<a name="ln501">    fast search with boolean methods on the fingerprints.</a>
+<a name="ln502">    It then becomes feasible to make a definitive substructure search by</a>
+<a name="ln503">    conventional methods on this reduced list even if it is slow.</a>
+<a name="ln504"> </a>
+<a name="ln505">    OpenBabel provides a framework for applying new types of fingerprints without</a>
+<a name="ln506">    changing any existing code. They are derived from OBFingerprint and the</a>
+<a name="ln507">    source file is just compiled with the rest of OpenBabel. Alternatively,</a>
+<a name="ln508">    they can be separately compiled as a DLL or shared library and discovered</a>
+<a name="ln509">    when OpenBabel runs.</a>
+<a name="ln510"> </a>
+<a name="ln511">    For more on these specific implementations of fingerprints in Open</a>
+<a name="ln512">    Babel, please take a look at the developer's wiki:</a>
+<a name="ln513">    http://openbabel.org/wiki/Fingerprints</a>
+<a name="ln514"> </a>
+<a name="ln515">    Fingerprints derived from this abstract base class OBFingerprint can be for any</a>
+<a name="ln516">    object derived from OBBase (not just for OBMol).</a>
+<a name="ln517">    Each derived class provides an ID as a string and OBFingerprint keeps a map of</a>
+<a name="ln518">    these to provides a pointer to the class when requested in FindFingerprint.</a>
+<a name="ln519"> </a>
+<a name="ln520">    &lt;h4&gt;-- To define a fingerprint type --&lt;/h4&gt;</a>
+<a name="ln521">    The classes derived form OBFingerprint are required to provide</a>
+<a name="ln522">    a GetFingerprint() routine and a Description() routine</a>
+<a name="ln523">    \code</a>
+<a name="ln524">    class MyFpType : OBFingerprint</a>
+<a name="ln525">    {</a>
+<a name="ln526">       MyFpType(const char* id) : OBFingerprint(id){};</a>
+<a name="ln527"> </a>
+<a name="ln528">       virtual bool GetFingerprint(OBBase* pOb, vector&lt;unsigned int&gt;&amp; fp, int nbits)</a>
+<a name="ln529">       {</a>
+<a name="ln530">          //Convert pOb to the required type, usually OBMol</a>
+<a name="ln531">          OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln532">          fp.resize(required_number_of_words);</a>
+<a name="ln533">          ...</a>
+<a name="ln534">          use SetBit(fp,n); to set the nth bit</a>
+<a name="ln535"> </a>
+<a name="ln536">          if(nbits)</a>
+<a name="ln537">             Fold(fp, nbits);</a>
+<a name="ln538">       }</a>
+<a name="ln539"> </a>
+<a name="ln540">       virtual const char* Description(){ return &quot;Some descriptive text&quot;;}</a>
+<a name="ln541">       ...</a>
+<a name="ln542">    };</a>
+<a name="ln543">    \endcode</a>
+<a name="ln544"> </a>
+<a name="ln545">    Declare a global instance with the ID you will use in -f options to specify</a>
+<a name="ln546">    its use.</a>
+<a name="ln547">    \code</a>
+<a name="ln548">    MyFpType theMyFpType(&quot;myfpID&quot;);</a>
+<a name="ln549">    \endcode</a>
+<a name="ln550"> </a>
+<a name="ln551">    &lt;h4&gt;-- To obtain a fingerprint --&lt;/h4&gt;</a>
+<a name="ln552">    \code</a>
+<a name="ln553">    OBMol mol;</a>
+<a name="ln554">    ...</a>
+<a name="ln555">    vector&lt;unsigned int&gt; fp;</a>
+<a name="ln556">    OBFingerprint::GetDefault()-&gt;GetFingerprint(&amp;mol, fp); //gets default size of fingerprint</a>
+<a name="ln557">    \endcode</a>
+<a name="ln558">    or</a>
+<a name="ln559">    \code</a>
+<a name="ln560">    vector&lt;unsigned int&gt; fp;</a>
+<a name="ln561">    OBFingerPrint* pFP = OBFingerprint::FindFingerprint(&quot;myfpID&quot;);</a>
+<a name="ln562">    ...and maybe...</a>
+<a name="ln563">    pFP-&gt;GetFingerprint(&amp;mol,fp, 128); //fold down to 128bits if was originally larger</a>
+<a name="ln564">    \endcode</a>
+<a name="ln565"> </a>
+<a name="ln566">    &lt;h4&gt;-- To print a list of available fingerprint types --&lt;/h4&gt;</a>
+<a name="ln567">    \code</a>
+<a name="ln568">    std::string id;</a>
+<a name="ln569">    OBFingerPrint* pFPrt=NULL;</a>
+<a name="ln570">    while(OBFingerprint::GetNextFPrt(id, pFPrt))</a>
+<a name="ln571">    {</a>
+<a name="ln572">       cout &lt;&lt; id &lt;&lt; &quot; -- &quot; &lt;&lt; pFPrt-&gt;Description() &lt;&lt; endl;</a>
+<a name="ln573">    }</a>
+<a name="ln574">    \endcode</a>
+<a name="ln575"> </a>
+<a name="ln576">    Fingerprints are handled as vector&lt;unsigned int&gt; so that the number of bits</a>
+<a name="ln577">    in this vector and their order will be platform and compiler</a>
+<a name="ln578">    dependent, because of size of int types and endian differences.</a>
+<a name="ln579">    Use fingerprints (and fastsearch indexes containing them) only</a>
+<a name="ln580">    for comparing with other fingerprints prepared on the same machine.</a>
+<a name="ln581"> </a>
+<a name="ln582">    The FingerprintFormat class is an output format which displays fingerprints</a>
+<a name="ln583">    as hexadecimal. When multiple molecules are supplied it will calculate the</a>
+<a name="ln584">    Tanimoto coefficient from the first molecule to each of the others. It also</a>
+<a name="ln585">    shows whether the first molecule is a possible substructure to all the others,</a>
+<a name="ln586">    i.e. whether all the bits set in the fingerprint for the first molecule are</a>
+<a name="ln587">    set in the fingerprint of the others. To display hexadecimal information when</a>
+<a name="ln588">    multiple molecules are provided it is necessay to use the -xh option.</a>
+<a name="ln589"> </a>
+<a name="ln590">    To see a list of available format types, type obabel -F on the command line.</a>
+<a name="ln591">    The -xF option of the FingerprintFormat class also provides this output, but due</a>
+<a name="ln592">    to a quirk in the way the program works, it is necessary to have a valid input</a>
+<a name="ln593">    molecule for this option to work.</a>
+<a name="ln594">  */</a>
+<a name="ln595"> </a>
+<a name="ln596">  /*! \class FastSearch fingerprint.h &lt;openbabel/fingerprint.h&gt;</a>
+<a name="ln597">    The FastSearch class searches an index to a datafile containing a list of molecules</a>
+<a name="ln598">    (or other objects) prepared by FastSearchIndexer.</a>
+<a name="ln599"> </a>
+<a name="ln600">    OpenBabel can also search files for molecules containing a substructure specified</a>
+<a name="ln601">    by a SMARTS string, using OBSmartsPattern or from the command line:</a>
+<a name="ln602">    \code</a>
+<a name="ln603">    obabel datafile.xxx -O outfile.yyy -sSMARTS</a>
+<a name="ln604">    \endcode</a>
+<a name="ln605">    But when the data file contains more than about 10,000 molecules this becomes</a>
+<a name="ln606">    rather too slow to be used interactively. To do it more quickly, an index</a>
+<a name="ln607">    of the molecules containing their fingerprints (see OBFingerprint) is prepared using</a>
+<a name="ln608">    FastSearchIndexer. The indexing process may take a long time but only has to</a>
+<a name="ln609">    be done once. The index can be searched very quickly with FastSearch. Because</a>
+<a name="ln610">    of the nature of fingerprints a match to a bit does not guarantee</a>
+<a name="ln611">    the presence of a particular substructure or other molecular property, so that</a>
+<a name="ln612">    a definitive answer may require a subsequent search of the (much reduced) list</a>
+<a name="ln613">    of candidates by another method (like OBSmartsPattern).</a>
+<a name="ln614"> </a>
+<a name="ln615">    Note that the index files are not portable. They need to be prepared on the</a>
+<a name="ln616">    computer that will access them.</a>
+<a name="ln617"> </a>
+<a name="ln618">    &lt;h4&gt;Using FastSearch and FastSearchIndexer in a program&lt;/h4&gt;</a>
+<a name="ln619"> </a>
+<a name="ln620">    The index has two tables:</a>
+<a name="ln621">    - an array of fingerprints of the molecules</a>
+<a name="ln622">    - an array of the seek positions in the datasource file of all the molecules</a>
+<a name="ln623"> </a>
+<a name="ln624">    &lt;h4&gt;To prepare an fastsearch index file:&lt;/h4&gt;</a>
+<a name="ln625">    - Open an ostream to the index file.</a>
+<a name="ln626">    - Make a FastSearchIndexer object on the heap or the stack, passing in as parameters:</a>
+<a name="ln627">    - the datafile name, the indexfile stream,</a>
+<a name="ln628">    - the id of the fingerprint type to be used,</a>
+<a name="ln629">    -  the number of bits the fingerprint is to be folded down to, If it is to be left</a>
+<a name="ln630">    unfolded, set fpid to 0 or do not specify it.</a>
+<a name="ln631">    .</a>
+<a name="ln632">    - For each molecule, call Add() with its pointer and its position in the datafile.&lt;br&gt;</a>
+<a name="ln633">    Currently the std::streampos value is implicitly cast to unsigned int so that</a>
+<a name="ln634">    for 32bit machines the datafile has to be no longer than about 2Gbyte.</a>
+<a name="ln635">    - The index file is written when the FastSearchIndexer object is deleted or goes out</a>
+<a name="ln636">    of scope.</a>
+<a name="ln637"> </a>
+<a name="ln638">    &lt;h4&gt;To search in a fastsearch index file&lt;/h4&gt;</a>
+<a name="ln639"> </a>
+<a name="ln640">    - Open a std::istream to the indexfile (in binary mode on some systems)</a>
+<a name="ln641">    - Make a FastSearch object, read the index and open the datafile whose</a>
+<a name="ln642">    name it provides</a>
+<a name="ln643">    \code</a>
+<a name="ln644">    ifstream ifs(indexname,ios::binary);</a>
+<a name="ln645">    FastSearch fs;</a>
+<a name="ln646">    string datafilename = fs.ReadIndex(&amp;ifs);</a>
+<a name="ln647">    if(datafilename.empty()</a>
+<a name="ln648">       return false;</a>
+<a name="ln649"> </a>
+<a name="ln650">    ifstream datastream(datafilename);</a>
+<a name="ln651">    if(!datastream)</a>
+<a name="ln652">       return false;</a>
+<a name="ln653">    \endcode</a>
+<a name="ln654"> </a>
+<a name="ln655">    &lt;strong&gt;To do a search for molecules which have all the substructure bits the</a>
+<a name="ln656">    OBMol object, patternMol&lt;/strong&gt;</a>
+<a name="ln657">    \code</a>
+<a name="ln658">    vector&lt;unsigned int&gt;&amp; SeekPositions;</a>
+<a name="ln659">    if(!fs.Find(patternMol, SeekPositions, MaxCandidates))</a>
+<a name="ln660">	    for(itr=SeekPositions.begin();itr!=SeekPositions.end();++itr)</a>
+<a name="ln661">      {</a>
+<a name="ln662">         datastream.seekg(*itr);</a>
+<a name="ln663">         ... read the candidate molecule</a>
+<a name="ln664">         and subject to more rigorous test if necessary</a>
+<a name="ln665">      }</a>
+<a name="ln666">    \endcode</a>
+<a name="ln667"> </a>
+<a name="ln668">    &lt;strong&gt;To do a similarity search based on the Tanimoto coefficient&lt;/strong&gt;</a>
+<a name="ln669">    This is defined as: &lt;br&gt;</a>
+<a name="ln670">    &lt;em&gt;Number of bits set in (patternFP &amp; targetFP)/Number of bits in (patternFP | targetFP)&lt;/em&gt;&lt;br&gt;</a>
+<a name="ln671">    where the boolean operations between the fingerprints are bitwise&lt;br&gt;</a>
+<a name="ln672">    The Tanimoto coefficient has no absolute meaning and depends on</a>
+<a name="ln673">    the design of the fingerprint.</a>
+<a name="ln674">    \code</a>
+<a name="ln675">    multimap&lt;double, unsigned int&gt; SeekposMap;</a>
+<a name="ln676">    // to find n best molecules</a>
+<a name="ln677">    fs.FindSimilar(&amp;patternMol, SeekposMap, n);</a>
+<a name="ln678">    ...or</a>
+<a name="ln679">    // to find molecules with Tanimoto coefficient &gt; MinTani</a>
+<a name="ln680">    fs.FindSimilar(&amp;patternMol, SeekposMap, MinTani);</a>
+<a name="ln681"> </a>
+<a name="ln682">    multimap&lt;double, unsigned int&gt;::reverse_iterator itr;</a>
+<a name="ln683">    for(itr=SeekposMap.rbegin();itr!=SeekposMap.rend();++itr)</a>
+<a name="ln684">    {</a>
+<a name="ln685">       datastream.seekg(itr-&gt;second);</a>
+<a name="ln686">       // ... read the candidate molecule</a>
+<a name="ln687">       double tani = itr-&gt;first;</a>
+<a name="ln688">    }</a>
+<a name="ln689">    \endcode</a>
+<a name="ln690"> </a>
+<a name="ln691">    The FastSearchFormat class facilitates the use of these routine from the</a>
+<a name="ln692">    command line or other front end program. For instance:</a>
+<a name="ln693"> </a>
+<a name="ln694">    &lt;strong&gt;Prepare an index:&lt;/strong&gt;</a>
+<a name="ln695">    \code</a>
+<a name="ln696">    obabel datafile.xxx -O index.fs</a>
+<a name="ln697">    \endcode</a>
+<a name="ln698">    With options you can specify:</a>
+<a name="ln699">    - which type of fingerprint to be used, e.g. -xfFP2,</a>
+<a name="ln700">    -	whether it is folded to a specified number of bits, e.g. -xn128</a>
+<a name="ln701">    (which should be a power of 2)</a>
+<a name="ln702">    - whether to pre-select the molecules which are indexed:</a>
+<a name="ln703">    - by structure e.g only ethers and esters, -sCOC</a>
+<a name="ln704">    - by excluding molecules with bezene rings, -vc1ccccc1</a>
+<a name="ln705">    - by position in the datafile e.g. only mols 10 to 90, -f10 -l90</a>
+<a name="ln706">    .</a>
+<a name="ln707">    &lt;strong&gt;Substructure search&lt;/strong&gt; in a previously prepared index file</a>
+<a name="ln708">    \code</a>
+<a name="ln709">    obabel index.fs -O outfile.yyy -sSMILES</a>
+<a name="ln710">    \endcode</a>
+<a name="ln711">    The datafile can also be used as the input file, provided the input format is specified as fs</a>
+<a name="ln712">    \code</a>
+<a name="ln713">    obabel datafile.xxx -O outfile.yyy -sSMILES -ifs</a>
+<a name="ln714">    \endcode</a>
+<a name="ln715">    A &quot;slow&quot; search not using fingerprints would be done on the same data by omitting -ifs.</a>
+<a name="ln716">    A &quot;slow&quot; search can use SMARTS strings, but the fast search is restricted</a>
+<a name="ln717">    to the subset which is valid SMILES.</a>
+<a name="ln718"> </a>
+<a name="ln719">    With the -S option, the target can be specified as a molecule in a file of any format</a>
+<a name="ln720">    \code</a>
+<a name="ln721">    obabel datafile.xxx -O outfile.yyy -Spattern_mol.zzz -ifs</a>
+<a name="ln722">    \endcode</a>
+<a name="ln723">    These searches have two stages: a fingerprint search which produces</a>
+<a name="ln724">    a number of candidate molecules and a definitive search which selects</a>
+<a name="ln725">    from these using SMARTS pattern matching. The maximum number of candidates</a>
+<a name="ln726">    is 4000 by default but you can change this with an option</a>
+<a name="ln727">    e.g. -al 8000  (Note that you need the space between l and the number.)</a>
+<a name="ln728">    If the fingerprint search reaches the maximum number it will not</a>
+<a name="ln729">    look further and will tell you at what stage it stopped.</a>
+<a name="ln730"> </a>
+<a name="ln731">    &lt;strong&gt;Similarity search&lt;/strong&gt; in a previously prepared index file&lt;br&gt;</a>
+<a name="ln732">    This rather done (rather than a substructure search) if the -at option is used,</a>
+<a name="ln733">    \code</a>
+<a name="ln734">    obabel datafile.xxx -O outfile.yyy -sSMILES -ifs -at0.7</a>
+<a name="ln735">    \endcode</a>
+<a name="ln736">    for instance</a>
+<a name="ln737">    - -at0.7 will recover all molecules with Tanimoto greater than 0.7</a>
+<a name="ln738">    - -at15 (no decimal point) will recover the 15 molecules with largest coefficients.</a>
+<a name="ln739">    - -aa will add the Tanimoto coefficient to the titles of the output molecules.</a>
+<a name="ln740"> </a>
+<a name="ln741">    All stages, the indexing, the interpretation of the SMILES string in the -s option,</a>
+<a name="ln742">    the file in the -S option and the final SMARTS filter convert to OBMol and apply</a>
+<a name="ln743">    ConvertDativeBonds(). This ensures thatforms such as[N+]([O-])=O  and N(=O)=O</a>
+<a name="ln744">    are recognized as chemically identical.</a>
+<a name="ln745">  */</a>
+<a name="ln746"> </a>
+<a name="ln747">}//Openbabel</a>
+<a name="ln748"> </a>
+<a name="ln749">//! \file fingerprint.cpp</a>
+<a name="ln750">//! \brief Definitions for OBFingerprint base class and fastsearch classes</a>
+
+</code></pre>
+<div class="balloon" rel="438"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v595/" target="_blank">V595</a> The '_indexstream' pointer was utilized before it was verified against nullptr. Check lines: 438, 447.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

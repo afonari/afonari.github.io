@@ -1,0 +1,1335 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>depict.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">depict.cpp - 2D Depiction of molecules using OBPainter.</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 2009-2010 by Tim Vandermeersch</a>
+<a name="ln5">Some portions Copyright (C) 2009 by Chris Morley</a>
+<a name="ln6"> </a>
+<a name="ln7">This file is part of the Open Babel project.</a>
+<a name="ln8">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln11">it under the terms of the GNU General Public License as published by</a>
+<a name="ln12">the Free Software Foundation version 2 of the License.</a>
+<a name="ln13"> </a>
+<a name="ln14">This program is distributed in the hope that it will be useful,</a>
+<a name="ln15">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln16">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln17">GNU General Public License for more details.</a>
+<a name="ln18">***********************************************************************/</a>
+<a name="ln19"> </a>
+<a name="ln20">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/ring.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/alias.h&gt;</a>
+<a name="ln24">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln25">#include &lt;openbabel/depict/depict.h&gt;</a>
+<a name="ln26">#include &lt;openbabel/depict/painter.h&gt;</a>
+<a name="ln27">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln28">#include &lt;algorithm&gt; // std::reverse</a>
+<a name="ln29">#include &lt;iterator&gt; // std::istream_iterator</a>
+<a name="ln30">#include &lt;openbabel/stereo/stereo.h&gt;</a>
+<a name="ln31">#include &lt;openbabel/stereo/cistrans.h&gt;</a>
+<a name="ln32">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln33">#include &lt;openbabel/obfunctions.h&gt;</a>
+<a name="ln34"> </a>
+<a name="ln35">#include &lt;cmath&gt;</a>
+<a name="ln36"> </a>
+<a name="ln37">#include &lt;iostream&gt;</a>
+<a name="ln38">using namespace std;</a>
+<a name="ln39"> </a>
+<a name="ln40">namespace OpenBabel</a>
+<a name="ln41">{</a>
+<a name="ln42"> </a>
+<a name="ln43">  enum {</a>
+<a name="ln44">    Left,</a>
+<a name="ln45">    Right,</a>
+<a name="ln46">    Up,</a>
+<a name="ln47">    Down</a>
+<a name="ln48">  };</a>
+<a name="ln49"> </a>
+<a name="ln50">  // defined in mol.cpp</a>
+<a name="ln51">  extern bool SortAtomZ(const pair&lt;OBAtom*,double&gt; &amp;a, const pair&lt;OBAtom*,double&gt; &amp;b);</a>
+<a name="ln52"> </a>
+<a name="ln53">  class OBDepictPrivate</a>
+<a name="ln54">  {</a>
+<a name="ln55">    public:</a>
+<a name="ln56">      OBDepictPrivate() : mol(nullptr), painter(nullptr), bondLength(40.0), penWidth(2.0),</a>
+<a name="ln57">          bondSpacing(6.0), bondWidth(8.0), fontSize(16), subscriptSize(13),</a>
+<a name="ln58">          aliasMode(false), bondColor(&quot;black&quot;), options(0){}</a>
+<a name="ln59">      virtual ~OBDepictPrivate(){};</a>
+<a name="ln60"> </a>
+<a name="ln61">      virtual void DrawSimpleBond(OBAtom *beginAtom, OBAtom *endAtom, int order, bool crossed_bond=false);</a>
+<a name="ln62">      virtual void DrawWedge(OBAtom *beginAtom, OBAtom *endAtom);</a>
+<a name="ln63">      virtual void DrawHash(OBAtom *beginAtom, OBAtom *endAtom);</a>
+<a name="ln64">      virtual void DrawWobblyBond(OBAtom *beginAtom, OBAtom *endAtom);</a>
+<a name="ln65">      virtual void DrawRingBond(OBAtom *beginAtom, OBAtom *endAtom, const vector3 &amp;center, int order);</a>
+<a name="ln66">      virtual void DrawAtom(OBAtom* atom);</a>
+<a name="ln67">      virtual void DrawAtomLabel(const std::string &amp;label, int alignment, const vector3 &amp;pos);</a>
+<a name="ln68"> </a>
+<a name="ln69">      virtual void DrawRing(OBRing *ring, OBBitVec &amp;drawnBonds);</a>
+<a name="ln70">      virtual void DrawAromaticRing(OBRing *ring, OBBitVec &amp;drawnBonds);</a>
+<a name="ln71"> </a>
+<a name="ln72">      bool HasLabel(OBAtom *atom);</a>
+<a name="ln73">      void SetWedgeAndHash(OBMol* mol);</a>
+<a name="ln74"> </a>
+<a name="ln75">      OBMol     *mol;</a>
+<a name="ln76">      OBPainter *painter;</a>
+<a name="ln77">      double     bondLength;</a>
+<a name="ln78">      double     penWidth;</a>
+<a name="ln79">      double     bondSpacing;</a>
+<a name="ln80">      double     bondWidth;</a>
+<a name="ln81">    // for z-scaling the opacity</a>
+<a name="ln82">      double     zScale;</a>
+<a name="ln83">      double     zMin;</a>
+<a name="ln84">      //bool       drawTerminalC;</a>
+<a name="ln85">      int        fontSize, subscriptSize;</a>
+<a name="ln86">      bool       aliasMode;</a>
+<a name="ln87">      std::string fontFamily;</a>
+<a name="ln88">      OBColor    bondColor;</a>
+<a name="ln89">      unsigned   options;</a>
+<a name="ln90">  };</a>
+<a name="ln91"> </a>
+<a name="ln92">  class OBDepictPrivateBallAndStick : public OBDepictPrivate</a>
+<a name="ln93">  {</a>
+<a name="ln94">  public:</a>
+<a name="ln95">        OBDepictPrivateBallAndStick(bool symbolOnBall) : m_symbolOnBall(symbolOnBall){}</a>
+<a name="ln96"> </a>
+<a name="ln97">        bool m_symbolOnBall;</a>
+<a name="ln98"> </a>
+<a name="ln99">        void DrawSimpleBond(OBAtom *beginAtom, OBAtom *endAtom, int order, bool crossed_bond=false);</a>
+<a name="ln100">        void DrawWedge(OBAtom *beginAtom, OBAtom *endAtom);</a>
+<a name="ln101">        void DrawHash(OBAtom *beginAtom, OBAtom *endAtom);</a>
+<a name="ln102">        void DrawWobblyBond(OBAtom *beginAtom, OBAtom *endAtom);</a>
+<a name="ln103">        void DrawRingBond(OBAtom *beginAtom, OBAtom *endAtom, const vector3 &amp;center, int order);</a>
+<a name="ln104">        void DrawAtom(OBAtom *atom);</a>
+<a name="ln105">        void DrawAtomLabel(const std::string &amp;label, int alignment, const vector3 &amp;pos);</a>
+<a name="ln106"> </a>
+<a name="ln107">        void DrawRing(OBRing *ring, OBBitVec &amp;drawnBonds);</a>
+<a name="ln108">        void DrawAromaticRing(OBRing *ring, OBBitVec &amp;drawnBonds);</a>
+<a name="ln109"> </a>
+<a name="ln110">  private:</a>
+<a name="ln111">        void DrawAromaticRingBond(OBAtom *prevAtom, OBAtom *beginAtom, OBAtom *endAtom, OBAtom *nextAtom, const vector3 &amp;center, double dist);</a>
+<a name="ln112">        double GetAtomRadius(OBAtom* atom);</a>
+<a name="ln113"> </a>
+<a name="ln114">  };</a>
+<a name="ln115"> </a>
+<a name="ln116">  OBDepict::OBDepict(OBPainter *painter) : d(new OBDepictPrivate)</a>
+<a name="ln117">  {</a>
+<a name="ln118">    d-&gt;painter = painter;</a>
+<a name="ln119">  }</a>
+<a name="ln120"> </a>
+<a name="ln121">  OBDepict::OBDepict(OBPainter *painter, bool withBall, bool symbolOnBall)</a>
+<a name="ln122">  {</a>
+<a name="ln123">    if(withBall)</a>
+<a name="ln124">      d = new OBDepictPrivateBallAndStick(symbolOnBall);</a>
+<a name="ln125">    else</a>
+<a name="ln126">      d = new OBDepictPrivate();</a>
+<a name="ln127">    d-&gt;painter = painter;</a>
+<a name="ln128">  }</a>
+<a name="ln129"> </a>
+<a name="ln130">  OBDepict::~OBDepict()</a>
+<a name="ln131">  {</a>
+<a name="ln132">    delete d-&gt;mol;</a>
+<a name="ln133">    d-&gt;mol = nullptr;</a>
+<a name="ln134">    delete d;</a>
+<a name="ln135">  }</a>
+<a name="ln136"> </a>
+<a name="ln137">  void OBDepict::SetBondLength(double length)</a>
+<a name="ln138">  {</a>
+<a name="ln139">    d-&gt;bondLength = length;</a>
+<a name="ln140">  }</a>
+<a name="ln141"> </a>
+<a name="ln142">  double OBDepict::GetBondLength() const</a>
+<a name="ln143">  {</a>
+<a name="ln144">    return d-&gt;bondLength;</a>
+<a name="ln145">  }</a>
+<a name="ln146"> </a>
+<a name="ln147">  void OBDepict::SetPenWidth(double width)</a>
+<a name="ln148">  {</a>
+<a name="ln149">    d-&gt;penWidth = width;</a>
+<a name="ln150">    d-&gt;painter-&gt;SetPenWidth(width);</a>
+<a name="ln151">  }</a>
+<a name="ln152"> </a>
+<a name="ln153">  double OBDepict::GetPenWidth() const</a>
+<a name="ln154">  {</a>
+<a name="ln155">    return d-&gt;penWidth;</a>
+<a name="ln156">  }</a>
+<a name="ln157"> </a>
+<a name="ln158">  void OBDepict::SetBondSpacing(double spacing)</a>
+<a name="ln159">  {</a>
+<a name="ln160">    d-&gt;bondSpacing = spacing;</a>
+<a name="ln161">  }</a>
+<a name="ln162"> </a>
+<a name="ln163">  double OBDepict::GetBondSpacing() const</a>
+<a name="ln164">  {</a>
+<a name="ln165">    return d-&gt;bondSpacing;</a>
+<a name="ln166">  }</a>
+<a name="ln167"> </a>
+<a name="ln168">  void OBDepict::SetBondWidth(double width)</a>
+<a name="ln169">  {</a>
+<a name="ln170">    d-&gt;bondWidth = width;</a>
+<a name="ln171">  }</a>
+<a name="ln172"> </a>
+<a name="ln173">  double OBDepict::GetBondWidth() const</a>
+<a name="ln174">  {</a>
+<a name="ln175">    return d-&gt;bondWidth;</a>
+<a name="ln176">  }</a>
+<a name="ln177"> </a>
+<a name="ln178">/*  void OBDepict::SetDrawingTerminalCarbon(bool enabled)</a>
+<a name="ln179">  {</a>
+<a name="ln180">    d-&gt;drawTerminalC = enabled;</a>
+<a name="ln181">  }</a>
+<a name="ln182"> </a>
+<a name="ln183">  bool OBDepict::GetDrawingTerminalCarbon() const</a>
+<a name="ln184">  {</a>
+<a name="ln185">    return d-&gt;drawTerminalC;</a>
+<a name="ln186">  }</a>
+<a name="ln187">*/</a>
+<a name="ln188">  void OBDepict::SetOption(unsigned opts)</a>
+<a name="ln189">  {</a>
+<a name="ln190">    d-&gt;options |= opts;</a>
+<a name="ln191">  }</a>
+<a name="ln192"> </a>
+<a name="ln193">  unsigned OBDepict::GetOptions() const</a>
+<a name="ln194">  {</a>
+<a name="ln195">    return d-&gt;options;</a>
+<a name="ln196">  }</a>
+<a name="ln197">  void OBDepict::ClearOptions()</a>
+<a name="ln198">  {</a>
+<a name="ln199">    d-&gt;options = 0;</a>
+<a name="ln200">  }</a>
+<a name="ln201"> </a>
+<a name="ln202">  void OBDepict::SetFontFamily(const std::string &amp;family)</a>
+<a name="ln203">  {</a>
+<a name="ln204">    d-&gt;fontFamily = family;</a>
+<a name="ln205">    d-&gt;painter-&gt;SetFontFamily(family);</a>
+<a name="ln206">  }</a>
+<a name="ln207"> </a>
+<a name="ln208">  const std::string&amp; OBDepict::GetFontFamily() const</a>
+<a name="ln209">  {</a>
+<a name="ln210">    return d-&gt;fontFamily;</a>
+<a name="ln211">  }</a>
+<a name="ln212"> </a>
+<a name="ln213">  void OBDepict::SetFontSize(int pointSize, bool subscript)</a>
+<a name="ln214">  {</a>
+<a name="ln215">    if (subscript) {</a>
+<a name="ln216">      d-&gt;subscriptSize = pointSize;</a>
+<a name="ln217">      return;</a>
+<a name="ln218">    }</a>
+<a name="ln219"> </a>
+<a name="ln220">    d-&gt;fontSize = pointSize;</a>
+<a name="ln221">    d-&gt;subscriptSize = (int)(0.85 * pointSize);</a>
+<a name="ln222">  }</a>
+<a name="ln223"> </a>
+<a name="ln224">  int OBDepict::GetFontSize(bool subscript) const</a>
+<a name="ln225">  {</a>
+<a name="ln226">    if (subscript)</a>
+<a name="ln227">      return d-&gt;subscriptSize;</a>
+<a name="ln228">    return d-&gt;fontSize;</a>
+<a name="ln229">  }</a>
+<a name="ln230"> </a>
+<a name="ln231">  void OBDepict::SetAliasMode(bool b)</a>
+<a name="ln232">  {</a>
+<a name="ln233">    d-&gt;aliasMode = b;</a>
+<a name="ln234">  }</a>
+<a name="ln235"> </a>
+<a name="ln236">  //Color is not quite properly integrated into OBDepict, but is needed if</a>
+<a name="ln237">  //element-dependent coloring is to be used.</a>
+<a name="ln238">  void OBDepict::SetBondColor(const std::string&amp; scolor)</a>
+<a name="ln239">  {</a>
+<a name="ln240">    d-&gt;bondColor = scolor;</a>
+<a name="ln241">  }</a>
+<a name="ln242"> </a>
+<a name="ln243">  int GetLabelAlignment(OBAtom *atom)</a>
+<a name="ln244">  {</a>
+<a name="ln245">    // compute the sum of the bond vectors, this gives</a>
+<a name="ln246">    vector3 direction(VZero);</a>
+<a name="ln247">    OBBondIterator i;</a>
+<a name="ln248">    for (OBAtom *nbr = atom-&gt;BeginNbrAtom(i); nbr; nbr = atom-&gt;NextNbrAtom(i))</a>
+<a name="ln249">      direction += atom-&gt;GetVector() - nbr-&gt;GetVector();</a>
+<a name="ln250"> </a>
+<a name="ln251">    const double bias = -0.1; //towards left-alignment, which is more natural</a>
+<a name="ln252">    int alignment = 0;</a>
+<a name="ln253">    if ((atom-&gt;GetExplicitDegree() == 2) &amp;&amp; (abs(direction.y()) &gt; abs(direction.x()))) {</a>
+<a name="ln254">      if (direction.y() &lt;= 0.0)</a>
+<a name="ln255">        alignment = Up;</a>
+<a name="ln256">      else</a>
+<a name="ln257">        alignment = Down;</a>
+<a name="ln258">    } else {</a>
+<a name="ln259">      if (direction.x() &lt; bias)</a>
+<a name="ln260">        alignment = Right;</a>
+<a name="ln261">      else</a>
+<a name="ln262">        alignment = Left;</a>
+<a name="ln263">    }</a>
+<a name="ln264"> </a>
+<a name="ln265">    return alignment;</a>
+<a name="ln266">  }</a>
+<a name="ln267"> </a>
+<a name="ln268">  unsigned int GetAtomSymClass(OBAtom *atom)</a>
+<a name="ln269">  {</a>
+<a name="ln270">    OBPairData *pd = dynamic_cast&lt;OBPairData*&gt;(atom-&gt;GetParent()-&gt;GetData(&quot;OpenBabel Symmetry Classes&quot;));</a>
+<a name="ln271">    if (pd) {</a>
+<a name="ln272"> </a>
+<a name="ln273">      cout &lt;&lt; &quot;same? = &quot; &lt;&lt; pd-&gt;GetValue() &lt;&lt; endl;</a>
+<a name="ln274"> </a>
+<a name="ln275">      istringstream iss(pd-&gt;GetValue());</a>
+<a name="ln276">      std::vector&lt;unsigned int&gt; symmetry_classes;</a>
+<a name="ln277">      copy(istream_iterator&lt;unsigned int&gt;(iss),</a>
+<a name="ln278">           istream_iterator&lt;unsigned int&gt;(),</a>
+<a name="ln279">           back_inserter&lt;vector&lt;unsigned int&gt; &gt;(symmetry_classes));</a>
+<a name="ln280">      // Now find the number of unique elements</a>
+<a name="ln281">      vector&lt;unsigned int&gt; copy_sym = symmetry_classes;</a>
+<a name="ln282">      sort(copy_sym.begin(), copy_sym.end());</a>
+<a name="ln283">      vector&lt;unsigned int&gt;::iterator end_pos = unique(copy_sym.begin(), copy_sym.end()); // Requires sorted elements</a>
+<a name="ln284">      int nclasses = end_pos - copy_sym.begin();</a>
+<a name="ln285"> </a>
+<a name="ln286">      cout &lt;&lt; &quot;sym_class[&quot; &lt;&lt; atom-&gt;GetIndex() &lt;&lt; &quot;] = &quot; &lt;&lt; symmetry_classes.at(atom-&gt;GetIndex()) &lt;&lt; endl;</a>
+<a name="ln287">      return symmetry_classes.at(atom-&gt;GetIndex());</a>
+<a name="ln288">    }</a>
+<a name="ln289"> </a>
+<a name="ln290">    return 99;</a>
+<a name="ln291">  }</a>
+<a name="ln292"> </a>
+<a name="ln293">  bool OBDepict::AddAtomLabels(AtomLabelType type)</a>
+<a name="ln294">  {</a>
+<a name="ln295">    d-&gt;painter-&gt;SetPenColor(OBColor(&quot;red&quot;));</a>
+<a name="ln296">    d-&gt;painter-&gt;SetFillColor(OBColor(&quot;red&quot;));</a>
+<a name="ln297">    d-&gt;painter-&gt;SetFontSize((int)(GetFontSize() * 0.8));// smaller text</a>
+<a name="ln298">    OBAtomIterator i;</a>
+<a name="ln299">    for (OBAtom *atom = d-&gt;mol-&gt;BeginAtom(i); atom; atom = d-&gt;mol-&gt;NextAtom(i)) {</a>
+<a name="ln300">      vector3 pos(atom-&gt;GetVector());</a>
+<a name="ln301">      std::stringstream ss;</a>
+<a name="ln302">      switch (type) {</a>
+<a name="ln303">        case AtomId:</a>
+<a name="ln304">          ss &lt;&lt; atom-&gt;GetId();</a>
+<a name="ln305">          d-&gt;painter-&gt;DrawText(pos.x(), pos.y(), ss.str());</a>
+<a name="ln306">          break;</a>
+<a name="ln307">        case AtomSymmetryClass:</a>
+<a name="ln308">          ss &lt;&lt; GetAtomSymClass(atom);</a>
+<a name="ln309">          d-&gt;painter-&gt;DrawText(pos.x(), pos.y(), ss.str());</a>
+<a name="ln310">          break;</a>
+<a name="ln311">        case AtomIndex:</a>
+<a name="ln312">          ss &lt;&lt; atom-&gt;GetIdx();</a>
+<a name="ln313">          d-&gt;painter-&gt;DrawText(pos.x(), pos.y(), ss.str());</a>
+<a name="ln314">          break;</a>
+<a name="ln315"> </a>
+<a name="ln316">        default:</a>
+<a name="ln317">          break;</a>
+<a name="ln318">      }</a>
+<a name="ln319">    }</a>
+<a name="ln320"> </a>
+<a name="ln321">    return true;</a>
+<a name="ln322">  }</a>
+<a name="ln323"> </a>
+<a name="ln324">  void OBDepictPrivate::DrawRing(OBRing *ring, OBBitVec &amp;drawnBonds)</a>
+<a name="ln325">  {</a>
+<a name="ln326">    std::vector&lt;int&gt; indexes = ring-&gt;_path;</a>
+<a name="ln327">    vector3 center(VZero);</a>
+<a name="ln328">    for (std::vector&lt;int&gt;::iterator l = indexes.begin(); l != indexes.end(); ++l) {</a>
+<a name="ln329">      center += mol-&gt;GetAtom(*l)-&gt;GetVector();</a>
+<a name="ln330">    }</a>
+<a name="ln331">    center /= indexes.size();</a>
+<a name="ln332"> </a>
+<a name="ln333">    for (unsigned int l = 0; l &lt; indexes.size(); ++l) {</a>
+<a name="ln334">      OBAtom *begin = mol-&gt;GetAtom(indexes[l]);</a>
+<a name="ln335">      OBAtom *end;</a>
+<a name="ln336">      if (l+1 &lt; indexes.size())</a>
+<a name="ln337">        end = mol-&gt;GetAtom(indexes[l+1]);</a>
+<a name="ln338">      else</a>
+<a name="ln339">        end = mol-&gt;GetAtom(indexes[0]);</a>
+<a name="ln340"> </a>
+<a name="ln341">      OBBond *ringBond = mol-&gt;GetBond(begin, end);</a>
+<a name="ln342">      if (drawnBonds.BitIsSet(ringBond-&gt;GetId()))</a>
+<a name="ln343">        continue;</a>
+<a name="ln344"> </a>
+<a name="ln345">      if((options &amp; OBDepict::internalColor) &amp;&amp; ringBond-&gt;HasData(&quot;color&quot;))</a>
+<a name="ln346">        painter-&gt;SetPenColor(OBColor(ringBond-&gt;GetData(&quot;color&quot;)-&gt;GetValue()));</a>
+<a name="ln347">      else</a>
+<a name="ln348">        painter-&gt;SetPenColor(bondColor);</a>
+<a name="ln349"> </a>
+<a name="ln350">      DrawRingBond(begin, end, center, ringBond-&gt;GetBondOrder());</a>
+<a name="ln351">      drawnBonds.SetBitOn(ringBond-&gt;GetId());</a>
+<a name="ln352">    }</a>
+<a name="ln353">  }</a>
+<a name="ln354"> </a>
+<a name="ln355">  void OBDepictPrivate::DrawAromaticRing(OBRing *ring, OBBitVec &amp;drawnBonds)</a>
+<a name="ln356">  {</a>
+<a name="ln357">    DrawRing(ring, drawnBonds);</a>
+<a name="ln358">  }</a>
+<a name="ln359"> </a>
+<a name="ln360">  enum Radical { NOT_RADICAL, ONE_DOT, TWO_DOT };</a>
+<a name="ln361"> </a>
+<a name="ln362">  // Assign 0, 1, or 2 radical dots</a>
+<a name="ln363">  // - if spin is specified, then this determines the number of dots</a>
+<a name="ln364">  // - otherwise, the degree of undervalence determines it</a>
+<a name="ln365">  static Radical AssignRadicalDots(OBAtom* atom)</a>
+<a name="ln366">  {</a>
+<a name="ln367">    unsigned int spin = atom-&gt;GetSpinMultiplicity();</a>
+<a name="ln368">    if (spin)</a>
+<a name="ln369">      return spin == 2 ? TWO_DOT : ONE_DOT;</a>
+<a name="ln370"> </a>
+<a name="ln371">    unsigned int actualvalence = atom-&gt;GetTotalValence();</a>
+<a name="ln372">    unsigned int typicalvalence = GetTypicalValence(atom-&gt;GetAtomicNum(), actualvalence, atom-&gt;GetFormalCharge());</a>
+<a name="ln373">    int diff = typicalvalence - actualvalence;</a>
+<a name="ln374">    if (diff &lt;= 0)</a>
+<a name="ln375">      return NOT_RADICAL;</a>
+<a name="ln376">    return diff == 2 ? TWO_DOT : ONE_DOT;</a>
+<a name="ln377">  }</a>
+<a name="ln378"> </a>
+<a name="ln379">  bool OBDepict::DrawMolecule(OBMol *mol)</a>
+<a name="ln380">  {</a>
+<a name="ln381">    if (!d-&gt;painter)</a>
+<a name="ln382">      return false;</a>
+<a name="ln383"> </a>
+<a name="ln384">    if (d-&gt;mol != nullptr)</a>
+<a name="ln385">      delete d-&gt;mol;</a>
+<a name="ln386">    d-&gt;mol = new OBMol(*mol); // Copy it</a>
+<a name="ln387"> </a>
+<a name="ln388">    double width=0.0, height=0.0;</a>
+<a name="ln389"> </a>
+<a name="ln390">    OBAtom *atom;</a>
+<a name="ln391">    OBBondIterator j;</a>
+<a name="ln392">    OBAtomIterator i;</a>
+<a name="ln393"> </a>
+<a name="ln394"> </a>
+<a name="ln395">    // Determine which should be wedge and hash bonds...</a>
+<a name="ln396">    // Note: we need to do this before we invert the y-coordinate for depiction</a>
+<a name="ln397">    std::map&lt;OBBond*, enum OBStereo::BondDirection&gt; updown;</a>
+<a name="ln398">    std::map&lt;OBBond*, OBStereo::Ref&gt; from;</a>
+<a name="ln399">    TetStereoToWedgeHash(*d-&gt;mol, updown, from);</a>
+<a name="ln400"> </a>
+<a name="ln401">    if(mol-&gt;NumAtoms()&gt;0) {</a>
+<a name="ln402">      // scale bond lengths and invert the y coordinate (both SVG and Cairo use top left as the origin)</a>
+<a name="ln403">      double bondLengthSum = 0.0;</a>
+<a name="ln404">      for (OBBond *bond = mol-&gt;BeginBond(j); bond; bond = mol-&gt;NextBond(j))</a>
+<a name="ln405">        bondLengthSum += bond-&gt;GetLength();</a>
+<a name="ln406">      const double averageBondLength = bondLengthSum / mol-&gt;NumBonds();</a>
+<a name="ln407">      double f;</a>
+<a name="ln408">      if(mol-&gt;NumBonds()&gt;0) {</a>
+<a name="ln409">        f = d-&gt;bondLength / averageBondLength;</a>
+<a name="ln410">      } else if(mol-&gt;NumAtoms()&gt;1){</a>
+<a name="ln411">        /* In molecules without bonds but more than one atom,</a>
+<a name="ln412">           use the minimum atom distance as a substitute for average bond length. */</a>
+<a name="ln413">        f = DBL_MAX;</a>
+<a name="ln414">        OBAtomIterator i2;</a>
+<a name="ln415">        OBAtom *atom2;</a>
+<a name="ln416">        vector3 a1pos;</a>
+<a name="ln417">        double currdist;</a>
+<a name="ln418">        for (atom = d-&gt;mol-&gt;BeginAtom(i); atom; atom = d-&gt;mol-&gt;NextAtom(i)) {</a>
+<a name="ln419">          a1pos = atom-&gt;GetVector();</a>
+<a name="ln420">          for (atom2 = d-&gt;mol-&gt;BeginAtom(i2); atom2; atom2 = d-&gt;mol-&gt;NextAtom(i2)) {</a>
+<a name="ln421">            if(atom != atom2) {</a>
+<a name="ln422">              currdist = a1pos.distSq(atom2-&gt;GetVector());</a>
+<a name="ln423">              if(currdist &lt; f &amp;&amp; currdist != 0)</a>
+<a name="ln424">                f = currdist;</a>
+<a name="ln425">            }</a>
+<a name="ln426">          }</a>
+<a name="ln427">        }</a>
+<a name="ln428">        f = d-&gt;bondLength / sqrt(f);</a>
+<a name="ln429">      } else</a>
+<a name="ln430">        f = 1.0;</a>
+<a name="ln431">      for (atom = d-&gt;mol-&gt;BeginAtom(i); atom; atom = d-&gt;mol-&gt;NextAtom(i))</a>
+<a name="ln432">        atom-&gt;SetVector(atom-&gt;GetX() * f, - atom-&gt;GetY() * f, atom-&gt;GetZ());</a>
+<a name="ln433"> </a>
+<a name="ln434">      // find min/max values</a>
+<a name="ln435">      double min_x, max_x;</a>
+<a name="ln436">      double min_y, max_y;</a>
+<a name="ln437">      double min_z, max_z;</a>
+<a name="ln438">      atom = d-&gt;mol-&gt;BeginAtom(i);</a>
+<a name="ln439">      if (atom != nullptr) {</a>
+<a name="ln440">        min_x = max_x = atom-&gt;GetX();</a>
+<a name="ln441">        min_y = max_y = atom-&gt;GetY();</a>
+<a name="ln442">        min_z = max_z = atom-&gt;GetZ();</a>
+<a name="ln443">        for (atom = d-&gt;mol-&gt;NextAtom(i); atom; atom = d-&gt;mol-&gt;NextAtom(i)) {</a>
+<a name="ln444">          min_x = std::min(min_x, atom-&gt;GetX());</a>
+<a name="ln445">          max_x = std::max(max_x, atom-&gt;GetX());</a>
+<a name="ln446">          min_y = std::min(min_y, atom-&gt;GetY());</a>
+<a name="ln447">          max_y = std::max(max_y, atom-&gt;GetY());</a>
+<a name="ln448">          min_z = std::min(min_z, atom-&gt;GetZ());</a>
+<a name="ln449">          max_z = std::max(max_z, atom-&gt;GetZ());</a>
+<a name="ln450">        }</a>
+<a name="ln451">      }</a>
+<a name="ln452"> </a>
+<a name="ln453">      double margin;</a>
+<a name="ln454">      if (d-&gt;options &amp; noMargin)</a>
+<a name="ln455">        margin = 5.0;</a>
+<a name="ln456">      else</a>
+<a name="ln457">        margin = 40.0;</a>
+<a name="ln458">      // translate all atoms so the bottom-left atom is at margin,margin</a>
+<a name="ln459">      for (atom = d-&gt;mol-&gt;BeginAtom(i); atom; atom = d-&gt;mol-&gt;NextAtom(i))</a>
+<a name="ln460">        atom-&gt;SetVector(atom-&gt;GetX() - min_x + margin, atom-&gt;GetY() - min_y + margin, atom-&gt;GetZ());</a>
+<a name="ln461"> </a>
+<a name="ln462">      width  = max_x - min_x + 2*margin;</a>
+<a name="ln463">      height = max_y - min_y + 2*margin;</a>
+<a name="ln464"> </a>
+<a name="ln465">      d-&gt;zScale = max_z - min_z;</a>
+<a name="ln466">      if (fabs(d-&gt;zScale) &lt; 1.0e-1)</a>
+<a name="ln467">        d-&gt;zScale = 0.0;</a>
+<a name="ln468">      d-&gt;zMin = min_z;</a>
+<a name="ln469"> </a>
+<a name="ln470">      //d-&gt;painter-&gt;SetPenWidth(d-&gt;penWidth);</a>
+<a name="ln471">      //d-&gt;painter-&gt;SetPenColor(d-&gt;pen));</a>
+<a name="ln472">      //d-&gt;painter-&gt;SetFillColor(OBColor(&quot;black&quot;));</a>
+<a name="ln473">    }</a>
+<a name="ln474"> </a>
+<a name="ln475">    d-&gt;painter-&gt;NewCanvas(width, height);</a>
+<a name="ln476"> </a>
+<a name="ln477">    // Identify and remember the ring bonds according to the SSSR</a>
+<a name="ln478">    // - note that OBBond-&gt;IsInRing() includes bonds not included in the SSSR as the SSSR excludes very large rings</a>
+<a name="ln479">    std::vector&lt;OBRing*&gt; rings(mol-&gt;GetSSSR());</a>
+<a name="ln480">    OBBitVec ringBonds;</a>
+<a name="ln481">    for (std::vector&lt;OBRing*&gt;::iterator k = rings.begin(); k != rings.end(); ++k) {</a>
+<a name="ln482">      OBRing *ring = *k;</a>
+<a name="ln483">      std::vector&lt;int&gt; indexes = ring-&gt;_path;</a>
+<a name="ln484">      for (unsigned int l = 0; l &lt; indexes.size(); ++l) {</a>
+<a name="ln485">        OBAtom *begin = d-&gt;mol-&gt;GetAtom(indexes[l]);</a>
+<a name="ln486">        OBAtom *end;</a>
+<a name="ln487">        if (l+1 &lt; indexes.size())</a>
+<a name="ln488">          end = d-&gt;mol-&gt;GetAtom(indexes[l+1]);</a>
+<a name="ln489">        else</a>
+<a name="ln490">          end = d-&gt;mol-&gt;GetAtom(indexes[0]);</a>
+<a name="ln491"> </a>
+<a name="ln492">        OBBond *ringBond = d-&gt;mol-&gt;GetBond(begin, end);</a>
+<a name="ln493">        ringBonds.SetBitOn(ringBond-&gt;GetId());</a>
+<a name="ln494">      }</a>
+<a name="ln495">    }</a>
+<a name="ln496"> </a>
+<a name="ln497">    // draw bonds</a>
+<a name="ln498">    for (OBBond *bond = d-&gt;mol-&gt;BeginBond(j); bond; bond = d-&gt;mol-&gt;NextBond(j)) {</a>
+<a name="ln499">      OBAtom *begin = bond-&gt;GetBeginAtom();</a>
+<a name="ln500">      OBAtom *end = bond-&gt;GetEndAtom();</a>
+<a name="ln501">      if((d-&gt;options &amp; internalColor) &amp;&amp; bond-&gt;HasData(&quot;color&quot;))</a>
+<a name="ln502">        d-&gt;painter-&gt;SetPenColor(OBColor(bond-&gt;GetData(&quot;color&quot;)-&gt;GetValue()));</a>
+<a name="ln503">      else</a>
+<a name="ln504">        d-&gt;painter-&gt;SetPenColor(d-&gt;bondColor);</a>
+<a name="ln505"> </a>
+<a name="ln506">      if(from.find(bond)!=from.end()) {</a>
+<a name="ln507">        //is a wedge or hash bond</a>
+<a name="ln508">        if(from[bond]==bond-&gt;GetEndAtom()-&gt;GetId())</a>
+<a name="ln509">          swap(begin, end);</a>
+<a name="ln510">        if(updown[bond]==OBStereo::UpBond)</a>
+<a name="ln511">          d-&gt;DrawWedge(begin, end);</a>
+<a name="ln512">        else if(updown[bond]==OBStereo::DownBond)</a>
+<a name="ln513">          d-&gt;DrawHash(begin, end);</a>
+<a name="ln514">        else {</a>
+<a name="ln515">          //This is a bond to a chiral center specified as unknown</a>
+<a name="ln516">          d-&gt;DrawWobblyBond(begin, end);</a>
+<a name="ln517">        }</a>
+<a name="ln518">      }</a>
+<a name="ln519">      else if (!ringBonds.BitIsSet(bond-&gt;GetId())) { // Ring bonds are handled below</a>
+<a name="ln520">        bool crossed_dbl_bond = false;</a>
+<a name="ln521">        OBStereoFacade sf(d-&gt;mol);</a>
+<a name="ln522">        if (sf.HasCisTransStereo(bond-&gt;GetId())) {</a>
+<a name="ln523">          OBCisTransStereo *ct = sf.GetCisTransStereo(bond-&gt;GetId());</a>
+<a name="ln524">          if (!ct-&gt;GetConfig().specified)</a>
+<a name="ln525">            crossed_dbl_bond = true;</a>
+<a name="ln526">        }</a>
+<a name="ln527">        d-&gt;DrawSimpleBond(begin, end, bond-&gt;GetBondOrder(), crossed_dbl_bond);</a>
+<a name="ln528">      }</a>
+<a name="ln529">    }</a>
+<a name="ln530"> </a>
+<a name="ln531">    // draw ring bonds</a>
+<a name="ln532">    OBBitVec drawnBonds;</a>
+<a name="ln533">    // draw aromatic rings first, looks better since all double bonds will</a>
+<a name="ln534">    // be inside aromatic rings</a>
+<a name="ln535">    for (std::vector&lt;OBRing*&gt;::iterator k = rings.begin(); k != rings.end(); ++k) {</a>
+<a name="ln536">      OBRing *ring = *k;</a>
+<a name="ln537">      if (ring-&gt;IsAromatic())</a>
+<a name="ln538">        d-&gt;DrawAromaticRing(ring, drawnBonds);</a>
+<a name="ln539">    }</a>
+<a name="ln540">    // draw aliphatic rings</a>
+<a name="ln541">    for (std::vector&lt;OBRing*&gt;::iterator k = rings.begin(); k != rings.end(); ++k) {</a>
+<a name="ln542">      OBRing *ring = *k;</a>
+<a name="ln543">      if (!ring-&gt;IsAromatic())</a>
+<a name="ln544">        d-&gt;DrawRing(ring, drawnBonds);</a>
+<a name="ln545">    }</a>
+<a name="ln546"> </a>
+<a name="ln547">    vector&lt;pair&lt;OBAtom*,double&gt; &gt; zsortedAtoms;</a>
+<a name="ln548">    vector&lt;int&gt; zsorted;</a>
+<a name="ln549">    unsigned int a;</a>
+<a name="ln550">    for (a = 0, atom = d-&gt;mol-&gt;BeginAtom(i) ; atom ; atom = d-&gt;mol-&gt;NextAtom(i), ++a)</a>
+<a name="ln551">      {</a>
+<a name="ln552">        pair&lt;OBAtom*,double&gt; entry(atom, atom-&gt;GetVector().z());</a>
+<a name="ln553">        zsortedAtoms.push_back(entry);</a>
+<a name="ln554">      }</a>
+<a name="ln555">    sort(zsortedAtoms.begin(), zsortedAtoms.end(), SortAtomZ);</a>
+<a name="ln556">    unsigned int max = zsortedAtoms.size();</a>
+<a name="ln557">    for (a = 0 ; a &lt; max ; a++ ) {</a>
+<a name="ln558">      atom   = zsortedAtoms[a].first;</a>
+<a name="ln559">      double x = atom-&gt;GetX();</a>
+<a name="ln560">      double y = atom-&gt;GetY();</a>
+<a name="ln561"> </a>
+<a name="ln562">      d-&gt;DrawAtom(atom);</a>
+<a name="ln563"> </a>
+<a name="ln564">      // draw atom labels</a>
+<a name="ln565">      int alignment = GetLabelAlignment(atom);</a>
+<a name="ln566">      bool rightAligned = false;</a>
+<a name="ln567">      switch (alignment) {</a>
+<a name="ln568">        case Right:</a>
+<a name="ln569">          rightAligned = true;</a>
+<a name="ln570">          /* no break */</a>
+<a name="ln571">        default:</a>
+<a name="ln572">          break;</a>
+<a name="ln573">      }</a>
+<a name="ln574"> </a>
+<a name="ln575">      if((d-&gt;options &amp; internalColor) &amp;&amp; atom-&gt;HasData(&quot;color&quot;))</a>
+<a name="ln576">        d-&gt;painter-&gt;SetPenColor(OBColor(atom-&gt;GetData(&quot;color&quot;)-&gt;GetValue()));</a>
+<a name="ln577">      else if(d-&gt;options &amp; bwAtoms)</a>
+<a name="ln578">        d-&gt;painter-&gt;SetPenColor(d-&gt;bondColor);</a>
+<a name="ln579">      else {</a>
+<a name="ln580">        double r, g, b;</a>
+<a name="ln581">        OBElements::GetRGB(atom-&gt;GetAtomicNum(), &amp;r, &amp;g, &amp;b);</a>
+<a name="ln582">        d-&gt;painter-&gt;SetPenColor(OBColor(r, g, b));</a>
+<a name="ln583">      }</a>
+<a name="ln584"> </a>
+<a name="ln585">      //charge and radical</a>
+<a name="ln586">      int charge = atom-&gt;GetFormalCharge();</a>
+<a name="ln587">      Radical radical = AssignRadicalDots(atom); // none, one or two</a>
+<a name="ln588">      if(charge || radical != NOT_RADICAL) {</a>
+<a name="ln589">        OBFontMetrics metrics = d-&gt;painter-&gt;GetFontMetrics(&quot;N&quot;);</a>
+<a name="ln590">        double yoffset = d-&gt;HasLabel(atom) ? -0.2 * metrics.height : -0.2 * metrics.height;</a>
+<a name="ln591">        /*switch (GetLabelAlignment(atom)) {</a>
+<a name="ln592">          case Up:</a>
+<a name="ln593">          case Left:</a>
+<a name="ln594">          case Right:</a>
+<a name="ln595">            yoffset = - 1.2 * metrics.height;</a>
+<a name="ln596">        }*/</a>
+<a name="ln597">        stringstream ss;</a>
+<a name="ln598">        if(charge) {</a>
+<a name="ln599">          if(abs(charge)!=1)</a>
+<a name="ln600">            ss &lt;&lt; abs(charge);</a>
+<a name="ln601">          if(charge&gt;0)</a>
+<a name="ln602">            ss &lt;&lt; '+';</a>
+<a name="ln603">          else if (charge&lt;-1) //use underscore for single negative charge and minus if multiple</a>
+<a name="ln604">            ss &lt;&lt; '-';</a>
+<a name="ln605">          else</a>
+<a name="ln606">          {</a>
+<a name="ln607">            ss &lt;&lt; '_';</a>
+<a name="ln608">            yoffset -= 0.5 * metrics.height;</a>
+<a name="ln609">          }</a>
+<a name="ln610">        }</a>
+<a name="ln611">        d-&gt;painter-&gt;DrawText(x + 0.4*metrics.width, y+yoffset, ss.str());</a>
+<a name="ln612">        if (radical != NOT_RADICAL) {</a>
+<a name="ln613">          string radchars;</a>
+<a name="ln614">          radchars = radical == ONE_DOT ? &quot;.&quot; : &quot;..&quot;;</a>
+<a name="ln615">          d-&gt;painter-&gt;SetFontSize(2 * metrics.fontSize);</a>
+<a name="ln616">          d-&gt;painter-&gt;DrawText(x + (0.4 + ss.str().size())*metrics.width,</a>
+<a name="ln617">            y + yoffset, radchars);</a>
+<a name="ln618">        }</a>
+<a name="ln619">        d-&gt;painter-&gt;SetFontSize(metrics.fontSize);//restore</a>
+<a name="ln620">      }</a>
+<a name="ln621"> </a>
+<a name="ln622">      if (atom-&gt;GetAtomicNum() == OBElements::Carbon) {</a>
+<a name="ln623">        if(!(d-&gt;options &amp; drawAllC))</a>
+<a name="ln624">        {</a>
+<a name="ln625">          if (atom-&gt;GetExplicitDegree() &gt; 1)</a>
+<a name="ln626">            continue;</a>
+<a name="ln627">          if ((atom-&gt;GetExplicitDegree() == 1) &amp;&amp; !(d-&gt;options &amp; drawTermC))//!d-&gt;drawTerminalC)</a>
+<a name="ln628">            continue;</a>
+<a name="ln629">        }</a>
+<a name="ln630">      }</a>
+<a name="ln631"> </a>
+<a name="ln632">      bool written = false;</a>
+<a name="ln633">      stringstream ss;</a>
+<a name="ln634"> </a>
+<a name="ln635">      //For unexpanded aliases use appropriate form of alias instead of element symbol, Hs, etc</a>
+<a name="ln636">      AliasData* ad = nullptr;</a>
+<a name="ln637">      if (d-&gt;aliasMode &amp;&amp; atom-&gt;HasData(AliasDataType))</a>
+<a name="ln638">        ad = static_cast&lt;AliasData*&gt;(atom-&gt;GetData(AliasDataType));</a>
+<a name="ln639">      if(ad &amp;&amp; !ad-&gt;IsExpanded())</a>
+<a name="ln640">      {</a>
+<a name="ln641">        ss &lt;&lt;ad-&gt;GetAlias(rightAligned);</a>
+<a name="ln642">        OBColor aliasColor = !ad-&gt;GetColor().empty() ? ad-&gt;GetColor() : d-&gt;bondColor;</a>
+<a name="ln643">          d-&gt;painter-&gt;SetPenColor(aliasColor);</a>
+<a name="ln644">        written = true;</a>
+<a name="ln645">      }</a>
+<a name="ln646"> </a>
+<a name="ln647">      if (!written) {</a>
+<a name="ln648">        //Atoms with no AliasData, but 0 atomic num and atomclass==n are output as Rn</a>
+<a name="ln649">        if (atom-&gt;GetAtomicNum()==0) {</a>
+<a name="ln650">          OBGenericData *data = atom-&gt;GetData(&quot;Atom Class&quot;);</a>
+<a name="ln651">          if (data) {</a>
+<a name="ln652">            OBPairInteger* acdata = dynamic_cast&lt;OBPairInteger*&gt;(data); // Could replace with C-style cast if willing to live dangerously</a>
+<a name="ln653">            if (acdata) {</a>
+<a name="ln654">              int ac = acdata-&gt;GetGenericValue();</a>
+<a name="ln655">              if (ac &gt;= 0) {</a>
+<a name="ln656">                ss &lt;&lt; 'R' &lt;&lt; ac;</a>
+<a name="ln657">                d-&gt;painter-&gt;SetPenColor(OBColor(&quot;black&quot;));</a>
+<a name="ln658">                written = true;</a>
+<a name="ln659">              }</a>
+<a name="ln660">            }</a>
+<a name="ln661">          }</a>
+<a name="ln662">        }</a>
+<a name="ln663">      }</a>
+<a name="ln664"> </a>
+<a name="ln665">      if (!written) {</a>
+<a name="ln666">        const char* atomSymbol;</a>
+<a name="ln667">        if(atom-&gt;GetAtomicNum() == OBElements::Hydrogen &amp;&amp; atom-&gt;GetIsotope()&gt;1)</a>
+<a name="ln668">          atomSymbol = atom-&gt;GetIsotope()==2 ? &quot;D&quot; : &quot;T&quot;;</a>
+<a name="ln669">        else</a>
+<a name="ln670">          atomSymbol = OBElements::GetSymbol(atom-&gt;GetAtomicNum());</a>
+<a name="ln671"> </a>
+<a name="ln672">        unsigned int hCount = atom-&gt;GetImplicitHCount();</a>
+<a name="ln673">        // LPW: The allExplicit option will omit the drawing of extra hydrogens</a>
+<a name="ln674">        // to fill the valence.</a>
+<a name="ln675">        if((d-&gt;options &amp; allExplicit))</a>
+<a name="ln676">            hCount = 0;</a>
+<a name="ln677">        // rightAligned:</a>
+<a name="ln678">        //   false  CH3</a>
+<a name="ln679">        //   true   H3C</a>
+<a name="ln680">        if (hCount &amp;&amp; rightAligned)</a>
+<a name="ln681">          ss &lt;&lt; &quot;H&quot;;</a>
+<a name="ln682">        if ((hCount &gt; 1) &amp;&amp; rightAligned)</a>
+<a name="ln683">          ss &lt;&lt; hCount;</a>
+<a name="ln684">        ss &lt;&lt; atomSymbol;</a>
+<a name="ln685">        if (hCount &amp;&amp; !rightAligned)</a>
+<a name="ln686">          ss &lt;&lt; &quot;H&quot;;</a>
+<a name="ln687">        if ((hCount &gt; 1) &amp;&amp; !rightAligned)</a>
+<a name="ln688">          ss &lt;&lt; hCount;</a>
+<a name="ln689">      }</a>
+<a name="ln690">      d-&gt;DrawAtomLabel(ss.str(), alignment, vector3(x, y, 0.0));</a>
+<a name="ln691">    }</a>
+<a name="ln692"> </a>
+<a name="ln693">    return true;</a>
+<a name="ln694">  }</a>
+<a name="ln695"> </a>
+<a name="ln696">  void OBDepictPrivate::DrawWobblyBond(OBAtom *beginAtom, OBAtom *endAtom)</a>
+<a name="ln697">  {</a>
+<a name="ln698">    vector3 begin = beginAtom-&gt;GetVector();</a>
+<a name="ln699">    vector3 end = endAtom-&gt;GetVector();</a>
+<a name="ln700">    vector3 vb = end - begin;</a>
+<a name="ln701"> </a>
+<a name="ln702">    if (HasLabel(beginAtom))</a>
+<a name="ln703">      begin += 0.33 * vb;</a>
+<a name="ln704">    if (HasLabel(endAtom))</a>
+<a name="ln705">      end -= 0.33 * vb;</a>
+<a name="ln706"> </a>
+<a name="ln707">    vb = end - begin; // Resize the extents of the vb vector</a>
+<a name="ln708"> </a>
+<a name="ln709">    vector3 orthogonalLine = cross(vb, VZ);</a>
+<a name="ln710">    orthogonalLine.normalize();</a>
+<a name="ln711">    orthogonalLine *= 0.5 * bondWidth;</a>
+<a name="ln712"> </a>
+<a name="ln713">    double lines[6] = { 0.20, 0.36, 0.52, 0.68, 0.84, 1.0 };</a>
+<a name="ln714"> </a>
+<a name="ln715">    // This code is adapted from DrawWedge():</a>
+<a name="ln716">    // What we do is just join up the opposite ends of each of the wedge strokes</a>
+<a name="ln717">    // to create a zig-zag bond</a>
+<a name="ln718"> </a>
+<a name="ln719">    double oldx, oldy, newx, newy;</a>
+<a name="ln720">    oldx = begin.x();</a>
+<a name="ln721">    oldy = begin.y();</a>
+<a name="ln722">    int sign = 1;</a>
+<a name="ln723">    for (int k = 0; k &lt; 6; ++k) {</a>
+<a name="ln724">      double w = lines[k];</a>
+<a name="ln725">      newx = begin.x() + vb.x() * w + sign * orthogonalLine.x() * w;</a>
+<a name="ln726">      newy = begin.y() + vb.y() * w + sign * orthogonalLine.y() * w;</a>
+<a name="ln727">      painter-&gt;DrawLine(oldx, oldy, newx, newy);</a>
+<a name="ln728">      oldx = newx;</a>
+<a name="ln729">      oldy = newy;</a>
+<a name="ln730">      sign = -sign;</a>
+<a name="ln731">    }</a>
+<a name="ln732">  }</a>
+<a name="ln733"> </a>
+<a name="ln734">  void OBDepictPrivate::DrawWedge(OBAtom *beginAtom, OBAtom *endAtom)</a>
+<a name="ln735">  {</a>
+<a name="ln736">    vector3 begin = beginAtom-&gt;GetVector();</a>
+<a name="ln737">    vector3 end = endAtom-&gt;GetVector();</a>
+<a name="ln738">    vector3 vb = end - begin;</a>
+<a name="ln739"> </a>
+<a name="ln740">    if (HasLabel(beginAtom))</a>
+<a name="ln741">      begin += 0.33 * vb;</a>
+<a name="ln742">    if (HasLabel(endAtom))</a>
+<a name="ln743">      end -= 0.33 * vb;</a>
+<a name="ln744"> </a>
+<a name="ln745">    vector3 orthogonalLine = cross(vb, VZ);</a>
+<a name="ln746">    orthogonalLine.normalize();</a>
+<a name="ln747">    orthogonalLine *= 0.5 * bondWidth;</a>
+<a name="ln748">    std::vector&lt;std::pair&lt;double,double&gt; &gt; points;</a>
+<a name="ln749"> </a>
+<a name="ln750">    points.push_back(std::pair&lt;double,double&gt;(begin.x(), begin.y()));</a>
+<a name="ln751">    points.push_back(std::pair&lt;double,double&gt;(end.x() + orthogonalLine.x(),</a>
+<a name="ln752">                                              end.y() + orthogonalLine.y()));</a>
+<a name="ln753">    points.push_back(std::pair&lt;double,double&gt;(end.x() - orthogonalLine.x(),</a>
+<a name="ln754">                                              end.y() - orthogonalLine.y()));</a>
+<a name="ln755">    painter-&gt;DrawPolygon(points);</a>
+<a name="ln756">  }</a>
+<a name="ln757"> </a>
+<a name="ln758">  void OBDepictPrivate::DrawHash(OBAtom *beginAtom, OBAtom *endAtom)</a>
+<a name="ln759">  {</a>
+<a name="ln760">    vector3 begin = beginAtom-&gt;GetVector();</a>
+<a name="ln761">    vector3 end = endAtom-&gt;GetVector();</a>
+<a name="ln762">    vector3 vb = end - begin;</a>
+<a name="ln763"> </a>
+<a name="ln764">    if (HasLabel(beginAtom))</a>
+<a name="ln765">      begin += 0.33 * vb;</a>
+<a name="ln766">    if (HasLabel(endAtom))</a>
+<a name="ln767">      end -= 0.33 * vb;</a>
+<a name="ln768"> </a>
+<a name="ln769">    vb = end - begin; // Resize the extents of the vb vector</a>
+<a name="ln770"> </a>
+<a name="ln771">    vector3 orthogonalLine = cross(vb, VZ);</a>
+<a name="ln772">    orthogonalLine.normalize();</a>
+<a name="ln773">    orthogonalLine *= 0.5 * bondWidth;</a>
+<a name="ln774"> </a>
+<a name="ln775">    double lines[6] = { 0.20, 0.36, 0.52, 0.68, 0.84, 1.0 };</a>
+<a name="ln776">    double oldwidth = painter-&gt;GetPenWidth();</a>
+<a name="ln777">    painter-&gt;SetPenWidth(1);</a>
+<a name="ln778">    for (int k = 0; k &lt; 6; ++k) {</a>
+<a name="ln779">      double w = lines[k];</a>
+<a name="ln780">      painter-&gt;DrawLine(begin.x() + vb.x() * w + orthogonalLine.x() * w,</a>
+<a name="ln781">                        begin.y() + vb.y() * w + orthogonalLine.y() * w,</a>
+<a name="ln782">                        begin.x() + vb.x() * w - orthogonalLine.x() * w,</a>
+<a name="ln783">                        begin.y() + vb.y() * w - orthogonalLine.y() * w);</a>
+<a name="ln784">    }</a>
+<a name="ln785">    painter-&gt;SetPenWidth(oldwidth);</a>
+<a name="ln786">  }</a>
+<a name="ln787"> </a>
+<a name="ln788">  void OBDepictPrivate::DrawSimpleBond(OBAtom *beginAtom, OBAtom *endAtom, int order, bool crossed_dbl_bond)</a>
+<a name="ln789">  {</a>
+<a name="ln790">    vector3 begin = beginAtom-&gt;GetVector();</a>
+<a name="ln791">    vector3 end = endAtom-&gt;GetVector();</a>
+<a name="ln792">    vector3 vb = end - begin;</a>
+<a name="ln793"> </a>
+<a name="ln794">    vb.normalize();</a>
+<a name="ln795"> </a>
+<a name="ln796">    if (HasLabel(beginAtom))</a>
+<a name="ln797">      begin += 13. * vb; // Length is normally 40</a>
+<a name="ln798">    if (HasLabel(endAtom))</a>
+<a name="ln799">      end -= 13. * vb;</a>
+<a name="ln800"> </a>
+<a name="ln801">    if (order == 1) {</a>
+<a name="ln802">      painter-&gt;DrawLine(begin.x(), begin.y(), end.x(), end.y());</a>
+<a name="ln803">    } else if (order == 2) {</a>
+<a name="ln804">      vector3 orthogonalLine = cross(end - begin, VZ).normalize();</a>
+<a name="ln805"> </a>
+<a name="ln806">      bool useAsymmetricDouble = options &amp; OBDepict::asymmetricDoubleBond;</a>
+<a name="ln807">      if (HasLabel(beginAtom) &amp;&amp; HasLabel(endAtom))</a>
+<a name="ln808">        useAsymmetricDouble = false;</a>
+<a name="ln809">      if (HasLabel(beginAtom) &amp;&amp; endAtom-&gt;GetExplicitDegree() == 3)</a>
+<a name="ln810">        useAsymmetricDouble = false;</a>
+<a name="ln811">      if (HasLabel(endAtom) &amp;&amp; beginAtom-&gt;GetExplicitDegree() == 3)</a>
+<a name="ln812">        useAsymmetricDouble = false;</a>
+<a name="ln813">      if (crossed_dbl_bond)</a>
+<a name="ln814">        useAsymmetricDouble = false; // The bond looks very strange otherwise in the case of cis</a>
+<a name="ln815"> </a>
+<a name="ln816">      if (!useAsymmetricDouble) {</a>
+<a name="ln817">        // style1</a>
+<a name="ln818">        //</a>
+<a name="ln819">        // -----------</a>
+<a name="ln820">        // -----------</a>
+<a name="ln821">        vector3 offset = orthogonalLine * 0.5 * bondSpacing;</a>
+<a name="ln822">        if (!crossed_dbl_bond) {</a>
+<a name="ln823">          painter-&gt;DrawLine(begin.x() + offset.x(), begin.y() + offset.y(),</a>
+<a name="ln824">                            end.x() + offset.x(), end.y() + offset.y());</a>
+<a name="ln825">          painter-&gt;DrawLine(begin.x() - offset.x(), begin.y() - offset.y(),</a>
+<a name="ln826">                            end.x() - offset.x(), end.y() - offset.y());</a>
+<a name="ln827">        }</a>
+<a name="ln828">        else {</a>
+<a name="ln829">          painter-&gt;DrawLine(begin.x() + offset.x(), begin.y() + offset.y(),</a>
+<a name="ln830">                            end.x() - offset.x(), end.y() - offset.y());</a>
+<a name="ln831">          painter-&gt;DrawLine(begin.x() - offset.x(), begin.y() - offset.y(),</a>
+<a name="ln832">                            end.x() + offset.x(), end.y() + offset.y());</a>
+<a name="ln833">        }</a>
+<a name="ln834">      } else {</a>
+<a name="ln835">        // style2</a>
+<a name="ln836">        //</a>
+<a name="ln837">        //   -------</a>
+<a name="ln838">        // -----------</a>
+<a name="ln839">        vector3 offset1 = orthogonalLine * /*0.5 * */ bondSpacing;</a>
+<a name="ln840">        vector3 offset2 = vb * /*0.5 * */ bondSpacing;</a>
+<a name="ln841">        vector3 offset3 = - vb * /*0.5 * */ bondSpacing;</a>
+<a name="ln842"> </a>
+<a name="ln843">        if (HasLabel(beginAtom))</a>
+<a name="ln844">          offset2 = VZero;</a>
+<a name="ln845">        if (HasLabel(endAtom))</a>
+<a name="ln846">          offset3 = VZero;</a>
+<a name="ln847"> </a>
+<a name="ln848">        painter-&gt;DrawLine(begin.x(), begin.y(), end.x(), end.y());</a>
+<a name="ln849">        painter-&gt;DrawLine(begin.x() + offset1.x() + offset2.x(),</a>
+<a name="ln850">                          begin.y() + offset1.y() + offset2.y(),</a>
+<a name="ln851">                          end.x() + offset1.x() + offset3.x(),</a>
+<a name="ln852">                          end.y() + offset1.y() + offset3.y());</a>
+<a name="ln853">      }</a>
+<a name="ln854">    } else if (order == 3) {</a>
+<a name="ln855">      vector3 orthogonalLine = cross(end - begin, VZ).normalize();</a>
+<a name="ln856">      vector3 offset = orthogonalLine * 0.7 * bondSpacing;</a>
+<a name="ln857">      painter-&gt;DrawLine(begin.x(), begin.y(), end.x(), end.y());</a>
+<a name="ln858">      painter-&gt;DrawLine(begin.x() + offset.x(), begin.y() + offset.y(),</a>
+<a name="ln859">                        end.x() + offset.x(), end.y() + offset.y());</a>
+<a name="ln860">      painter-&gt;DrawLine(begin.x() - offset.x(), begin.y() - offset.y(),</a>
+<a name="ln861">                        end.x() - offset.x(), end.y() - offset.y());</a>
+<a name="ln862">    }</a>
+<a name="ln863">  }</a>
+<a name="ln864"> </a>
+<a name="ln865">  void OBDepictPrivate::DrawRingBond(OBAtom *beginAtom, OBAtom *endAtom, const vector3 &amp;center, int order)</a>
+<a name="ln866">  {</a>
+<a name="ln867">    if (order != 2) {</a>
+<a name="ln868">      DrawSimpleBond(beginAtom, endAtom, order);</a>
+<a name="ln869">      return;</a>
+<a name="ln870">    }</a>
+<a name="ln871"> </a>
+<a name="ln872">    vector3 begin = beginAtom-&gt;GetVector();</a>
+<a name="ln873">    vector3 end = endAtom-&gt;GetVector();</a>
+<a name="ln874"> </a>
+<a name="ln875">    vector3 vb = (end - begin).normalize();</a>
+<a name="ln876">    vector3 orthogonalLine = cross(vb, VZ)/*.normalize()*/;</a>
+<a name="ln877">    vector3 spacing = orthogonalLine * bondSpacing * 1.2;</a>
+<a name="ln878">    vector3 offset = vb * bondSpacing;</a>
+<a name="ln879">    if ((begin + spacing - center).length() &gt; (begin - spacing - center).length())</a>
+<a name="ln880">      spacing *= -1.0;</a>
+<a name="ln881"> </a>
+<a name="ln882">    vector3 vbb = end - begin;</a>
+<a name="ln883">    if (HasLabel(beginAtom))</a>
+<a name="ln884">      begin += 0.33 * vbb;</a>
+<a name="ln885">    if (HasLabel(endAtom))</a>
+<a name="ln886">      end -= 0.33 * vbb;</a>
+<a name="ln887">    painter-&gt;DrawLine(begin.x(), begin.y(), end.x(), end.y());</a>
+<a name="ln888"> </a>
+<a name="ln889">    if (HasLabel(beginAtom))</a>
+<a name="ln890">      begin -= 0.10 * vbb;</a>
+<a name="ln891">    if (HasLabel(endAtom))</a>
+<a name="ln892">      end += 0.10 * vbb;</a>
+<a name="ln893">    painter-&gt;DrawLine(begin.x() + spacing.x() + offset.x(), begin.y() + spacing.y() + offset.y(),</a>
+<a name="ln894">                      end.x() + spacing.x() - offset.x(), end.y() + spacing.y() - offset.y());</a>
+<a name="ln895">  }</a>
+<a name="ln896"> </a>
+<a name="ln897">  void OBDepictPrivate::DrawAtom(OBAtom *atom)</a>
+<a name="ln898">  {</a>
+<a name="ln899">  }</a>
+<a name="ln900"> </a>
+<a name="ln901">  void OBDepictPrivate::DrawAtomLabel(const std::string &amp;label, int alignment, const vector3 &amp;pos)</a>
+<a name="ln902">  {</a>
+<a name="ln903">   /*</a>
+<a name="ln904">    cout &lt;&lt; &quot;FontMetrics(&quot; &lt;&lt; label &lt;&lt; &quot;):&quot; &lt;&lt; endl;</a>
+<a name="ln905">    cout &lt;&lt; &quot;  ascent = &quot; &lt;&lt; metrics.ascent &lt;&lt; endl;</a>
+<a name="ln906">    cout &lt;&lt; &quot;  descent = &quot; &lt;&lt; metrics.descent &lt;&lt; endl;</a>
+<a name="ln907">    cout &lt;&lt; &quot;  width = &quot; &lt;&lt; metrics.width &lt;&lt; endl;</a>
+<a name="ln908">    cout &lt;&lt; &quot;  height = &quot; &lt;&lt; metrics.height &lt;&lt; endl;</a>
+<a name="ln909"> </a>
+<a name="ln910">    painter-&gt;SetFillColor(OBColor(&quot;white&quot;));</a>
+<a name="ln911">    painter-&gt;SetPenColor(OBColor(&quot;white&quot;));</a>
+<a name="ln912">    painter-&gt;DrawCircle(pos.x(), pos.y(), metrics.ascent / 2);</a>
+<a name="ln913">    painter-&gt;SetPenColor(OBColor(&quot;black&quot;));</a>
+<a name="ln914">    */</a>
+<a name="ln915"> </a>
+<a name="ln916">    // compute the total width</a>
+<a name="ln917">    double totalWidth = 0.0;</a>
+<a name="ln918">    if ((alignment == Right) || (alignment == Left) || (label.find(&quot;H&quot;) == std::string::npos)) {</a>
+<a name="ln919">      for (unsigned int i = 0; i &lt; label.size(); ++i) {</a>
+<a name="ln920">        if (!isalpha(label[i])) {</a>
+<a name="ln921">          painter-&gt;SetFontSize(subscriptSize);</a>
+<a name="ln922">          totalWidth += painter-&gt;GetFontMetrics(label.substr(i, 1)).width;</a>
+<a name="ln923">        } else {</a>
+<a name="ln924">          painter-&gt;SetFontSize(fontSize);</a>
+<a name="ln925">          totalWidth += painter-&gt;GetFontMetrics(label.substr(i, 1)).width;</a>
+<a name="ln926">        }</a>
+<a name="ln927">      }</a>
+<a name="ln928">    } else {</a>
+<a name="ln929">      painter-&gt;SetFontSize(fontSize);</a>
+<a name="ln930">      totalWidth = painter-&gt;GetFontMetrics(label.substr(0, label.find(&quot;H&quot;))).width;</a>
+<a name="ln931">      double width = 0.0;</a>
+<a name="ln932">      for (unsigned int i = label.find(&quot;H&quot;); i &lt; label.size(); ++i) {</a>
+<a name="ln933">        if (!isalpha(label[i])) {</a>
+<a name="ln934">          painter-&gt;SetFontSize(subscriptSize);</a>
+<a name="ln935">          width += painter-&gt;GetFontMetrics(label.substr(i, 1)).width;</a>
+<a name="ln936">        } else {</a>
+<a name="ln937">          painter-&gt;SetFontSize(fontSize);</a>
+<a name="ln938">          width += painter-&gt;GetFontMetrics(label.substr(i, 1)).width;</a>
+<a name="ln939">        }</a>
+<a name="ln940">      }</a>
+<a name="ln941"> </a>
+<a name="ln942">      if (width &gt; totalWidth)</a>
+<a name="ln943">        totalWidth = width;</a>
+<a name="ln944">    }</a>
+<a name="ln945"> </a>
+<a name="ln946">    painter-&gt;SetFontSize(fontSize);</a>
+<a name="ln947">    OBFontMetrics metrics = painter-&gt;GetFontMetrics(label);</a>
+<a name="ln948"> </a>
+<a name="ln949"> </a>
+<a name="ln950">    std::string str, subscript;</a>
+<a name="ln951">    // compute the horizontal starting position</a>
+<a name="ln952">    double xOffset, yOffset, yOffsetSubscript;</a>
+<a name="ln953">    switch (alignment) {</a>
+<a name="ln954">      case Right:</a>
+<a name="ln955">        xOffset = 0.5 * painter-&gt;GetFontMetrics(label.substr(0, 1)).width -</a>
+<a name="ln956">                  painter-&gt;GetFontMetrics(label).width;</a>
+<a name="ln957">        break;</a>
+<a name="ln958">      case Left:</a>
+<a name="ln959">        xOffset = - 0.5 * painter-&gt;GetFontMetrics(label.substr(label.size()-1, 1)).width;</a>
+<a name="ln960">        break;</a>
+<a name="ln961">      case Up:</a>
+<a name="ln962">      case Down:</a>
+<a name="ln963">        if (label.find(&quot;H&quot;) != std::string::npos)</a>
+<a name="ln964">          xOffset = - 0.5 * painter-&gt;GetFontMetrics(label.substr(0, label.find(&quot;H&quot;))).width;</a>
+<a name="ln965">        else</a>
+<a name="ln966">          xOffset = - 0.5 * totalWidth;</a>
+<a name="ln967">        break;</a>
+<a name="ln968">      default:</a>
+<a name="ln969">        xOffset = - 0.5 * totalWidth;</a>
+<a name="ln970">        break;</a>
+<a name="ln971">    }</a>
+<a name="ln972"> </a>
+<a name="ln973">    // compute the vertical starting position</a>
+<a name="ln974">    yOffset = 0.5 * (metrics.ascent /*- metrics.descent*/);</a>
+<a name="ln975">    yOffsetSubscript = yOffset - metrics.descent;</a>
+<a name="ln976">    double xInitial = xOffset;</a>
+<a name="ln977"> </a>
+<a name="ln978">    for (unsigned int i = 0; i &lt; label.size(); ++i) {</a>
+<a name="ln979">      if (label[i] == 'H') {</a>
+<a name="ln980">        if ((alignment == Up) || (alignment == Down))</a>
+<a name="ln981">          if (!str.empty()) {</a>
+<a name="ln982">            // write the current string</a>
+<a name="ln983">            painter-&gt;SetFontSize(fontSize);</a>
+<a name="ln984">            painter-&gt;DrawText(pos.x() + xOffset, pos.y() + yOffset, str);</a>
+<a name="ln985">            if (alignment == Down) {</a>
+<a name="ln986">              yOffset += metrics.fontSize;</a>
+<a name="ln987">              yOffsetSubscript += metrics.fontSize;</a>
+<a name="ln988">            } else {</a>
+<a name="ln989">              yOffset -= metrics.fontSize;</a>
+<a name="ln990">              yOffsetSubscript -= metrics.fontSize;</a>
+<a name="ln991">            }</a>
+<a name="ln992">            xOffset = xInitial;</a>
+<a name="ln993">            str.clear();</a>
+<a name="ln994">          }</a>
+<a name="ln995">      }</a>
+<a name="ln996"> </a>
+<a name="ln997"> </a>
+<a name="ln998">      if (!isalpha(label[i])) {</a>
+<a name="ln999">        if (!str.empty()) {</a>
+<a name="ln1000">          // write the current string</a>
+<a name="ln1001">          painter-&gt;SetFontSize(fontSize);</a>
+<a name="ln1002">          OBFontMetrics metrics = painter-&gt;GetFontMetrics(str);</a>
+<a name="ln1003">          painter-&gt;DrawText(pos.x() + xOffset, pos.y() + yOffset, str);</a>
+<a name="ln1004">          xOffset += metrics.width;</a>
+<a name="ln1005">          str.clear();</a>
+<a name="ln1006">        }</a>
+<a name="ln1007"> </a>
+<a name="ln1008">        subscript += label.substr(i, 1);</a>
+<a name="ln1009">      } else {</a>
+<a name="ln1010">        if (!subscript.empty()) {</a>
+<a name="ln1011">          // write the current subscript</a>
+<a name="ln1012">          painter-&gt;SetFontSize(subscriptSize);</a>
+<a name="ln1013">          OBFontMetrics metrics = painter-&gt;GetFontMetrics(subscript);</a>
+<a name="ln1014">          painter-&gt;DrawText(pos.x() + xOffset, pos.y() + yOffsetSubscript, subscript);</a>
+<a name="ln1015">          xOffset += metrics.width;</a>
+<a name="ln1016">          subscript.clear();</a>
+<a name="ln1017">        }</a>
+<a name="ln1018"> </a>
+<a name="ln1019">        str += label.substr(i, 1);</a>
+<a name="ln1020">      }</a>
+<a name="ln1021">    }</a>
+<a name="ln1022">    if (!str.empty()) {</a>
+<a name="ln1023">      painter-&gt;SetFontSize(fontSize);</a>
+<a name="ln1024">      OBFontMetrics metrics = painter-&gt;GetFontMetrics(str);</a>
+<a name="ln1025">      painter-&gt;DrawText(pos.x() + xOffset, pos.y() + yOffset, str);</a>
+<a name="ln1026">    }</a>
+<a name="ln1027">    if (!subscript.empty()) {</a>
+<a name="ln1028">      painter-&gt;SetFontSize(subscriptSize);</a>
+<a name="ln1029">      OBFontMetrics metrics = painter-&gt;GetFontMetrics(subscript);</a>
+<a name="ln1030">      double yOffset = ispunct(subscript[subscript.size()-1]) || ispunct(subscript[0])</a>
+<a name="ln1031">        || (subscript.size()&gt;1 &amp;&amp; ispunct(subscript[1]))</a>
+<a name="ln1032">        ? -yOffsetSubscript : yOffsetSubscript;</a>
+<a name="ln1033">      painter-&gt;DrawText(pos.x() + xOffset, pos.y() + yOffset, subscript);</a>
+<a name="ln1034">    }</a>
+<a name="ln1035"> </a>
+<a name="ln1036">  }</a>
+<a name="ln1037"> </a>
+<a name="ln1038">  bool OBDepictPrivate::HasLabel(OBAtom *atom)</a>
+<a name="ln1039">  {</a>
+<a name="ln1040">    if (atom-&gt;GetAtomicNum() != OBElements::Carbon)</a>
+<a name="ln1041">      return true;</a>
+<a name="ln1042">    if ((options &amp; OBDepict::drawAllC) || ((options &amp; OBDepict::drawTermC) &amp;&amp; (atom-&gt;GetExplicitDegree() == 1)))</a>
+<a name="ln1043">      return true;</a>
+<a name="ln1044">    return false;</a>
+<a name="ln1045">  }</a>
+<a name="ln1046"> </a>
+<a name="ln1047">  void OBDepictPrivate::SetWedgeAndHash(OBMol* mol)</a>
+<a name="ln1048">  {</a>
+<a name="ln1049">    // Remove any existing wedge and hash bonds</a>
+<a name="ln1050">    FOR_BONDS_OF_MOL(b,mol)  {</a>
+<a name="ln1051">      b-&gt;SetWedge(false);</a>
+<a name="ln1052">      b-&gt;SetHash(false);</a>
+<a name="ln1053">    }</a>
+<a name="ln1054"> </a>
+<a name="ln1055">    std::map&lt;OBBond*, enum OBStereo::BondDirection&gt; updown;</a>
+<a name="ln1056">    std::map&lt;OBBond*, OBStereo::Ref&gt; from;</a>
+<a name="ln1057">    std::map&lt;OBBond*, OBStereo::Ref&gt;::const_iterator from_cit;</a>
+<a name="ln1058">    TetStereoToWedgeHash(*mol, updown, from);</a>
+<a name="ln1059"> </a>
+<a name="ln1060">    for(from_cit=from.begin();from_cit!=from.end();++from_cit) {</a>
+<a name="ln1061">      OBBond* pbond = from_cit-&gt;first;</a>
+<a name="ln1062">      if(updown[pbond]==OBStereo::UpBond)</a>
+<a name="ln1063">        pbond-&gt;SetHash();</a>
+<a name="ln1064">      else if(updown[pbond]==OBStereo::DownBond)</a>
+<a name="ln1065">        pbond-&gt;SetWedge();</a>
+<a name="ln1066">    }</a>
+<a name="ln1067">  }</a>
+<a name="ln1068">  void OBDepictPrivateBallAndStick::DrawSimpleBond(OBAtom* beginAtom,</a>
+<a name="ln1069">  OBAtom* endAtom, int order, bool crossed_bond)</a>
+<a name="ln1070">  {</a>
+<a name="ln1071">    const vector3 begin = beginAtom-&gt;GetVector();</a>
+<a name="ln1072">    const vector3 end = endAtom-&gt;GetVector();</a>
+<a name="ln1073">    const vector3 vb = (end - begin).normalize();</a>
+<a name="ln1074"> </a>
+<a name="ln1075">    // calculate the expected opacity and width</a>
+<a name="ln1076">    // to simulate perspective</a>
+<a name="ln1077">    penWidth = 3.0;</a>
+<a name="ln1078">    bondColor.alpha = 1.0;</a>
+<a name="ln1079"> </a>
+<a name="ln1080">    if (fabs(zScale) &gt; 1.0e-1) {</a>
+<a name="ln1081">      double beginAtomScale = (beginAtom-&gt;GetZ() - zMin) / zScale;</a>
+<a name="ln1082">      double endAtomScale = (endAtom-&gt;GetZ() - zMin) / zScale;</a>
+<a name="ln1083">      double averageScale = (beginAtomScale + endAtomScale)/2.0;</a>
+<a name="ln1084">      if (averageScale &lt; 0.15)</a>
+<a name="ln1085">        averageScale = 0.15;</a>
+<a name="ln1086"> </a>
+<a name="ln1087">      penWidth = 3.0 * averageScale;</a>
+<a name="ln1088">      bondColor.alpha = averageScale;</a>
+<a name="ln1089">    }</a>
+<a name="ln1090">    painter-&gt;SetPenWidth(penWidth);</a>
+<a name="ln1091"> </a>
+<a name="ln1092">    if (order == 1) {</a>
+<a name="ln1093">      painter-&gt;DrawLine(begin.x(), begin.y(), end.x(), end.y());</a>
+<a name="ln1094">    } else if (order == 2) {</a>
+<a name="ln1095">      const vector3 orthogonalLine = cross(end - begin, VZ).normalize();</a>
+<a name="ln1096"> </a>
+<a name="ln1097">        // style1</a>
+<a name="ln1098">        //</a>
+<a name="ln1099">        // -----------</a>
+<a name="ln1100">        // -----------</a>
+<a name="ln1101">        const vector3 offset = orthogonalLine * 0.5 * bondSpacing;</a>
+<a name="ln1102">        painter-&gt;DrawLine(begin.x() + offset.x(), begin.y() + offset.y(),</a>
+<a name="ln1103">                            end.x() + offset.x(), end.y() + offset.y());</a>
+<a name="ln1104">        painter-&gt;DrawLine(begin.x() - offset.x(), begin.y() - offset.y(),</a>
+<a name="ln1105">                            end.x() - offset.x(), end.y() - offset.y());</a>
+<a name="ln1106">    } else if (order == 3) {</a>
+<a name="ln1107">      const vector3 orthogonalLine = cross(end - begin, VZ).normalize();</a>
+<a name="ln1108">      const vector3 offset = orthogonalLine * 0.7 * bondSpacing;</a>
+<a name="ln1109">      painter-&gt;DrawLine(begin.x(), begin.y(), end.x(), end.y());</a>
+<a name="ln1110">      painter-&gt;DrawLine(begin.x() + offset.x(), begin.y() + offset.y(),</a>
+<a name="ln1111">                        end.x() + offset.x(), end.y() + offset.y());</a>
+<a name="ln1112">      painter-&gt;DrawLine(begin.x() - offset.x(), begin.y() - offset.y(),</a>
+<a name="ln1113">                        end.x() - offset.x(), end.y() - offset.y());</a>
+<a name="ln1114">    }</a>
+<a name="ln1115"> </a>
+<a name="ln1116">  }</a>
+<a name="ln1117"> </a>
+<a name="ln1118">  inline void OBDepictPrivateBallAndStick::DrawWedge(OBAtom* beginAtom,</a>
+<a name="ln1119">  OBAtom* endAtom)</a>
+<a name="ln1120">  {</a>
+<a name="ln1121">    const vector3 begin = beginAtom-&gt;GetVector();</a>
+<a name="ln1122">    const vector3 end = endAtom-&gt;GetVector();</a>
+<a name="ln1123">    const vector3 vb = end - begin;</a>
+<a name="ln1124">    const vector3 orthogonalLine = cross(vb, VZ).normalize() * 0.5 * bondWidth;</a>
+<a name="ln1125">    std::vector&lt;std::pair&lt;double,double&gt; &gt; points;</a>
+<a name="ln1126"> </a>
+<a name="ln1127">    points.push_back(std::pair&lt;double,double&gt;(begin.x(), begin.y()));</a>
+<a name="ln1128">    points.push_back(std::pair&lt;double,double&gt;(end.x() + orthogonalLine.x(),</a>
+<a name="ln1129">                                              end.y() + orthogonalLine.y()));</a>
+<a name="ln1130">    points.push_back(std::pair&lt;double,double&gt;(end.x() - orthogonalLine.x(),</a>
+<a name="ln1131">                                              end.y() - orthogonalLine.y()));</a>
+<a name="ln1132">    painter-&gt;DrawPolygon(points);</a>
+<a name="ln1133"> </a>
+<a name="ln1134">  }</a>
+<a name="ln1135"> </a>
+<a name="ln1136">  inline void OBDepictPrivateBallAndStick::DrawHash(OBAtom* beginAtom,</a>
+<a name="ln1137">  OBAtom* endAtom)</a>
+<a name="ln1138">  {</a>
+<a name="ln1139">    const vector3 begin = beginAtom-&gt;GetVector();</a>
+<a name="ln1140">    const vector3 end = endAtom-&gt;GetVector();</a>
+<a name="ln1141">    const vector3 vb = end - begin;</a>
+<a name="ln1142">    const vector3 orthogonalLine = cross(vb, VZ).normalize() * 0.5 * bondWidth;</a>
+<a name="ln1143">    const double lines[6] = { 0.20, 0.36, 0.52, 0.68, 0.84, 1.0 };</a>
+<a name="ln1144">    const double oldwidth = painter-&gt;GetPenWidth();</a>
+<a name="ln1145">    painter-&gt;SetPenWidth(1);</a>
+<a name="ln1146">    for (int k = 0; k &lt; 6; ++k) {</a>
+<a name="ln1147">      const double w = lines[k];</a>
+<a name="ln1148">      painter-&gt;DrawLine(begin.x() + vb.x() * w + orthogonalLine.x() * w,</a>
+<a name="ln1149">                        begin.y() + vb.y() * w + orthogonalLine.y() * w,</a>
+<a name="ln1150">                        begin.x() + vb.x() * w - orthogonalLine.x() * w,</a>
+<a name="ln1151">                        begin.y() + vb.y() * w - orthogonalLine.y() * w);</a>
+<a name="ln1152">    }</a>
+<a name="ln1153">    painter-&gt;SetPenWidth(oldwidth);</a>
+<a name="ln1154"> </a>
+<a name="ln1155">  }</a>
+<a name="ln1156"> </a>
+<a name="ln1157">  inline void OBDepictPrivateBallAndStick::DrawWobblyBond(OBAtom* beginAtom,</a>
+<a name="ln1158">  OBAtom* endAtom)</a>
+<a name="ln1159">  {</a>
+<a name="ln1160">    DrawSimpleBond(beginAtom, endAtom, 1);</a>
+<a name="ln1161">  }</a>
+<a name="ln1162"> </a>
+<a name="ln1163">  inline void OBDepictPrivateBallAndStick::DrawRingBond(OBAtom* beginAtom,</a>
+<a name="ln1164">  OBAtom* endAtom, const vector3&amp; center, int order)</a>
+<a name="ln1165">  {</a>
+<a name="ln1166">    OBDepictPrivate::DrawRingBond(beginAtom, endAtom, center, order);</a>
+<a name="ln1167">  }</a>
+<a name="ln1168"> </a>
+<a name="ln1169"> </a>
+<a name="ln1170">  inline void OBDepictPrivateBallAndStick::DrawRing(OBRing* ring,</a>
+<a name="ln1171">  OBBitVec&amp; drawnBonds)</a>
+<a name="ln1172">  {</a>
+<a name="ln1173">    OBDepictPrivate::DrawRing(ring, drawnBonds);</a>
+<a name="ln1174">  }</a>
+<a name="ln1175"> </a>
+<a name="ln1176">inline void OBDepictPrivateBallAndStick::DrawAromaticRing(OBRing* ring,</a>
+<a name="ln1177">OBBitVec&amp; drawnBonds)</a>
+<a name="ln1178">  {</a>
+<a name="ln1179"> </a>
+<a name="ln1180">    const std::vector&lt;int&gt; indexes = ring-&gt;_path;</a>
+<a name="ln1181">    const size_t ringSize = indexes.size();</a>
+<a name="ln1182">    vector3 center(VZero);</a>
+<a name="ln1183">    double maxdist =0.;</a>
+<a name="ln1184">    for (std::vector&lt;int&gt;::const_iterator l = indexes.begin(); l != indexes.end(); ++l) {</a>
+<a name="ln1185">      center += mol-&gt;GetAtom(*l)-&gt;GetVector();</a>
+<a name="ln1186">      maxdist = max(maxdist, GetAtomRadius(mol-&gt;GetAtom(*l)));</a>
+<a name="ln1187">    }</a>
+<a name="ln1188">    center /= ringSize;</a>
+<a name="ln1189"> </a>
+<a name="ln1190">    for (unsigned int l = 0; l &lt; indexes.size(); ++l) {</a>
+<a name="ln1191">      OBAtom *prev  = mol-&gt;GetAtom(indexes[l]);</a>
+<a name="ln1192">      OBAtom *begin = mol-&gt;GetAtom(indexes[(l+1) % ringSize]);</a>
+<a name="ln1193">      OBAtom *end   = mol-&gt;GetAtom(indexes[(l+2) % ringSize]);</a>
+<a name="ln1194">      OBAtom *next  = mol-&gt;GetAtom(indexes[(l+3) % ringSize]);</a>
+<a name="ln1195"> </a>
+<a name="ln1196">      OBBond *ringBond = mol-&gt;GetBond(begin, end);</a>
+<a name="ln1197"> </a>
+<a name="ln1198">      // calculate the expected opacity and width</a>
+<a name="ln1199">      // to simulate perspective</a>
+<a name="ln1200">      penWidth = 3.0;</a>
+<a name="ln1201">      bondColor.alpha = 1.0;</a>
+<a name="ln1202"> </a>
+<a name="ln1203">      if (fabs(zScale) &gt; 1.0e-1) {</a>
+<a name="ln1204">        double beginAtomScale = (begin-&gt;GetZ() - zMin) / zScale;</a>
+<a name="ln1205">        double endAtomScale = (end-&gt;GetZ() - zMin) / zScale;</a>
+<a name="ln1206">        double averageScale = (beginAtomScale + endAtomScale)/2.0;</a>
+<a name="ln1207">        if (averageScale &lt; 0.15)</a>
+<a name="ln1208">          averageScale = 0.15;</a>
+<a name="ln1209"> </a>
+<a name="ln1210">        penWidth = 3.0 * averageScale;</a>
+<a name="ln1211">        bondColor.alpha = averageScale;</a>
+<a name="ln1212">      }</a>
+<a name="ln1213">      painter-&gt;SetPenWidth(penWidth);</a>
+<a name="ln1214"> </a>
+<a name="ln1215">      if((options &amp; OBDepict::internalColor) &amp;&amp; ringBond-&gt;HasData(&quot;color&quot;))</a>
+<a name="ln1216">        painter-&gt;SetPenColor(OBColor(ringBond-&gt;GetData(&quot;color&quot;)-&gt;GetValue()));</a>
+<a name="ln1217">      else</a>
+<a name="ln1218">        painter-&gt;SetPenColor(bondColor);</a>
+<a name="ln1219"> </a>
+<a name="ln1220">      DrawAromaticRingBond(prev,begin, end, next, center, maxdist);</a>
+<a name="ln1221">      drawnBonds.SetBitOn(ringBond-&gt;GetId());</a>
+<a name="ln1222">    }</a>
+<a name="ln1223">  }</a>
+<a name="ln1224"> </a>
+<a name="ln1225">  inline void OBDepictPrivateBallAndStick::DrawAromaticRingBond(OBAtom *prevAtom, OBAtom *beginAtom, OBAtom *endAtom, OBAtom *nextAtom, const vector3 &amp;center, double dist)</a>
+<a name="ln1226">  {</a>
+<a name="ln1227">    const vector3 prev  = prevAtom-&gt;GetVector();</a>
+<a name="ln1228">    const vector3 begin = beginAtom-&gt;GetVector();</a>
+<a name="ln1229">    const vector3 end   = endAtom-&gt;GetVector();</a>
+<a name="ln1230">    const vector3 next  = nextAtom-&gt;GetVector();</a>
+<a name="ln1231"> </a>
+<a name="ln1232">    const vector3 orthogonalLine = cross(end - begin, VZ).normalize();</a>
+<a name="ln1233">    const vector3 offset = orthogonalLine * 0.5 * bondSpacing;</a>
+<a name="ln1234">    painter-&gt;DrawLine(begin.x() - offset.x(), begin.y() - offset.y(),</a>
+<a name="ln1235">                      end.x() - offset.x(), end.y() - offset.y());</a>
+<a name="ln1236"> </a>
+<a name="ln1237">    static const float dashpattern[] = {5., 5.};</a>
+<a name="ln1238">    static const vector&lt;double&gt; pat = vector&lt;double&gt;(dashpattern,dashpattern + sizeof(dashpattern)/sizeof(double));</a>
+<a name="ln1239">    painter-&gt;DrawLine(begin.x() + offset.x(), begin.y() + offset.y(),</a>
+<a name="ln1240">                      end.x() + offset.x(), end.y() + offset.y(), pat);</a>
+<a name="ln1241">  }</a>
+<a name="ln1242"> </a>
+<a name="ln1243">  void OBDepictPrivateBallAndStick::DrawAtom(OBAtom *atom)</a>
+<a name="ln1244">  {</a>
+<a name="ln1245">    double r, g, b;</a>
+<a name="ln1246">    OBElements::GetRGB(atom-&gt;GetAtomicNum(), &amp;r, &amp;g, &amp;b);</a>
+<a name="ln1247">    OBColor atomColor = OBColor(r, g, b);</a>
+<a name="ln1248">    double opacity = 1.0;</a>
+<a name="ln1249">    if (fabs(zScale) &gt; 1.0e-1)</a>
+<a name="ln1250">      opacity = sqrt((atom-&gt;GetZ() - zMin) / zScale);</a>
+<a name="ln1251">    if (opacity &lt; 0.2)</a>
+<a name="ln1252">      opacity = 0.2;</a>
+<a name="ln1253"> </a>
+<a name="ln1254">    painter-&gt;SetFillRadial(OBColor(&quot;white&quot;),atomColor);</a>
+<a name="ln1255">    painter-&gt;DrawBall(atom-&gt;GetVector().x(), atom-&gt;GetVector().y(),GetAtomRadius(atom), opacity);</a>
+<a name="ln1256">  }</a>
+<a name="ln1257"> </a>
+<a name="ln1258">  double OBDepictPrivateBallAndStick::GetAtomRadius(OBAtom *atom)</a>
+<a name="ln1259">  {</a>
+<a name="ln1260">    double radius = OBElements::GetCovalentRad(atom-&gt;GetAtomicNum());</a>
+<a name="ln1261">    double perspective = 1.0;</a>
+<a name="ln1262">    if (fabs(zScale) &gt; 1.0e-1)</a>
+<a name="ln1263">      perspective = (atom-&gt;GetZ() - zMin) / zScale;</a>
+<a name="ln1264">    if (perspective &lt; 0.5)</a>
+<a name="ln1265">      perspective = 0.5;</a>
+<a name="ln1266"> </a>
+<a name="ln1267">    return perspective * radius * bondLength / 1.1;</a>
+<a name="ln1268">  }</a>
+<a name="ln1269"> </a>
+<a name="ln1270">  void OBDepictPrivateBallAndStick::DrawAtomLabel(const std::string &amp;label, int alignment, const vector3 &amp;pos)</a>
+<a name="ln1271">    {</a>
+<a name="ln1272">      if (m_symbolOnBall)</a>
+<a name="ln1273">        OBDepictPrivate::DrawAtomLabel(label,alignment,pos);</a>
+<a name="ln1274">    }</a>
+<a name="ln1275"> </a>
+<a name="ln1276">}</a>
+<a name="ln1277"> </a>
+<a name="ln1278">/// @file depict.cpp</a>
+<a name="ln1279">/// @brief 2D depiction of molecules using OBPainter.</a>
+
+</code></pre>
+<div class="balloon" rel="462"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v614/" target="_blank">V614</a> Potentially uninitialized variable 'max_x' used.</p></div>
+<div class="balloon" rel="462"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v614/" target="_blank">V614</a> Potentially uninitialized variable 'min_x' used.</p></div>
+<div class="balloon" rel="463"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v614/" target="_blank">V614</a> Potentially uninitialized variable 'max_y' used.</p></div>
+<div class="balloon" rel="463"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v614/" target="_blank">V614</a> Potentially uninitialized variable 'min_y' used.</p></div>
+<div class="balloon" rel="465"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v614/" target="_blank">V614</a> Potentially uninitialized variable 'max_z' used.</p></div>
+<div class="balloon" rel="465"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v614/" target="_blank">V614</a> Potentially uninitialized variable 'min_z' used.</p></div>
+<div class="balloon" rel="590"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v583/" target="_blank">V583</a> The '?:' operator, regardless of its conditional expression, always returns one and the same value: - 0.2 * metrics.height.</p></div>
+<div class="balloon" rel="1024"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v561/" target="_blank">V561</a> It's probably better to assign value to 'metrics' variable than to declare it anew. Previous declaration: depict.cpp, line 947.</p></div>
+<div class="balloon" rel="1029"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v561/" target="_blank">V561</a> It's probably better to assign value to 'metrics' variable than to declare it anew. Previous declaration: depict.cpp, line 947.</p></div>
+<div class="balloon" rel="1238"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v706/" target="_blank">V706</a> Suspicious division: sizeof (dashpattern) / sizeof (double). Size of every element in 'dashpattern' array does not equal to divisor.</p></div>
+<div class="balloon" rel="56"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v730/" target="_blank">V730</a> Not all members of a class are initialized inside the constructor. Consider inspecting: zScale, zMin.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

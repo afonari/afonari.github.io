@@ -1,0 +1,563 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>mdffformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Copyright (C) 2004 by Chris Morley for template</a>
+<a name="ln3">Copyright (C) 2009 by David C. Lonie for VASP template</a>
+<a name="ln4">Copyright (C) 2014 by Kirill Okhotnikov for MDFF format </a>
+<a name="ln5"> </a>
+<a name="ln6">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln7">it under the terms of the GNU General Public License as published by</a>
+<a name="ln8">the Free Software Foundation version 2 of the License.</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is distributed in the hope that it will be useful,</a>
+<a name="ln11">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln12">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln13">GNU General Public License for more details.</a>
+<a name="ln14">***********************************************************************/</a>
+<a name="ln15"> </a>
+<a name="ln16">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln17">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln18">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln23"> </a>
+<a name="ln24"> </a>
+<a name="ln25">#include &lt;limits.h&gt;</a>
+<a name="ln26">#include &lt;locale&gt; // For isalpha(int)</a>
+<a name="ln27">#include &lt;map&gt;</a>
+<a name="ln28">#include &lt;stdexcept&gt;</a>
+<a name="ln29">#include &lt;cstdlib&gt;</a>
+<a name="ln30">#include &lt;algorithm&gt;</a>
+<a name="ln31"> </a>
+<a name="ln32">#ifdef _MSC_VER</a>
+<a name="ln33">#define INFINITY (DBL_MAX+DBL_MAX)</a>
+<a name="ln34">#define NAN (INFINITY-INFINITY)</a>
+<a name="ln35">#endif</a>
+<a name="ln36"> </a>
+<a name="ln37">using namespace std;</a>
+<a name="ln38">namespace OpenBabel {</a>
+<a name="ln39">  class MDFFFormat : public OBMoleculeFormat</a>
+<a name="ln40">  {</a>
+<a name="ln41">  public:</a>
+<a name="ln42"> </a>
+<a name="ln43">    MDFFFormat()</a>
+<a name="ln44">    {</a>
+<a name="ln45">      OBConversion::RegisterFormat(&quot;POSFF&quot;,this);</a>
+<a name="ln46">      OBConversion::RegisterFormat(&quot;CONTFF&quot;,this);</a>
+<a name="ln47">      OBConversion::RegisterFormat(&quot;MDFF&quot;,this);      </a>
+<a name="ln48">    }</a>
+<a name="ln49"> </a>
+<a name="ln50">    virtual const char* Description()</a>
+<a name="ln51">    {</a>
+<a name="ln52">      return</a>
+<a name="ln53">        &quot;MDFF format\n&quot;</a>
+<a name="ln54">        &quot;The format used in the POSFF and CONTFF files used by MDFF\n\n&quot;</a>
+<a name="ln55"> </a>
+<a name="ln56">        &quot;POSFF and CONTFF are read to obtain information from MDFF calculations.\n&quot;</a>
+<a name="ln57">        &quot;The program will try to read the IONS.POT file if the name of the\n&quot;</a>
+<a name="ln58">        &quot;input file is POSFF or CONTFF.\n&quot;</a>
+<a name="ln59"> </a>
+<a name="ln60">        &quot;Write Options e.g. -xw\n&quot;</a>
+<a name="ln61">        &quot;  w Sort atoms by atomic number\n&quot;</a>
+<a name="ln62">        &quot;  u &lt;elementlist&gt; Sort atoms by list of element symbols provided in comma-separated string w/o spaces\n&quot;</a>
+<a name="ln63">        &quot;  i Write IONS.POT file\n&quot;              </a>
+<a name="ln64">        ;</a>
+<a name="ln65"> </a>
+<a name="ln66">    };</a>
+<a name="ln67"> </a>
+<a name="ln68">    virtual const char* SpecificationURL(){return &quot;https://code.google.com/p/mdff/&quot;;};</a>
+<a name="ln69"> </a>
+<a name="ln70">    /* Flags() can return be any of the following combined by |</a>
+<a name="ln71">       or be omitted if none apply</a>
+<a name="ln72">       NOTREADABLE  READONEONLY  NOTWRITABLE  WRITEONEONLY  DEFAULTFORMAT</a>
+<a name="ln73">       READBINARY  WRITEBINARY  READXML  ZEROATOMSOK */</a>
+<a name="ln74">    virtual unsigned int Flags()</a>
+<a name="ln75">    {</a>
+<a name="ln76">      return READONEONLY;</a>
+<a name="ln77">    };</a>
+<a name="ln78"> </a>
+<a name="ln79">    virtual int SkipObjects(int n, OBConversion* pConv)</a>
+<a name="ln80">    {</a>
+<a name="ln81">      return 0;</a>
+<a name="ln82">    };</a>
+<a name="ln83"> </a>
+<a name="ln84">    ////////////////////////////////////////////////////</a>
+<a name="ln85">    /// Declarations for the &quot;API&quot; interface functions. Definitions are below</a>
+<a name="ln86">    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln87">    virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln88"> </a>
+<a name="ln89">  private:</a>
+<a name="ln90">    /* Add declarations for any local function or member variables used.</a>
+<a name="ln91">       Generally only a single instance of a format class is used. Keep this in</a>
+<a name="ln92">       mind if you employ member variables. */</a>
+<a name="ln93">  };</a>
+<a name="ln94">  ////////////////////////////////////////////////////</a>
+<a name="ln95"> </a>
+<a name="ln96">  //Make an instance of the format class</a>
+<a name="ln97">  MDFFFormat theMDFFFormat;</a>
+<a name="ln98"> </a>
+<a name="ln99">  /////////////////////////////////////////////////////////////////</a>
+<a name="ln100">  </a>
+<a name="ln101">  struct atm_t_prop</a>
+<a name="ln102">  {</a>
+<a name="ln103">    int num_of_atoms;</a>
+<a name="ln104">    int atom_etab_num;</a>
+<a name="ln105">    string atom_symbol;</a>
+<a name="ln106">    double atom_charge;</a>
+<a name="ln107">    atm_t_prop(): num_of_atoms(0), atom_symbol(&quot;&quot;), atom_charge(0.0) {};</a>
+<a name="ln108">  };</a>
+<a name="ln109">  </a>
+<a name="ln110"> </a>
+<a name="ln111">  bool MDFFFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln112">  {</a>
+<a name="ln113">    OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln114">    if (pmol == nullptr)</a>
+<a name="ln115">      return false;</a>
+<a name="ln116"> </a>
+<a name="ln117">    // Move stream to EOF, some apps check ifs position to check for multimolecule files.</a>
+<a name="ln118">    // MDFF does not support this, and this parser makes its own streams.</a>
+<a name="ln119">    istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln120">    ifs.seekg (0, ios::end);</a>
+<a name="ln121"> </a>
+<a name="ln122">    char buffer[BUFF_SIZE];</a>
+<a name="ln123">    double x,y,z;</a>
+<a name="ln124">    unsigned int totalAtoms_fl = 0, totalTypes = 0;</a>
+<a name="ln125">    unsigned int totalAtoms = 0, atomCount = 0;</a>
+<a name="ln126">    OBAtom *atom;</a>
+<a name="ln127">    bool cartesian;</a>
+<a name="ln128">    vector&lt;string&gt; vs;</a>
+<a name="ln129">    vector&lt;atm_t_prop&gt; atom_t_prop;</a>
+<a name="ln130"> </a>
+<a name="ln131">    // Get path of input file:</a>
+<a name="ln132">    //    ifs_path.getline(buffer,BUFF_SIZE);</a>
+<a name="ln133">    //    path = buffer;</a>
+<a name="ln134">    string full_path = pConv-&gt;GetInFilename();</a>
+<a name="ln135">    size_t found = full_path.rfind(&quot;/&quot;);</a>
+<a name="ln136">    string path = (found == string::npos) ? &quot;&quot; : path.substr(0, found);</a>
+<a name="ln137">    string short_fn = full_path.substr(path.length(), string::npos);</a>
+<a name="ln138"> </a>
+<a name="ln139">    // Open files</a>
+<a name="ln140">    string posff_filename = pConv-&gt;GetInFilename(); </a>
+<a name="ln141">    ifstream ifs_posff (posff_filename.c_str());</a>
+<a name="ln142">    if (!ifs_posff) {</a>
+<a name="ln143">      return false; // No geometry file?</a>
+<a name="ln144">    }</a>
+<a name="ln145"> </a>
+<a name="ln146">    bool process_ions = (short_fn == &quot;CONTFF&quot;) || (short_fn == &quot;POSFF&quot;);</a>
+<a name="ln147">    string ionspot_filename = (path == &quot;&quot;) ? &quot;IONS.POT&quot; : path + &quot;/IONS.POT&quot;;    </a>
+<a name="ln148">    ifstream ifs_ions;</a>
+<a name="ln149">    if( process_ions )</a>
+<a name="ln150">    {  </a>
+<a name="ln151">      ifs_ions.open(ionspot_filename.c_str());</a>
+<a name="ln152">      process_ions = ifs_ions.is_open();</a>
+<a name="ln153">    }  </a>
+<a name="ln154">    </a>
+<a name="ln155">    pmol-&gt;BeginModify();</a>
+<a name="ln156"> </a>
+<a name="ln157">    // Start working on POSFF:</a>
+<a name="ln158">    ifs_posff.getline(buffer,BUFF_SIZE); // Total Number of atoms</a>
+<a name="ln159">    totalAtoms_fl = atoi(buffer);</a>
+<a name="ln160">    ifs_posff.getline(buffer,BUFF_SIZE); // Comment line</a>
+<a name="ln161">    pmol-&gt;SetTitle(buffer);</a>
+<a name="ln162"> </a>
+<a name="ln163">    ifs_posff.getline(buffer,BUFF_SIZE); // X_Vec vector</a>
+<a name="ln164">    tokenize(vs, buffer);</a>
+<a name="ln165">    x = atof(vs.at(0).c_str());</a>
+<a name="ln166">    y = atof(vs.at(1).c_str());</a>
+<a name="ln167">    z = atof(vs.at(2).c_str());</a>
+<a name="ln168">    vector3 x_vec (x,y,z);</a>
+<a name="ln169"> </a>
+<a name="ln170">    ifs_posff.getline(buffer,BUFF_SIZE); // Y_Vec vector</a>
+<a name="ln171">    tokenize(vs, buffer);</a>
+<a name="ln172">    x = atof(vs.at(0).c_str());</a>
+<a name="ln173">    y = atof(vs.at(1).c_str());</a>
+<a name="ln174">    z = atof(vs.at(2).c_str());</a>
+<a name="ln175">    vector3 y_vec (x,y,z);</a>
+<a name="ln176"> </a>
+<a name="ln177">    ifs_posff.getline(buffer,BUFF_SIZE); // Z_Vec vector</a>
+<a name="ln178">    tokenize(vs, buffer);</a>
+<a name="ln179">    x = atof(vs.at(0).c_str());</a>
+<a name="ln180">    y = atof(vs.at(1).c_str());</a>
+<a name="ln181">    z = atof(vs.at(2).c_str());</a>
+<a name="ln182">    vector3 z_vec (x,y,z);</a>
+<a name="ln183"> </a>
+<a name="ln184">    // Build unit cell</a>
+<a name="ln185">    OBUnitCell *cell = new OBUnitCell;</a>
+<a name="ln186">    cell-&gt;SetData(x_vec, y_vec, z_vec);</a>
+<a name="ln187">    cell-&gt;SetSpaceGroup(1);</a>
+<a name="ln188">    pmol-&gt;SetData(cell);</a>
+<a name="ln189">    </a>
+<a name="ln190">    // get number of different atoms types.</a>
+<a name="ln191">    ifs_posff.getline(buffer,BUFF_SIZE);</a>
+<a name="ln192">    totalTypes = atoi(buffer);</a>
+<a name="ln193">    atom_t_prop.resize(totalTypes);</a>
+<a name="ln194"> </a>
+<a name="ln195">    ifs_posff.getline(buffer, BUFF_SIZE);</a>
+<a name="ln196">    tokenize(vs, buffer);</a>
+<a name="ln197">    </a>
+<a name="ln198">    if(vs.size() != atom_t_prop.size() )</a>
+<a name="ln199">    {</a>
+<a name="ln200">      obErrorLog.ThrowError(__FUNCTION__, &quot;Number of types is wrong. Format is not read.&quot;, obError);</a>
+<a name="ln201">      pmol-&gt;EndModify();</a>
+<a name="ln202">      return false;</a>
+<a name="ln203">    }  </a>
+<a name="ln204">    for (size_t i = 0; i &lt; atom_t_prop.size(); ++i) </a>
+<a name="ln205">    {  </a>
+<a name="ln206">      atom_t_prop[i].atom_symbol = vs[i];</a>
+<a name="ln207">      atom_t_prop[i].atom_etab_num = OpenBabel::OBElements::GetAtomicNum(atom_t_prop[i].atom_symbol.c_str());</a>
+<a name="ln208">    }  </a>
+<a name="ln209"> </a>
+<a name="ln210">    // Fetch next line to get stoichiometry</a>
+<a name="ln211">    ifs_posff.getline(buffer,BUFF_SIZE);</a>
+<a name="ln212">    tokenize(vs, buffer);</a>
+<a name="ln213">    </a>
+<a name="ln214">    if(vs.size() != atom_t_prop.size() )</a>
+<a name="ln215">    {</a>
+<a name="ln216">      obErrorLog.ThrowError(__FUNCTION__, &quot;Number of types is wrong. Format is not readed.&quot;, obError);</a>
+<a name="ln217">      pmol-&gt;EndModify();</a>
+<a name="ln218">      return false;</a>
+<a name="ln219">    }  </a>
+<a name="ln220">    </a>
+<a name="ln221">    // Extract and sum the atom counts. The sum is used to parse the atomic</a>
+<a name="ln222">    // coordinates</a>
+<a name="ln223">    totalAtoms = 0;</a>
+<a name="ln224">    for (size_t i = 0; i &lt; atom_t_prop.size(); ++i) </a>
+<a name="ln225">    {  </a>
+<a name="ln226">      int currentCount = atoi(vs.at(i).c_str());</a>
+<a name="ln227">      atom_t_prop[i].num_of_atoms =  currentCount;</a>
+<a name="ln228">      totalAtoms += currentCount;</a>
+<a name="ln229">    }</a>
+<a name="ln230">    </a>
+<a name="ln231">    //Read Ions properties</a>
+<a name="ln232">    if( process_ions )</a>
+<a name="ln233">    {</a>
+<a name="ln234">      while(!ifs_ions.eof())</a>
+<a name="ln235">      {</a>
+<a name="ln236">        vector&lt;string&gt; vs;</a>
+<a name="ln237">        ifs_ions.getline(buffer, BUFF_SIZE); </a>
+<a name="ln238">        tokenize(vs, buffer);</a>
+<a name="ln239">        vs.erase(find(vs.begin(), vs.end(), &quot;!&quot;) ,vs.end());</a>
+<a name="ln240">        vs.erase(remove(vs.begin(), vs.end(), &quot;=&quot;));</a>
+<a name="ln241">                </a>
+<a name="ln242">        if(vs.size() == 0)</a>
+<a name="ln243">          continue;</a>
+<a name="ln244">        if(vs[0] == &quot;qch&quot;)</a>
+<a name="ln245">        {</a>
+<a name="ln246">          if(vs.size() - 1 != atom_t_prop.size())</a>
+<a name="ln247">            obErrorLog.ThrowError(__FUNCTION__, &quot;Number of charges for atom is wrong. Skipped&quot;, obWarning);</a>
+<a name="ln248">          else</a>
+<a name="ln249">            for(int i = 0; i &lt; atom_t_prop.size(); i++)</a>
+<a name="ln250">            {</a>
+<a name="ln251">              string tk = vs[i + 1];</a>
+<a name="ln252">              string str = tk.substr(tk.length() - 2) == &quot;d0&quot; ? tk.substr(0, tk.length() - 2) : tk;</a>
+<a name="ln253">              atom_t_prop[i].atom_charge = atof(tk.c_str());</a>
+<a name="ln254">            }  </a>
+<a name="ln255">        } </a>
+<a name="ln256">      }</a>
+<a name="ln257">    }  </a>
+<a name="ln258"> </a>
+<a name="ln259">    // Cartesian or fractional?</a>
+<a name="ln260">    ifs_posff.getline(buffer,BUFF_SIZE);</a>
+<a name="ln261">    // [C|c|K|k] indicates cartesian coordinates, anything else (including</a>
+<a name="ln262">    // an empty string, buffer[0] == 0) indicates fractional coordinates</a>
+<a name="ln263">    cartesian = ( buffer[0] == 'C' || buffer[0] == 'c' || </a>
+<a name="ln264">                  buffer[0] == 'K' || buffer[0] == 'k' );</a>
+<a name="ln265"> </a>
+<a name="ln266">    atomCount = 0;</a>
+<a name="ln267">    for(unsigned int i = 0; i &lt; atom_t_prop.size(); i++)</a>
+<a name="ln268">    {</a>
+<a name="ln269">      bool err_break = false;</a>
+<a name="ln270">      for(unsigned int j = 0; j &lt; atom_t_prop[i].num_of_atoms; j++)</a>
+<a name="ln271">      {</a>
+<a name="ln272">        ifs_posff.getline(buffer, BUFF_SIZE); // atom location</a>
+<a name="ln273">        // Parse the buffer now.</a>
+<a name="ln274">        tokenize(vs, buffer);</a>
+<a name="ln275">        atom = pmol-&gt;NewAtom();</a>
+<a name="ln276">        atom-&gt;SetAtomicNum(atom_t_prop[i].atom_etab_num);</a>
+<a name="ln277">        </a>
+<a name="ln278">        err_break = ( vs.size() &lt; 4 ) || ( vs[0] != atom_t_prop[i].atom_symbol );</a>
+<a name="ln279">        if (err_break)</a>
+<a name="ln280">          break;</a>
+<a name="ln281"> </a>
+<a name="ln282">        x = atof(vs[1].c_str());</a>
+<a name="ln283">        y = atof(vs[2].c_str());</a>
+<a name="ln284">        z = atof(vs[3].c_str());</a>
+<a name="ln285">        vector3 coords (x,y,z);</a>
+<a name="ln286">        if (!cartesian)</a>
+<a name="ln287">          coords = cell-&gt;FractionalToCartesian( coords );</a>
+<a name="ln288">        atom-&gt;SetVector(coords);</a>
+<a name="ln289">        atom-&gt;SetFormalCharge(atom_t_prop[i].atom_charge);</a>
+<a name="ln290">        atomCount++;</a>
+<a name="ln291">      }</a>
+<a name="ln292">      if (err_break)</a>
+<a name="ln293">        break;</a>
+<a name="ln294">    }</a>
+<a name="ln295">    </a>
+<a name="ln296">    if ( atomCount != totalAtoms_fl )</a>
+<a name="ln297">    {</a>
+<a name="ln298">      stringstream errorMsg;      </a>
+<a name="ln299">      errorMsg &lt;&lt; &quot;Problems reading a MDFF file: &quot;</a>
+<a name="ln300">               &lt;&lt; &quot;The number of atoms read is not right.&quot;</a>
+<a name="ln301">               &lt;&lt;  &quot;atomCount = &quot; &lt;&lt; atomCount &lt;&lt; &quot; totalAtoms_fl = &quot; &lt;&lt; totalAtoms_fl &lt;&lt; endl;</a>
+<a name="ln302">      obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obError);</a>
+<a name="ln303">      </a>
+<a name="ln304">      pmol-&gt;EndModify();</a>
+<a name="ln305">      return false;</a>
+<a name="ln306">    }</a>
+<a name="ln307"> </a>
+<a name="ln308">    // There is some trailing garbage, but AFAIK it's not useful for anything.</a>
+<a name="ln309">    ifs_posff.close();</a>
+<a name="ln310">    pmol-&gt;EndModify();</a>
+<a name="ln311">    </a>
+<a name="ln312">    return true;</a>
+<a name="ln313">  }</a>
+<a name="ln314">  </a>
+<a name="ln315">  class aindx</a>
+<a name="ln316">  {</a>
+<a name="ln317">  public:</a>
+<a name="ln318">    int index_param;</a>
+<a name="ln319">    //int etab_number;</a>
+<a name="ln320">    int atom_index;</a>
+<a name="ln321">    bool operator&lt;(const aindx &amp;left) const</a>
+<a name="ln322">    {</a>
+<a name="ln323">      vector&lt;int&gt; vs;</a>
+<a name="ln324">      vs.push_back(index_param - left.index_param);</a>
+<a name="ln325">      //vs.push_back(etab_number - left.etab_number);</a>
+<a name="ln326">      vs.push_back(atom_index  - left.atom_index);</a>
+<a name="ln327">      </a>
+<a name="ln328">      bool less = false;</a>
+<a name="ln329">      for(int i = 0; i &lt; vs.size(); i++)      </a>
+<a name="ln330">      {</a>
+<a name="ln331">        if( vs[i] != 0)</a>
+<a name="ln332">        {  </a>
+<a name="ln333">          less = vs[i] &lt; 0;</a>
+<a name="ln334">          break;</a>
+<a name="ln335">        }  </a>
+<a name="ln336">      }</a>
+<a name="ln337">      return less;  </a>
+<a name="ln338">    }</a>
+<a name="ln339">  };</a>
+<a name="ln340"> </a>
+<a name="ln341">  bool MDFFFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln342">  {</a>
+<a name="ln343">    //No surprises in this routine, cartesian coordinates are written out</a>
+<a name="ln344">    //and if at least a single atom has information about constraints,</a>
+<a name="ln345">    //then selective dynamics is used and the info is written out.</a>
+<a name="ln346">    //The atoms are ordered according to their atomic number so that the</a>
+<a name="ln347">    //output looks nice, this can be reversed by using command line flag &quot;-xw&quot;.</a>
+<a name="ln348">    //</a>
+<a name="ln349">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln350">    if (pmol == nullptr) {</a>
+<a name="ln351">      return false;</a>
+<a name="ln352">    }</a>
+<a name="ln353"> </a>
+<a name="ln354">    ostream&amp; ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln355">    OBMol mol(*pmol);</a>
+<a name="ln356">    </a>
+<a name="ln357">    if(mol.HasData(OBGenericDataType::UnitCell))</a>
+<a name="ln358">    {</a>
+<a name="ln359">      OBUnitCell *uc = static_cast&lt;OBUnitCell*&gt;(mol.GetData(OBGenericDataType::UnitCell));</a>
+<a name="ln360">      uc-&gt;FillUnitCell(&amp;mol);</a>
+<a name="ln361">    }            </a>
+<a name="ln362"> </a>
+<a name="ln363">    char buffer[BUFF_SIZE];</a>
+<a name="ln364">    OBUnitCell *uc = nullptr;</a>
+<a name="ln365">    vector&lt;vector3&gt; cell;</a>
+<a name="ln366"> </a>
+<a name="ln367">    const char * sortAtoms     = pConv-&gt;IsOption(&quot;w&quot;, OBConversion::OUTOPTIONS);</a>
+<a name="ln368">    const char * sortAtomsList = pConv-&gt;IsOption(&quot;u&quot;, OBConversion::OUTOPTIONS);</a>
+<a name="ln369">    const char * writeIONS     = pConv-&gt;IsOption(&quot;i&quot;, OBConversion::OUTOPTIONS);    </a>
+<a name="ln370"> </a>
+<a name="ln371">    // Create a list of ids. These may be sorted by atomic number depending</a>
+<a name="ln372">    // on the value of keepOrder.</a>
+<a name="ln373">    </a>
+<a name="ln374">    map&lt;int, int&gt; indl; </a>
+<a name="ln375">    </a>
+<a name="ln376">    if (sortAtoms != nullptr)</a>
+<a name="ln377">    {</a>
+<a name="ln378">      indl.clear();</a>
+<a name="ln379">      for(int i = 0; i &lt; 200; i++)</a>
+<a name="ln380">        indl[i] = i;</a>
+<a name="ln381">    }</a>
+<a name="ln382">    </a>
+<a name="ln383">    if (sortAtomsList != nullptr)</a>
+<a name="ln384">    {</a>
+<a name="ln385">      indl.clear();</a>
+<a name="ln386">      vector&lt;string&gt; vs;</a>
+<a name="ln387">      tokenize(vs, sortAtomsList);</a>
+<a name="ln388">      for(int i = 0; i &lt; vs.size(); i++)</a>
+<a name="ln389">        indl[OBElements::GetAtomicNum(vs[i].c_str())] = i;</a>
+<a name="ln390">    }</a>
+<a name="ln391">    </a>
+<a name="ln392">    map&lt;aindx, OBAtom *&gt; amap;</a>
+<a name="ln393">    </a>
+<a name="ln394">    FOR_ATOMS_OF_MOL(atom, mol) </a>
+<a name="ln395">    {</a>
+<a name="ln396">      aindx ndx;</a>
+<a name="ln397">      ndx.index_param = indl[atom-&gt;GetAtomicNum()];</a>
+<a name="ln398">      ndx.atom_index = atom-&gt;GetIndex();</a>
+<a name="ln399">      amap[ndx] = &amp;(*atom);</a>
+<a name="ln400">    }</a>
+<a name="ln401">    </a>
+<a name="ln402">    //Set elements array</a>
+<a name="ln403">    vector&lt; pair&lt;string, unsigned int&gt; &gt; atypes_def;</a>
+<a name="ln404">    string last_atom_smb = &quot;&quot;;</a>
+<a name="ln405">    for(map&lt;aindx, OBAtom *&gt;::const_iterator it = amap.begin(); it != amap.end(); ++it)</a>
+<a name="ln406">    {</a>
+<a name="ln407">      string curr_atom_smb = OpenBabel::OBElements::GetSymbol(it-&gt;second-&gt;GetAtomicNum());</a>
+<a name="ln408">      if( last_atom_smb != curr_atom_smb )</a>
+<a name="ln409">      {  </a>
+<a name="ln410">        last_atom_smb = curr_atom_smb;</a>
+<a name="ln411">        atypes_def.push_back( pair&lt;string, unsigned int&gt;(curr_atom_smb, 0) );</a>
+<a name="ln412">      }</a>
+<a name="ln413">      atypes_def[atypes_def.size() - 1].second++;</a>
+<a name="ln414">    }</a>
+<a name="ln415"> </a>
+<a name="ln416">    // write number of atoms</a>
+<a name="ln417">    ofs &lt;&lt; mol.NumAtoms() &lt;&lt; endl;</a>
+<a name="ln418">    // write title</a>
+<a name="ln419">    ofs &lt;&lt; mol.GetTitle() &lt;&lt; endl;</a>
+<a name="ln420">    if (!mol.HasData(OBGenericDataType::UnitCell)) {</a>
+<a name="ln421">      // the unit cell has not been defined. Leave as all zeros so the user</a>
+<a name="ln422">      // can fill it in themselves</a>
+<a name="ln423">      for (int ii = 0; ii &lt; 3; ii++) {</a>
+<a name="ln424">        snprintf(buffer, BUFF_SIZE, &quot;0.0  0.0  0.0&quot;);</a>
+<a name="ln425">        ofs &lt;&lt; buffer &lt;&lt; endl;</a>
+<a name="ln426">      }</a>
+<a name="ln427">    }</a>
+<a name="ln428">    else</a>
+<a name="ln429">    {</a>
+<a name="ln430">      // there is a unit cell, write it out</a>
+<a name="ln431">      uc = static_cast&lt;OBUnitCell*&gt;(mol.GetData(OBGenericDataType::UnitCell));</a>
+<a name="ln432">      cell = uc-&gt;GetCellVectors();</a>
+<a name="ln433">      for (vector&lt;vector3&gt;::const_iterator i = cell.begin();</a>
+<a name="ln434">           i != cell.end(); ++i) {</a>
+<a name="ln435">        snprintf(buffer, BUFF_SIZE, &quot;%20.15f%20.15f%20.15f&quot;,</a>
+<a name="ln436">                 i-&gt;x(), i-&gt;y(), i-&gt;z());</a>
+<a name="ln437">        ofs &lt;&lt; buffer &lt;&lt; endl;</a>
+<a name="ln438">      }</a>
+<a name="ln439">    }</a>
+<a name="ln440">    //Print the number of atoms types</a>
+<a name="ln441">    ofs &lt;&lt;  atypes_def.size() &lt;&lt; endl;</a>
+<a name="ln442">    </a>
+<a name="ln443">    for (int i = 0; i &lt; atypes_def.size(); i++)</a>
+<a name="ln444">    {</a>
+<a name="ln445">      snprintf(buffer, BUFF_SIZE, &quot;%-3s &quot;, atypes_def[i].first.c_str());</a>
+<a name="ln446">      ofs &lt;&lt; buffer ;</a>
+<a name="ln447">    }</a>
+<a name="ln448">    ofs &lt;&lt; endl;</a>
+<a name="ln449">    </a>
+<a name="ln450">    for (int i = 0; i &lt; atypes_def.size(); i++)</a>
+<a name="ln451">    {</a>
+<a name="ln452">      snprintf(buffer, BUFF_SIZE, &quot;%-3u &quot;, atypes_def[i].second);</a>
+<a name="ln453">      ofs &lt;&lt; buffer ;</a>
+<a name="ln454">    }</a>
+<a name="ln455">    ofs &lt;&lt; endl;</a>
+<a name="ln456"> </a>
+<a name="ln457">    // and test if any of the atoms has constraints</a>
+<a name="ln458">    // print the atomic coordinates in \AA</a>
+<a name="ln459">    ofs &lt;&lt; &quot;Cartesian&quot; &lt;&lt; endl;</a>
+<a name="ln460">    </a>
+<a name="ln461">    map&lt;string, double&gt; charge_smb;</a>
+<a name="ln462"> </a>
+<a name="ln463">    for (map&lt;aindx, OBAtom *&gt;::const_iterator it  = amap.begin(); </a>
+<a name="ln464">                                              it != amap.end(); ++it)</a>
+<a name="ln465">    {  </a>
+<a name="ln466">      // Print coordinates</a>
+<a name="ln467">      string smb = OpenBabel::OBElements::GetSymbol(it-&gt;second-&gt;GetAtomicNum());</a>
+<a name="ln468">      snprintf(buffer, BUFF_SIZE, &quot;%-3s %26.19f %26.19f %26.19f&quot;, smb.c_str(),</a>
+<a name="ln469">               it-&gt;second-&gt;GetX(), it-&gt;second-&gt;GetY(), it-&gt;second-&gt;GetZ());</a>
+<a name="ln470">      </a>
+<a name="ln471">      if(charge_smb.find(smb) == charge_smb.end() )</a>
+<a name="ln472">        charge_smb[smb] = it-&gt;second-&gt;GetFormalCharge();</a>
+<a name="ln473">      else</a>
+<a name="ln474">        if(charge_smb[smb] != it-&gt;second-&gt;GetFormalCharge())</a>
+<a name="ln475">          charge_smb[smb] = NAN;</a>
+<a name="ln476">      </a>
+<a name="ln477">      ofs &lt;&lt; buffer &lt;&lt; endl;</a>
+<a name="ln478">    }</a>
+<a name="ln479">    </a>
+<a name="ln480">    if (writeIONS == nullptr)</a>
+<a name="ln481">      return true;</a>
+<a name="ln482">    </a>
+<a name="ln483">    //Write IONS.POT</a>
+<a name="ln484">    string path = pConv-&gt;GetOutFilename();</a>
+<a name="ln485">    size_t found = path.rfind(&quot;/&quot;);</a>
+<a name="ln486">    path = (found == string::npos) ? &quot;&quot; : path.substr(0, found);</a>
+<a name="ln487">    string ionspot_filename = (path == &quot;&quot;) ? &quot;IONS.POT&quot; : path + &quot;/IONS.POT&quot;;</a>
+<a name="ln488">    ofstream ofs_ions;</a>
+<a name="ln489">    ofs_ions.open(ionspot_filename.c_str(), fstream::out);</a>
+<a name="ln490">    </a>
+<a name="ln491">    for(int i = 0; i &lt; 4; i++)</a>
+<a name="ln492">    {  </a>
+<a name="ln493">      if( (i == 0) || (i == 2) )</a>
+<a name="ln494">        ofs_ions &lt;&lt; &quot; ! &quot; ;</a>
+<a name="ln495">      else if (i == 1)</a>
+<a name="ln496">        ofs_ions &lt;&lt; &quot; mass = &quot; ;</a>
+<a name="ln497">      else if (i == 3)</a>
+<a name="ln498">        ofs_ions &lt;&lt; &quot; qch = &quot; ;</a>
+<a name="ln499">        </a>
+<a name="ln500">      for(int j = 0; j &lt; atypes_def.size(); j++)</a>
+<a name="ln501">      {</a>
+<a name="ln502">        if( (i == 0) || (i == 2) )</a>
+<a name="ln503">          ofs_ions &lt;&lt; atypes_def[j].first &lt;&lt; &quot;  &quot;;</a>
+<a name="ln504">        else if (i == 1)</a>
+<a name="ln505">          ofs_ions &lt;&lt; OBElements::GetMass(OBElements::GetAtomicNum(atypes_def[j].first.c_str())) &lt;&lt; &quot;d0 &quot;;</a>
+<a name="ln506">        else if (i == 3)</a>
+<a name="ln507">          ofs_ions &lt;&lt; charge_smb[atypes_def[j].first] &lt;&lt; &quot;d0 &quot;;</a>
+<a name="ln508">      }</a>
+<a name="ln509">      ofs_ions &lt;&lt; endl;</a>
+<a name="ln510">    }</a>
+<a name="ln511"> </a>
+<a name="ln512">    return true;</a>
+<a name="ln513">  }</a>
+<a name="ln514"> </a>
+<a name="ln515">} //namespace OpenBabel</a>
+<a name="ln516"> </a>
+<a name="ln517"> </a>
+
+</code></pre>
+<div class="balloon" rel="107"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v730/" target="_blank">V730</a> Not all members of a class are initialized inside the constructor. Consider inspecting: atom_etab_num.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

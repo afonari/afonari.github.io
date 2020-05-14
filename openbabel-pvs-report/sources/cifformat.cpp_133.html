@@ -1,0 +1,1812 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>cifformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">cifformat.cpp - Implementation of subclass of OBFormat for conversion of OBMol.</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright (C) 2006 Vincent Favre-Nicolin</a>
+<a name="ln5"> </a>
+<a name="ln6">This file is part of the Open Babel project.</a>
+<a name="ln7">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln10">it under the terms of the GNU General Public License as published by</a>
+<a name="ln11">the Free Software Foundation version 2 of the License.</a>
+<a name="ln12"> </a>
+<a name="ln13">This program is distributed in the hope that it will be useful,</a>
+<a name="ln14">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln15">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln16">GNU General Public License for more details.</a>
+<a name="ln17">***********************************************************************/</a>
+<a name="ln18"> </a>
+<a name="ln19">#ifndef M_PI</a>
+<a name="ln20">#define M_PI 3.14159265358979323846</a>
+<a name="ln21">#endif</a>
+<a name="ln22"> </a>
+<a name="ln23">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln24">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln25">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln26">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln27">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln28">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln29">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln30">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln31">#include &lt;cstdlib&gt;</a>
+<a name="ln32"> </a>
+<a name="ln33">#include &lt;openbabel/math/spacegroup.h&gt;</a>
+<a name="ln34"> </a>
+<a name="ln35">#include &lt;sstream&gt;</a>
+<a name="ln36">#include &lt;vector&gt;</a>
+<a name="ln37">#include &lt;list&gt;</a>
+<a name="ln38">#include &lt;map&gt;</a>
+<a name="ln39">#include &lt;set&gt;</a>
+<a name="ln40"> </a>
+<a name="ln41">#define NOCHARGE FLT_MAX</a>
+<a name="ln42"> </a>
+<a name="ln43">#ifdef _MSC_VER</a>
+<a name="ln44"> #pragma warning( disable : 4503 )</a>
+<a name="ln45"> // The decorated name was longer than the compiler limit (4096), and was truncated.</a>
+<a name="ln46"> // This is due to the use of templates specialized on templates repeatedly.</a>
+<a name="ln47"> // The correctness of the program, however, is unaffected by the truncated name,</a>
+<a name="ln48"> // but if you get link time errors on a truncated symbol, it will be more difficult</a>
+<a name="ln49"> // to determine the type of the symbol in the error. Debugging will also be more difficult;</a>
+<a name="ln50"> // the debugger will also have difficultly mapping symbol name to type name.</a>
+<a name="ln51">#endif</a>
+<a name="ln52"> </a>
+<a name="ln53">using namespace std;</a>
+<a name="ln54"> </a>
+<a name="ln55">namespace OpenBabel</a>
+<a name="ln56">{</a>
+<a name="ln57">  class CIFFormat : public OBMoleculeFormat</a>
+<a name="ln58">  {</a>
+<a name="ln59">  public:</a>
+<a name="ln60">    //Register this format type ID</a>
+<a name="ln61">    CIFFormat()</a>
+<a name="ln62">    {</a>
+<a name="ln63">      RegisterFormat(&quot;cif&quot;, &quot;chemical/x-cif&quot;);</a>
+<a name="ln64">    }</a>
+<a name="ln65"> </a>
+<a name="ln66">    virtual const char* Description() //required</a>
+<a name="ln67">    {</a>
+<a name="ln68">      return</a>
+<a name="ln69">        &quot;Crystallographic Information File\n&quot;</a>
+<a name="ln70">        &quot;The CIF file format is the standard interchange format for small-molecule crystal structures\n\n&quot;</a>
+<a name="ln71">        &quot;Fractional coordinates are converted to cartesian ones using the following convention:\n\n&quot;</a>
+<a name="ln72"> </a>
+<a name="ln73">        &quot;- The x axis is parallel to a\n&quot;</a>
+<a name="ln74">        &quot;- The y axis is in the (a,b) plane\n&quot;</a>
+<a name="ln75">        &quot;- The z axis is along c*\n\n&quot;</a>
+<a name="ln76"> </a>
+<a name="ln77">        &quot;Ref: Int. Tables for Crystallography (2006), vol. B, sec 3.3.1.1.1\n&quot;</a>
+<a name="ln78">        &quot;  (the matrix used is the 2nd form listed)\n\n&quot;</a>
+<a name="ln79"> </a>
+<a name="ln80">        &quot;Read Options e.g. -ab:\n&quot;</a>
+<a name="ln81">        &quot;  s  Output single bonds only\n&quot;</a>
+<a name="ln82">        &quot;  b  Disable bonding entirely\n&quot;</a>
+<a name="ln83">        &quot;  B  Use bonds listed in CIF file from _geom_bond_etc records (overrides option b)\n\n&quot;</a>
+<a name="ln84"> </a>
+<a name="ln85">        &quot;Write Options e.g. -xg:\n&quot;</a>
+<a name="ln86">        &quot;  g  Write bonds using _geom_bond_etc fields \n\n&quot;;</a>
+<a name="ln87">    };</a>
+<a name="ln88"> </a>
+<a name="ln89">    virtual const char* SpecificationURL()</a>
+<a name="ln90">    {return &quot;http://www.iucr.org/iucr-top/cif/spec/&quot;;}; //optional</a>
+<a name="ln91"> </a>
+<a name="ln92">    //*** This section identical for most OBMol conversions ***</a>
+<a name="ln93">    ////////////////////////////////////////////////////</a>
+<a name="ln94">    /// The &quot;API&quot; interface functions</a>
+<a name="ln95">    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln96">    virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln97">  };</a>
+<a name="ln98">  //############################## Case-insensituve string####################################################</a>
+<a name="ln99">  // :@todo: This duplicates normal case-insensitive string comparison in OpenBabel</a>
+<a name="ln100">  /// Case-insensitive string class</a>
+<a name="ln101">  /// From: Guru of the Week #29</a>
+<a name="ln102">  /// e.g.: http://gcc.gnu.org/onlinedocs/libstdc++/21_strings/gotw29a.txt</a>
+<a name="ln103">  ///</a>
+<a name="ln104">  /// Public domain</a>
+<a name="ln105">  struct ci_char_traits : public std::char_traits&lt;char&gt;</a>
+<a name="ln106">  {</a>
+<a name="ln107">    static bool eq( char c1, char c2 );</a>
+<a name="ln108"> </a>
+<a name="ln109">    static bool ne( char c1, char c2 );</a>
+<a name="ln110"> </a>
+<a name="ln111">    static bool lt( char c1, char c2 );</a>
+<a name="ln112"> </a>
+<a name="ln113">    static int compare(const char* s1,const char* s2,size_t n );</a>
+<a name="ln114"> </a>
+<a name="ln115">    static const char* find( const char* s, int n, char a );</a>
+<a name="ln116">  };</a>
+<a name="ln117"> </a>
+<a name="ln118">  typedef std::basic_string&lt;char, ci_char_traits&gt; ci_string;</a>
+<a name="ln119">  int strnicmp(const char *s1, const char *s2, int len)</a>
+<a name="ln120">  {</a>
+<a name="ln121">    unsigned char c1, c2;</a>
+<a name="ln122">    while (len)</a>
+<a name="ln123">      {</a>
+<a name="ln124">        c1 = *s1; c2 = *s2;</a>
+<a name="ln125">        s1++; s2++;</a>
+<a name="ln126">        if (!c1) return c2 ? -1 : 0;</a>
+<a name="ln127">        if (!c2) return 1;</a>
+<a name="ln128">        if (c1 != c2)</a>
+<a name="ln129">          {</a>
+<a name="ln130">            c1 = tolower(c1);</a>
+<a name="ln131">            c2 = tolower(c2);</a>
+<a name="ln132">            if (c1 != c2) return c1 &lt; c2 ? -1 : 1;</a>
+<a name="ln133">          }</a>
+<a name="ln134">        len--;</a>
+<a name="ln135">      }</a>
+<a name="ln136">    return 0;</a>
+<a name="ln137">  }</a>
+<a name="ln138"> </a>
+<a name="ln139">  bool ci_char_traits::eq( char c1, char c2 )</a>
+<a name="ln140">  {return tolower(c1) == tolower(c2);}</a>
+<a name="ln141"> </a>
+<a name="ln142">  bool ci_char_traits::ne( char c1, char c2 )</a>
+<a name="ln143">  {return tolower(c1) != tolower(c2);}</a>
+<a name="ln144"> </a>
+<a name="ln145">  bool ci_char_traits::lt( char c1, char c2 )</a>
+<a name="ln146">  {return tolower(c1) &lt; tolower(c2);}</a>
+<a name="ln147"> </a>
+<a name="ln148">  int ci_char_traits::compare(const char* s1,const char* s2,size_t n )</a>
+<a name="ln149">  {return strnicmp( s1, s2, n );}</a>
+<a name="ln150"> </a>
+<a name="ln151">  const char* ci_char_traits::find( const char* s, int n, char a )</a>
+<a name="ln152">  {</a>
+<a name="ln153">    while( n-- &gt; 0 &amp;&amp; tolower(*s) != tolower(a) ) ++s;</a>
+<a name="ln154">    return s;</a>
+<a name="ln155">  }</a>
+<a name="ln156">  //############################## CIF CLASSES headers####################################################</a>
+<a name="ln157">  /** The CIFData class holds all the information from a \e single data_ block from a cif file.</a>
+<a name="ln158">   *</a>
+<a name="ln159">   * It is a placeholder for all comments, item and loop data, as raw strings copied from</a>
+<a name="ln160">   * a cif file.</a>
+<a name="ln161">   *</a>
+<a name="ln162">   * It is also used to interpret this data to extract parts of the cif data, i.e.</a>
+<a name="ln163">   * only part of the core cif dictionnary are recognized. CIF tags currently recognized</a>
+<a name="ln164">   * include (&quot;tag1 &gt; tag2&quot; means tag1 is preferred to tag2 when extracting the info, only one is reported):</a>
+<a name="ln165">   *  - crystal name: _chemical_name_systematic &gt; _chemical_name_mineral &gt; _chemical_name_structure_type &gt; _chemical_name_common</a>
+<a name="ln166">   *  - crystal formula: _chemical_formula_analytical &gt; _chemical_formula_structural &gt; _chemical_formula_iupac &gt; _chemical_formula_moiety</a>
+<a name="ln167">   *  - unit cell:  _cell_length_{a,b,c} ; _cell_angle_{alpha,beta,gamma}</a>
+<a name="ln168">   *  - spacegroup number: _space_group_IT_number &gt; _symmetry_Int_Tables_number</a>
+<a name="ln169">   *  - spacegroup Hall symbol: _space_group_name_Hall &gt; _symmetry_space_group_name_Hall</a>
+<a name="ln170">   *  - spacegroup Hermann-Mauguin symbol:_space_group_name_H-M_alt &gt; _symmetry_space_group_name_H-M</a>
+<a name="ln171">   *  - atom coordinates: _atom_site_fract_{x} ; _atom_site_Cartn_{x,y,z}</a>
+<a name="ln172">   *  - atom occupancy: _atom_site_occupancy</a>
+<a name="ln173">   *  - atom label &amp; symbol: _atom_site_type_symbol ; _atom_site_label</a>
+<a name="ln174">   *</a>
+<a name="ln175">   * Cartesian coordinates are stored in Angstroems, angles in radians.</a>
+<a name="ln176">   *</a>
+<a name="ln177">   * If another data field is needed, it is possible to directly access the string data</a>
+<a name="ln178">   * (CIFData::mvComment , CIFData::mvItem and CIFData::mvLoop) to search for the correct tags.</a>
+<a name="ln179">   */</a>
+<a name="ln180">  class CIFData</a>
+<a name="ln181">  {</a>
+<a name="ln182">  public:</a>
+<a name="ln183">    CIFData();</a>
+<a name="ln184"> </a>
+<a name="ln185">    /// Extract lattice parameters, spacegroup (symbol or number), atomic positions,</a>
+<a name="ln186">    /// chemical name and formula if available.</a>
+<a name="ln187">    /// All other data is ignored</a>
+<a name="ln188">    void ExtractAll();</a>
+<a name="ln189">    /// Extract name &amp; formula for the crystal</a>
+<a name="ln190">    void ExtractName();</a>
+<a name="ln191">    /// Extract unit cell</a>
+<a name="ln192">    void ExtractUnitCell();</a>
+<a name="ln193">    /// Extract spacegroup number or symbol</a>
+<a name="ln194">    void ExtractSpacegroup();</a>
+<a name="ln195">    /// Extract all atomic positions. Will generate cartesian from fractional</a>
+<a name="ln196">    /// coordinates or vice-versa if only cartesian coordinates are available.</a>
+<a name="ln197">    void ExtractAtomicPositions();</a>
+<a name="ln198">    /// Extract listed bond distances, from _geom_bond_* loops</a>
+<a name="ln199">    void ExtractBonds();</a>
+<a name="ln200">    //// Extract Charges information from cif file and assign it to atoms</a>
+<a name="ln201">    void ExtractCharges();</a>
+<a name="ln202">    /// Generate fractional coordinates from cartesian ones for all atoms</a>
+<a name="ln203">    /// CIFData::CalcMatrices() must be called first</a>
+<a name="ln204">    void Cartesian2FractionalCoord();</a>
+<a name="ln205">    /// Generate cartesian coordinates from fractional ones for all atoms</a>
+<a name="ln206">    /// CIFData::CalcMatrices() must be called first</a>
+<a name="ln207">    void Fractional2CartesianCoord();</a>
+<a name="ln208">    /// Convert from fractional to cartesian coordinates</a>
+<a name="ln209">    /// CIFData::CalcMatrices() must be called first</a>
+<a name="ln210">    void f2c(float &amp;x,float &amp;y, float &amp;z);</a>
+<a name="ln211">    /// Convert from cartesia to fractional coordinates</a>
+<a name="ln212">    /// CIFData::CalcMatrices() must be called first</a>
+<a name="ln213">    void c2f(float &amp;x,float &amp;y, float &amp;z);</a>
+<a name="ln214">    /// Calculate real space transformation matrices</a>
+<a name="ln215">    /// requires unit cell parameters</a>
+<a name="ln216">    void CalcMatrices();</a>
+<a name="ln217">    /// Comments from CIF file, in the order they were read</a>
+<a name="ln218">    std::list&lt;std::string&gt; mvComment;</a>
+<a name="ln219">    /// Individual CIF items</a>
+<a name="ln220">    std::map&lt;ci_string,std::string&gt; mvItem;</a>
+<a name="ln221">    /// CIF Loop data</a>
+<a name="ln222">    std::map&lt;std::set&lt;ci_string&gt;,std::map&lt;ci_string,std::vector&lt;std::string&gt; &gt; &gt; mvLoop;</a>
+<a name="ln223">    /// Lattice parameters, in ansgtroem and degrees - vector size is 0 if no</a>
+<a name="ln224">    /// parameters have been obtained yet.</a>
+<a name="ln225">    std::vector&lt;float&gt; mvLatticePar;</a>
+<a name="ln226">    /// Spacegroup number from International Tables (_space_group_IT_number), or -1.</a>
+<a name="ln227">    unsigned int mSpacegroupNumberIT;</a>
+<a name="ln228">    /// Spacegroup Hall symbol (or empty string) (_space_group_name_Hall)</a>
+<a name="ln229">    std::string mSpacegroupSymbolHall;</a>
+<a name="ln230">    /// Spacegroup Hermann-Mauguin symbol (or empty string) (_space_group_name_H-M_alt)</a>
+<a name="ln231">    std::string mSpacegroupHermannMauguin;</a>
+<a name="ln232">    /// Crystal name. Or empty string if none is available.</a>
+<a name="ln233">    std::string mName;</a>
+<a name="ln234">    /// Formula. Or empty string if none is available.</a>
+<a name="ln235">    std::string mFormula;</a>
+<a name="ln236">    /// Atom record</a>
+<a name="ln237">    struct CIFAtom</a>
+<a name="ln238">    {</a>
+<a name="ln239">      CIFAtom();</a>
+<a name="ln240">      /// Label of the atom, or empty string (_atom_site_label).</a>
+<a name="ln241">      std::string mLabel;</a>
+<a name="ln242">      /// Symbol of the atom, or empty string (_atom_type_symbol or _atom_site_type_symbol).</a>
+<a name="ln243">      std::string mSymbol;</a>
+<a name="ln244">      /// Fractionnal coordinates (_atom_site_fract_{x,y,z}) or empty vector.</a>
+<a name="ln245">      std::vector&lt;float&gt; mCoordFrac;</a>
+<a name="ln246">      /// Cartesian coordinates in Angstroem (_atom_site_Cartn_{x,y,z}) or empty vector.</a>
+<a name="ln247">      /// Transformation to fractionnal coordinates currently assumes</a>
+<a name="ln248">      /// &quot;a parallel to x; b in the plane of y and z&quot; (see _atom_sites_Cartn_transform_axes)</a>
+<a name="ln249">      std::vector&lt;float&gt; mCoordCart;</a>
+<a name="ln250">      /// Site occupancy, or -1</a>
+<a name="ln251">      float mOccupancy;</a>
+<a name="ln252">      //charge from oxydation</a>
+<a name="ln253">      float mCharge;</a>
+<a name="ln254">    };</a>
+<a name="ln255">    /// Atoms, if any are found</a>
+<a name="ln256">    std::vector&lt;CIFAtom&gt; mvAtom;</a>
+<a name="ln257">    /// Bond distance record</a>
+<a name="ln258">    struct CIFBond</a>
+<a name="ln259">    {</a>
+<a name="ln260">      /// Label of the two bonded atoms</a>
+<a name="ln261">      std::string mLabel1,mLabel2;</a>
+<a name="ln262">      /// distance</a>
+<a name="ln263">      float mDistance;</a>
+<a name="ln264">    };</a>
+<a name="ln265">    /// Atoms, if any are found</a>
+<a name="ln266">    std::vector&lt;CIFBond&gt; mvBond;</a>
+<a name="ln267">    /// Fractionnal2Cartesian matrix</a>
+<a name="ln268">    float mOrthMatrix[3][3];</a>
+<a name="ln269">    /// Cartesian2Fractionnal matrix</a>
+<a name="ln270">    float mOrthMatrixInvert[3][3];</a>
+<a name="ln271">    const SpaceGroup *mSpaceGroup;</a>
+<a name="ln272">    /// Name for the CIF data block</a>
+<a name="ln273">    std::string mDataBlockName;</a>
+<a name="ln274">  };</a>
+<a name="ln275">  /** Main CIF class - parses the stream and separates data blocks, comments, items, loops.</a>
+<a name="ln276">   * All values are stored as string, and Each CIF block is stored in a separate CIFData object.</a>
+<a name="ln277">   * No interpretaion is made here - this must be done from all CIFData objects.</a>
+<a name="ln278">   */</a>
+<a name="ln279">  class CIF</a>
+<a name="ln280">  {</a>
+<a name="ln281">  public:</a>
+<a name="ln282">    /// Creates the CIF object from a stream</a>
+<a name="ln283">    ///</a>
+<a name="ln284">    /// \param interpret: if true, interpret all data blocks. See CIFData::ExtractAll()</a>
+<a name="ln285">    CIF(std::istream &amp;in, const bool interpret=true);</a>
+<a name="ln286">    //private:</a>
+<a name="ln287">    /// Separate the file in data blocks and parse them to sort tags, loops and comments.</a>
+<a name="ln288">    /// All is stored in the original strings.</a>
+<a name="ln289">    ///</a>
+<a name="ln290">    /// Returns the name of the next data block</a>
+<a name="ln291">    void Parse(std::istream &amp;in);</a>
+<a name="ln292">    /// The data blocks, after parsing. The key is the name of the data block</a>
+<a name="ln293">    std::map&lt;std::string,CIFData&gt; mvData;</a>
+<a name="ln294">    /// Global comments, outside and data block</a>
+<a name="ln295">    std::list&lt;std::string&gt; mvComment;</a>
+<a name="ln296">  };</a>
+<a name="ln297">  /// Convert one CIF value to a floating-point value</a>
+<a name="ln298">  /// Return 0 if no value can be converted (e.g. if '.' or '?' is encountered)</a>
+<a name="ln299">  float CIFNumeric2Float(const std::string &amp;s);</a>
+<a name="ln300">  /// Convert one CIF value to a floating-point value</a>
+<a name="ln301">  /// Return 0 if no value can be converted (e.g. if '.' or '?' is encountered)</a>
+<a name="ln302">  int CIFNumeric2Int(const std::string &amp;s);</a>
+<a name="ln303"> </a>
+<a name="ln304">  template &lt;typename T&gt; string to_string(T pNumber)</a>
+<a name="ln305">  {</a>
+<a name="ln306">    ostringstream oOStrStream;</a>
+<a name="ln307">    oOStrStream &lt;&lt; pNumber;</a>
+<a name="ln308">    return oOStrStream.str();</a>
+<a name="ln309">  }</a>
+<a name="ln310"> </a>
+<a name="ln311">  bool is_double(const std::string&amp; s, double&amp; r_double);</a>
+<a name="ln312"> </a>
+<a name="ln313">  //############################## CIF CLASSES CODE ####################################################</a>
+<a name="ln314">  CIFData::CIFAtom::CIFAtom():</a>
+<a name="ln315">    mLabel(&quot;&quot;),mSymbol(&quot;&quot;),mOccupancy(1.0f)</a>
+<a name="ln316">  {}</a>
+<a name="ln317"> </a>
+<a name="ln318">  CIFData::CIFData()</a>
+<a name="ln319">  {}</a>
+<a name="ln320"> </a>
+<a name="ln321">  void CIFData::ExtractAll()</a>
+<a name="ln322">  {</a>
+<a name="ln323">    {</a>
+<a name="ln324">      stringstream ss;</a>
+<a name="ln325">      ss&lt;&lt;&quot;CIF: interpreting data block: &quot;&lt;&lt;mDataBlockName;</a>
+<a name="ln326">      obErrorLog.ThrowError(__FUNCTION__, ss.str(), obInfo);</a>
+<a name="ln327">    }</a>
+<a name="ln328">    if(mDataBlockName==&quot;data_global&quot;)</a>
+<a name="ln329">      { // :KLUDGE: this data block name is used for journal &amp;author information</a>
+<a name="ln330">        // for IUCr journals, so do not generate an error if the block contains</a>
+<a name="ln331">        // no structural information</a>
+<a name="ln332">        bool empty_iucrjournal_block=true;</a>
+<a name="ln333">        if(mvItem.find(&quot;_cell_length_a&quot;   )!=mvItem.end()) empty_iucrjournal_block=false;</a>
+<a name="ln334">        if(mvItem.find(&quot;_cell_length_b&quot;   )!=mvItem.end()) empty_iucrjournal_block=false;</a>
+<a name="ln335">        if(mvItem.find(&quot;_cell_length_c&quot;   )!=mvItem.end()) empty_iucrjournal_block=false;</a>
+<a name="ln336">        for(map&lt;set&lt;ci_string&gt;,map&lt;ci_string,vector&lt;string&gt; &gt; &gt;::const_iterator loop=mvLoop.begin();</a>
+<a name="ln337">            loop!=mvLoop.end();++loop)</a>
+<a name="ln338">          {</a>
+<a name="ln339">            if(loop-&gt;second.find(&quot;_atom_site_fract_x&quot;)!=loop-&gt;second.end()) empty_iucrjournal_block=false;</a>
+<a name="ln340">            if(loop-&gt;second.find(&quot;_atom_site_fract_y&quot;)!=loop-&gt;second.end()) empty_iucrjournal_block=false;</a>
+<a name="ln341">            if(loop-&gt;second.find(&quot;_atom_site_fract_z&quot;)!=loop-&gt;second.end()) empty_iucrjournal_block=false;</a>
+<a name="ln342">            if(loop-&gt;second.find(&quot;_atom_site_Cartn_x&quot;)!=loop-&gt;second.end()) empty_iucrjournal_block=false;</a>
+<a name="ln343">            if(loop-&gt;second.find(&quot;_atom_site_Cartn_y&quot;)!=loop-&gt;second.end()) empty_iucrjournal_block=false;</a>
+<a name="ln344">            if(loop-&gt;second.find(&quot;_atom_site_Cartn_z&quot;)!=loop-&gt;second.end()) empty_iucrjournal_block=false;</a>
+<a name="ln345">          }</a>
+<a name="ln346">        if(empty_iucrjournal_block)</a>
+<a name="ln347">          {</a>
+<a name="ln348">            stringstream ss;</a>
+<a name="ln349">            ss &lt;&lt; &quot;CIF WARNING: found en empty 'data_global' block - SKIPPING\n&quot;</a>
+<a name="ln350">               &lt;&lt; &quot;  (you can safely ignore this if reading a CIF file from an IUCr journal)&quot;;</a>
+<a name="ln351">            obErrorLog.ThrowError(__FUNCTION__, ss.str(), obWarning);</a>
+<a name="ln352">            return;</a>
+<a name="ln353">          }</a>
+<a name="ln354">    }</a>
+<a name="ln355">    // :@todo: Take care of values listed as &quot;.&quot; and &quot;?&quot; instead of a real value.</a>
+<a name="ln356">    this-&gt;ExtractName();</a>
+<a name="ln357">    // Spacegroup must be extracted before unit cell</a>
+<a name="ln358">    this-&gt;ExtractSpacegroup();</a>
+<a name="ln359">    this-&gt;ExtractUnitCell();</a>
+<a name="ln360">    this-&gt;ExtractAtomicPositions();</a>
+<a name="ln361">    if(mvAtom.size()==0)</a>
+<a name="ln362">      {</a>
+<a name="ln363">        stringstream ss;</a>
+<a name="ln364">        ss &lt;&lt; &quot;CIF Error: no atom found ! (in data block:&quot;&lt;&lt;mDataBlockName&lt;&lt;&quot;)&quot;;</a>
+<a name="ln365">        obErrorLog.ThrowError(__FUNCTION__, ss.str(), obError);</a>
+<a name="ln366">      }</a>
+<a name="ln367">    this-&gt;ExtractBonds();</a>
+<a name="ln368">    this-&gt;ExtractCharges();</a>
+<a name="ln369">  }</a>
+<a name="ln370"> </a>
+<a name="ln371">  void CIFData::ExtractUnitCell()</a>
+<a name="ln372">  {</a>
+<a name="ln373">    // Use spacegroup to determine missing angle or length</a>
+<a name="ln374">    const int spgid= mSpaceGroup-&gt;GetId();</a>
+<a name="ln375">    if(  (mvItem.find(&quot;_cell_length_a&quot;)!=mvItem.end())</a>
+<a name="ln376">       ||(mvItem.find(&quot;_cell_length_b&quot;)!=mvItem.end())</a>
+<a name="ln377">       ||(mvItem.find(&quot;_cell_length_c&quot;)!=mvItem.end()) )</a>
+<a name="ln378">      {</a>
+<a name="ln379">        mvLatticePar.resize(6);</a>
+<a name="ln380">        for(unsigned int i=0;i&lt;6;i++) mvLatticePar[i]=float(0);</a>
+<a name="ln381">        map&lt;ci_string,string&gt;::const_iterator positem;</a>
+<a name="ln382">        positem=mvItem.find(&quot;_cell_length_a&quot;);</a>
+<a name="ln383">        if(positem!=mvItem.end())</a>
+<a name="ln384">          mvLatticePar[0]=CIFNumeric2Float(positem-&gt;second);</a>
+<a name="ln385">        positem=mvItem.find(&quot;_cell_length_b&quot;);</a>
+<a name="ln386">        if(positem!=mvItem.end())</a>
+<a name="ln387">          mvLatticePar[1]=CIFNumeric2Float(positem-&gt;second);</a>
+<a name="ln388">        positem=mvItem.find(&quot;_cell_length_c&quot;);</a>
+<a name="ln389">        if(positem!=mvItem.end())</a>
+<a name="ln390">          mvLatticePar[2]=CIFNumeric2Float(positem-&gt;second);</a>
+<a name="ln391">        positem=mvItem.find(&quot;_cell_angle_alpha&quot;);</a>
+<a name="ln392">        if(positem!=mvItem.end())</a>
+<a name="ln393">          mvLatticePar[3]=CIFNumeric2Float(positem-&gt;second);</a>
+<a name="ln394">        positem=mvItem.find(&quot;_cell_angle_beta&quot;);</a>
+<a name="ln395">        if(positem!=mvItem.end())</a>
+<a name="ln396">          mvLatticePar[4]=CIFNumeric2Float(positem-&gt;second);</a>
+<a name="ln397">        positem=mvItem.find(&quot;_cell_angle_gamma&quot;);</a>
+<a name="ln398">        if(positem!=mvItem.end())</a>
+<a name="ln399">          mvLatticePar[5]=CIFNumeric2Float(positem-&gt;second);</a>
+<a name="ln400">        stringstream ss;</a>
+<a name="ln401">        ss &lt;&lt; &quot;Found Lattice parameters:&quot; &lt;&lt; mvLatticePar[0] &lt;&lt; &quot; , &quot; &lt;&lt; mvLatticePar[1] &lt;&lt; &quot; , &quot; &lt;&lt; mvLatticePar[2]</a>
+<a name="ln402">           &lt;&lt; &quot; , &quot; &lt;&lt; mvLatticePar[3] &lt;&lt; &quot; , &quot; &lt;&lt; mvLatticePar[4] &lt;&lt; &quot; , &quot; &lt;&lt; mvLatticePar[5];</a>
+<a name="ln403">        obErrorLog.ThrowError(__FUNCTION__, ss.str(), obDebug);</a>
+<a name="ln404">        mvLatticePar[3] = static_cast&lt;float&gt; (mvLatticePar[3] * DEG_TO_RAD);// pi/180</a>
+<a name="ln405">        mvLatticePar[4] = static_cast&lt;float&gt; (mvLatticePar[4] * DEG_TO_RAD);</a>
+<a name="ln406">        mvLatticePar[5] = static_cast&lt;float&gt; (mvLatticePar[5] * DEG_TO_RAD);</a>
+<a name="ln407"> </a>
+<a name="ln408">        // Fill values depending on spacegroup, *only* when missing</a>
+<a name="ln409">        if((spgid&gt;2)&amp;&amp;(spgid&lt;=15))</a>
+<a name="ln410">        {// :TODO: monoclinic spg, depending on unique axis....</a>
+<a name="ln411">        }</a>
+<a name="ln412">        if((spgid&gt;15)&amp;&amp;(spgid&lt;=142))</a>
+<a name="ln413">        {// orthorombic &amp; tetragonal</a>
+<a name="ln414">          if(mvLatticePar[3]==0) mvLatticePar[3]=M_PI/2;</a>
+<a name="ln415">          if(mvLatticePar[4]==0) mvLatticePar[4]=M_PI/2;</a>
+<a name="ln416">          if(mvLatticePar[5]==0) mvLatticePar[5]=M_PI/2;</a>
+<a name="ln417">        }</a>
+<a name="ln418">        if((spgid&gt;74)&amp;&amp;(spgid&lt;=142))</a>
+<a name="ln419">        {// Tetragonal, make sure a=b if one is missing</a>
+<a name="ln420">          if(mvLatticePar[1]==0) mvLatticePar[1]=mvLatticePar[0];</a>
+<a name="ln421">          if(mvLatticePar[0]==0) mvLatticePar[0]=mvLatticePar[1];</a>
+<a name="ln422">        }</a>
+<a name="ln423">        if((spgid&gt;142)&amp;&amp;(spgid&lt;=194))</a>
+<a name="ln424">        {// trigonal/ rhomboedric...</a>
+<a name="ln425">          const string::size_type pos = mSpaceGroup-&gt;GetHallName().find('R');</a>
+<a name="ln426">          if(pos==std::string::npos)</a>
+<a name="ln427">          {//rhomboedric cell, a=b=c, alpha=beta=gamma</a>
+<a name="ln428">            float a=0;</a>
+<a name="ln429">            if(mvLatticePar[0]&gt;a) a=mvLatticePar[0];</a>
+<a name="ln430">            if(mvLatticePar[1]&gt;a) a=mvLatticePar[1];</a>
+<a name="ln431">            if(mvLatticePar[2]&gt;a) a=mvLatticePar[2];</a>
+<a name="ln432">            if(mvLatticePar[0]==0) mvLatticePar[0]=a;</a>
+<a name="ln433">            if(mvLatticePar[1]==0) mvLatticePar[1]=a;</a>
+<a name="ln434">            if(mvLatticePar[2]==0) mvLatticePar[2]=a;</a>
+<a name="ln435"> </a>
+<a name="ln436">            float alpha=0;</a>
+<a name="ln437">            if(mvLatticePar[3]&gt;alpha) alpha=mvLatticePar[3];</a>
+<a name="ln438">            if(mvLatticePar[4]&gt;alpha) alpha=mvLatticePar[4];</a>
+<a name="ln439">            if(mvLatticePar[5]&gt;alpha) alpha=mvLatticePar[5];</a>
+<a name="ln440">            if(mvLatticePar[3]==0) mvLatticePar[3]=alpha;</a>
+<a name="ln441">            if(mvLatticePar[4]==0) mvLatticePar[4]=alpha;</a>
+<a name="ln442">            if(mvLatticePar[5]==0) mvLatticePar[5]=alpha;</a>
+<a name="ln443">          }</a>
+<a name="ln444">          else</a>
+<a name="ln445">          {//hexagonal cell, a=b &amp; alpha=beta=pi/2, gamma= 2*pi/3</a>
+<a name="ln446">            if(mvLatticePar[1]==0) mvLatticePar[1]=mvLatticePar[0];</a>
+<a name="ln447">            if(mvLatticePar[0]==0) mvLatticePar[0]=mvLatticePar[1];</a>
+<a name="ln448">            if(mvLatticePar[3]==0) mvLatticePar[3]=M_PI/2;</a>
+<a name="ln449">            if(mvLatticePar[4]==0) mvLatticePar[4]=M_PI/2;</a>
+<a name="ln450">            if(mvLatticePar[5]==0) mvLatticePar[5]=2*M_PI/3;</a>
+<a name="ln451">          }</a>
+<a name="ln452">        }</a>
+<a name="ln453">        if(spgid&gt;194)</a>
+<a name="ln454">        {</a>
+<a name="ln455">          if(mvLatticePar[3]==0) mvLatticePar[3]=M_PI/2;</a>
+<a name="ln456">          if(mvLatticePar[4]==0) mvLatticePar[4]=M_PI/2;</a>
+<a name="ln457">          if(mvLatticePar[5]==0) mvLatticePar[5]=M_PI/2;</a>
+<a name="ln458">          // In case some idiot cif only supplies one value, make sure a=b=c</a>
+<a name="ln459">          float a=0;</a>
+<a name="ln460">          if(mvLatticePar[0]&gt;a) a=mvLatticePar[0];</a>
+<a name="ln461">          if(mvLatticePar[1]&gt;a) a=mvLatticePar[1];</a>
+<a name="ln462">          if(mvLatticePar[2]&gt;a) a=mvLatticePar[2];</a>
+<a name="ln463">          if(mvLatticePar[0]==0) mvLatticePar[0]=a;</a>
+<a name="ln464">          if(mvLatticePar[1]==0) mvLatticePar[1]=a;</a>
+<a name="ln465">          if(mvLatticePar[2]==0) mvLatticePar[2]=a;</a>
+<a name="ln466">        }</a>
+<a name="ln467">        // Handle missing values</a>
+<a name="ln468">        if(mvLatticePar[3]&lt;1e-6)</a>
+<a name="ln469">        {</a>
+<a name="ln470">            stringstream ss;</a>
+<a name="ln471">            ss &lt;&lt; &quot;CIF WARNING: missing alpha value, defaulting to 90 degrees (in data block:&quot;&lt;&lt;mDataBlockName&lt;&lt;&quot;)&quot;;</a>
+<a name="ln472">            obErrorLog.ThrowError(__FUNCTION__, ss.str(), obWarning);</a>
+<a name="ln473">            mvLatticePar[3]=90*DEG_TO_RAD;</a>
+<a name="ln474">        }</a>
+<a name="ln475">        if(mvLatticePar[4]&lt;1e-6)</a>
+<a name="ln476">        {</a>
+<a name="ln477">            stringstream ss;</a>
+<a name="ln478">            ss &lt;&lt; &quot;CIF WARNING: missing beta value, defaulting to 90 degrees (in data block:&quot;&lt;&lt;mDataBlockName&lt;&lt;&quot;)&quot;;</a>
+<a name="ln479">            obErrorLog.ThrowError(__FUNCTION__, ss.str(), obWarning);</a>
+<a name="ln480">            mvLatticePar[4]=90*DEG_TO_RAD;</a>
+<a name="ln481">        }</a>
+<a name="ln482">        if(mvLatticePar[5]&lt;1e-6)</a>
+<a name="ln483">        {</a>
+<a name="ln484">            stringstream ss;</a>
+<a name="ln485">            ss &lt;&lt; &quot;CIF WARNING: missing gamma value, defaulting to 90 degrees (in data block:&quot;&lt;&lt;mDataBlockName&lt;&lt;&quot;)&quot;;</a>
+<a name="ln486">            obErrorLog.ThrowError(__FUNCTION__, ss.str(), obWarning);</a>
+<a name="ln487">            mvLatticePar[5]=90*DEG_TO_RAD;</a>
+<a name="ln488">        }</a>
+<a name="ln489">        if(mvLatticePar[1]&lt;1e-6)</a>
+<a name="ln490">        {</a>
+<a name="ln491">            stringstream ss;</a>
+<a name="ln492">            ss &lt;&lt; &quot;CIF Error: missing b lattice parameter - cannot interpret structure ! (in data block:&quot;&lt;&lt;mDataBlockName&lt;&lt;&quot;)&quot;;</a>
+<a name="ln493">            obErrorLog.ThrowError(__FUNCTION__, ss.str(), obError);</a>
+<a name="ln494">        }</a>
+<a name="ln495">        if(mvLatticePar[2]&lt;1e-6)</a>
+<a name="ln496">        {</a>
+<a name="ln497">            stringstream ss;</a>
+<a name="ln498">            ss &lt;&lt; &quot;CIF Error: missing c lattice parameter - cannot interpret structure ! (in data block:&quot;&lt;&lt;mDataBlockName&lt;&lt;&quot;)&quot;;</a>
+<a name="ln499">            obErrorLog.ThrowError(__FUNCTION__, ss.str(), obError);</a>
+<a name="ln500">        }</a>
+<a name="ln501"> </a>
+<a name="ln502">        this-&gt;CalcMatrices();</a>
+<a name="ln503">      }</a>
+<a name="ln504">      else</a>
+<a name="ln505">      {</a>
+<a name="ln506">         stringstream ss;</a>
+<a name="ln507">         ss &lt;&lt; &quot;CIF Error: missing a,b and c value - cannot interpret structure ! (in data block:&quot;&lt;&lt;mDataBlockName&lt;&lt;&quot;)&quot;;</a>
+<a name="ln508">         obErrorLog.ThrowError(__FUNCTION__, ss.str(), obError);</a>
+<a name="ln509">      }</a>
+<a name="ln510">  }</a>
+<a name="ln511"> </a>
+<a name="ln512">  void CIFData::ExtractSpacegroup()</a>
+<a name="ln513">  {</a>
+<a name="ln514">    map&lt;ci_string,string&gt;::const_iterator positem;</a>
+<a name="ln515">    bool found = false;</a>
+<a name="ln516">    positem=mvItem.find(&quot;_space_group_IT_number&quot;);</a>
+<a name="ln517">    if(positem!=mvItem.end())</a>
+<a name="ln518">      {</a>
+<a name="ln519">        mSpacegroupNumberIT=CIFNumeric2Int(positem-&gt;second);</a>
+<a name="ln520">        found = true;</a>
+<a name="ln521">        stringstream ss;</a>
+<a name="ln522">        ss &lt;&lt; &quot;Found spacegroup IT number:&quot; &lt;&lt; mSpacegroupNumberIT;</a>
+<a name="ln523">        obErrorLog.ThrowError(__FUNCTION__, ss.str(), obDebug);</a>
+<a name="ln524">      }</a>
+<a name="ln525">    else</a>
+<a name="ln526">      {</a>
+<a name="ln527">        positem=mvItem.find(&quot;_symmetry_Int_Tables_number&quot;);</a>
+<a name="ln528">        if(positem!=mvItem.end())</a>
+<a name="ln529">          {</a>
+<a name="ln530">            mSpacegroupNumberIT=CIFNumeric2Int(positem-&gt;second);</a>
+<a name="ln531">            found = true;</a>
+<a name="ln532">            stringstream ss;</a>
+<a name="ln533">            ss &lt;&lt; &quot;Found spacegroup IT number (with OBSOLETE CIF #1.0 TAG):&quot; &lt;&lt; mSpacegroupNumberIT;</a>
+<a name="ln534">            obErrorLog.ThrowError(__FUNCTION__, ss.str(), obDebug);</a>
+<a name="ln535">          }</a>
+<a name="ln536">        else {</a>
+<a name="ln537">          positem=mvItem.find(&quot;_symmetry_group_IT_number&quot;);</a>
+<a name="ln538">          if(positem!=mvItem.end())</a>
+<a name="ln539">          {</a>
+<a name="ln540">            mSpacegroupNumberIT=CIFNumeric2Int(positem-&gt;second);</a>
+<a name="ln541">            found = true;</a>
+<a name="ln542">            stringstream ss;</a>
+<a name="ln543">            ss &lt;&lt; &quot;Found spacegroup IT number (with NON-STANDARD CIF TAG):&quot; &lt;&lt; mSpacegroupNumberIT;</a>
+<a name="ln544">            obErrorLog.ThrowError(__FUNCTION__, ss.str(), obDebug);</a>
+<a name="ln545">          }</a>
+<a name="ln546">          else</a>
+<a name="ln547">            mSpacegroupNumberIT=0;</a>
+<a name="ln548">        }</a>
+<a name="ln549">      }</a>
+<a name="ln550"> </a>
+<a name="ln551">    positem=mvItem.find(&quot;_space_group_name_Hall&quot;);</a>
+<a name="ln552">    if(positem!=mvItem.end())</a>
+<a name="ln553">      {</a>
+<a name="ln554">        mSpacegroupSymbolHall=positem-&gt;second;</a>
+<a name="ln555">        found = true;</a>
+<a name="ln556">        obErrorLog.ThrowError(__FUNCTION__, &quot;Found spacegroup Hall symbol:&quot;+mSpacegroupSymbolHall, obDebug);</a>
+<a name="ln557">      }</a>
+<a name="ln558">    else</a>
+<a name="ln559">      {</a>
+<a name="ln560">        positem=mvItem.find(&quot;_symmetry_space_group_name_Hall&quot;);</a>
+<a name="ln561">        if(positem!=mvItem.end())</a>
+<a name="ln562">          {</a>
+<a name="ln563">            mSpacegroupSymbolHall=positem-&gt;second;</a>
+<a name="ln564">            found = true;</a>
+<a name="ln565">            obErrorLog.ThrowError(__FUNCTION__, &quot;Found spacegroup Hall symbol (with OBSOLETE CIF #1.0 TAG):&quot;+mSpacegroupSymbolHall, obDebug);</a>
+<a name="ln566">          }</a>
+<a name="ln567">      }</a>
+<a name="ln568"> </a>
+<a name="ln569">    positem=mvItem.find(&quot;_space_group_name_H-M_alt&quot;);</a>
+<a name="ln570">    if(positem!=mvItem.end())</a>
+<a name="ln571">      {</a>
+<a name="ln572">        mSpacegroupHermannMauguin=positem-&gt;second;</a>
+<a name="ln573">        found = true;</a>
+<a name="ln574">        obErrorLog.ThrowError(__FUNCTION__, &quot;Found spacegroup Hermann-Mauguin symbol:&quot;+mSpacegroupHermannMauguin, obDebug);</a>
+<a name="ln575">      }</a>
+<a name="ln576">    else</a>
+<a name="ln577">      {</a>
+<a name="ln578">        positem=mvItem.find(&quot;_symmetry_space_group_name_H-M&quot;);</a>
+<a name="ln579">        if(positem!=mvItem.end())</a>
+<a name="ln580">          {</a>
+<a name="ln581">            mSpacegroupHermannMauguin=positem-&gt;second;</a>
+<a name="ln582">            found = true;</a>
+<a name="ln583">            obErrorLog.ThrowError(__FUNCTION__, &quot;Found spacegroup Hermann-Mauguin symbol (with OBSOLETE CIF #1.0 TAG):&quot;+mSpacegroupHermannMauguin, obDebug);</a>
+<a name="ln584">          }</a>
+<a name="ln585">      }</a>
+<a name="ln586">    // DDL2 tag is &quot;_space_group.IT_coordinate_system_code&quot;, converted by the cif reader to &quot;_space_group_IT_coordinate_system_code&quot;</a>
+<a name="ln587">    positem=mvItem.find(&quot;_space_group_IT_coordinate_system_code&quot;);</a>
+<a name="ln588">    if(positem!=mvItem.end())</a>
+<a name="ln589">      {</a>
+<a name="ln590">        obErrorLog.ThrowError(__FUNCTION__, &quot;Found spacegroup IT_coordinate_system_code:&quot;+positem-&gt;second, obDebug);</a>
+<a name="ln591">        if((mSpacegroupHermannMauguin.length()&gt;0) &amp;&amp; (positem-&gt;second==&quot;1&quot; || positem-&gt;second==&quot;2&quot;))</a>
+<a name="ln592">        {</a>
+<a name="ln593">          // this is a HACK which will work as long as the HM symbols in spacegroups.txt have the &quot;:1&quot; or &quot;:2&quot; extension listed, when needed</a>
+<a name="ln594">          mSpacegroupHermannMauguin=mSpacegroupHermannMauguin+string(&quot;:&quot;)+positem-&gt;second;</a>
+<a name="ln595">        }</a>
+<a name="ln596">        else</a>
+<a name="ln597">        {</a>
+<a name="ln598">          stringstream ss;</a>
+<a name="ln599">          ss &lt;&lt; &quot;CIF Error: found DDL2 tag _space_group.IT_coordinate_system_code (&quot;&lt;&lt;positem-&gt;second&lt;&lt;&quot;)&quot;&lt;&lt;endl</a>
+<a name="ln600">             &lt;&lt;&quot;            but could not interpret it ! Origin choice or axis may be incorrect.&quot;;</a>
+<a name="ln601">          obErrorLog.ThrowError(__FUNCTION__, ss.str(), obWarning);</a>
+<a name="ln602">        }</a>
+<a name="ln603">      }</a>
+<a name="ln604"> </a>
+<a name="ln605">    mSpaceGroup = nullptr;</a>
+<a name="ln606">    // be forgiving - if spg not found, try again</a>
+<a name="ln607">    // Prefer Hall &gt; HM == number, as Hall symbol is truly unique</a>
+<a name="ln608">    if (mSpacegroupSymbolHall.length() &gt; 0) {</a>
+<a name="ln609">      //Make sure there are no leading spaces before Hall symbol (kludge)</a>
+<a name="ln610">      for(std::string::iterator pos=mSpacegroupSymbolHall.begin();pos!=mSpacegroupSymbolHall.end();)</a>
+<a name="ln611">      {</a>
+<a name="ln612">        if((char)(*pos)==' ')  pos=mSpacegroupSymbolHall.erase(pos);</a>
+<a name="ln613">        else ++pos;</a>
+<a name="ln614">      }</a>
+<a name="ln615">      mSpaceGroup = SpaceGroup::GetSpaceGroup(mSpacegroupSymbolHall);</a>
+<a name="ln616">    }</a>
+<a name="ln617">    if (mSpaceGroup == nullptr &amp;&amp; mSpacegroupHermannMauguin.length() &gt; 0) {</a>
+<a name="ln618">      mSpaceGroup = SpaceGroup::GetSpaceGroup(mSpacegroupHermannMauguin);</a>
+<a name="ln619">    }</a>
+<a name="ln620">    if (mSpaceGroup == nullptr &amp;&amp; mSpacegroupNumberIT != 0) {</a>
+<a name="ln621">      mSpaceGroup = SpaceGroup::GetSpaceGroup(mSpacegroupNumberIT);</a>
+<a name="ln622">    }</a>
+<a name="ln623">    if (mSpaceGroup == nullptr) {</a>
+<a name="ln624">      SpaceGroup *sg = new SpaceGroup();</a>
+<a name="ln625">      positem=mvItem.find(&quot;_space_group_symop_operation_xyz&quot;);</a>
+<a name="ln626">      if(positem==mvItem.end())</a>
+<a name="ln627">        positem=mvItem.find(&quot;_symmetry_equiv_pos_as_xyz&quot;);</a>
+<a name="ln628">      if(positem!=mvItem.end())</a>
+<a name="ln629">        {</a>
+<a name="ln630">          sg-&gt;AddTransform (positem-&gt;second);</a>
+<a name="ln631">          found = true;</a>
+<a name="ln632">        }</a>
+<a name="ln633">      else {</a>
+<a name="ln634">        for(map&lt;set&lt;ci_string&gt;,map&lt;ci_string,vector&lt;string&gt; &gt; &gt;::const_iterator loop=mvLoop.begin();</a>
+<a name="ln635">            loop!=mvLoop.end();++loop)</a>
+<a name="ln636">          {</a>
+<a name="ln637">            map&lt;ci_string,vector&lt;string&gt; &gt;::const_iterator pos;</a>
+<a name="ln638">            unsigned i, nb;</a>
+<a name="ln639">            pos=loop-&gt;second.find(&quot;_space_group_symop_operation_xyz&quot;);</a>
+<a name="ln640">            if (pos==loop-&gt;second.end())</a>
+<a name="ln641">              pos=loop-&gt;second.find(&quot;_symmetry_equiv_pos_as_xyz&quot;);</a>
+<a name="ln642">            if (pos!=loop-&gt;second.end())</a>
+<a name="ln643">              {</a>
+<a name="ln644">                nb=pos-&gt;second.size();</a>
+<a name="ln645">                found = true;</a>
+<a name="ln646">                for (i = 0; i &lt; nb; i++)</a>
+<a name="ln647">                  sg-&gt;AddTransform(pos-&gt;second[i]);</a>
+<a name="ln648">                break; // found the transforms, so we have done with them</a>
+<a name="ln649">              }</a>
+<a name="ln650">          }</a>
+<a name="ln651">        if (found)</a>
+<a name="ln652">          mSpaceGroup = SpaceGroup::Find(sg);</a>
+<a name="ln653">        if (mSpaceGroup == nullptr &amp;&amp; sg-&gt;IsValid())</a>
+<a name="ln654">          mSpaceGroup = sg;</a>
+<a name="ln655">        else</a>
+<a name="ln656">          delete sg;</a>
+<a name="ln657">      }</a>
+<a name="ln658">    }</a>
+<a name="ln659">    if (mSpaceGroup == nullptr)</a>
+<a name="ln660">    {</a>
+<a name="ln661">        stringstream ss;</a>
+<a name="ln662">        ss &lt;&lt; &quot;CIF Error: missing spacegroup description: defaulting to P1... (in data block:&quot;&lt;&lt;mDataBlockName&lt;&lt;&quot;)&quot;;</a>
+<a name="ln663">        obErrorLog.ThrowError(__FUNCTION__, ss.str(), obWarning);</a>
+<a name="ln664">        mSpaceGroup = SpaceGroup::GetSpaceGroup(1);</a>
+<a name="ln665">    }</a>
+<a name="ln666">    // set the space group name to Hall symbol</a>
+<a name="ln667">    mSpacegroupSymbolHall = mSpaceGroup-&gt;GetHallName();</a>
+<a name="ln668">  }</a>
+<a name="ln669"> </a>
+<a name="ln670">  void CIFData::ExtractName()</a>
+<a name="ln671">  {</a>
+<a name="ln672">    map&lt;ci_string,string&gt;::const_iterator positem;</a>
+<a name="ln673">    positem=mvItem.find(&quot;_chemical_name_systematic&quot;);</a>
+<a name="ln674">    if(positem!=mvItem.end())</a>
+<a name="ln675">      {</a>
+<a name="ln676">        mName=positem-&gt;second;</a>
+<a name="ln677">        obErrorLog.ThrowError(__FUNCTION__, &quot;Found chemical name:&quot;+mName, obDebug);</a>
+<a name="ln678">      }</a>
+<a name="ln679">    else</a>
+<a name="ln680">      {</a>
+<a name="ln681">        positem=mvItem.find(&quot;_chemical_name_mineral&quot;);</a>
+<a name="ln682">        if(positem!=mvItem.end())</a>
+<a name="ln683">          {</a>
+<a name="ln684">            mName=positem-&gt;second;</a>
+<a name="ln685">            obErrorLog.ThrowError(__FUNCTION__, &quot;Found chemical name:&quot;+mName, obDebug);</a>
+<a name="ln686">          }</a>
+<a name="ln687">        else</a>
+<a name="ln688">          {</a>
+<a name="ln689">            positem=mvItem.find(&quot;_chemical_name_structure_type&quot;);</a>
+<a name="ln690">            if(positem!=mvItem.end())</a>
+<a name="ln691">              {</a>
+<a name="ln692">                mName=positem-&gt;second;</a>
+<a name="ln693">                obErrorLog.ThrowError(__FUNCTION__, &quot;Found chemical name:&quot;+mName, obDebug);</a>
+<a name="ln694">              }</a>
+<a name="ln695">            else</a>
+<a name="ln696">              {</a>
+<a name="ln697">                positem=mvItem.find(&quot;_chemical_name_common&quot;);</a>
+<a name="ln698">                if(positem!=mvItem.end())</a>
+<a name="ln699">                  {</a>
+<a name="ln700">                    mName=positem-&gt;second;</a>
+<a name="ln701">                    obErrorLog.ThrowError(__FUNCTION__, &quot;Found chemical name:&quot;+mName, obDebug);</a>
+<a name="ln702">                  }</a>
+<a name="ln703">              }</a>
+<a name="ln704">          }</a>
+<a name="ln705">      }</a>
+<a name="ln706">    /// Crystal formula</a>
+<a name="ln707">    positem=mvItem.find(&quot;_chemical_formula_analytical&quot;);</a>
+<a name="ln708">    if(positem!=mvItem.end())</a>
+<a name="ln709">      {</a>
+<a name="ln710">        mFormula=positem-&gt;second;</a>
+<a name="ln711">        obErrorLog.ThrowError(__FUNCTION__, &quot;Found chemical formula:&quot;+mFormula, obDebug);</a>
+<a name="ln712">      }</a>
+<a name="ln713">    else</a>
+<a name="ln714">      {</a>
+<a name="ln715">        positem=mvItem.find(&quot;_chemical_formula_structural&quot;);</a>
+<a name="ln716">        if(positem!=mvItem.end())</a>
+<a name="ln717">          {</a>
+<a name="ln718">            mFormula=positem-&gt;second;</a>
+<a name="ln719">            obErrorLog.ThrowError(__FUNCTION__, &quot;Found chemical formula:&quot;+mFormula, obDebug);</a>
+<a name="ln720">          }</a>
+<a name="ln721">        else</a>
+<a name="ln722">          {</a>
+<a name="ln723">            positem=mvItem.find(&quot;_chemical_formula_iupac&quot;);</a>
+<a name="ln724">            if(positem!=mvItem.end())</a>
+<a name="ln725">              {</a>
+<a name="ln726">                mFormula=positem-&gt;second;</a>
+<a name="ln727">                obErrorLog.ThrowError(__FUNCTION__, &quot;Found chemical formula:&quot;+mFormula, obDebug);</a>
+<a name="ln728">              }</a>
+<a name="ln729">            else</a>
+<a name="ln730">              {</a>
+<a name="ln731">                positem=mvItem.find(&quot;_chemical_formula_moiety&quot;);</a>
+<a name="ln732">                if(positem!=mvItem.end())</a>
+<a name="ln733">                  {</a>
+<a name="ln734">                    mFormula=positem-&gt;second;</a>
+<a name="ln735">                    obErrorLog.ThrowError(__FUNCTION__, &quot;Found chemical formula:&quot;+mFormula, obDebug);</a>
+<a name="ln736">                  }</a>
+<a name="ln737">              }</a>
+<a name="ln738">          }</a>
+<a name="ln739">      }</a>
+<a name="ln740">  }</a>
+<a name="ln741"> </a>
+<a name="ln742">  void CIFData::ExtractAtomicPositions()</a>
+<a name="ln743">  {</a>
+<a name="ln744">    map&lt;ci_string,string&gt;::const_iterator positem;</a>
+<a name="ln745">    for(map&lt;set&lt;ci_string&gt;,map&lt;ci_string,vector&lt;string&gt; &gt; &gt;::const_iterator loop=mvLoop.begin();</a>
+<a name="ln746">        loop!=mvLoop.end();++loop)</a>
+<a name="ln747">      {</a>
+<a name="ln748">        if(mvAtom.size()&gt;0) break;// only extract ONE list of atoms, preferably fractional coordinates</a>
+<a name="ln749">        map&lt;ci_string,vector&lt;string&gt; &gt;::const_iterator posx,posy,posz,poslabel,possymbol,posoccup;</a>
+<a name="ln750">        posx=loop-&gt;second.find(&quot;_atom_site_fract_x&quot;);</a>
+<a name="ln751">        posy=loop-&gt;second.find(&quot;_atom_site_fract_y&quot;);</a>
+<a name="ln752">        posz=loop-&gt;second.find(&quot;_atom_site_fract_z&quot;);</a>
+<a name="ln753">        unsigned int nb = 0;</a>
+<a name="ln754">        if( (posx!=loop-&gt;second.end()) &amp;&amp; (posy!=loop-&gt;second.end()) &amp;&amp; (posz!=loop-&gt;second.end()))</a>
+<a name="ln755">          {</a>
+<a name="ln756">            nb=posx-&gt;second.size();</a>
+<a name="ln757">            mvAtom.resize(nb);</a>
+<a name="ln758">            for(unsigned int i=0;i&lt;nb;++i)</a>
+<a name="ln759">              {</a>
+<a name="ln760">                mvAtom[i].mCoordFrac.resize(3);</a>
+<a name="ln761">                mvAtom[i].mCoordFrac[0]=CIFNumeric2Float(posx-&gt;second[i]);</a>
+<a name="ln762">                mvAtom[i].mCoordFrac[1]=CIFNumeric2Float(posy-&gt;second[i]);</a>
+<a name="ln763">                mvAtom[i].mCoordFrac[2]=CIFNumeric2Float(posz-&gt;second[i]);</a>
+<a name="ln764">              }</a>
+<a name="ln765">            this-&gt;Fractional2CartesianCoord();</a>
+<a name="ln766">          }</a>
+<a name="ln767">        else</a>
+<a name="ln768">          {</a>
+<a name="ln769">            posx=loop-&gt;second.find(&quot;_atom_site_Cartn_x&quot;);</a>
+<a name="ln770">            posy=loop-&gt;second.find(&quot;_atom_site_Cartn_y&quot;);</a>
+<a name="ln771">            posz=loop-&gt;second.find(&quot;_atom_site_Cartn_z&quot;);</a>
+<a name="ln772">            if( (posx!=loop-&gt;second.end()) &amp;&amp; (posy!=loop-&gt;second.end()) &amp;&amp; (posz!=loop-&gt;second.end()))</a>
+<a name="ln773">              {</a>
+<a name="ln774">                nb=posx-&gt;second.size();</a>
+<a name="ln775">                mvAtom.resize(nb);</a>
+<a name="ln776">                for(unsigned int i=0;i&lt;nb;++i)</a>
+<a name="ln777">                  {</a>
+<a name="ln778">                    mvAtom[i].mCoordCart.resize(3);</a>
+<a name="ln779">                    mvAtom[i].mCoordCart[0]=CIFNumeric2Float(posx-&gt;second[i]);</a>
+<a name="ln780">                    mvAtom[i].mCoordCart[1]=CIFNumeric2Float(posy-&gt;second[i]);</a>
+<a name="ln781">                    mvAtom[i].mCoordCart[2]=CIFNumeric2Float(posz-&gt;second[i]);</a>
+<a name="ln782">                  }</a>
+<a name="ln783">                this-&gt;Cartesian2FractionalCoord();</a>
+<a name="ln784">              }</a>
+<a name="ln785">          }</a>
+<a name="ln786">        if(mvAtom.size()&gt;0)</a>
+<a name="ln787">          {// Got the atoms, get names and symbols</a>
+<a name="ln788">            possymbol=loop-&gt;second.find(&quot;_atom_site_type_symbol&quot;);</a>
+<a name="ln789">            if(possymbol!=loop-&gt;second.end())</a>
+<a name="ln790">              for(unsigned int i=0;i&lt;nb;++i)</a>
+<a name="ln791">                mvAtom[i].mSymbol=possymbol-&gt;second[i];</a>
+<a name="ln792">            poslabel=loop-&gt;second.find(&quot;_atom_site_label&quot;);</a>
+<a name="ln793">            if(poslabel!=loop-&gt;second.end())</a>
+<a name="ln794">              for(unsigned int i=0;i&lt;nb;++i)</a>
+<a name="ln795">                {</a>
+<a name="ln796">                  mvAtom[i].mLabel=poslabel-&gt;second[i];</a>
+<a name="ln797">                  if(possymbol==loop-&gt;second.end())</a>
+<a name="ln798">                    {// There was no symbol, use the labels to guess it</a>
+<a name="ln799">                      int nbc=0;</a>
+<a name="ln800">                      if(mvAtom[i].mLabel.size()==1)</a>
+<a name="ln801">                        if(isalpha(mvAtom[i].mLabel[0])) nbc=1;</a>
+<a name="ln802">                      if(mvAtom[i].mLabel.size()&gt;=2)</a>
+<a name="ln803">                        {</a>
+<a name="ln804">                          if(isalpha(mvAtom[i].mLabel[0]) &amp;&amp; isalpha(mvAtom[i].mLabel[1])) nbc=2;</a>
+<a name="ln805">                          else if(isalpha(mvAtom[i].mLabel[0])) nbc=1;</a>
+<a name="ln806">                        }</a>
+<a name="ln807">                      if(nbc&gt;0) mvAtom[i].mSymbol=mvAtom[i].mLabel.substr(0,nbc);</a>
+<a name="ln808">                      else mvAtom[i].mSymbol=&quot;H&quot;;//Something wen wrong, no symbol !</a>
+<a name="ln809">                    }</a>
+<a name="ln810">                }</a>
+<a name="ln811">            // Occupancy ?</a>
+<a name="ln812">            posoccup=loop-&gt;second.find(&quot;_atom_site_occupancy&quot;);</a>
+<a name="ln813">            if(posoccup!=loop-&gt;second.end())</a>
+<a name="ln814">              for(unsigned int i=0;i&lt;nb;++i)</a>
+<a name="ln815">                {</a>
+<a name="ln816">                  mvAtom[i].mOccupancy=CIFNumeric2Float(posoccup-&gt;second[i]);</a>
+<a name="ln817">                  if( (mvAtom[i].mOccupancy &lt;= 0.0) || (mvAtom[i].mOccupancy &gt; 1.0) )</a>
+<a name="ln818">                    mvAtom[i].mOccupancy = 1.0;</a>
+<a name="ln819">                }</a>
+<a name="ln820">            // Now be somewhat verbose</a>
+<a name="ln821">            stringstream ss;</a>
+<a name="ln822">            ss &lt;&lt; &quot;Found &quot;&lt;&lt;nb&lt;&lt;&quot; atoms.&quot;&lt;&lt;endl;</a>
+<a name="ln823">            for(unsigned int i=0;i&lt;nb;++i)</a>
+<a name="ln824">              {</a>
+<a name="ln825">                ss&lt;&lt;mvAtom[i].mLabel&lt;&lt;&quot; &quot;&lt;&lt;mvAtom[i].mSymbol;</a>
+<a name="ln826">                if(mvAtom[i].mCoordFrac.size()&gt;0)</a>
+<a name="ln827">                  {</a>
+<a name="ln828">                    ss&lt;&lt;&quot; , Fractional: &quot;;</a>
+<a name="ln829">                    for(unsigned int j=0;j&lt;mvAtom[i].mCoordFrac.size();++j)</a>
+<a name="ln830">                      ss&lt;&lt;mvAtom[i].mCoordFrac[j]&lt;&lt;&quot; &quot;;</a>
+<a name="ln831">                  }</a>
+<a name="ln832">                if(mvAtom[i].mCoordCart.size()&gt;0)</a>
+<a name="ln833">                  {</a>
+<a name="ln834">                    ss&lt;&lt;&quot; , Cartesian: &quot;;</a>
+<a name="ln835">                    for(unsigned int j=0;j&lt;mvAtom[i].mCoordCart.size();++j)</a>
+<a name="ln836">                      ss&lt;&lt;mvAtom[i].mCoordCart[j]&lt;&lt;&quot; &quot;;</a>
+<a name="ln837">                  }</a>
+<a name="ln838">                ss&lt;&lt;&quot; , Occupancy= &quot;&lt;&lt;mvAtom[i].mOccupancy&lt;&lt;endl;</a>
+<a name="ln839">              }</a>
+<a name="ln840">            obErrorLog.ThrowError(__FUNCTION__, ss.str(), obDebug);</a>
+<a name="ln841">          }</a>
+<a name="ln842">      }</a>
+<a name="ln843">  }</a>
+<a name="ln844"> </a>
+<a name="ln845">  void CIFData::ExtractBonds()</a>
+<a name="ln846">  {</a>
+<a name="ln847">    map&lt;ci_string,string&gt;::const_iterator positem;</a>
+<a name="ln848">    for(map&lt;set&lt;ci_string&gt;,map&lt;ci_string,vector&lt;string&gt; &gt; &gt;::const_iterator loop=mvLoop.begin(); loop!=mvLoop.end();++loop)</a>
+<a name="ln849">      {</a>
+<a name="ln850">        //if(mvBond.size()&gt;0) break;// Only allow one bond list</a>
+<a name="ln851">        map&lt;ci_string,vector&lt;string&gt; &gt;::const_iterator poslabel1,poslabel2,posdist;</a>
+<a name="ln852">        poslabel1=loop-&gt;second.find(&quot;_geom_bond_atom_site_label_1&quot;);</a>
+<a name="ln853">        poslabel2=loop-&gt;second.find(&quot;_geom_bond_atom_site_label_2&quot;);</a>
+<a name="ln854">        posdist=loop-&gt;second.find(&quot;_geom_bond_distance&quot;);</a>
+<a name="ln855">        if( (poslabel1!=loop-&gt;second.end()) &amp;&amp; (poslabel2!=loop-&gt;second.end()) &amp;&amp; (posdist!=loop-&gt;second.end()))</a>
+<a name="ln856">          {</a>
+<a name="ln857">            obErrorLog.ThrowError(__FUNCTION__, &quot;Found _geom_bond* record...&quot;, obDebug);</a>
+<a name="ln858">            const unsigned long nb=poslabel1-&gt;second.size();</a>
+<a name="ln859">            mvBond.resize(nb);</a>
+<a name="ln860">            for(unsigned int i=0;i&lt;nb;++i)</a>
+<a name="ln861">              {</a>
+<a name="ln862">                mvBond[i].mLabel1=poslabel1-&gt;second[i];</a>
+<a name="ln863">                mvBond[i].mLabel2=poslabel2-&gt;second[i];</a>
+<a name="ln864">                mvBond[i].mDistance=CIFNumeric2Float(posdist-&gt;second[i]);</a>
+<a name="ln865">                stringstream ss;</a>
+<a name="ln866">                ss &lt;&lt; &quot;  d(&quot; &lt;&lt; mvBond[i].mLabel1 &lt;&lt; &quot;-&quot; &lt;&lt; mvBond[i].mLabel2 &lt;&lt; &quot;)=&quot; &lt;&lt; mvBond[i].mDistance;</a>
+<a name="ln867">                obErrorLog.ThrowError(__FUNCTION__, ss.str(), obDebug);</a>
+<a name="ln868">              }</a>
+<a name="ln869">          }</a>
+<a name="ln870">      }</a>
+<a name="ln871">  }</a>
+<a name="ln872"> </a>
+<a name="ln873">  void CIFData::ExtractCharges()</a>
+<a name="ln874">  {</a>
+<a name="ln875">    map&lt;ci_string,string&gt;::const_iterator positem;</a>
+<a name="ln876"> </a>
+<a name="ln877">    map&lt;std::string, double&gt; lbl2ox;</a>
+<a name="ln878">    for(map&lt;set&lt;ci_string&gt;, map&lt;ci_string, vector&lt;string&gt; &gt; &gt;::const_iterator loop=mvLoop.begin(); loop!=mvLoop.end(); ++loop)</a>
+<a name="ln879">    {</a>
+<a name="ln880">      //if(mvBond.size()&gt;0) break;// Only allow one bond list</a>
+<a name="ln881">      map&lt;ci_string,vector&lt;string&gt; &gt;::const_iterator pos_symbol, pos_ox_number, posdist;</a>
+<a name="ln882">      pos_symbol    =loop-&gt;second.find(&quot;_atom_type_symbol&quot;);</a>
+<a name="ln883">      pos_ox_number =loop-&gt;second.find(&quot;_atom_type_oxidation_number&quot;);</a>
+<a name="ln884">      if( (pos_symbol != loop-&gt;second.end()) &amp;&amp; (pos_ox_number != loop-&gt;second.end()) )</a>
+<a name="ln885">      {</a>
+<a name="ln886">        obErrorLog.ThrowError(__FUNCTION__, &quot; Found _atom_type* record with oxydation number...&quot;, obDebug);</a>
+<a name="ln887">        const unsigned long nl = pos_symbol-&gt;second.size();</a>
+<a name="ln888"> </a>
+<a name="ln889">        for(unsigned int i = 0; i &lt; nl; i++)</a>
+<a name="ln890">        {</a>
+<a name="ln891">          lbl2ox[pos_symbol-&gt;second[i]] = CIFNumeric2Float(pos_ox_number-&gt;second[i]);</a>
+<a name="ln892">          obErrorLog.ThrowError(__FUNCTION__, &quot; has oxydation &quot;+pos_ox_number-&gt;second[i], obDebug);</a>
+<a name="ln893">        }</a>
+<a name="ln894">      }</a>
+<a name="ln895">    }</a>
+<a name="ln896"> </a>
+<a name="ln897">    for (std::vector&lt;CIFAtom&gt;::iterator it = mvAtom.begin() ; it != mvAtom.end(); ++it)</a>
+<a name="ln898">    {</a>
+<a name="ln899">      string label = (*it).mLabel;</a>
+<a name="ln900"> </a>
+<a name="ln901">      if( lbl2ox.count(label) &gt; 0 )</a>
+<a name="ln902">        (*it).mCharge = lbl2ox[label];</a>
+<a name="ln903">      else</a>
+<a name="ln904">      {</a>
+<a name="ln905">        (*it).mCharge = NOCHARGE;</a>
+<a name="ln906">        obErrorLog.ThrowError(__FUNCTION__, &quot;Charge for label: &quot;+label+&quot; cannot be found.&quot;, obDebug);</a>
+<a name="ln907">      }</a>
+<a name="ln908">    }</a>
+<a name="ln909">  }</a>
+<a name="ln910"> </a>
+<a name="ln911">  void CIFData::CalcMatrices()</a>
+<a name="ln912">  {</a>
+<a name="ln913">    if(mvLatticePar.size()==0) return;//:@todo: throw error</a>
+<a name="ln914">    float a,b,c,alpha,beta,gamma;//direct space parameters</a>
+<a name="ln915">    float aa,bb,cc,alphaa,betaa,gammaa;//reciprocal space parameters</a>
+<a name="ln916">    float v;//volume of the unit cell</a>
+<a name="ln917">    a=mvLatticePar[0];</a>
+<a name="ln918">    b=mvLatticePar[1];</a>
+<a name="ln919">    c=mvLatticePar[2];</a>
+<a name="ln920">    alpha=mvLatticePar[3];</a>
+<a name="ln921">    beta=mvLatticePar[4];</a>
+<a name="ln922">    gamma=mvLatticePar[5];</a>
+<a name="ln923"> </a>
+<a name="ln924">    v=sqrt(1-cos(alpha)*cos(alpha)-cos(beta)*cos(beta)-cos(gamma)*cos(gamma)</a>
+<a name="ln925">           +2*cos(alpha)*cos(beta)*cos(gamma));</a>
+<a name="ln926"> </a>
+<a name="ln927">    aa=sin(alpha)/a/v;</a>
+<a name="ln928">    bb=sin(beta )/b/v;</a>
+<a name="ln929">    cc=sin(gamma)/c/v;</a>
+<a name="ln930"> </a>
+<a name="ln931">    alphaa=acos( (cos(beta )*cos(gamma)-cos(alpha))/sin(beta )/sin(gamma) );</a>
+<a name="ln932">    betaa =acos( (cos(alpha)*cos(gamma)-cos(beta ))/sin(alpha)/sin(gamma) );</a>
+<a name="ln933">    gammaa=acos( (cos(alpha)*cos(beta )-cos(gamma))/sin(alpha)/sin(beta ) );</a>
+<a name="ln934"> </a>
+<a name="ln935">    mOrthMatrix[0][0]=a;</a>
+<a name="ln936">    mOrthMatrix[0][1]=b*cos(gamma);</a>
+<a name="ln937">    mOrthMatrix[0][2]=c*cos(beta);</a>
+<a name="ln938"> </a>
+<a name="ln939">    mOrthMatrix[1][0]=0;</a>
+<a name="ln940">    mOrthMatrix[1][1]=b*sin(gamma);</a>
+<a name="ln941">    mOrthMatrix[1][2]=-c*sin(beta)*cos(alphaa);</a>
+<a name="ln942"> </a>
+<a name="ln943">    mOrthMatrix[2][0]=0;</a>
+<a name="ln944">    mOrthMatrix[2][1]=0;</a>
+<a name="ln945">    mOrthMatrix[2][2]=1/cc;</a>
+<a name="ln946"> </a>
+<a name="ln947">    // Invert upper triangular matrix</a>
+<a name="ln948">    float cm[3][3];</a>
+<a name="ln949">    cm[0][0]=mOrthMatrix[0][0];</a>
+<a name="ln950">    cm[0][1]=mOrthMatrix[0][1];</a>
+<a name="ln951">    cm[0][2]=mOrthMatrix[0][2];</a>
+<a name="ln952"> </a>
+<a name="ln953">    cm[1][0]=mOrthMatrix[1][0];</a>
+<a name="ln954">    cm[1][1]=mOrthMatrix[1][1];</a>
+<a name="ln955">    cm[1][2]=mOrthMatrix[1][2];</a>
+<a name="ln956"> </a>
+<a name="ln957">    cm[2][0]=mOrthMatrix[2][0];</a>
+<a name="ln958">    cm[2][1]=mOrthMatrix[2][1];</a>
+<a name="ln959">    cm[2][2]=mOrthMatrix[2][2];</a>
+<a name="ln960">    for(long i=0;i&lt;3;i++)</a>
+<a name="ln961">      for(long j=0;j&lt;3;j++)</a>
+<a name="ln962">        if(i==j) mOrthMatrixInvert[i][j]=1;</a>
+<a name="ln963">        else mOrthMatrixInvert[i][j]=0;</a>
+<a name="ln964">    for(long i=0;i&lt;3;i++)</a>
+<a name="ln965">      {</a>
+<a name="ln966">        float a;</a>
+<a name="ln967">        for(long j=i-1;j&gt;=0;j--)</a>
+<a name="ln968">          {</a>
+<a name="ln969">            a=cm[j][i]/cm[i][i];</a>
+<a name="ln970">            for(long k=0;k&lt;3;k++) mOrthMatrixInvert[j][k] -= mOrthMatrixInvert[i][k]*a;</a>
+<a name="ln971">            for(long k=0;k&lt;3;k++) cm[j][k] -= cm[i][k]*a;</a>
+<a name="ln972">          }</a>
+<a name="ln973">        a=cm[i][i];</a>
+<a name="ln974">        for(long k=0;k&lt;3;k++) mOrthMatrixInvert[i][k] /= a;</a>
+<a name="ln975">        for(long k=0;k&lt;3;k++) cm[i][k] /= a;</a>
+<a name="ln976">      }</a>
+<a name="ln977">      stringstream ss;</a>
+<a name="ln978">      ss &lt;&lt;&quot;Fractional2Cartesian matrix:&quot;&lt;&lt;endl</a>
+<a name="ln979">           &lt;&lt;mOrthMatrix[0][0]&lt;&lt;&quot; &quot;&lt;&lt;mOrthMatrix[0][1]&lt;&lt;&quot; &quot;&lt;&lt;mOrthMatrix[0][2]&lt;&lt;endl</a>
+<a name="ln980">           &lt;&lt;mOrthMatrix[1][0]&lt;&lt;&quot; &quot;&lt;&lt;mOrthMatrix[1][1]&lt;&lt;&quot; &quot;&lt;&lt;mOrthMatrix[1][2]&lt;&lt;endl</a>
+<a name="ln981">           &lt;&lt;mOrthMatrix[2][0]&lt;&lt;&quot; &quot;&lt;&lt;mOrthMatrix[2][1]&lt;&lt;&quot; &quot;&lt;&lt;mOrthMatrix[2][2]&lt;&lt;endl&lt;&lt;endl;</a>
+<a name="ln982">      ss &lt;&lt;&quot;Cartesian2Fractional matrix:&quot;&lt;&lt;endl</a>
+<a name="ln983">           &lt;&lt;mOrthMatrixInvert[0][0]&lt;&lt;&quot; &quot;&lt;&lt;mOrthMatrixInvert[0][1]&lt;&lt;&quot; &quot;&lt;&lt;mOrthMatrixInvert[0][2]&lt;&lt;endl</a>
+<a name="ln984">           &lt;&lt;mOrthMatrixInvert[1][0]&lt;&lt;&quot; &quot;&lt;&lt;mOrthMatrixInvert[1][1]&lt;&lt;&quot; &quot;&lt;&lt;mOrthMatrixInvert[1][2]&lt;&lt;endl</a>
+<a name="ln985">           &lt;&lt;mOrthMatrixInvert[2][0]&lt;&lt;&quot; &quot;&lt;&lt;mOrthMatrixInvert[2][1]&lt;&lt;&quot; &quot;&lt;&lt;mOrthMatrixInvert[2][2];</a>
+<a name="ln986">      obErrorLog.ThrowError(__FUNCTION__, ss.str(), obDebug);</a>
+<a name="ln987">  }</a>
+<a name="ln988"> </a>
+<a name="ln989">  void CIFData::f2c(float &amp;x,float &amp;y, float &amp;z)</a>
+<a name="ln990">  {</a>
+<a name="ln991">    const float x0=x,y0=y,z0=z;</a>
+<a name="ln992">    x=mOrthMatrix[0][0]*x0+mOrthMatrix[0][1]*y0+mOrthMatrix[0][2]*z0;</a>
+<a name="ln993">    y=mOrthMatrix[1][0]*x0+mOrthMatrix[1][1]*y0+mOrthMatrix[1][2]*z0;</a>
+<a name="ln994">    z=mOrthMatrix[2][0]*x0+mOrthMatrix[2][1]*y0+mOrthMatrix[2][2]*z0;</a>
+<a name="ln995">  }</a>
+<a name="ln996"> </a>
+<a name="ln997">  void CIFData::c2f(float &amp;x,float &amp;y, float &amp;z)</a>
+<a name="ln998">  {</a>
+<a name="ln999">    const float x0=x,y0=y,z0=z;</a>
+<a name="ln1000">    x=mOrthMatrixInvert[0][0]*x0+mOrthMatrixInvert[0][1]*y0+mOrthMatrixInvert[0][2]*z0;</a>
+<a name="ln1001">    y=mOrthMatrixInvert[1][0]*x0+mOrthMatrixInvert[1][1]*y0+mOrthMatrixInvert[1][2]*z0;</a>
+<a name="ln1002">    z=mOrthMatrixInvert[2][0]*x0+mOrthMatrixInvert[2][1]*y0+mOrthMatrixInvert[2][2]*z0;</a>
+<a name="ln1003">  }</a>
+<a name="ln1004"> </a>
+<a name="ln1005">  void CIFData::Cartesian2FractionalCoord()</a>
+<a name="ln1006">  {</a>
+<a name="ln1007">    if(mvLatticePar.size()==0) return;//:@todo: report error</a>
+<a name="ln1008">    for(vector&lt;CIFAtom&gt;::iterator pos=mvAtom.begin();pos!=mvAtom.end();++pos)</a>
+<a name="ln1009">      {</a>
+<a name="ln1010">        pos-&gt;mCoordFrac.resize(3);</a>
+<a name="ln1011">        pos-&gt;mCoordFrac[0]=pos-&gt;mCoordCart.at(0);</a>
+<a name="ln1012">        pos-&gt;mCoordFrac[1]=pos-&gt;mCoordCart.at(1);</a>
+<a name="ln1013">        pos-&gt;mCoordFrac[2]=pos-&gt;mCoordCart.at(2);</a>
+<a name="ln1014">        c2f(pos-&gt;mCoordFrac[0],pos-&gt;mCoordFrac[1],pos-&gt;mCoordFrac[2]);</a>
+<a name="ln1015">      }</a>
+<a name="ln1016">  }</a>
+<a name="ln1017"> </a>
+<a name="ln1018">  void CIFData::Fractional2CartesianCoord()</a>
+<a name="ln1019">  {</a>
+<a name="ln1020">    if(mvLatticePar.size()==0) return;//:@todo: report error</a>
+<a name="ln1021">    for(vector&lt;CIFAtom&gt;::iterator pos=mvAtom.begin();pos!=mvAtom.end();++pos)</a>
+<a name="ln1022">      {</a>
+<a name="ln1023">        pos-&gt;mCoordCart.resize(3);</a>
+<a name="ln1024">        pos-&gt;mCoordCart[0]=pos-&gt;mCoordFrac.at(0);</a>
+<a name="ln1025">        pos-&gt;mCoordCart[1]=pos-&gt;mCoordFrac.at(1);</a>
+<a name="ln1026">        pos-&gt;mCoordCart[2]=pos-&gt;mCoordFrac.at(2);</a>
+<a name="ln1027">        f2c(pos-&gt;mCoordCart[0],pos-&gt;mCoordCart[1],pos-&gt;mCoordCart[2]);</a>
+<a name="ln1028">      }</a>
+<a name="ln1029">  }</a>
+<a name="ln1030"> </a>
+<a name="ln1031">  /////</a>
+<a name="ln1032"> </a>
+<a name="ln1033"> </a>
+<a name="ln1034">  CIF::CIF(istream &amp;is, const bool interpret)</a>
+<a name="ln1035">  {</a>
+<a name="ln1036">    bool found_atoms=false;</a>
+<a name="ln1037">    while(!found_atoms)</a>
+<a name="ln1038">    {</a>
+<a name="ln1039">      // :TODO: we don't need a vector of CIFData, since only one block is read at a time</a>
+<a name="ln1040">      mvData.clear();</a>
+<a name="ln1041">      this-&gt;Parse(is);</a>
+<a name="ln1042">      // Extract structure from 1 block</a>
+<a name="ln1043">      if(interpret)</a>
+<a name="ln1044">        for(map&lt;string,CIFData&gt;::iterator posd=mvData.begin();posd!=mvData.end();++posd)</a>
+<a name="ln1045">        {</a>
+<a name="ln1046">          posd-&gt;second.ExtractAll();</a>
+<a name="ln1047">          if(posd-&gt;second.mvAtom.size()&gt;0) found_atoms=true;</a>
+<a name="ln1048">        }</a>
+<a name="ln1049">    }</a>
+<a name="ln1050">  }</a>
+<a name="ln1051"> </a>
+<a name="ln1052">  bool iseol(const char c) { return ((c=='\n')||(c=='\r'));}</a>
+<a name="ln1053"> </a>
+<a name="ln1054">  /// Read one value, whether it is numeric, string or text</a>
+<a name="ln1055">  string CIFReadValue(istream &amp;in,char &amp;lastc)</a>
+<a name="ln1056">  {</a>
+<a name="ln1057">    bool vv=false;//very verbose ?</a>
+<a name="ln1058">    string value(&quot;&quot;);</a>
+<a name="ln1059">    while(!isgraph(in.peek())) in.get(lastc);</a>
+<a name="ln1060">    while(in.peek()=='#')</a>
+<a name="ln1061">      {//discard these comments for now</a>
+<a name="ln1062">        string tmp;</a>
+<a name="ln1063">        getline(in,tmp);</a>
+<a name="ln1064">        lastc='\r';</a>
+<a name="ln1065">        while(!isgraph(in.peek())) in.get(lastc);</a>
+<a name="ln1066">      }</a>
+<a name="ln1067">    if(in.peek()=='_') {</a>
+<a name="ln1068">      stringstream errorMsg;</a>
+<a name="ln1069">      errorMsg &lt;&lt; &quot;Warning: Trying to read a value but found a new CIF tag !&quot;;</a>
+<a name="ln1070">      obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() , obError);</a>
+<a name="ln1071">      return value;</a>
+<a name="ln1072">    }</a>
+<a name="ln1073">    if(in.peek()==';')</a>
+<a name="ln1074">      {//SemiColonTextField</a>
+<a name="ln1075">        bool warning=!iseol(lastc);</a>
+<a name="ln1076">        if(warning){</a>
+<a name="ln1077">          stringstream errorMsg;</a>
+<a name="ln1078">          errorMsg &lt;&lt; &quot;Warning: Trying to read a SemiColonTextField but last char is not an end-of-line char !&quot;;</a>
+<a name="ln1079">          obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() , obError);</a>
+<a name="ln1080">        }</a>
+<a name="ln1081">        value=&quot;&quot;;</a>
+<a name="ln1082">        in.get(lastc);</a>
+<a name="ln1083">        while(in.peek()!=';')</a>
+<a name="ln1084">          {</a>
+<a name="ln1085">            if (in.peek() == '_') {</a>
+<a name="ln1086">              stringstream errorMsg;</a>
+<a name="ln1087">              errorMsg &lt;&lt; &quot;Warning: Trying to read a value but found a new CIF tag !&quot;;</a>
+<a name="ln1088">              obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() , obError);</a>
+<a name="ln1089">              warning = true;</a>
+<a name="ln1090">              break;</a>
+<a name="ln1091">            }</a>
+<a name="ln1092">            string tmp;</a>
+<a name="ln1093">            getline(in,tmp);</a>
+<a name="ln1094">            value+=tmp+&quot; &quot;;</a>
+<a name="ln1095">          }</a>
+<a name="ln1096">        if (!warning)</a>
+<a name="ln1097">          in.get(lastc);</a>
+<a name="ln1098">        if(vv) obErrorLog.ThrowError(__FUNCTION__, &quot;SemiColonTextField:&quot;+value, obDebug);</a>
+<a name="ln1099">        if(warning &amp;&amp; !vv) obErrorLog.ThrowError(__FUNCTION__, &quot;SemiColonTextField:&quot;+value, obDebug);</a>
+<a name="ln1100">        return value;</a>
+<a name="ln1101">      }</a>
+<a name="ln1102">    if((in.peek()=='\'') || (in.peek()=='\&quot;'))</a>
+<a name="ln1103">      {//QuotedString</a>
+<a name="ln1104">        char delim;</a>
+<a name="ln1105">        in.get(delim);</a>
+<a name="ln1106">        value=&quot;&quot;;</a>
+<a name="ln1107">        while(!((lastc==delim)&amp;&amp;(!isgraph(in.peek()))) )</a>
+<a name="ln1108">          {</a>
+<a name="ln1109">            in.get(lastc);</a>
+<a name="ln1110">            value+=lastc;</a>
+<a name="ln1111">          }</a>
+<a name="ln1112">        if(vv) obErrorLog.ThrowError(__FUNCTION__, &quot;QuotedString:&quot;+value, obDebug);</a>
+<a name="ln1113">        return value.substr(0,value.size()-1);</a>
+<a name="ln1114">      }</a>
+<a name="ln1115">    // If we got here, we have an ordinary value, numeric or unquoted string</a>
+<a name="ln1116">    in&gt;&gt;value;</a>
+<a name="ln1117">    if(vv) obErrorLog.ThrowError(__FUNCTION__, &quot;NormalValue:&quot;+value, obDebug);</a>
+<a name="ln1118">    return value;</a>
+<a name="ln1119">  }</a>
+<a name="ln1120"> </a>
+<a name="ln1121">  void CIF::Parse(istream &amp;in)</a>
+<a name="ln1122">  {</a>
+<a name="ln1123">    bool vv=false;//very verbose ?</a>
+<a name="ln1124">    char lastc=' ';</a>
+<a name="ln1125">    string block=&quot;&quot;;// Current block data</a>
+<a name="ln1126">    while(!in.eof())</a>
+<a name="ln1127">      {</a>
+<a name="ln1128">        while(!isgraph(in.peek()) &amp;&amp; !in.eof()) in.get(lastc);</a>
+<a name="ln1129">        if(in.peek()=='#')</a>
+<a name="ln1130">          {//Comment</a>
+<a name="ln1131">            string tmp;</a>
+<a name="ln1132">            getline(in,tmp);</a>
+<a name="ln1133">            if(block==&quot;&quot;) mvComment.push_back(tmp);</a>
+<a name="ln1134">            else mvData[block].mvComment.push_back(tmp);</a>
+<a name="ln1135">            lastc='\r';</a>
+<a name="ln1136">            continue;</a>
+<a name="ln1137">          }</a>
+<a name="ln1138">        if(in.peek()=='_')</a>
+<a name="ln1139">          {//Tag</a>
+<a name="ln1140">            string tag,value;</a>
+<a name="ln1141">            in&gt;&gt;tag;</a>
+<a name="ln1142">            // Convert all dots to underscores to cover much of DDL2 with this DDL1 parser.</a>
+<a name="ln1143">            for (string::size_type pos = tag.find('.'); pos != string::npos; pos = tag.find('.', ++ pos))</a>
+<a name="ln1144">              tag.replace(pos, 1, 1, '_');</a>
+<a name="ln1145">            value=CIFReadValue(in,lastc);</a>
+<a name="ln1146">            mvData[block].mvItem[ci_string(tag.c_str())]=value;</a>
+<a name="ln1147">            if(vv)</a>
+<a name="ln1148">            {</a>
+<a name="ln1149">              stringstream ss;</a>
+<a name="ln1150">              ss&lt;&lt;&quot;New Tag:&quot;&lt;&lt;tag&lt;&lt;&quot; (&quot;&lt;&lt;value.size()&lt;&lt;&quot;):&quot;&lt;&lt;value;</a>
+<a name="ln1151">              obErrorLog.ThrowError(__FUNCTION__, ss.str(), obDebug);</a>
+<a name="ln1152">            }</a>
+<a name="ln1153">            continue;</a>
+<a name="ln1154">          }</a>
+<a name="ln1155">        if((in.peek()=='d') || (in.peek()=='D'))</a>
+<a name="ln1156">          {// Data</a>
+<a name="ln1157">            if(!mvData.empty()) return; // We want just a single data block</a>
+<a name="ln1158"> </a>
+<a name="ln1159">            string tmp;</a>
+<a name="ln1160">            in&gt;&gt;tmp;</a>
+<a name="ln1161">            block=tmp.substr(5);</a>
+<a name="ln1162">            if(vv)</a>
+<a name="ln1163">            {</a>
+<a name="ln1164">              stringstream ss;</a>
+<a name="ln1165">              ss&lt;&lt;endl&lt;&lt;endl&lt;&lt;&quot;NEW BLOCK DATA: !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! -&gt;&quot;&lt;&lt;block&lt;&lt;endl&lt;&lt;endl;</a>
+<a name="ln1166">              obErrorLog.ThrowError(__FUNCTION__, ss.str(), obDebug);</a>
+<a name="ln1167">            }</a>
+<a name="ln1168">            mvData[block]=CIFData();</a>
+<a name="ln1169">            mvData[block].mDataBlockName=tmp;</a>
+<a name="ln1170">            continue;</a>
+<a name="ln1171">          }</a>
+<a name="ln1172">        if((in.peek()=='l') || (in.peek()=='L'))</a>
+<a name="ln1173">          {// loop_</a>
+<a name="ln1174">            vector&lt;ci_string&gt; tit;</a>
+<a name="ln1175">            string tmp;</a>
+<a name="ln1176">            in&gt;&gt;tmp; //should be loop_</a>
+<a name="ln1177">            if(vv) obErrorLog.ThrowError(__FUNCTION__, &quot;LOOP : &quot;+tmp, obDebug);</a>
+<a name="ln1178">            while(true)</a>
+<a name="ln1179">              {//read titles</a>
+<a name="ln1180">                while(!isgraph(in.peek()) &amp;&amp; !in.eof()) in.get(lastc);</a>
+<a name="ln1181">                if(in.peek()=='#')</a>
+<a name="ln1182">                  {</a>
+<a name="ln1183">                    getline(in,tmp);</a>
+<a name="ln1184">                    if(block==&quot;&quot;) mvComment.push_back(tmp);</a>
+<a name="ln1185">                    else mvData[block].mvComment.push_back(tmp);</a>
+<a name="ln1186">                    continue;</a>
+<a name="ln1187">                  }</a>
+<a name="ln1188">                if(in.peek()!='_')</a>
+<a name="ln1189">                  {</a>
+<a name="ln1190">                    stringstream ss;</a>
+<a name="ln1191">                    ss &lt;&lt; &quot;End of loop titles:&quot;&lt;&lt;(char)in.peek();</a>
+<a name="ln1192">                    if(vv) obErrorLog.ThrowError(__FUNCTION__, ss.str(), obDebug);</a>
+<a name="ln1193">                    break;</a>
+<a name="ln1194">                  }</a>
+<a name="ln1195">                in&gt;&gt;tmp;</a>
+<a name="ln1196">                // Convert all dots to underscores to cover much of DDL2 with this DDL1 parser.</a>
+<a name="ln1197">                for (string::size_type pos = tmp.find('.'); pos != string::npos; pos = tmp.find('.', ++ pos))</a>
+<a name="ln1198">                  tmp.replace(pos, 1, 1, '_');</a>
+<a name="ln1199">                tit.push_back(ci_string(tmp.c_str()));</a>
+<a name="ln1200">                if(vv) obErrorLog.ThrowError(__FUNCTION__, &quot; , &quot;+tmp, obDebug);</a>
+<a name="ln1201">              }</a>
+<a name="ln1202">            map&lt;ci_string,vector&lt;string&gt; &gt; lp;</a>
+<a name="ln1203">            while(true)</a>
+<a name="ln1204">              {</a>
+<a name="ln1205">                std::ios::pos_type pos0=in.tellg();</a>
+<a name="ln1206">                while(!isgraph(in.peek()) &amp;&amp; !in.eof()) in.get(lastc);</a>
+<a name="ln1207">                if(in.eof()) break;</a>
+<a name="ln1208">                if(in.peek()=='_') break;</a>
+<a name="ln1209">                if(in.peek()=='#')</a>
+<a name="ln1210">                  {// Comment (in a loop ??)</a>
+<a name="ln1211">                    //const std::ios::pos_type pos=in.tellg();</a>
+<a name="ln1212">                    string tmp;</a>
+<a name="ln1213">                    getline(in,tmp);</a>
+<a name="ln1214">                    pos0=in.tellg();</a>
+<a name="ln1215">                    if(block==&quot;&quot;) mvComment.push_back(tmp);</a>
+<a name="ln1216">                    else mvData[block].mvComment.push_back(tmp);</a>
+<a name="ln1217">                    lastc='\r';</a>
+<a name="ln1218">                    if(vv) obErrorLog.ThrowError(__FUNCTION__, &quot;Comment in a loop (?):&quot;+tmp, obDebug);</a>
+<a name="ln1219">                    //in.seekg(pos);</a>
+<a name="ln1220">                    break;</a>
+<a name="ln1221">                  }</a>
+<a name="ln1222">                //in&gt;&gt;tmp;</a>
+<a name="ln1223">                tmp=CIFReadValue(in,lastc);</a>
+<a name="ln1224">                if(ci_string(tmp.c_str())==&quot;loop_&quot;)</a>
+<a name="ln1225">                  {//go back and continue</a>
+<a name="ln1226">                    in.clear();</a>
+<a name="ln1227">                    in.seekg(pos0,std::ios::beg);</a>
+<a name="ln1228">                    stringstream ss;</a>
+<a name="ln1229">                    ss &lt;&lt;&quot;END OF LOOP :&quot;&lt;&lt;tmp&lt;&lt;&quot;,&quot;&lt;&lt;(char)in.peek()&lt;&lt;&quot;,&quot;&lt;&lt;in.tellg();</a>
+<a name="ln1230">                    if(vv) obErrorLog.ThrowError(__FUNCTION__, ss.str(), obDebug);</a>
+<a name="ln1231">                    break;</a>
+<a name="ln1232">                  }</a>
+<a name="ln1233">                if(tmp.size()&gt;=5)</a>
+<a name="ln1234">                  if(ci_string(tmp.substr(0,5).c_str())==&quot;data_&quot;)</a>
+<a name="ln1235">                    {//go back and continue</a>
+<a name="ln1236">                      in.clear();</a>
+<a name="ln1237">                      in.seekg(pos0,std::ios::beg);</a>
+<a name="ln1238">                      stringstream ss;</a>
+<a name="ln1239">                      ss &lt;&lt;&quot;END OF LOOP :&quot;&lt;&lt;tmp&lt;&lt;&quot;,&quot;&lt;&lt;(char)in.peek()&lt;&lt;&quot;,&quot;&lt;&lt;in.tellg();</a>
+<a name="ln1240">                      if(vv) obErrorLog.ThrowError(__FUNCTION__, ss.str(), obDebug);</a>
+<a name="ln1241">                      break;</a>
+<a name="ln1242">                    }</a>
+<a name="ln1243">                for(unsigned int i=0;i&lt;tit.size();++i)</a>
+<a name="ln1244">                  {//Read all values</a>
+<a name="ln1245">                    if(i&gt;0) tmp=CIFReadValue(in,lastc);</a>
+<a name="ln1246">                    lp[tit[i]].push_back(tmp);</a>
+<a name="ln1247">                    stringstream ss;</a>
+<a name="ln1248">                    ss &lt;&lt;&quot; LOOP VALUE    #&quot;&lt;&lt;lp[tit[i]].size()&lt;&lt;&quot;,&quot;&lt;&lt;i&lt;&lt;&quot; :  &quot;&lt;&lt;tmp;</a>
+<a name="ln1249">                    if(vv) obErrorLog.ThrowError(__FUNCTION__, ss.str(), obDebug);</a>
+<a name="ln1250">                  }</a>
+<a name="ln1251">              }</a>
+<a name="ln1252">            // The key to the mvLoop map is the set of column titles</a>
+<a name="ln1253">            set&lt;ci_string&gt; stit;</a>
+<a name="ln1254">            for(unsigned int i=0;i&lt;tit.size();++i) stit.insert(tit[i]);</a>
+<a name="ln1255">            mvData[block].mvLoop[stit]=lp;</a>
+<a name="ln1256">            continue;</a>
+<a name="ln1257">          }</a>
+<a name="ln1258">        // If we get here, something went wrong ! Discard till end of line...</a>
+<a name="ln1259">        // It is OK if this is just a blank line though</a>
+<a name="ln1260">        string junk;</a>
+<a name="ln1261">        getline(in,junk);</a>
+<a name="ln1262"> </a>
+<a name="ln1263">        if(junk.size()&gt;0)</a>
+<a name="ln1264">        {</a>
+<a name="ln1265">          stringstream errorMsg;</a>
+<a name="ln1266">          errorMsg &lt;&lt; &quot;Warning: one line could not be interpreted while reading a CIF file:&quot;&lt;&lt;endl</a>
+<a name="ln1267">                   &lt;&lt; &quot; -&gt; line contents:&quot; &lt;&lt; junk;</a>
+<a name="ln1268">          obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() , obWarning);</a>
+<a name="ln1269">        }</a>
+<a name="ln1270">      }</a>
+<a name="ln1271">  }</a>
+<a name="ln1272"> </a>
+<a name="ln1273">  float CIFNumeric2Float(const string &amp;s)</a>
+<a name="ln1274">  {</a>
+<a name="ln1275">    if((s==&quot;.&quot;) || (s==&quot;?&quot;)) return 0.0;</a>
+<a name="ln1276">    float v;</a>
+<a name="ln1277">    const int n=sscanf(s.c_str(),&quot;%f&quot;,&amp;v);</a>
+<a name="ln1278">    if(n!=1) return 0.0;</a>
+<a name="ln1279">    return v;</a>
+<a name="ln1280">  }</a>
+<a name="ln1281"> </a>
+<a name="ln1282">  int CIFNumeric2Int(const string &amp;s)</a>
+<a name="ln1283">  {</a>
+<a name="ln1284">    if((s==&quot;.&quot;) || (s==&quot;?&quot;)) return 0;</a>
+<a name="ln1285">    int v;</a>
+<a name="ln1286">    const int n=sscanf(s.c_str(),&quot;%d&quot;,&amp;v);</a>
+<a name="ln1287">    if(n!=1) return 0;</a>
+<a name="ln1288">    return v;</a>
+<a name="ln1289">  }</a>
+<a name="ln1290"> </a>
+<a name="ln1291">  bool is_double(const std::string&amp; s, double&amp; r_double)</a>
+<a name="ln1292">  {</a>
+<a name="ln1293">    std::istringstream i(s);</a>
+<a name="ln1294"> </a>
+<a name="ln1295">    if (i &gt;&gt; r_double)</a>
+<a name="ln1296">      return true;</a>
+<a name="ln1297"> </a>
+<a name="ln1298">    r_double = 0.0;</a>
+<a name="ln1299">    return false;</a>
+<a name="ln1300">  }</a>
+<a name="ln1301"> </a>
+<a name="ln1302"> </a>
+<a name="ln1303">  //################ END CIF CLASSES######################################</a>
+<a name="ln1304"> </a>
+<a name="ln1305">  //Make an instance of the format class</a>
+<a name="ln1306">  CIFFormat theCIFFormat;</a>
+<a name="ln1307"> </a>
+<a name="ln1308">  // Helper function for CorrectFormatCharges</a>
+<a name="ln1309">  // Is this atom an oxygen in a water molecule</a>
+<a name="ln1310">  // We know the oxygen is connected to one ion, but check for non-hydrogens</a>
+<a name="ln1311">  // Returns: true if the atom is an oxygen and connected to two hydrogens and up to one other atom</a>
+<a name="ln1312">  bool CIFisWaterOxygen(OBAtom *atom)</a>
+<a name="ln1313">  {</a>
+<a name="ln1314">    if (atom-&gt;GetAtomicNum() != OBElements::Oxygen)</a>
+<a name="ln1315">      return false;</a>
+<a name="ln1316"> </a>
+<a name="ln1317">    int nonHydrogenCount = 0;</a>
+<a name="ln1318">    int hydrogenCount = 0;</a>
+<a name="ln1319">    FOR_NBORS_OF_ATOM(neighbor, *atom) {</a>
+<a name="ln1320">      if (neighbor-&gt;GetAtomicNum() != OBElements::Hydrogen)</a>
+<a name="ln1321">        nonHydrogenCount++;</a>
+<a name="ln1322">      else</a>
+<a name="ln1323">        hydrogenCount++;</a>
+<a name="ln1324">    }</a>
+<a name="ln1325"> </a>
+<a name="ln1326">    return (hydrogenCount == 2 &amp;&amp; nonHydrogenCount &lt;= 1);</a>
+<a name="ln1327">  }</a>
+<a name="ln1328"> </a>
+<a name="ln1329">  // Look for lone ions, and correct their formal charges</a>
+<a name="ln1330">  void CorrectFormalCharges(OBMol *mol)</a>
+<a name="ln1331">  {</a>
+<a name="ln1332">    if (!mol)</a>
+<a name="ln1333">      return;</a>
+<a name="ln1334"> </a>
+<a name="ln1335">    // First look for NR4, PR4 ions,</a>
+<a name="ln1336">    // or bare halides, alkali and alkaline earth metal ions</a>
+<a name="ln1337">    FOR_ATOMS_OF_MOL(atom, *mol) {</a>
+<a name="ln1338"> </a>
+<a name="ln1339">      if ((atom-&gt;GetAtomicNum() == 7 || atom-&gt;GetAtomicNum() == 15)</a>
+<a name="ln1340">          &amp;&amp; atom-&gt;GetExplicitValence() == 4) {</a>
+<a name="ln1341">        // check if we should make a positive charge?</a>
+<a name="ln1342">        // i.e., 4 non-metal neighbors</a>
+<a name="ln1343">        bool nonMetalNeighbors = true;</a>
+<a name="ln1344">        FOR_NBORS_OF_ATOM(neighbor, &amp;*atom) {</a>
+<a name="ln1345">          switch (neighbor-&gt;GetAtomicNum()) {</a>
+<a name="ln1346">          case 1:</a>
+<a name="ln1347">          case 5: case 6: case 7: case 8: case 9:</a>
+<a name="ln1348">          case 14: case 15: case 16: case 17:</a>
+<a name="ln1349">          case 33: case 34: case 35:</a>
+<a name="ln1350">          case 53:</a>
+<a name="ln1351">            continue; // good non-metals</a>
+<a name="ln1352">          default:</a>
+<a name="ln1353">            nonMetalNeighbors = false;</a>
+<a name="ln1354">            break; // stop looking</a>
+<a name="ln1355">          }</a>
+<a name="ln1356">        }</a>
+<a name="ln1357">        if (nonMetalNeighbors) // 4 non-metals, e.g. NH4+</a>
+<a name="ln1358">          atom-&gt;SetFormalCharge(+1);</a>
+<a name="ln1359">      }</a>
+<a name="ln1360"> </a>
+<a name="ln1361">      // Now look for simple atomic ions like Na, Li, F, Cl, Br...</a>
+<a name="ln1362">      // If we have an existing formal charge, keep going</a>
+<a name="ln1363">      if (atom-&gt;GetFormalCharge() != 0)</a>
+<a name="ln1364">        continue;</a>
+<a name="ln1365"> </a>
+<a name="ln1366">      // If we're connected to anything besides H2O, keep going</a>
+<a name="ln1367">      if (atom-&gt;GetExplicitDegree() != 0) {</a>
+<a name="ln1368">        int nonWaterBonds = 0;</a>
+<a name="ln1369">        FOR_NBORS_OF_ATOM(neighbor, &amp;*atom) {</a>
+<a name="ln1370">          if (!CIFisWaterOxygen(&amp;*neighbor)) {</a>
+<a name="ln1371">            nonWaterBonds = 1;</a>
+<a name="ln1372">            break;</a>
+<a name="ln1373">          }</a>
+<a name="ln1374">        }</a>
+<a name="ln1375">        if (nonWaterBonds)</a>
+<a name="ln1376">          continue; // look at another atom</a>
+<a name="ln1377">      }</a>
+<a name="ln1378"> </a>
+<a name="ln1379">      switch(atom-&gt;GetAtomicNum()) {</a>
+<a name="ln1380">      case 3: case 11: case 19: case 37: case 55: case 87:</a>
+<a name="ln1381">        // Alkali ions</a>
+<a name="ln1382">        atom-&gt;SetFormalCharge(+1);</a>
+<a name="ln1383">        break;</a>
+<a name="ln1384">      case 4: case 12: case 20: case 38: case 56: case 88:</a>
+<a name="ln1385">        // Alkaline earth ions</a>
+<a name="ln1386">        atom-&gt;SetFormalCharge(+2);</a>
+<a name="ln1387">        break;</a>
+<a name="ln1388">      case 9: case 17: case 35: case 53: case 85:</a>
+<a name="ln1389">        // Halides</a>
+<a name="ln1390">        atom-&gt;SetFormalCharge(-1);</a>
+<a name="ln1391">        break;</a>
+<a name="ln1392">      }</a>
+<a name="ln1393">    }</a>
+<a name="ln1394">  }</a>
+<a name="ln1395"> </a>
+<a name="ln1396">  /////////////////////////////////////////////////////////////////</a>
+<a name="ln1397">  bool CIFFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln1398">  {</a>
+<a name="ln1399">    // If installed, use the mmCIF parser to read CIF</a>
+<a name="ln1400">    OBFormat *obformat = OBFormat::FindType(&quot;mmcif&quot;);</a>
+<a name="ln1401">    if (obformat) { return obformat-&gt;ReadMolecule(pOb, pConv); }</a>
+<a name="ln1402">    obErrorLog.ThrowError(__FUNCTION__, &quot;mmCIF parser not found. Using CIF parser.&quot;, obDebug);</a>
+<a name="ln1403"> </a>
+<a name="ln1404">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln1405">    if (pmol == nullptr)</a>
+<a name="ln1406">      return false;</a>
+<a name="ln1407"> </a>
+<a name="ln1408">    CIF cif(*pConv-&gt;GetInStream(),true);</a>
+<a name="ln1409">    // Loop on all data blocks until we find one structure :@todo: handle multiple structures</a>
+<a name="ln1410">    for(map&lt;string,CIFData&gt;::iterator pos=cif.mvData.begin();pos!=cif.mvData.end();++pos)</a>
+<a name="ln1411">      if(pos-&gt;second.mvAtom.size()&gt;0)</a>
+<a name="ln1412">        {</a>
+<a name="ln1413">          pmol-&gt;BeginModify();</a>
+<a name="ln1414">          if(pos-&gt;second.mvLatticePar.size()==6)</a>
+<a name="ln1415">            {// We have one unit cell</a>
+<a name="ln1416">              string spg=pos-&gt;second.mSpacegroupSymbolHall;</a>
+<a name="ln1417">              if(spg==&quot;&quot;) spg=pos-&gt;second.mSpacegroupHermannMauguin;</a>
+<a name="ln1418">              if(spg==&quot;&quot;) spg=pos-&gt;second.mSpacegroupNumberIT;</a>
+<a name="ln1419">              if(spg==&quot;&quot;) spg=&quot;P1&quot;;</a>
+<a name="ln1420">              OBUnitCell *pCell=new OBUnitCell;</a>
+<a name="ln1421">              pCell-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln1422">              pCell-&gt;SetData(pos-&gt;second.mvLatticePar[0],</a>
+<a name="ln1423">                             pos-&gt;second.mvLatticePar[1],</a>
+<a name="ln1424">                             pos-&gt;second.mvLatticePar[2],</a>
+<a name="ln1425">                             pos-&gt;second.mvLatticePar[3]/DEG_TO_RAD,</a>
+<a name="ln1426">                             pos-&gt;second.mvLatticePar[4]/DEG_TO_RAD,</a>
+<a name="ln1427">                             pos-&gt;second.mvLatticePar[5]/DEG_TO_RAD);</a>
+<a name="ln1428">              pCell-&gt;SetSpaceGroup(spg);</a>
+<a name="ln1429">              pCell-&gt;SetSpaceGroup(pos-&gt;second.mSpaceGroup);</a>
+<a name="ln1430">              pmol-&gt;SetData(pCell);</a>
+<a name="ln1431">            }</a>
+<a name="ln1432">          if(pos-&gt;second.mName!=&quot;&quot;) pmol-&gt;SetTitle(pos-&gt;second.mName);</a>
+<a name="ln1433">          else</a>
+<a name="ln1434">            if(pos-&gt;second.mFormula!=&quot;&quot;) pmol-&gt;SetTitle(pos-&gt;second.mFormula);</a>
+<a name="ln1435">            else pmol-&gt;SetTitle(pConv-&gt;GetTitle());</a>
+<a name="ln1436"> </a>
+<a name="ln1437">          if(pos-&gt;second.mFormula!=&quot;&quot;) pmol-&gt;SetFormula(pos-&gt;second.mFormula);</a>
+<a name="ln1438"> </a>
+<a name="ln1439">          // Keep a map linking the cif atom label to the obatom*, for bond interpretation later</a>
+<a name="ln1440">          std::map&lt;std::string,OBAtom *&gt; vLabelOBatom;</a>
+<a name="ln1441"> </a>
+<a name="ln1442">          const unsigned int nbatoms=pos-&gt;second.mvAtom.size();</a>
+<a name="ln1443">          pmol-&gt;ReserveAtoms(nbatoms);</a>
+<a name="ln1444">          for(vector&lt;CIFData::CIFAtom&gt;::const_iterator posat=pos-&gt;second.mvAtom.begin();posat!=pos-&gt;second.mvAtom.end();++posat)</a>
+<a name="ln1445">            {</a>
+<a name="ln1446">              // Problem: posat-&gt;mSymbol is not guaranteed to actually be a symbol</a>
+<a name="ln1447">              // see http://www.iucr.org/iucr-top/cif/cifdic_html/1/cif_core.dic/Iatom_type_symbol.html</a>
+<a name="ln1448">              // Try to strip the string to have a better chance to have a valid symbol</a>
+<a name="ln1449">              // This is not guaranteed to work still, as the CIF standard allows about any string...</a>
+<a name="ln1450">              string tmpSymbol=posat-&gt;mSymbol;</a>
+<a name="ln1451">              unsigned int nbc=0;</a>
+<a name="ln1452">              if((tmpSymbol.size()==1) &amp;&amp; isalpha(tmpSymbol[0])) nbc=1;</a>
+<a name="ln1453">              else if(tmpSymbol.size()&gt;=2)</a>
+<a name="ln1454">                {</a>
+<a name="ln1455">                  if(isalpha(tmpSymbol[0]) &amp;&amp; isalpha(tmpSymbol[1])) nbc=2;</a>
+<a name="ln1456">                  else if(isalpha(tmpSymbol[0])) nbc=1;</a>
+<a name="ln1457">                }</a>
+<a name="ln1458"> </a>
+<a name="ln1459">              OBAtom *atom  = pmol-&gt;NewAtom();</a>
+<a name="ln1460"> </a>
+<a name="ln1461">              vLabelOBatom.insert(make_pair(posat-&gt;mLabel,atom));</a>
+<a name="ln1462"> </a>
+<a name="ln1463">              if(tmpSymbol.size()&gt;nbc)</a>
+<a name="ln1464">                {// Try to find a formal charge in the symbol</a>
+<a name="ln1465">                  int charge=0;</a>
+<a name="ln1466">                  int sign=0;</a>
+<a name="ln1467">                  for(unsigned int i=nbc;i&lt;tmpSymbol.size();++i)</a>
+<a name="ln1468">                    {// Use first number found as formal charge</a>
+<a name="ln1469">                      if(isdigit(tmpSymbol[i]) &amp;&amp; (charge==0)) charge=atoi(tmpSymbol.substr(i,1).c_str());</a>
+<a name="ln1470">                      if('-'==tmpSymbol[i]) sign-=1;</a>
+<a name="ln1471">                      if('+'==tmpSymbol[i]) sign+=1;</a>
+<a name="ln1472">                    }</a>
+<a name="ln1473">                  if(0!=sign) // no sign, no charge</a>
+<a name="ln1474">                    {</a>
+<a name="ln1475">                      if(charge==0) charge=1;</a>
+<a name="ln1476">                      stringstream ss;</a>
+<a name="ln1477">                      ss &lt;&lt; tmpSymbol&lt;&lt;&quot; / symbol=&quot;&lt;&lt;tmpSymbol.substr(0,nbc)&lt;&lt;&quot; charge= &quot;&lt;&lt;sign*charge;</a>
+<a name="ln1478">                      obErrorLog.ThrowError(__FUNCTION__, ss.str(), obDebug);</a>
+<a name="ln1479">                      atom-&gt;SetFormalCharge(sign*charge);</a>
+<a name="ln1480">                    }</a>
+<a name="ln1481">                }</a>
+<a name="ln1482"> </a>
+<a name="ln1483">              if(nbc&gt;0) tmpSymbol=tmpSymbol.substr(0,nbc);</a>
+<a name="ln1484">              else tmpSymbol=&quot;C&quot;;//Something went wrong, no symbol ! Default to C ??</a>
+<a name="ln1485"> </a>
+<a name="ln1486">              int atomicNum = OBElements::GetAtomicNum(tmpSymbol.c_str());</a>
+<a name="ln1487">              // Test for some oxygens with subscripts</a>
+<a name="ln1488">              if (atomicNum == 0 &amp;&amp; tmpSymbol[0] == 'O') {</a>
+<a name="ln1489">                atomicNum = 8; // e.g. Ob, OH, etc.</a>
+<a name="ln1490">              }</a>
+<a name="ln1491"> </a>
+<a name="ln1492">              atom-&gt;SetAtomicNum(atomicNum); //set atomic number, or '0' if the atom type is not recognized</a>
+<a name="ln1493">              atom-&gt;SetType(tmpSymbol); //set atomic number, or '0' if the atom type is not recognized</a>
+<a name="ln1494">              atom-&gt;SetVector(posat-&gt;mCoordCart[0],posat-&gt;mCoordCart[1],posat-&gt;mCoordCart[2]);</a>
+<a name="ln1495">              if(posat-&gt;mLabel.size()&gt;0)</a>
+<a name="ln1496">              {</a>
+<a name="ln1497">                OBPairData *label = new OBPairData;</a>
+<a name="ln1498">                label-&gt;SetAttribute(&quot;_atom_site_label&quot;);</a>
+<a name="ln1499">                label-&gt;SetValue(posat-&gt;mLabel);</a>
+<a name="ln1500">                label-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln1501">                atom-&gt;SetData(label);</a>
+<a name="ln1502">              }</a>
+<a name="ln1503"> </a>
+<a name="ln1504">              OBPairFloatingPoint *occup_data = new OBPairFloatingPoint;</a>
+<a name="ln1505">              occup_data-&gt;SetAttribute(&quot;_atom_site_occupancy&quot;);</a>
+<a name="ln1506">              occup_data-&gt;SetValue(posat-&gt;mOccupancy);</a>
+<a name="ln1507">              occup_data-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln1508">              atom-&gt;SetData(occup_data);</a>
+<a name="ln1509"> </a>
+<a name="ln1510">              if( posat-&gt;mCharge != NOCHARGE )</a>
+<a name="ln1511">              {</a>
+<a name="ln1512">                OBPairFloatingPoint *charge_data = new OBPairFloatingPoint;</a>
+<a name="ln1513">                charge_data-&gt;SetAttribute(&quot;input_charge&quot;);</a>
+<a name="ln1514">                charge_data-&gt;SetValue(posat-&gt;mCharge);</a>
+<a name="ln1515">                charge_data-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln1516">                atom-&gt;SetData(charge_data);</a>
+<a name="ln1517">              }</a>
+<a name="ln1518">            }</a>
+<a name="ln1519">          if (!pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln1520">            pmol-&gt;ConnectTheDots();</a>
+<a name="ln1521">          if (pConv-&gt;IsOption(&quot;B&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln1522">            {</a>
+<a name="ln1523">              for(vector&lt;CIFData::CIFBond&gt;::const_iterator posbond=pos-&gt;second.mvBond.begin();posbond!=pos-&gt;second.mvBond.end();++posbond)</a>
+<a name="ln1524">                {// Add bonds present in the cif and not detected by ConnectTheDots()</a>
+<a name="ln1525">                  std::map&lt;std::string,OBAtom *&gt;::iterator posat1,posat2;</a>
+<a name="ln1526">                  posat1=vLabelOBatom.find(posbond-&gt;mLabel1);</a>
+<a name="ln1527">                  posat2=vLabelOBatom.find(posbond-&gt;mLabel2);</a>
+<a name="ln1528">                  if(posat1!=vLabelOBatom.end() &amp;&amp; posat2!=vLabelOBatom.end())</a>
+<a name="ln1529">                    {</a>
+<a name="ln1530">                      stringstream ss;</a>
+<a name="ln1531">                      ss &lt;&lt; &quot;  Adding cif bond ? &quot;&lt;&lt;posat1-&gt;first&lt;&lt;&quot;-&quot;&lt;&lt;posat2-&gt;first;</a>
+<a name="ln1532">                      obErrorLog.ThrowError(__FUNCTION__, ss.str(), obDebug);</a>
+<a name="ln1533">                      if (pmol-&gt;GetBond(posat1-&gt;second, posat2-&gt;second) == nullptr)</a>
+<a name="ln1534">                        {</a>
+<a name="ln1535">                           obErrorLog.ThrowError(__FUNCTION__, &quot;  :Bond added !&quot;, obDebug);</a>
+<a name="ln1536">                           OBBond * bond=pmol-&gt;NewBond();</a>
+<a name="ln1537">                           bond-&gt;SetBegin(posat1-&gt;second);</a>
+<a name="ln1538">                           bond-&gt;SetEnd(posat2-&gt;second);</a>
+<a name="ln1539">                           bond-&gt;SetBondOrder(1);</a>
+<a name="ln1540">                           bond-&gt;SetLength(double(posbond-&gt;mDistance));</a>
+<a name="ln1541">                        }</a>
+<a name="ln1542">                       else obErrorLog.ThrowError(__FUNCTION__, &quot;  :Bond already present.. &quot;, obDebug);</a>
+<a name="ln1543">                    }</a>
+<a name="ln1544">                }</a>
+<a name="ln1545">            }</a>
+<a name="ln1546">          if (!pConv-&gt;IsOption(&quot;s&quot;,OBConversion::INOPTIONS) &amp;&amp; !pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln1547">            pmol-&gt;PerceiveBondOrders();</a>
+<a name="ln1548">          pmol-&gt;EndModify();</a>
+<a name="ln1549">          pmol-&gt;SetAutomaticFormalCharge(false); // we should have set formal charges</a>
+<a name="ln1550">          CorrectFormalCharges(pmol); // Look for lone Na -&gt; Na+, etc.</a>
+<a name="ln1551">          return true;</a>
+<a name="ln1552">        }</a>
+<a name="ln1553"> </a>
+<a name="ln1554">    // If we got here, no structure was found</a>
+<a name="ln1555">    obErrorLog.ThrowError(__FUNCTION__, &quot;Problems reading a CIF file: no structure found !&quot; , obWarning);</a>
+<a name="ln1556">    return(false);</a>
+<a name="ln1557">  }</a>
+<a name="ln1558"> </a>
+<a name="ln1559">  ////////////////////////////////////////////////////////////////</a>
+<a name="ln1560"> </a>
+<a name="ln1561">  bool CIFFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln1562">  {</a>
+<a name="ln1563">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln1564">    if (pmol == nullptr)</a>
+<a name="ln1565">      return false;</a>
+<a name="ln1566">    ostream &amp;ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln1567"> </a>
+<a name="ln1568">    char buffer[BUFF_SIZE];</a>
+<a name="ln1569"> </a>
+<a name="ln1570">    ofs &lt;&lt;&quot;# CIF file generated by openbabel &quot;&lt;&lt;BABEL_VERSION&lt;&lt;&quot;, see https://openbabel.org&quot;&lt;&lt;endl;</a>
+<a name="ln1571"> </a>
+<a name="ln1572">    ofs &lt;&lt; &quot;data_I&quot;&lt;&lt;endl;</a>
+<a name="ln1573">    // Use pmol-&gt;GetTitle() as chemical name, though it will probably be the file name</a>
+<a name="ln1574">    ofs &lt;&lt;&quot;_chemical_name_common '&quot;&lt;&lt;pmol-&gt;GetTitle()&lt;&lt;&quot;'&quot;&lt;&lt;endl;</a>
+<a name="ln1575">    // Print Unit cell if we have it</a>
+<a name="ln1576">    OBUnitCell *pUC = nullptr;</a>
+<a name="ln1577">    if (pmol-&gt;HasData(OBGenericDataType::UnitCell))</a>
+<a name="ln1578">      {</a>
+<a name="ln1579">        pUC = (OBUnitCell*)pmol-&gt;GetData(OBGenericDataType::UnitCell);</a>
+<a name="ln1580">        ofs &lt;&lt; &quot;_cell_length_a &quot; &lt;&lt; pUC-&gt;GetA() &lt;&lt; endl</a>
+<a name="ln1581">            &lt;&lt; &quot;_cell_length_b &quot; &lt;&lt; pUC-&gt;GetB() &lt;&lt; endl</a>
+<a name="ln1582">            &lt;&lt; &quot;_cell_length_c &quot; &lt;&lt; pUC-&gt;GetC() &lt;&lt; endl</a>
+<a name="ln1583">            &lt;&lt; &quot;_cell_angle_alpha &quot; &lt;&lt; pUC-&gt;GetAlpha() &lt;&lt; endl</a>
+<a name="ln1584">            &lt;&lt; &quot;_cell_angle_beta &quot;  &lt;&lt; pUC-&gt;GetBeta() &lt;&lt; endl</a>
+<a name="ln1585">            &lt;&lt; &quot;_cell_angle_gamma &quot; &lt;&lt; pUC-&gt;GetGamma() &lt;&lt; endl;</a>
+<a name="ln1586">        // Save the space group if known</a>
+<a name="ln1587">        const SpaceGroup* pSG = pUC-&gt;GetSpaceGroup();</a>
+<a name="ln1588">        if (pSG != nullptr)</a>
+<a name="ln1589">          {</a>
+<a name="ln1590">            // Do we have an extended HM symbol, with origin choice as &quot;:1&quot; or &quot;:2&quot; ? If so, remove it.</a>
+<a name="ln1591">            size_t n=pSG-&gt;GetHMName().find(&quot;:&quot;);</a>
+<a name="ln1592">            if(n==string::npos)</a>
+<a name="ln1593">              ofs &lt;&lt; &quot;_space_group_name_H-M_alt '&quot; &lt;&lt; pSG-&gt;GetHMName() &lt;&lt; &quot;'&quot; &lt;&lt; endl;</a>
+<a name="ln1594">            else</a>
+<a name="ln1595">              ofs &lt;&lt; &quot;_space_group_name_H-M_alt '&quot; &lt;&lt; pSG-&gt;GetHMName().substr(0,n) &lt;&lt; &quot;'&quot; &lt;&lt; endl;</a>
+<a name="ln1596">            ofs &lt;&lt; &quot;_space_group_name_Hall '&quot; &lt;&lt; pSG-&gt;GetHallName() &lt;&lt; &quot;'&quot; &lt;&lt; endl;</a>
+<a name="ln1597">            ofs &lt;&lt; &quot;loop_&quot; &lt;&lt;endl</a>
+<a name="ln1598">                &lt;&lt; &quot;    _symmetry_equiv_pos_as_xyz&quot; &lt;&lt; endl;</a>
+<a name="ln1599">            transform3dIterator ti;</a>
+<a name="ln1600">            const transform3d *t = pSG-&gt;BeginTransform(ti);</a>
+<a name="ln1601">            while(t)</a>
+<a name="ln1602">              {</a>
+<a name="ln1603">                ofs &lt;&lt; &quot;    &quot; &lt;&lt; t-&gt;DescribeAsString() &lt;&lt; endl;</a>
+<a name="ln1604">                t = pSG-&gt;NextTransform(ti);</a>
+<a name="ln1605">              }</a>
+<a name="ln1606">          }</a>
+<a name="ln1607">      }</a>
+<a name="ln1608"> </a>
+<a name="ln1609">    ofs &lt;&lt; &quot;loop_&quot;                      &lt;&lt; endl</a>
+<a name="ln1610">        &lt;&lt; &quot;    _atom_site_label&quot;       &lt;&lt; endl</a>
+<a name="ln1611">        &lt;&lt; &quot;    _atom_site_type_symbol&quot; &lt;&lt; endl</a>
+<a name="ln1612">        &lt;&lt; &quot;    _atom_site_fract_x&quot;     &lt;&lt; endl</a>
+<a name="ln1613">        &lt;&lt; &quot;    _atom_site_fract_y&quot;     &lt;&lt; endl</a>
+<a name="ln1614">        &lt;&lt; &quot;    _atom_site_fract_z&quot;     &lt;&lt; endl</a>
+<a name="ln1615">        &lt;&lt; &quot;    _atom_site_occupancy&quot;   &lt;&lt; endl;</a>
+<a name="ln1616">    std::map&lt;OBAtom*,std::string&gt; label_table;</a>
+<a name="ln1617">    unsigned int i = 0;</a>
+<a name="ln1618">    FOR_ATOMS_OF_MOL(atom, *pmol)</a>
+<a name="ln1619">      {</a>
+<a name="ln1620">         double X, Y, Z; //atom coordinates</a>
+<a name="ln1621">         vector3 v = atom-&gt;GetVector();</a>
+<a name="ln1622">         if (pUC != nullptr) {</a>
+<a name="ln1623">           v = pUC-&gt;CartesianToFractional(v);</a>
+<a name="ln1624">           v = pUC-&gt;WrapFractionalCoordinate(v);</a>
+<a name="ln1625">         }</a>
+<a name="ln1626">         X = v.x();</a>
+<a name="ln1627">         Y = v.y();</a>
+<a name="ln1628">         Z = v.z();</a>
+<a name="ln1629">         string label_str;</a>
+<a name="ln1630">         double occup;</a>
+<a name="ln1631"> </a>
+<a name="ln1632">         if (atom-&gt;HasData(&quot;_atom_site_occupancy&quot;))</a>
+<a name="ln1633">           {</a>
+<a name="ln1634">             occup = (dynamic_cast&lt;OBPairFloatingPoint *&gt; (atom-&gt;GetData(&quot;_atom_site_occupancy&quot;)))-&gt;GetGenericValue();</a>
+<a name="ln1635">           }</a>
+<a name="ln1636">         else occup = 1.0;</a>
+<a name="ln1637"> </a>
+<a name="ln1638">         if (atom-&gt;HasData(&quot;_atom_site_label&quot;))</a>
+<a name="ln1639">           {</a>
+<a name="ln1640">             OBPairData *label = dynamic_cast&lt;OBPairData *&gt; (atom-&gt;GetData(&quot;_atom_site_label&quot;));</a>
+<a name="ln1641">             label_str = label-&gt;GetValue().c_str();</a>
+<a name="ln1642">           }</a>
+<a name="ln1643">         else</a>
+<a name="ln1644">           {</a>
+<a name="ln1645">             label_str = OBElements::GetSymbol(atom-&gt;GetAtomicNum()) + to_string(i);</a>
+<a name="ln1646">             i++;</a>
+<a name="ln1647">           }</a>
+<a name="ln1648">         // Save the existing or generated label for optional bonding</a>
+<a name="ln1649">         label_table[&amp;*atom] = label_str;</a>
+<a name="ln1650"> </a>
+<a name="ln1651">         snprintf(buffer, BUFF_SIZE, &quot;    %-8s %-5s %10.5f %10.5f %10.5f %8.3f\n&quot;,</a>
+<a name="ln1652">                  label_str.c_str(), OBElements::GetSymbol(atom-&gt;GetAtomicNum()),</a>
+<a name="ln1653">                  X, Y, Z, occup);</a>
+<a name="ln1654"> </a>
+<a name="ln1655">         ofs &lt;&lt; buffer;</a>
+<a name="ln1656">      }</a>
+<a name="ln1657"> </a>
+<a name="ln1658">    if (pConv-&gt;IsOption(&quot;g&quot;, OBConversion::OUTOPTIONS))</a>
+<a name="ln1659">      {</a>
+<a name="ln1660">        if (pmol-&gt;NumBonds() &gt; 0) {</a>
+<a name="ln1661">            obErrorLog.ThrowError(__FUNCTION__, &quot;Writing bonds to output CIF&quot;, obDebug);</a>
+<a name="ln1662">            ofs &lt;&lt; &quot;loop_&quot;                            &lt;&lt; endl</a>
+<a name="ln1663">                &lt;&lt; &quot;    _geom_bond_atom_site_label_1&quot; &lt;&lt; endl</a>
+<a name="ln1664">                &lt;&lt; &quot;    _geom_bond_atom_site_label_2&quot; &lt;&lt; endl</a>
+<a name="ln1665">                &lt;&lt; &quot;    _geom_bond_distance&quot;          &lt;&lt; endl</a>
+<a name="ln1666">                &lt;&lt; &quot;    _geom_bond_site_symmetry_2&quot;   &lt;&lt; endl</a>
+<a name="ln1667">                &lt;&lt; &quot;    _ccdc_geom_bond_type&quot;         &lt;&lt; endl;</a>
+<a name="ln1668">        } else {</a>
+<a name="ln1669">            obErrorLog.ThrowError(__FUNCTION__, &quot;No bonds defined in molecule for CIF export&quot;, obDebug);</a>
+<a name="ln1670">        }</a>
+<a name="ln1671"> </a>
+<a name="ln1672">        FOR_BONDS_OF_MOL(bond, *pmol)</a>
+<a name="ln1673">        {</a>
+<a name="ln1674">          std::string label_1 = label_table[bond-&gt;GetBeginAtom()];</a>
+<a name="ln1675">          std::string label_2 = label_table[bond-&gt;GetEndAtom()];</a>
+<a name="ln1676"> </a>
+<a name="ln1677">          std::string sym_key;</a>
+<a name="ln1678">          int symmetry_num = 555;</a>
+<a name="ln1679">          if (bond-&gt;IsPeriodic()) {</a>
+<a name="ln1680">              OBUnitCell *box = (OBUnitCell*)pmol-&gt;GetData(OBGenericDataType::UnitCell);</a>
+<a name="ln1681">              vector3 begin, end_orig, end_expected, uc_direction;</a>
+<a name="ln1682">              // Use consistent coordinates with the X Y Z written in the _atom_site_* loop earlier</a>
+<a name="ln1683">              begin = box-&gt;CartesianToFractional(bond-&gt;GetBeginAtom()-&gt;GetVector());</a>
+<a name="ln1684">              begin = box-&gt;WrapFractionalCoordinate(begin);</a>
+<a name="ln1685">              end_orig = box-&gt;CartesianToFractional(bond-&gt;GetEndAtom()-&gt;GetVector());</a>
+<a name="ln1686">              end_orig = box-&gt;WrapFractionalCoordinate(end_orig);</a>
+<a name="ln1687">              end_expected = box-&gt;UnwrapFractionalNear(end_orig, begin);</a>
+<a name="ln1688"> </a>
+<a name="ln1689">              // To get the signs right, consider the example {0, 0.7}.  We want -1 as the periodic direction.</a>
+<a name="ln1690">              // TODO: Think about edge cases, particularly atoms on the border of the unit cell.</a>
+<a name="ln1691">              uc_direction = end_expected - end_orig;</a>
+<a name="ln1692"> </a>
+<a name="ln1693">              std:vector&lt;int&gt; uc;</a>
+<a name="ln1694">              for (int i = 0; i &lt; 3; ++i) {</a>
+<a name="ln1695">                  double raw_cell = uc_direction[i];</a>
+<a name="ln1696">                  uc.push_back(static_cast&lt;int&gt;(lrint(raw_cell)));</a>
+<a name="ln1697">              }</a>
+<a name="ln1698">              symmetry_num += 100*uc[0] + 10*uc[1] + 1*uc[2];  // Unit cell directionality vs. 555, per CIF spec</a>
+<a name="ln1699">          }</a>
+<a name="ln1700">          if (symmetry_num == 555)</a>
+<a name="ln1701">            {</a>
+<a name="ln1702">              sym_key = &quot;.&quot;;</a>
+<a name="ln1703">            }</a>
+<a name="ln1704">          else</a>
+<a name="ln1705">            {</a>
+<a name="ln1706">              stringstream ss;</a>
+<a name="ln1707">              ss &lt;&lt; &quot;1_&quot; &lt;&lt; symmetry_num;</a>
+<a name="ln1708">              sym_key = ss.str();</a>
+<a name="ln1709">            }</a>
+<a name="ln1710"> </a>
+<a name="ln1711">          std::string bond_type;</a>
+<a name="ln1712">          int bond_order = bond-&gt;GetBondOrder();</a>
+<a name="ln1713">          switch (bond_order)</a>
+<a name="ln1714">          {</a>
+<a name="ln1715">            case 1:</a>
+<a name="ln1716">              bond_type = &quot;S&quot;;</a>
+<a name="ln1717">              break;</a>
+<a name="ln1718">            case 2:</a>
+<a name="ln1719">              bond_type = &quot;D&quot;;</a>
+<a name="ln1720">              break;</a>
+<a name="ln1721">            case 3:</a>
+<a name="ln1722">              bond_type = &quot;T&quot;;</a>
+<a name="ln1723">              break;</a>
+<a name="ln1724">            case 5:  // FIXME: this will be different in upstream code</a>
+<a name="ln1725">              bond_type = &quot;A&quot;;  // aromatic, per OBBond::_order</a>
+<a name="ln1726">              break;</a>
+<a name="ln1727">            default:</a>
+<a name="ln1728">              stringstream ss;</a>
+<a name="ln1729">              ss &lt;&lt; &quot;Unexpected bond order &quot; &lt;&lt; bond_order</a>
+<a name="ln1730">                 &lt;&lt; &quot; for bond&quot; &lt;&lt; label_1 &lt;&lt; &quot;-&quot; &lt;&lt; label_2 &lt;&lt; std::endl</a>
+<a name="ln1731">                 &lt;&lt; &quot;Defaulting to single bond.&quot;;</a>
+<a name="ln1732">              obErrorLog.ThrowError(__FUNCTION__, ss.str(), obWarning);</a>
+<a name="ln1733">              bond_type = &quot;S&quot;;</a>
+<a name="ln1734">          }</a>
+<a name="ln1735"> </a>
+<a name="ln1736"> </a>
+<a name="ln1737">          //printf(&quot;%p: %s\n&quot;, &amp;*atom, label_table[&amp;*atom].c_str());</a>
+<a name="ln1738">          snprintf(buffer, BUFF_SIZE, &quot;    %-7s%-7s%10.5f%7s%4s\n&quot;,</a>
+<a name="ln1739">                   label_1.c_str(), label_2.c_str(),</a>
+<a name="ln1740">                   bond-&gt;GetLength(), sym_key.c_str(),</a>
+<a name="ln1741">                   bond_type.c_str());</a>
+<a name="ln1742"> </a>
+<a name="ln1743">          ofs &lt;&lt; buffer;</a>
+<a name="ln1744">        }</a>
+<a name="ln1745">      }</a>
+<a name="ln1746">    return true;</a>
+<a name="ln1747">  }//WriteMolecule</a>
+<a name="ln1748">} //namespace OpenBabel</a>
+
+</code></pre>
+<div class="balloon" rel="1098"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'vv' is always false.</p></div>
+<div class="balloon" rel="1099"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: !vv.</p></div>
+<div class="balloon" rel="1112"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'vv' is always false.</p></div>
+<div class="balloon" rel="1117"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'vv' is always false.</p></div>
+<div class="balloon" rel="1128"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v663/" target="_blank">V663</a> Infinite loop is possible. The 'cin.eof()' condition is insufficient to break from the loop. Consider adding the 'cin.fail()' function call to the conditional expression.</p></div>
+<div class="balloon" rel="1147"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'vv' is always false.</p></div>
+<div class="balloon" rel="1162"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'vv' is always false.</p></div>
+<div class="balloon" rel="1177"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'vv' is always false.</p></div>
+<div class="balloon" rel="1180"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v663/" target="_blank">V663</a> Infinite loop is possible. The 'cin.eof()' condition is insufficient to break from the loop. Consider adding the 'cin.fail()' function call to the conditional expression.</p></div>
+<div class="balloon" rel="1192"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'vv' is always false.</p></div>
+<div class="balloon" rel="1200"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'vv' is always false.</p></div>
+<div class="balloon" rel="1206"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v663/" target="_blank">V663</a> Infinite loop is possible. The 'cin.eof()' condition is insufficient to break from the loop. Consider adding the 'cin.fail()' function call to the conditional expression.</p></div>
+<div class="balloon" rel="1218"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'vv' is always false.</p></div>
+<div class="balloon" rel="1230"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'vv' is always false.</p></div>
+<div class="balloon" rel="1240"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'vv' is always false.</p></div>
+<div class="balloon" rel="1249"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'vv' is always false.</p></div>
+<div class="balloon" rel="1126"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v663/" target="_blank">V663</a> Infinite loop is possible. The 'cin.eof()' condition is insufficient to break from the loop. Consider adding the 'cin.fail()' function call to the conditional expression.</p></div>
+<div class="balloon" rel="314"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v730/" target="_blank">V730</a> Not all members of a class are initialized inside the constructor. Consider inspecting: mCharge.</p></div>
+<div class="balloon" rel="318"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v730/" target="_blank">V730</a> Not all members of a class are initialized inside the constructor. Consider inspecting: mSpacegroupNumberIT, mOrthMatrix, mOrthMatrixInvert, mSpaceGroup.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

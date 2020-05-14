@@ -1,0 +1,476 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>shuffletest.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">#include &quot;obtest.h&quot;</a>
+<a name="ln2">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln3">#include &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln4">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln5">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln6"> </a>
+<a name="ln7">#include &lt;openbabel/graphsym.h&gt;</a>
+<a name="ln8">#include &lt;openbabel/stereo/tetrahedral.h&gt;</a>
+<a name="ln9">#include &lt;openbabel/canon.h&gt;</a>
+<a name="ln10"> </a>
+<a name="ln11">#include &lt;iostream&gt;</a>
+<a name="ln12">#include &lt;vector&gt;</a>
+<a name="ln13">#include &lt;algorithm&gt;</a>
+<a name="ln14"> </a>
+<a name="ln15">//#define WITH_DEPICTION 1</a>
+<a name="ln16"> </a>
+<a name="ln17">using std::cout;</a>
+<a name="ln18">using std::endl;</a>
+<a name="ln19">using namespace OpenBabel;</a>
+<a name="ln20"> </a>
+<a name="ln21">static unsigned int N = 10;</a>
+<a name="ln22"> </a>
+<a name="ln23">void compareMolecules(OBMol *mol1, OBMol *mol2)</a>
+<a name="ln24">{</a>
+<a name="ln25">  std::vector&lt;unsigned int&gt; canlbls1, canlbls2;</a>
+<a name="ln26">  std::vector&lt;unsigned int&gt; symclasses1, symclasses2;</a>
+<a name="ln27"> </a>
+<a name="ln28">  CanonicalLabels(mol1, symclasses1, canlbls1);</a>
+<a name="ln29">  cout &lt;&lt; &quot;mol1.NumAtoms = &quot; &lt;&lt; mol1-&gt;NumAtoms() &lt;&lt; endl;</a>
+<a name="ln30"> </a>
+<a name="ln31">  CanonicalLabels(mol2, symclasses2, canlbls2);</a>
+<a name="ln32">  cout &lt;&lt; &quot;mol2.NumAtoms = &quot; &lt;&lt; mol2-&gt;NumAtoms() &lt;&lt; endl;</a>
+<a name="ln33"> </a>
+<a name="ln34">  std::vector&lt;unsigned int&gt; symclassesCopy1 = symclasses1;</a>
+<a name="ln35">  std::sort(symclassesCopy1.begin(), symclassesCopy1.end());</a>
+<a name="ln36">  std::vector&lt;unsigned int&gt;::iterator end1 = std::unique(symclassesCopy1.begin(), symclassesCopy1.end());</a>
+<a name="ln37">  unsigned int unique1 = end1 - symclassesCopy1.begin();</a>
+<a name="ln38"> </a>
+<a name="ln39">  std::vector&lt;unsigned int&gt; symclassesCopy2 = symclasses2;</a>
+<a name="ln40">  std::sort(symclassesCopy2.begin(), symclassesCopy2.end());</a>
+<a name="ln41">  std::vector&lt;unsigned int&gt;::iterator end2 = std::unique(symclassesCopy2.begin(), symclassesCopy2.end());</a>
+<a name="ln42">  unsigned int unique2 = end2 - symclassesCopy2.begin();</a>
+<a name="ln43"> </a>
+<a name="ln44">  OB_ASSERT( unique1 == unique2 );</a>
+<a name="ln45">  if (unique1 != unique2)</a>
+<a name="ln46">    cout &lt;&lt; unique1 &lt;&lt; &quot; == &quot; &lt;&lt; unique2 &lt;&lt; endl;</a>
+<a name="ln47"> </a>
+<a name="ln48">  FOR_ATOMS_OF_MOL (a1, mol1) {</a>
+<a name="ln49">    OBAtom *a2 = nullptr;</a>
+<a name="ln50">    unsigned int symClass1 = symclasses1.at(a1-&gt;GetIndex());</a>
+<a name="ln51">    for (unsigned int i = 0; i &lt; symclasses2.size(); ++i)</a>
+<a name="ln52">      if (symclasses2.at(i) == symClass1) {</a>
+<a name="ln53">        a2 = mol2-&gt;GetAtom(i+1);</a>
+<a name="ln54">        break;</a>
+<a name="ln55">      }</a>
+<a name="ln56"> </a>
+<a name="ln57">    if (!a2)</a>
+<a name="ln58">      continue;</a>
+<a name="ln59"> </a>
+<a name="ln60">    OB_ASSERT( a1-&gt;GetAtomicNum() == a2-&gt;GetAtomicNum() );</a>
+<a name="ln61">    OB_ASSERT( a1-&gt;GetExplicitDegree() == a2-&gt;GetExplicitDegree() );</a>
+<a name="ln62">    OB_ASSERT( a1-&gt;GetHvyDegree() == a2-&gt;GetHvyDegree() );</a>
+<a name="ln63">    OB_ASSERT( a1-&gt;GetHeteroDegree() == a2-&gt;GetHeteroDegree() );</a>
+<a name="ln64">    OB_ASSERT( a1-&gt;GetImplicitHCount() == a2-&gt;GetImplicitHCount() );</a>
+<a name="ln65">  }</a>
+<a name="ln66"> </a>
+<a name="ln67">}</a>
+<a name="ln68"> </a>
+<a name="ln69"> </a>
+<a name="ln70"> </a>
+<a name="ln71"> </a>
+<a name="ln72">bool doRoundtrip(OBMol *mol)</a>
+<a name="ln73">{</a>
+<a name="ln74">  cout &lt;&lt; &quot;==================== start doRoundtrip =========================&quot; &lt;&lt; endl;</a>
+<a name="ln75"> </a>
+<a name="ln76">  OBConversion conv;</a>
+<a name="ln77">  conv.SetInAndOutFormats(&quot;can&quot;, &quot;can&quot;);</a>
+<a name="ln78"> </a>
+<a name="ln79">  OBMol round2; // result of reading first output as canonical SMILES</a>
+<a name="ln80">  std::string output, roundtrip; // first output string, then the roundtrip</a>
+<a name="ln81"> </a>
+<a name="ln82">  mol-&gt;SetTitle(&quot;&quot;);</a>
+<a name="ln83">  output = conv.WriteString(mol, true); // trim whitespace</a>
+<a name="ln84">  OB_REQUIRE(conv.ReadString(&amp;round2, output));</a>
+<a name="ln85"> </a>
+<a name="ln86">  bool result = true;</a>
+<a name="ln87">  round2.SetTitle(&quot;&quot;);</a>
+<a name="ln88">  roundtrip = conv.WriteString(&amp;round2, true);</a>
+<a name="ln89">  if (roundtrip != output) {</a>
+<a name="ln90">    cout &lt;&lt; &quot;Failed roundtrip: \n  &quot; &lt;&lt; output &lt;&lt; &quot; -&gt; \n  &quot; &lt;&lt; roundtrip &lt;&lt; endl;</a>
+<a name="ln91">    result = false;</a>
+<a name="ln92">  }</a>
+<a name="ln93">  OB_ASSERT( roundtrip == output );</a>
+<a name="ln94"> </a>
+<a name="ln95">//  compareMolecules(mol, &amp;round2);</a>
+<a name="ln96"> </a>
+<a name="ln97">  cout &lt;&lt; &quot;==================== end doRoundtrip =========================&quot; &lt;&lt; endl;</a>
+<a name="ln98"> </a>
+<a name="ln99">  return result;</a>
+<a name="ln100">}</a>
+<a name="ln101"> </a>
+<a name="ln102"> </a>
+<a name="ln103"> </a>
+<a name="ln104"> </a>
+<a name="ln105"> </a>
+<a name="ln106"> </a>
+<a name="ln107"> </a>
+<a name="ln108"> </a>
+<a name="ln109">bool doShuffleTest(const std::string &amp;smiles)</a>
+<a name="ln110">{</a>
+<a name="ln111">  cout &lt;&lt; &quot; True Shuffling: &quot; &lt;&lt; smiles &lt;&lt; endl;</a>
+<a name="ln112">  // read a smiles string</a>
+<a name="ln113">  OBMol mol;</a>
+<a name="ln114">  OBConversion canConv, smiConv;</a>
+<a name="ln115">  OB_REQUIRE( canConv.SetInFormat(&quot;smi&quot;) );</a>
+<a name="ln116">  OB_REQUIRE( canConv.SetOutFormat(&quot;can&quot;) );</a>
+<a name="ln117">  OB_REQUIRE( smiConv.SetOutFormat(&quot;smi&quot;) );</a>
+<a name="ln118">  // read a smiles string</a>
+<a name="ln119">  OB_REQUIRE( canConv.ReadString(&amp;mol, smiles) );</a>
+<a name="ln120"> </a>
+<a name="ln121"> </a>
+<a name="ln122">  std::vector&lt;OBAtom*&gt; atoms;</a>
+<a name="ln123">  FOR_ATOMS_OF_MOL(atom, mol)</a>
+<a name="ln124">    atoms.push_back(&amp;*atom);</a>
+<a name="ln125"> </a>
+<a name="ln126"> </a>
+<a name="ln127">  std::string ref = canConv.WriteString(&amp;mol, true); // FIXME</a>
+<a name="ln128">  cout &lt;&lt; &quot;ref = &quot; &lt;&lt; ref &lt;&lt; endl;</a>
+<a name="ln129"> </a>
+<a name="ln130">  bool result = true;</a>
+<a name="ln131">  for (unsigned int i = 0; i &lt; N; ++i) {</a>
+<a name="ln132">    // shuffle the atoms</a>
+<a name="ln133">    std::random_shuffle(atoms.begin(), atoms.end());</a>
+<a name="ln134">    mol.RenumberAtoms(atoms);</a>
+<a name="ln135">    // get can smiles</a>
+<a name="ln136">    std::string cansmi = canConv.WriteString(&amp;mol, true);</a>
+<a name="ln137">    OB_ASSERT( cansmi == ref );</a>
+<a name="ln138"> </a>
+<a name="ln139">    doRoundtrip(&amp;mol);</a>
+<a name="ln140">  }</a>
+<a name="ln141"> </a>
+<a name="ln142">  bool roundtrip = doRoundtrip(&amp;mol);</a>
+<a name="ln143">  OB_ASSERT( result == roundtrip );</a>
+<a name="ln144"> </a>
+<a name="ln145">  return result;</a>
+<a name="ln146">}</a>
+<a name="ln147"> </a>
+<a name="ln148">bool doShuffleTestFile(const std::string &amp;filename)</a>
+<a name="ln149">{</a>
+<a name="ln150">  cout &lt;&lt; &quot; True Shuffling: &quot; &lt;&lt; filename &lt;&lt; endl;</a>
+<a name="ln151">  std::string file = OBTestUtil::GetFilename(filename);</a>
+<a name="ln152">  // read a smiles string</a>
+<a name="ln153">  OBMol mol;</a>
+<a name="ln154">  OBConversion canConv, smiConv;</a>
+<a name="ln155">  OBFormat *format = canConv.FormatFromExt(file.c_str());</a>
+<a name="ln156">  OB_REQUIRE( format );</a>
+<a name="ln157">  OB_REQUIRE( canConv.SetInFormat(format) );</a>
+<a name="ln158">  OB_REQUIRE( canConv.ReadFile(&amp;mol, file) );</a>
+<a name="ln159">  OB_REQUIRE( canConv.SetOutFormat(&quot;can&quot;) );</a>
+<a name="ln160">  OB_REQUIRE( smiConv.SetOutFormat(&quot;smi&quot;) );</a>
+<a name="ln161"> </a>
+<a name="ln162"> </a>
+<a name="ln163">  std::string smiles = canConv.WriteString(&amp;mol, true);</a>
+<a name="ln164"> </a>
+<a name="ln165">  std::vector&lt;OBAtom*&gt; atoms;</a>
+<a name="ln166">  FOR_ATOMS_OF_MOL(atom, mol)</a>
+<a name="ln167">    atoms.push_back(&amp;*atom);</a>
+<a name="ln168"> </a>
+<a name="ln169">  std::string ref = canConv.WriteString(&amp;mol, true); // FIXME</a>
+<a name="ln170">  cout &lt;&lt; &quot;ref = &quot; &lt;&lt; ref &lt;&lt; endl;</a>
+<a name="ln171"> </a>
+<a name="ln172">  bool result = true;</a>
+<a name="ln173">  for (unsigned int i = 0; i &lt; N; ++i) {</a>
+<a name="ln174">    // shuffle the atoms</a>
+<a name="ln175">    std::random_shuffle(atoms.begin(), atoms.end());</a>
+<a name="ln176">    mol.RenumberAtoms(atoms);</a>
+<a name="ln177"> </a>
+<a name="ln178">    // get can smiles</a>
+<a name="ln179">    std::string cansmi = canConv.WriteString(&amp;mol, true); // FIXME</a>
+<a name="ln180">    OB_ASSERT( cansmi == ref );</a>
+<a name="ln181">  }</a>
+<a name="ln182"> </a>
+<a name="ln183">  bool roundtrip = doRoundtrip(&amp;mol);</a>
+<a name="ln184">  OB_ASSERT( result == roundtrip );</a>
+<a name="ln185"> </a>
+<a name="ln186">  return result;</a>
+<a name="ln187">}</a>
+<a name="ln188"> </a>
+<a name="ln189">bool doShuffleTestOnMultiFile(const std::string &amp;filename)</a>
+<a name="ln190">{</a>
+<a name="ln191">  cout &lt;&lt; &quot; True Shuffling: &quot; &lt;&lt; filename &lt;&lt; endl;</a>
+<a name="ln192">  std::string file = OBTestUtil::GetFilename(filename);</a>
+<a name="ln193">  // read a smiles string</a>
+<a name="ln194">  OBMol mol;</a>
+<a name="ln195">  OBConversion canConv;</a>
+<a name="ln196">  OBFormat *format = canConv.FormatFromExt(file.c_str());</a>
+<a name="ln197">  OB_REQUIRE( format );</a>
+<a name="ln198">  OB_REQUIRE( canConv.SetInFormat(format) );</a>
+<a name="ln199">  OB_REQUIRE( canConv.SetOutFormat(&quot;can&quot;) );</a>
+<a name="ln200"> </a>
+<a name="ln201"> </a>
+<a name="ln202">  std::ifstream ifs;</a>
+<a name="ln203">  ifs.open(file.c_str());</a>
+<a name="ln204">  OB_REQUIRE( ifs );</a>
+<a name="ln205"> </a>
+<a name="ln206">  bool result = true;</a>
+<a name="ln207">  while (canConv.Read(&amp;mol, &amp;ifs)) {</a>
+<a name="ln208"> </a>
+<a name="ln209">    std::vector&lt;OBAtom*&gt; atoms;</a>
+<a name="ln210">    FOR_ATOMS_OF_MOL(atom, mol)</a>
+<a name="ln211">      atoms.push_back(&amp;*atom);</a>
+<a name="ln212"> </a>
+<a name="ln213">    mol.SetTitle(&quot;&quot;);</a>
+<a name="ln214">    std::string ref = canConv.WriteString(&amp;mol, true);</a>
+<a name="ln215">    cout &lt;&lt; &quot;ref = &quot; &lt;&lt; ref &lt;&lt; endl;</a>
+<a name="ln216"> </a>
+<a name="ln217">    bool subresult = true;</a>
+<a name="ln218">    for (unsigned int i = 0; i &lt; N; ++i) {</a>
+<a name="ln219">      // shuffle the atoms</a>
+<a name="ln220">      std::random_shuffle(atoms.begin(), atoms.end());</a>
+<a name="ln221">      mol.RenumberAtoms(atoms);</a>
+<a name="ln222"> </a>
+<a name="ln223">      // get can smiles</a>
+<a name="ln224">      mol.SetTitle(&quot;&quot;);</a>
+<a name="ln225">      std::string cansmi = canConv.WriteString(&amp;mol, true);</a>
+<a name="ln226">      // comapare with ref</a>
+<a name="ln227">      OB_ASSERT( cansmi == ref );</a>
+<a name="ln228">    }</a>
+<a name="ln229"> </a>
+<a name="ln230">    bool roundtrip = doRoundtrip(&amp;mol);</a>
+<a name="ln231">    OB_ASSERT( subresult == roundtrip );</a>
+<a name="ln232">  }</a>
+<a name="ln233"> </a>
+<a name="ln234">  return result;</a>
+<a name="ln235">}</a>
+<a name="ln236"> </a>
+<a name="ln237">int shuffletest(int argc, char* argv[])</a>
+<a name="ln238">{</a>
+<a name="ln239">  int defaultchoice = 1;</a>
+<a name="ln240">  </a>
+<a name="ln241">  int choice = defaultchoice;</a>
+<a name="ln242"> </a>
+<a name="ln243">  if (argc &gt; 1) {</a>
+<a name="ln244">    if(sscanf(argv[1], &quot;%d&quot;, &amp;choice) != 1) {</a>
+<a name="ln245">      printf(&quot;Couldn't parse that input as a number\n&quot;);</a>
+<a name="ln246">      return -1;</a>
+<a name="ln247">    }</a>
+<a name="ln248">  }</a>
+<a name="ln249">  // Define location of file formats for testing</a>
+<a name="ln250">#ifdef FORMATDIR</a>
+<a name="ln251">    char env[BUFF_SIZE];</a>
+<a name="ln252">    snprintf(env, BUFF_SIZE, &quot;BABEL_LIBDIR=%s&quot;, FORMATDIR);</a>
+<a name="ln253">    putenv(env);</a>
+<a name="ln254">#endif  </a>
+<a name="ln255"> </a>
+<a name="ln256">  /*</a>
+<a name="ln257">  if (argc == 3) {</a>
+<a name="ln258">    OB_ASSERT( doShuffleTestOnMultiFile(argv[2]) );</a>
+<a name="ln259">    cout &lt;&lt; &quot;PASSED TESTS: &quot; &lt;&lt; testCount - failed &lt;&lt; &quot;/&quot; &lt;&lt; testCount &lt;&lt; endl;</a>
+<a name="ln260">    return 0;</a>
+<a name="ln261">  }*/</a>
+<a name="ln262"> </a>
+<a name="ln263">  switch(choice) {</a>
+<a name="ln264">  case 1:</a>
+<a name="ln265">    OB_ASSERT( doShuffleTest(&quot;COc1cc2c(cc1O)CN1C[C@@H]2c2cc(OC)c(cc2C1)O&quot;) );</a>
+<a name="ln266">    OB_ASSERT( doShuffleTest(&quot;C(C1C=CCCC1)(C(=O)N/N=C/c1ccc(cc1)C#N)C(=O)N/N=C\\c1ccc(cc1)C#N&quot;) );</a>
+<a name="ln267">    OB_ASSERT( doShuffleTest(&quot;C(C1C=CCCC1)(C(=O)N/N=C\\c1ccc(cc1)C#N)C(=O)N/N=C/c1ccc(cc1)C#N&quot;) );</a>
+<a name="ln268"> </a>
+<a name="ln269"> </a>
+<a name="ln270">    OB_ASSERT( doShuffleTest(&quot;CC(=O)O.N=C\\1/C=C/C(=C(/c2ccc(N)cc2)\\c2ccc(N)c(C)c2)/C=C1&quot;) );</a>
+<a name="ln271">    OB_ASSERT( doShuffleTest(&quot;CCNc1ccc(cc1)/C(=C/1\\C=C/C(=N)/C=C1)/c1ccc(N(CC)CC)c(C)c1&quot;) );</a>
+<a name="ln272">    OB_ASSERT( doShuffleTest(&quot;C[C@H]1CCCCN1/C=C/1\\C(=O)O[C@@](C)(CC)OC1=O&quot;) );</a>
+<a name="ln273">    OB_ASSERT( doShuffleTest(&quot;N=C\\1/C=C/C(=C(\\c2ccc(N)cc2)/c2ccc(N)c(C)c2)/C=C1&quot;) );</a>
+<a name="ln274">    OB_ASSERT( doShuffleTest(&quot;N=C\\1/C=C/C(=N\\Cc2ccc(N)cc2)/C=C1&quot;) );</a>
+<a name="ln275"> </a>
+<a name="ln276">    OB_ASSERT( doShuffleTest(&quot;[O+]#C[Fe+]1234(C#[O+])(/C=C/CCC/C=C/[Fe+]5678(C#[O+])(C#[O+])[C@H]9C7=C6C5=C89)[C@H]5C3=C2C1=C45.F[B-](F)(F)F&quot;) );</a>
+<a name="ln277">    OB_ASSERT( doShuffleTest(&quot;[O+]#C[Fe+]1234(C#[O+])(/C=C/CCCC/C=C/[Fe+]5678(C#[O+])(C#[O+])C9=C6C7=C5[C@@H]89)C5=C3C2=C1[C@H]45.F[B-](F)(F)F&quot;) );</a>
+<a name="ln278"> </a>
+<a name="ln279"> </a>
+<a name="ln280">    OB_ASSERT( doShuffleTest(&quot;c1[14cH]cccc1&quot;) );</a>
+<a name="ln281">    OB_ASSERT( doShuffleTest(&quot;[14cH]1[14cH]cccc1&quot;) );</a>
+<a name="ln282">    OB_ASSERT( doShuffleTest(&quot;[14cH]1[14cH]ccc[14cH]1&quot;) );</a>
+<a name="ln283">    OB_ASSERT( doShuffleTest(&quot;[14cH]1[14cH]cc[14cH][14cH]1&quot;) );</a>
+<a name="ln284">    OB_ASSERT( doShuffleTest(&quot;[14cH]1[14cH]c[14cH][14cH][14cH]1&quot;) );</a>
+<a name="ln285">    OB_ASSERT( doShuffleTest(&quot;[14cH]1[14cH][14cH][14cH][14cH][14cH]1&quot;) );</a>
+<a name="ln286"> </a>
+<a name="ln287"> </a>
+<a name="ln288">    OB_ASSERT( doShuffleTestOnMultiFile(&quot;stereo/error2.smi&quot;) ); // FYI, kekulization error somewhere in here</a>
+<a name="ln289"> </a>
+<a name="ln290">    OB_ASSERT( doShuffleTest(&quot;F[Po@SP1](Cl)(Br)I&quot;) );</a>
+<a name="ln291">    OB_ASSERT( doShuffleTest(&quot;F[Po@SP2](Br)(Cl)I&quot;) );</a>
+<a name="ln292">    OB_ASSERT( doShuffleTest(&quot;F[Po@SP3](Cl)(I)Br&quot;) );</a>
+<a name="ln293">    break;</a>
+<a name="ln294">  case 2:</a>
+<a name="ln295">    //OB_ASSERT( doShuffleTest(&quot;C12=C3C4=C5[C@@H]1[Fe]16782345C2=C7[C@@]8(C6=C12)[Ge]([C@]12C3=C4C5=C1[Fe]16782345C2=C7C6=C1[C@H]82)([C@@]12C3=C4C5=C1[Fe]16782345C2=C7C6=C1[C@H]82)[C@]12C3=C4C5=C1[Fe]16782345C2=C7C6=C1[C@H]82&quot;) );</a>
+<a name="ln296">    OB_ASSERT( doShuffleTest(&quot;Br.CC(=O)Nc1ccc(cc1)S(=O)(=O)c1ccc(cc1)NC(=O)c1ccccc1SC(=O)CCCCn1ccccc1&quot;) );</a>
+<a name="ln297">    OB_ASSERT( doShuffleTest(&quot;Br.CC(=O)Nc1cccc(c1)S(=O)(=O)c1cccc(NC(=O)c2ccccc2SC(=O)CCCCn2ccccc2)c1&quot;) );</a>
+<a name="ln298">    OB_ASSERT( doShuffleTest(&quot;Br.COc1ccc(cc1)Cn1cccc(O)c1&quot;) );</a>
+<a name="ln299">    OB_ASSERT( doShuffleTest(&quot;Br.COc1ccc2c(c1)[C@]13CCCC[C@@H]3[C@H](N(C)CC1)[C@@]12CC1&quot;) );</a>
+<a name="ln300">    OB_ASSERT( doShuffleTest(&quot;Br.NCCCCNCCCC[C@-]12C3=C4C5=C1[Fe+2]16782345[C-]2C7=C6C1=C82&quot;) );</a>
+<a name="ln301">    OB_ASSERT( doShuffleTest(&quot;Br.NCCCCNCCCC[C@@-]12C3=C4C5=C1[Fe+2]16782345[C-]2C7=C6C1=C82&quot;) );</a>
+<a name="ln302">    OB_ASSERT( doShuffleTest(&quot;Br.NCCCNCCCCNCCCC[C@-]12C3=C4C5=C1[Fe+2]16782345[C-]2C7=C6C1=C82&quot;) );</a>
+<a name="ln303">    OB_ASSERT( doShuffleTest(&quot;Br.NCCCNCCCCNCCCC[C@@-]12C3=C4C5=C1[Fe+2]16782345[C-]2C7=C6C1=C82&quot;) );</a>
+<a name="ln304">    OB_ASSERT( doShuffleTest(&quot;Br.NCCCNCCCCNCCCNCCCC[C@-]12C3=C4C5=C1[Fe+2]16782345[C-]2C7=C6C1=C82&quot;) );</a>
+<a name="ln305">    OB_ASSERT( doShuffleTest(&quot;Br.NCCCNCCCCNCCCNCCCC[C@@-]12C3=C4C5=C1[Fe+2]16782345[C-]2C7=C6C1=C82&quot;) );</a>
+<a name="ln306">    OB_ASSERT( doShuffleTest(&quot;Br.NCCCNCCCC[C@-]12C3=C4C5=C1[Fe+2]16782345[C-]2C7=C6C1=C82&quot;) );</a>
+<a name="ln307">    OB_ASSERT( doShuffleTest(&quot;Br.NCCCNCCCC[C@@-]12C3=C4C5=C1[Fe+2]16782345[C-]2C7=C6C1=C82&quot;) );</a>
+<a name="ln308">    OB_ASSERT( doShuffleTest(&quot;CC(=O)O.Oc1nc(N)c2nc3c(nc2n1)c1cccc2cccc3c12.OS(=O)(=O)O&quot;) );</a>
+<a name="ln309">    OB_ASSERT( doShuffleTest(&quot;C12=C3C4=C5[C@H]1[Fe]16782345C2=C6C7=C1C82&quot;) );</a>
+<a name="ln310">    OB_ASSERT( doShuffleTest(&quot;C12([C@@H]3CCC[C@@H]1CCC[C@@H]2CCC3)OC(=O)C&quot;) );</a>
+<a name="ln311">    OB_ASSERT( doShuffleTest(&quot;[Fe]12345678(C9(C1=C4C3=C29)C=O)C1=C6C7=C5C81&quot;) );</a>
+<a name="ln312">    OB_ASSERT( doShuffleTest(&quot;[Fe+2]12345678([C-]9(C1=C7C6=C29)CCCCNCCCCN)C1=C4C5=C3[C-]81.Br&quot;) );</a>
+<a name="ln313">    OB_ASSERT( doShuffleTest(&quot;O[C@H]1CC[C@@H](O)CC1&quot;) );</a>
+<a name="ln314">    OB_ASSERT( doShuffleTest(&quot;c1csc(c1)c1nnc(o1)C12C[C@@H]3C[C@@H](C[C@@H](C3)C2)C1&quot;) );</a>
+<a name="ln315">    OB_ASSERT( doShuffleTest(&quot;CC(=O)OC12[C@@H]3CCC[C@@H]1CCC[C@@H]2CCC3&quot;) );</a>
+<a name="ln316">    OB_ASSERT( doShuffleTest(&quot;CC(=O)OC12[C@@H]3CCC[C@@H]1CCC[C@@H]2CCC3&quot;) );</a>
+<a name="ln317">    OB_ASSERT( doShuffleTest(&quot;C/C(=N/c1ccncc1)/C(=N/c1ccncc1)/C&quot;) );</a>
+<a name="ln318">    OB_ASSERT( doShuffleTest(&quot;CC(=CCN[C@]12C[C@@H]3C[C@@H](C[C@@H](C3)C2)C1)C&quot;) );</a>
+<a name="ln319">    OB_ASSERT( doShuffleTest(&quot;Brc1ccc(nc1)NC(=S)N[C@]12C[C@@H]3C[C@H](C[C@@H](C3)C2)C1&quot;) );</a>
+<a name="ln320">    OB_ASSERT( doShuffleTest(&quot;c1ccc2c(c1)[C@H]1[C@@H]3O[C@@H]3[C@@H]2c2ccccc12&quot;) );</a>
+<a name="ln321">    OB_ASSERT( doShuffleTest(&quot;C(C/N=C\\c1ccccc1)/N=C/c1ccccc1&quot;) );</a>
+<a name="ln322">    OB_ASSERT( doShuffleTest(&quot;O=C(CCCC(=O)N/N=C(/C)\\c1ccccc1)N/N=C(\\C)/c1ccccc1&quot;) );</a>
+<a name="ln323">    OB_ASSERT( doShuffleTest(&quot;C/C(=N/c1ccccc1)/C(=N/c1ccccc1)/C&quot;) );</a>
+<a name="ln324">    OB_ASSERT( doShuffleTest(&quot;OC[C@H](O)COP1(=O)O[Pt@]2(N[C@H]3CCCC[C@@H]3N2)O1&quot;) );</a>
+<a name="ln325">    OB_ASSERT( doShuffleTest(&quot;n1ccc(cc1)C12C[C@H]3C[C@H](C[C@H](C3)C2)C1&quot;) );</a>
+<a name="ln326">    OB_ASSERT( doShuffleTest(&quot;C12=C3C4=C5[C@H]1[Fe]16782345C2=C6C7=C1C82&quot;) );</a>
+<a name="ln327">    OB_ASSERT( doShuffleTest(&quot;CC(=O)O.Oc1nc2nc3c(nc2c(N)n1)c1cccc2cccc3c12&quot;) );</a>
+<a name="ln328">    OB_ASSERT( doShuffleTestFile(&quot;stereo/incorrect_canon1.mol&quot;) );</a>
+<a name="ln329">    OB_ASSERT( doShuffleTestFile(&quot;stereo/incorrect_canon2.mol&quot;) );</a>
+<a name="ln330">    break;</a>
+<a name="ln331">  case 3:</a>
+<a name="ln332">    OB_ASSERT( doShuffleTest(&quot;O[C@H]1CC[C@@H](O)CC1&quot;) );</a>
+<a name="ln333">    OB_ASSERT( doShuffleTest(&quot;O[C@H]1C[C@@H](O)C[C@H](O)C1&quot;) );</a>
+<a name="ln334">    OB_ASSERT( doShuffleTest(&quot;O[C@H]1C[C@@H](O)C[C@@H](O)C1&quot;) );</a>
+<a name="ln335"> </a>
+<a name="ln336">    OB_ASSERT( doShuffleTest(&quot;[C@@H]1([C@H]([C@H]([C@H]1C)C)C)C&quot;) );</a>
+<a name="ln337">    OB_ASSERT( doShuffleTestFile(&quot;stereo/cyclobutane_D1.smi&quot;) );</a>
+<a name="ln338"> </a>
+<a name="ln339">    OB_ASSERT( doShuffleTestFile(&quot;stereo/razinger_fig7_5_spec.mol&quot;) );</a>
+<a name="ln340"> </a>
+<a name="ln341">    OB_ASSERT( doShuffleTestFile(&quot;stereo/cyclohexanediol_D1.mol&quot;) );</a>
+<a name="ln342">    OB_ASSERT( doShuffleTestFile(&quot;stereo/cyclohexanediol_D2.mol&quot;) );</a>
+<a name="ln343">    OB_ASSERT( doShuffleTestFile(&quot;stereo/cyclohexanetriol_D1.mol&quot;) );</a>
+<a name="ln344">    OB_ASSERT( doShuffleTestFile(&quot;stereo/cyclohexanetriol_D2.mol&quot;) );</a>
+<a name="ln345">    OB_ASSERT( doShuffleTestFile(&quot;stereo/cyclobutane_D1.mol&quot;) );</a>
+<a name="ln346">    OB_ASSERT( doShuffleTestFile(&quot;stereo/cyclobutane_D2.mol&quot;) );</a>
+<a name="ln347">    OB_ASSERT( doShuffleTestFile(&quot;stereo/cyclobutane_D3.mol&quot;) );</a>
+<a name="ln348">    OB_ASSERT( doShuffleTestFile(&quot;stereo/cyclobutane_D4.mol&quot;) );</a>
+<a name="ln349"> </a>
+<a name="ln350">    OB_ASSERT( doShuffleTest(&quot;[C@@H]1([C@H]([C@H]([C@H]1C)C)C)C&quot;) );</a>
+<a name="ln351">    OB_ASSERT( doShuffleTest(&quot;[C@@H]1([C@@H]([C@H]([C@H]1C)C)C)C&quot;) );	</a>
+<a name="ln352">    OB_ASSERT( doShuffleTest(&quot;[C@@H]1([C@@H]([C@H]([C@@H]1C)C)C)C&quot;) );	</a>
+<a name="ln353">    OB_ASSERT( doShuffleTest(&quot;[C@@H]1([C@@H]([C@@H]([C@H]1C)C)C)C&quot;) );	</a>
+<a name="ln354"> </a>
+<a name="ln355">    OB_ASSERT( doShuffleTestFile(&quot;stereo/inositol_cis.mol&quot;) );</a>
+<a name="ln356">    OB_ASSERT( doShuffleTestFile(&quot;stereo/inositol_epi.mol&quot;) );</a>
+<a name="ln357">    OB_ASSERT( doShuffleTestFile(&quot;stereo/inositol_allo.mol&quot;) );</a>
+<a name="ln358">    OB_ASSERT( doShuffleTestFile(&quot;stereo/inositol_myo.mol&quot;) );</a>
+<a name="ln359">    OB_ASSERT( doShuffleTestFile(&quot;stereo/inositol_muco.mol&quot;) );</a>
+<a name="ln360">    OB_ASSERT( doShuffleTestFile(&quot;stereo/inositol_neo.mol&quot;) );</a>
+<a name="ln361">    OB_ASSERT( doShuffleTestFile(&quot;stereo/inositol_scyllo.mol&quot;) );</a>
+<a name="ln362">    OB_ASSERT( doShuffleTestFile(&quot;stereo/inositol_chiroD.mol&quot;) );</a>
+<a name="ln363">    OB_ASSERT( doShuffleTestFile(&quot;stereo/inositol_chiroL.mol&quot;) );</a>
+<a name="ln364">    OB_ASSERT( doShuffleTest(&quot;O[C@H]1[C@@H](O)[C@H](O)[C@H](O)[C@H](O)[C@H]1O&quot;) );</a>
+<a name="ln365">    break;</a>
+<a name="ln366">  case 4:</a>
+<a name="ln367">    OB_ASSERT( doShuffleTestFile(&quot;stereo/razinger_fig7_19_spec1.mol&quot;) );</a>
+<a name="ln368">    OB_ASSERT( doShuffleTestFile(&quot;stereo/razinger_fig7_19_spec2.mol&quot;) );</a>
+<a name="ln369">    OB_ASSERT( doShuffleTestFile(&quot;stereo/razinger_fig7_19_spec3.mol&quot;) );</a>
+<a name="ln370">    OB_ASSERT( doShuffleTestFile(&quot;stereo/razinger_fig7_19_spec4.mol&quot;) );</a>
+<a name="ln371">    OB_ASSERT( doShuffleTestFile(&quot;stereo/razinger_fig7_19_spec5.mol&quot;) );</a>
+<a name="ln372">    OB_ASSERT( doShuffleTestFile(&quot;stereo/razinger_fig7_20_spec1.mol&quot;) );</a>
+<a name="ln373">    OB_ASSERT( doShuffleTestFile(&quot;stereo/razinger_fig7_26_spec1.mol&quot;) );</a>
+<a name="ln374">    OB_ASSERT( doShuffleTestFile(&quot;stereo/razinger_fig7_59_spec1.mol&quot;) );</a>
+<a name="ln375"> </a>
+<a name="ln376">    OB_ASSERT( doShuffleTestFile(&quot;stereo/razinger_fig7_30.mol&quot;) );</a>
+<a name="ln377">    OB_ASSERT( doShuffleTestFile(&quot;stereo/razinger_fig7_34.mol&quot;) );</a>
+<a name="ln378">    OB_ASSERT( doShuffleTestFile(&quot;stereo/razinger_fig7_35.mol&quot;) );</a>
+<a name="ln379">    OB_ASSERT( doShuffleTestFile(&quot;stereo/razinger_fig7_36.mol&quot;) );</a>
+<a name="ln380">    OB_ASSERT( doShuffleTestFile(&quot;stereo/razinger_fig7_37.mol&quot;) );</a>
+<a name="ln381">    OB_ASSERT( doShuffleTestFile(&quot;stereo/razinger_fig7_38.mol&quot;) );</a>
+<a name="ln382">    OB_ASSERT( doShuffleTestFile(&quot;stereo/razinger_fig7_39.mol&quot;) );</a>
+<a name="ln383">    break;</a>
+<a name="ln384">  case 5:</a>
+<a name="ln385">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon1.mol&quot;) );</a>
+<a name="ln386">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon2.mol&quot;) );</a>
+<a name="ln387">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon3.mol&quot;) );</a>
+<a name="ln388">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon4.mol&quot;) );</a>
+<a name="ln389">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon5.mol&quot;) );</a>
+<a name="ln390">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon6.mol&quot;) );</a>
+<a name="ln391">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon7.mol&quot;) );</a>
+<a name="ln392">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon8.mol&quot;) );</a>
+<a name="ln393">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon9.mol&quot;) );</a>
+<a name="ln394">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon10.mol&quot;) );</a>
+<a name="ln395">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon11.mol&quot;) );</a>
+<a name="ln396">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon12.mol&quot;) );</a>
+<a name="ln397">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon13.mol&quot;) );</a>
+<a name="ln398">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon14.mol&quot;) );</a>
+<a name="ln399">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon15.mol&quot;) );</a>
+<a name="ln400">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon16.mol&quot;) );</a>
+<a name="ln401">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon17.mol&quot;) );</a>
+<a name="ln402">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon18.mol&quot;) );</a>
+<a name="ln403">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon19.mol&quot;) );</a>
+<a name="ln404">    OB_REQUIRE( doShuffleTestFile(&quot;stereo/canon19.mol&quot;) );</a>
+<a name="ln405">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon20.mol&quot;) );</a>
+<a name="ln406">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon21.mol&quot;) );</a>
+<a name="ln407">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon22.mol&quot;) );</a>
+<a name="ln408">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon23.mol&quot;) );</a>
+<a name="ln409">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon24.mol&quot;) );</a>
+<a name="ln410"> </a>
+<a name="ln411">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon_cistrans1.mol&quot;) );</a>
+<a name="ln412">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon_cistrans2.mol&quot;) );</a>
+<a name="ln413">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon_cistrans3.mol&quot;) );</a>
+<a name="ln414">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon_cistrans4.mol&quot;) );</a>
+<a name="ln415">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon_cistrans5.mol&quot;) );</a>
+<a name="ln416">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon_cistrans6.mol&quot;) );</a>
+<a name="ln417">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon_cistrans7.mol&quot;) );</a>
+<a name="ln418">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon_cistrans8.mol&quot;) );</a>
+<a name="ln419">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon_cistrans9.mol&quot;) );</a>
+<a name="ln420">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon_cistrans15.mol&quot;) );</a>
+<a name="ln421">    OB_ASSERT( doShuffleTestFile(&quot;stereo/canon_cistrans16.mol&quot;) );</a>
+<a name="ln422">    break;</a>
+<a name="ln423">  default:</a>
+<a name="ln424">    cout &lt;&lt; &quot;Test number &quot; &lt;&lt; choice &lt;&lt; &quot; does not exist!\n&quot;;</a>
+<a name="ln425">    return -1;</a>
+<a name="ln426">  }</a>
+<a name="ln427"> </a>
+<a name="ln428">  return 0;</a>
+<a name="ln429">}</a>
+<a name="ln430"> </a>
+
+</code></pre>
+<div class="balloon" rel="21"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v707/" target="_blank">V707</a> Giving short names to global variables is considered to be bad practice. It is suggested to rename 'N' variable.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

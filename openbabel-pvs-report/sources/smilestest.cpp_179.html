@@ -1,0 +1,396 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>smilestest.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">#include &quot;obtest.h&quot;</a>
+<a name="ln2"> </a>
+<a name="ln3">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln4">#include &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln5">#include &lt;openbabel/stereo/tetrahedral.h&gt;</a>
+<a name="ln6">#include &lt;openbabel/stereo/cistrans.h&gt;</a>
+<a name="ln7">#include &lt;openbabel/stereo/squareplanar.h&gt;</a>
+<a name="ln8"> </a>
+<a name="ln9">#include &lt;openbabel/graphsym.h&gt;</a>
+<a name="ln10">#include &lt;openbabel/canon.h&gt;</a>
+<a name="ln11">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln12"> </a>
+<a name="ln13">using namespace std;</a>
+<a name="ln14">using namespace OpenBabel;</a>
+<a name="ln15"> </a>
+<a name="ln16">/*</a>
+<a name="ln17"> * Stereo classes have their own tests. This file tests if the smiles</a>
+<a name="ln18"> * format uses them correctly.</a>
+<a name="ln19"> */</a>
+<a name="ln20"> </a>
+<a name="ln21">void testTetrahedralStereo1()</a>
+<a name="ln22">{</a>
+<a name="ln23">  cout &lt;&lt; &quot;testTetrahedralStereo1()&quot; &lt;&lt; endl;</a>
+<a name="ln24">  // read a smiles string</a>
+<a name="ln25">  OBMol mol;</a>
+<a name="ln26">  OBConversion conv;</a>
+<a name="ln27">  OB_REQUIRE( conv.SetInFormat(&quot;smi&quot;) );</a>
+<a name="ln28">  cout &lt;&lt; &quot;smiles: C[C@H](O)N&quot; &lt;&lt; endl;</a>
+<a name="ln29">  OB_REQUIRE( conv.ReadString(&amp;mol, &quot;C[C@H](O)N&quot;) );</a>
+<a name="ln30"> </a>
+<a name="ln31">  // get the stereo data</a>
+<a name="ln32">  OB_REQUIRE( mol.HasData(OBGenericDataType::StereoData) );</a>
+<a name="ln33">  std::vector&lt;OBGenericData *&gt; stereoData = mol.GetAllData(OBGenericDataType::StereoData);</a>
+<a name="ln34">  OB_REQUIRE( stereoData.size() == 1 );</a>
+<a name="ln35"> </a>
+<a name="ln36">  // convert to tetrahedral data</a>
+<a name="ln37">  OB_REQUIRE( ((OBStereoBase*)stereoData[0])-&gt;GetType() == OBStereo::Tetrahedral );</a>
+<a name="ln38">  OBTetrahedralStereo *ts = dynamic_cast&lt;OBTetrahedralStereo*&gt;(stereoData[0]);</a>
+<a name="ln39">  OB_REQUIRE( ts );</a>
+<a name="ln40"> </a>
+<a name="ln41">  // print the configuration</a>
+<a name="ln42">  cout &lt;&lt; *ts &lt;&lt; endl;</a>
+<a name="ln43"> </a>
+<a name="ln44">  // construct a valid configuration here</a>
+<a name="ln45">  //</a>
+<a name="ln46">  // C[C@H](O)N</a>
+<a name="ln47">  // 0 1 2  3 4  &lt;- ids</a>
+<a name="ln48">  //</a>
+<a name="ln49">  OBTetrahedralStereo::Config cfg(1, 0, OBStereo::MakeRefs(4, 3, 2), OBStereo::Clockwise);</a>
+<a name="ln50"> </a>
+<a name="ln51">  // compare stereochemistry</a>
+<a name="ln52">  OB_REQUIRE( ts-&gt;GetConfig() == cfg );</a>
+<a name="ln53"> </a>
+<a name="ln54">  cout &lt;&lt; endl;</a>
+<a name="ln55">}</a>
+<a name="ln56"> </a>
+<a name="ln57">void genericSmilesCanonicalTest(const std::string &amp;smiles)</a>
+<a name="ln58">{</a>
+<a name="ln59">  cout &lt;&lt; &quot;Testing generic smiles &lt;-&gt; canonical smiles&quot; &lt;&lt; endl;</a>
+<a name="ln60">  // read a smiles string</a>
+<a name="ln61">  OBMol mol;</a>
+<a name="ln62">  OBConversion conv;</a>
+<a name="ln63">  OB_REQUIRE( conv.SetInFormat(&quot;smi&quot;) );</a>
+<a name="ln64">  OB_REQUIRE( conv.SetOutFormat(&quot;can&quot;) );</a>
+<a name="ln65">  cout &lt;&lt; &quot;smiles: &quot; &lt;&lt; smiles &lt;&lt; endl;</a>
+<a name="ln66">  // read a smiles string</a>
+<a name="ln67">  OB_REQUIRE( conv.ReadString(&amp;mol, smiles) );</a>
+<a name="ln68"> </a>
+<a name="ln69">  // store the stereo data for the smiles string using unique symmetry ids</a>
+<a name="ln70">  std::vector&lt;OBTetrahedralStereo::Config&gt; tetrahedral1;</a>
+<a name="ln71">  std::vector&lt;OBCisTransStereo::Config&gt; cistrans1;</a>
+<a name="ln72">  std::vector&lt;OBSquarePlanarStereo::Config&gt; squareplanar1;</a>
+<a name="ln73"> </a>
+<a name="ln74">  // get the stereo data</a>
+<a name="ln75">  OB_ASSERT( mol.HasData(OBGenericDataType::StereoData) );</a>
+<a name="ln76">  std::vector&lt;OBGenericData *&gt; stereoData = mol.GetAllData(OBGenericDataType::StereoData);</a>
+<a name="ln77"> </a>
+<a name="ln78">  std::vector&lt;unsigned int&gt; canlbls;</a>
+<a name="ln79">  std::vector&lt;unsigned int&gt; symclasses;</a>
+<a name="ln80">  OBGraphSym gs1(&amp;mol);</a>
+<a name="ln81">  gs1.GetSymmetry(symclasses);</a>
+<a name="ln82">  CanonicalLabels(&amp;mol, symclasses, canlbls);</a>
+<a name="ln83">  cout &lt;&lt; &quot;mol.NumAtoms = &quot; &lt;&lt; mol.NumAtoms() &lt;&lt; endl;</a>
+<a name="ln84">  for (std::vector&lt;OBGenericData*&gt;::iterator data = stereoData.begin(); data != stereoData.end(); ++data) {</a>
+<a name="ln85">    if (((OBStereoBase*)*data)-&gt;GetType() == OBStereo::Tetrahedral) {</a>
+<a name="ln86">      // convert to tetrahedral data</a>
+<a name="ln87">      OBTetrahedralStereo *ts = dynamic_cast&lt;OBTetrahedralStereo*&gt;(*data);</a>
+<a name="ln88">      OB_REQUIRE( ts );</a>
+<a name="ln89">      OB_ASSERT( ts-&gt;IsValid() );</a>
+<a name="ln90">      if (!ts-&gt;IsValid())</a>
+<a name="ln91">        continue;</a>
+<a name="ln92"> </a>
+<a name="ln93">      OBTetrahedralStereo::Config config = ts-&gt;GetConfig();</a>
+<a name="ln94">      // convert atom ids to symmetry ids</a>
+<a name="ln95">     if (mol.GetAtomById(config.center))</a>
+<a name="ln96">        config.center = canlbls.at( mol.GetAtomById(config.center)-&gt;GetIdx() - 1 );</a>
+<a name="ln97">      if (mol.GetAtomById(config.from))</a>
+<a name="ln98">        config.from = canlbls.at( mol.GetAtomById(config.from)-&gt;GetIdx() - 1 );</a>
+<a name="ln99">      if (mol.GetAtomById(config.refs[0]))</a>
+<a name="ln100">        config.refs[0] = canlbls.at( mol.GetAtomById(config.refs[0])-&gt;GetIdx() - 1 );</a>
+<a name="ln101">      if (mol.GetAtomById(config.refs[1]))</a>
+<a name="ln102">        config.refs[1] = canlbls.at( mol.GetAtomById(config.refs[1])-&gt;GetIdx() - 1 );</a>
+<a name="ln103">      if (mol.GetAtomById(config.refs[2]))</a>
+<a name="ln104">        config.refs[2] = canlbls.at( mol.GetAtomById(config.refs[2])-&gt;GetIdx() - 1 );</a>
+<a name="ln105">      cout &lt;&lt; &quot;Config with symmetry ids: &quot; &lt;&lt; config &lt;&lt; endl;</a>
+<a name="ln106">      tetrahedral1.push_back(config);</a>
+<a name="ln107">    } else</a>
+<a name="ln108">    if (((OBStereoBase*)*data)-&gt;GetType() == OBStereo::CisTrans) {</a>
+<a name="ln109">      // convert to tetrahedral data</a>
+<a name="ln110">      OBCisTransStereo *ct = dynamic_cast&lt;OBCisTransStereo*&gt;(*data);</a>
+<a name="ln111">      OB_REQUIRE( ct );</a>
+<a name="ln112">      OB_ASSERT( ct-&gt;IsValid() );</a>
+<a name="ln113"> </a>
+<a name="ln114">      OBCisTransStereo::Config config = ct-&gt;GetConfig();</a>
+<a name="ln115">      // convert atom ids to symmetry ids</a>
+<a name="ln116">      config.begin = canlbls.at( mol.GetAtomById(config.begin)-&gt;GetIdx() - 1 );</a>
+<a name="ln117">      config.end = canlbls.at( mol.GetAtomById(config.end)-&gt;GetIdx() - 1 );</a>
+<a name="ln118">      if (mol.GetAtomById(config.refs[0]))</a>
+<a name="ln119">        config.refs[0] = canlbls.at( mol.GetAtomById(config.refs[0])-&gt;GetIdx() - 1 );</a>
+<a name="ln120">      if (mol.GetAtomById(config.refs[1]))</a>
+<a name="ln121">        config.refs[1] = canlbls.at( mol.GetAtomById(config.refs[1])-&gt;GetIdx() - 1 );</a>
+<a name="ln122">      if (mol.GetAtomById(config.refs[2]))</a>
+<a name="ln123">        config.refs[2] = canlbls.at( mol.GetAtomById(config.refs[2])-&gt;GetIdx() - 1 );</a>
+<a name="ln124">      if (mol.GetAtomById(config.refs[3]))</a>
+<a name="ln125">        config.refs[3] = canlbls.at( mol.GetAtomById(config.refs[3])-&gt;GetIdx() - 1 );</a>
+<a name="ln126">      cout &lt;&lt; &quot;Config with symmetry ids: &quot; &lt;&lt; config &lt;&lt; endl;</a>
+<a name="ln127">      cistrans1.push_back(config);</a>
+<a name="ln128">    } else</a>
+<a name="ln129">    if (((OBStereoBase*)*data)-&gt;GetType() == OBStereo::SquarePlanar) {</a>
+<a name="ln130">      // convert to tetrahedral data</a>
+<a name="ln131">      OBSquarePlanarStereo *sp = dynamic_cast&lt;OBSquarePlanarStereo*&gt;(*data);</a>
+<a name="ln132">      OB_REQUIRE( sp );</a>
+<a name="ln133">      OB_ASSERT( sp-&gt;IsValid() );</a>
+<a name="ln134">      if (!sp-&gt;IsValid())</a>
+<a name="ln135">        continue;</a>
+<a name="ln136"> </a>
+<a name="ln137">      OBSquarePlanarStereo::Config config = sp-&gt;GetConfig();</a>
+<a name="ln138">      // convert atom ids to symmetry ids</a>
+<a name="ln139">     if (mol.GetAtomById(config.center))</a>
+<a name="ln140">        config.center = canlbls.at( mol.GetAtomById(config.center)-&gt;GetIdx() - 1 );</a>
+<a name="ln141">      if (mol.GetAtomById(config.refs[0]))</a>
+<a name="ln142">        config.refs[0] = canlbls.at( mol.GetAtomById(config.refs[0])-&gt;GetIdx() - 1 );</a>
+<a name="ln143">      if (mol.GetAtomById(config.refs[1]))</a>
+<a name="ln144">        config.refs[1] = canlbls.at( mol.GetAtomById(config.refs[1])-&gt;GetIdx() - 1 );</a>
+<a name="ln145">      if (mol.GetAtomById(config.refs[2]))</a>
+<a name="ln146">        config.refs[2] = canlbls.at( mol.GetAtomById(config.refs[2])-&gt;GetIdx() - 1 );</a>
+<a name="ln147">      if (mol.GetAtomById(config.refs[3]))</a>
+<a name="ln148">        config.refs[3] = canlbls.at( mol.GetAtomById(config.refs[3])-&gt;GetIdx() - 1 );</a>
+<a name="ln149">      cout &lt;&lt; &quot;Config with symmetry ids: &quot; &lt;&lt; config &lt;&lt; endl;</a>
+<a name="ln150">      squareplanar1.push_back(config);</a>
+<a name="ln151">    }</a>
+<a name="ln152"> </a>
+<a name="ln153"> </a>
+<a name="ln154">  }</a>
+<a name="ln155"> </a>
+<a name="ln156">  // write to can smiles</a>
+<a name="ln157">  std::string canSmiles = conv.WriteString(&amp;mol);</a>
+<a name="ln158">  cout &lt;&lt; &quot;canSmiles: &quot; &lt;&lt; canSmiles;</a>
+<a name="ln159">  // read can smiles in again</a>
+<a name="ln160">  OB_REQUIRE( conv.ReadString(&amp;mol, canSmiles) );</a>
+<a name="ln161"> </a>
+<a name="ln162">  // store the stereo data for the smiles string using unique symmetry ids</a>
+<a name="ln163">  std::vector&lt;OBTetrahedralStereo::Config&gt; tetrahedral2;</a>
+<a name="ln164">  std::vector&lt;OBCisTransStereo::Config&gt; cistrans2;</a>
+<a name="ln165">  std::vector&lt;OBSquarePlanarStereo::Config&gt; squareplanar2;</a>
+<a name="ln166"> </a>
+<a name="ln167">  // get the stereo data</a>
+<a name="ln168">  OB_ASSERT( mol.HasData(OBGenericDataType::StereoData) );</a>
+<a name="ln169">  stereoData = mol.GetAllData(OBGenericDataType::StereoData);</a>
+<a name="ln170"> </a>
+<a name="ln171">  OBGraphSym gs2(&amp;mol);</a>
+<a name="ln172">  gs2.GetSymmetry(symclasses);</a>
+<a name="ln173">  CanonicalLabels(&amp;mol, symclasses, canlbls);</a>
+<a name="ln174">  cout &lt;&lt; &quot;mol.NumAtoms = &quot; &lt;&lt; mol.NumAtoms() &lt;&lt; endl;</a>
+<a name="ln175">  for (std::vector&lt;OBGenericData*&gt;::iterator data = stereoData.begin(); data != stereoData.end(); ++data) {</a>
+<a name="ln176">    if (((OBStereoBase*)*data)-&gt;GetType() == OBStereo::Tetrahedral) {</a>
+<a name="ln177">      // convert to tetrahedral data</a>
+<a name="ln178">      OBTetrahedralStereo *ts = dynamic_cast&lt;OBTetrahedralStereo*&gt;(*data);</a>
+<a name="ln179">      OB_REQUIRE( ts );</a>
+<a name="ln180">      OB_ASSERT( ts-&gt;IsValid() );</a>
+<a name="ln181"> </a>
+<a name="ln182">      OBTetrahedralStereo::Config config = ts-&gt;GetConfig();</a>
+<a name="ln183">      // convert atom ids to symmetry ids</a>
+<a name="ln184">      if (mol.GetAtomById(config.center))</a>
+<a name="ln185">        config.center = canlbls.at( mol.GetAtomById(config.center)-&gt;GetIdx() - 1 );</a>
+<a name="ln186">      if (mol.GetAtomById(config.from))</a>
+<a name="ln187">        config.from = canlbls.at( mol.GetAtomById(config.from)-&gt;GetIdx() - 1 );</a>
+<a name="ln188">      if (mol.GetAtomById(config.refs[0]))</a>
+<a name="ln189">        config.refs[0] = canlbls.at( mol.GetAtomById(config.refs[0])-&gt;GetIdx() - 1 );</a>
+<a name="ln190">      if (mol.GetAtomById(config.refs[1]))</a>
+<a name="ln191">        config.refs[1] = canlbls.at( mol.GetAtomById(config.refs[1])-&gt;GetIdx() - 1 );</a>
+<a name="ln192">      if (mol.GetAtomById(config.refs[2]))</a>
+<a name="ln193">        config.refs[2] = canlbls.at( mol.GetAtomById(config.refs[2])-&gt;GetIdx() - 1 );</a>
+<a name="ln194">      cout &lt;&lt; &quot;Config with symmetry ids: &quot; &lt;&lt; config &lt;&lt; endl;</a>
+<a name="ln195">      tetrahedral2.push_back(config);</a>
+<a name="ln196">    }</a>
+<a name="ln197">    if (((OBStereoBase*)*data)-&gt;GetType() == OBStereo::CisTrans) {</a>
+<a name="ln198">      // convert to tetrahedral data</a>
+<a name="ln199">      OBCisTransStereo *ct = dynamic_cast&lt;OBCisTransStereo*&gt;(*data);</a>
+<a name="ln200">      OB_REQUIRE( ct );</a>
+<a name="ln201">      OB_ASSERT( ct-&gt;IsValid() );</a>
+<a name="ln202"> </a>
+<a name="ln203">      OBCisTransStereo::Config config = ct-&gt;GetConfig();</a>
+<a name="ln204">      // convert atom ids to symmetry ids</a>
+<a name="ln205">      config.begin = canlbls.at( mol.GetAtomById(config.begin)-&gt;GetIdx() - 1 );</a>
+<a name="ln206">      config.end = canlbls.at( mol.GetAtomById(config.end)-&gt;GetIdx() - 1 );</a>
+<a name="ln207">      if (mol.GetAtomById(config.refs[0]))</a>
+<a name="ln208">        config.refs[0] = canlbls.at( mol.GetAtomById(config.refs[0])-&gt;GetIdx() - 1 );</a>
+<a name="ln209">      if (mol.GetAtomById(config.refs[1]))</a>
+<a name="ln210">        config.refs[1] = canlbls.at( mol.GetAtomById(config.refs[1])-&gt;GetIdx() - 1 );</a>
+<a name="ln211">      if (mol.GetAtomById(config.refs[2]))</a>
+<a name="ln212">        config.refs[2] = canlbls.at( mol.GetAtomById(config.refs[2])-&gt;GetIdx() - 1 );</a>
+<a name="ln213">      if (mol.GetAtomById(config.refs[3]))</a>
+<a name="ln214">        config.refs[3] = canlbls.at( mol.GetAtomById(config.refs[3])-&gt;GetIdx() - 1 );</a>
+<a name="ln215">      cout &lt;&lt; &quot;Config with symmetry ids: &quot; &lt;&lt; config &lt;&lt; endl;</a>
+<a name="ln216">      cistrans2.push_back(config);</a>
+<a name="ln217">    } else</a>
+<a name="ln218">    if (((OBStereoBase*)*data)-&gt;GetType() == OBStereo::SquarePlanar) {</a>
+<a name="ln219">      // convert to tetrahedral data</a>
+<a name="ln220">      OBSquarePlanarStereo *sp = dynamic_cast&lt;OBSquarePlanarStereo*&gt;(*data);</a>
+<a name="ln221">      OB_REQUIRE( sp );</a>
+<a name="ln222">      OB_ASSERT( sp-&gt;IsValid() );</a>
+<a name="ln223"> </a>
+<a name="ln224">      OBSquarePlanarStereo::Config config = sp-&gt;GetConfig();</a>
+<a name="ln225">      // convert atom ids to symmetry ids</a>
+<a name="ln226">      if (mol.GetAtomById(config.center))</a>
+<a name="ln227">        config.center = canlbls.at( mol.GetAtomById(config.center)-&gt;GetIdx() - 1 );</a>
+<a name="ln228">      if (mol.GetAtomById(config.refs[0]))</a>
+<a name="ln229">        config.refs[0] = canlbls.at( mol.GetAtomById(config.refs[0])-&gt;GetIdx() - 1 );</a>
+<a name="ln230">      if (mol.GetAtomById(config.refs[1]))</a>
+<a name="ln231">        config.refs[1] = canlbls.at( mol.GetAtomById(config.refs[1])-&gt;GetIdx() - 1 );</a>
+<a name="ln232">      if (mol.GetAtomById(config.refs[2]))</a>
+<a name="ln233">        config.refs[2] = canlbls.at( mol.GetAtomById(config.refs[2])-&gt;GetIdx() - 1 );</a>
+<a name="ln234">      if (mol.GetAtomById(config.refs[3]))</a>
+<a name="ln235">        config.refs[3] = canlbls.at( mol.GetAtomById(config.refs[3])-&gt;GetIdx() - 1 );</a>
+<a name="ln236">      cout &lt;&lt; &quot;Config with symmetry ids: &quot; &lt;&lt; config &lt;&lt; endl;</a>
+<a name="ln237">      squareplanar2.push_back(config);</a>
+<a name="ln238">    }</a>
+<a name="ln239"> </a>
+<a name="ln240">  }</a>
+<a name="ln241"> </a>
+<a name="ln242">  // compare the tetrahedral structs</a>
+<a name="ln243">  OB_ASSERT( tetrahedral1.size() == tetrahedral2.size() );</a>
+<a name="ln244">  for (unsigned int i = 0; i &lt; tetrahedral1.size(); ++i) {</a>
+<a name="ln245">    for (unsigned int j = 0; j &lt; tetrahedral2.size(); ++j) {</a>
+<a name="ln246">      if (tetrahedral1[i].center == tetrahedral2[j].center)</a>
+<a name="ln247">        OB_ASSERT( tetrahedral1[i] == tetrahedral2[j] );</a>
+<a name="ln248">        if ( tetrahedral1[i] != tetrahedral2[j] ) {</a>
+<a name="ln249">          cout &lt;&lt; &quot;1 = &quot; &lt;&lt; tetrahedral1[i] &lt;&lt; endl;</a>
+<a name="ln250">          cout &lt;&lt; &quot;2 = &quot; &lt;&lt; tetrahedral2[j] &lt;&lt; endl;</a>
+<a name="ln251">        }</a>
+<a name="ln252">    }</a>
+<a name="ln253">  }</a>
+<a name="ln254">  // compare the cistrans structs</a>
+<a name="ln255">  OB_ASSERT( cistrans1.size() == cistrans2.size() );</a>
+<a name="ln256">  for (unsigned int i = 0; i &lt; cistrans1.size(); ++i) {</a>
+<a name="ln257">    for (unsigned int j = 0; j &lt; cistrans2.size(); ++j) {</a>
+<a name="ln258">      if ((cistrans1[i].begin == cistrans2[j].begin) &amp;&amp; (cistrans1[i].end == cistrans2[j].end))</a>
+<a name="ln259">        OB_ASSERT( cistrans1[i] == cistrans2[j] );</a>
+<a name="ln260">      if ((cistrans1[i].begin == cistrans2[j].end) &amp;&amp; (cistrans1[i].end == cistrans2[j].begin))</a>
+<a name="ln261">        OB_ASSERT( cistrans1[i] == cistrans2[j] );</a>
+<a name="ln262">    }</a>
+<a name="ln263">  }</a>
+<a name="ln264">  // compare the square-planar structs</a>
+<a name="ln265">  OB_ASSERT( squareplanar1.size() == squareplanar2.size() );</a>
+<a name="ln266">  for (unsigned int i = 0; i &lt; squareplanar1.size(); ++i) {</a>
+<a name="ln267">    for (unsigned int j = 0; j &lt; squareplanar2.size(); ++j) {</a>
+<a name="ln268">      if (squareplanar1[i].center == squareplanar2[j].center)</a>
+<a name="ln269">        OB_ASSERT( squareplanar1[i] == squareplanar2[j] );</a>
+<a name="ln270">        if ( squareplanar1[i] != squareplanar2[j] ) {</a>
+<a name="ln271">          cout &lt;&lt; &quot;1 = &quot; &lt;&lt; squareplanar1[i] &lt;&lt; endl;</a>
+<a name="ln272">          cout &lt;&lt; &quot;2 = &quot; &lt;&lt; squareplanar2[j] &lt;&lt; endl;</a>
+<a name="ln273">        }</a>
+<a name="ln274">    }</a>
+<a name="ln275">  }</a>
+<a name="ln276"> </a>
+<a name="ln277">  cout &lt;&lt; &quot;.&quot; &lt;&lt; endl &lt;&lt; endl;</a>
+<a name="ln278">}</a>
+<a name="ln279"> </a>
+<a name="ln280"> </a>
+<a name="ln281">int smilestest(int argc, char* argv[])</a>
+<a name="ln282">{</a>
+<a name="ln283">  int defaultchoice = 1;</a>
+<a name="ln284">  </a>
+<a name="ln285">  int choice = defaultchoice;</a>
+<a name="ln286"> </a>
+<a name="ln287">  if (argc &gt; 1) {</a>
+<a name="ln288">    if(sscanf(argv[1], &quot;%d&quot;, &amp;choice) != 1) {</a>
+<a name="ln289">      printf(&quot;Couldn't parse that input as a number\n&quot;);</a>
+<a name="ln290">      return -1;</a>
+<a name="ln291">    }</a>
+<a name="ln292">  }</a>
+<a name="ln293"> </a>
+<a name="ln294">  // Define location of file formats for testing</a>
+<a name="ln295">  #ifdef FORMATDIR</a>
+<a name="ln296">    char env[BUFF_SIZE];</a>
+<a name="ln297">    snprintf(env, BUFF_SIZE, &quot;BABEL_LIBDIR=%s&quot;, FORMATDIR);</a>
+<a name="ln298">    putenv(env);</a>
+<a name="ln299">  #endif</a>
+<a name="ln300"> </a>
+<a name="ln301">  switch(choice) {</a>
+<a name="ln302">  case 1:</a>
+<a name="ln303">    testTetrahedralStereo1();</a>
+<a name="ln304">    // Tetrahedral</a>
+<a name="ln305">    genericSmilesCanonicalTest(&quot;C[C@H](O)N&quot;);</a>
+<a name="ln306">    genericSmilesCanonicalTest(&quot;Cl[C@@](CCl)(I)Br&quot;);</a>
+<a name="ln307">    // CisTrans</a>
+<a name="ln308">    genericSmilesCanonicalTest(&quot;Cl/C=C/F&quot;);</a>
+<a name="ln309">    break;</a>
+<a name="ln310">  case 2:</a>
+<a name="ln311">    // SquarePlanar</a>
+<a name="ln312">    genericSmilesCanonicalTest(&quot;F[Po@SP1](Cl)(Br)I&quot;);</a>
+<a name="ln313">    genericSmilesCanonicalTest(&quot;F[Po@SP2](Br)(Cl)I&quot;);</a>
+<a name="ln314">    genericSmilesCanonicalTest(&quot;F[Po@SP3](Cl)(I)Br&quot;);</a>
+<a name="ln315">    break;</a>
+<a name="ln316">  case 3:</a>
+<a name="ln317">    // Mixed</a>
+<a name="ln318">    genericSmilesCanonicalTest(&quot;CCC[C@@H](O)CC\\C=C\\C=C\\C#CC#C\\C=C\\CO&quot;);</a>
+<a name="ln319">    genericSmilesCanonicalTest(&quot;OC[C@@H](O1)[C@@H](O)[C@H](O)[C@@H](O)[C@@H](O)1&quot;);</a>
+<a name="ln320">    genericSmilesCanonicalTest(&quot;OC[C@@H](O1)[C@@H](O)[C@H](O)[C@@H]2[C@@H]1c3c(O)c(OC)c(O)cc3C(=O)O2&quot;);</a>
+<a name="ln321">    genericSmilesCanonicalTest(&quot;CC(=O)OCCC(/C)=C\\C[C@H](C(C)=C)CCC=C&quot;);</a>
+<a name="ln322">    genericSmilesCanonicalTest(&quot;CC[C@H](O1)CC[C@@]12CCCO2&quot;);</a>
+<a name="ln323">    genericSmilesCanonicalTest(&quot;CN1CCC[C@H]1c2cccnc2&quot;);</a>
+<a name="ln324">    genericSmilesCanonicalTest(&quot;CC(C)[C@@]12C[C@@H]1[C@@H](C)C(=O)C2&quot;);</a>
+<a name="ln325">    genericSmilesCanonicalTest(&quot;CC(C)[C@H]1CC[C@]([C@@H]2[C@@H]1C=C(COC2=O)C(=O)O)(CCl)O&quot;);</a>
+<a name="ln326">    genericSmilesCanonicalTest(&quot;C(CS[14CH2][14C@@H]1[14C@H]([14C@H]([14CH](O1)O)O)O)[C@@H](C(=O)O)N&quot;);</a>
+<a name="ln327">    genericSmilesCanonicalTest(&quot;CCC[C@@H]1C[C@H](N(C1)C)C(=O)NC([C@@H]2[C@@H]([C@@H]([C@H]([C@H](O2)SC)OP(=O)(O)O)O)O)C(C)Cl&quot;);</a>
+<a name="ln328">    break;</a>
+<a name="ln329">    // this structure fails but this is an error in genericSmilesCanonicalTest (It should sort the centers). However, this is</a>
+<a name="ln330">    // extensivily tested in other tests.</a>
+<a name="ln331">    //genericSmilesCanonicalTest(&quot;O1C=C[C@H]([C@H]1O2)c3c2cc(OC)c4c3OC(=O)C5=C4CCC(=O)5&quot;);</a>
+<a name="ln332"> </a>
+<a name="ln333">    // FAILING: need to fix graphsymtest first!!</a>
+<a name="ln334">    // ring gets converted to aromatic ring, adding H on n (i.e. N -&gt; [nH])</a>
+<a name="ln335">    //genericSmilesCanonicalTest(&quot;CC1=CN(C(=O)NC1=O)[C@H]2C[C@@H]([C@H](O2)CNCC3=CC=CC=C3)O&quot;);</a>
+<a name="ln336">  default:</a>
+<a name="ln337">    cout &lt;&lt; &quot;Test number &quot; &lt;&lt; choice &lt;&lt; &quot; does not exist!\n&quot;;</a>
+<a name="ln338">    return -1;</a>
+<a name="ln339">  }</a>
+<a name="ln340"> </a>
+<a name="ln341">  return 0;</a>
+<a name="ln342">}</a>
+<a name="ln343"> </a>
+<a name="ln344"> </a>
+
+</code></pre>
+<div class="balloon" rel="42"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v522/" target="_blank">V522</a> There might be dereferencing of a potential null pointer 'ts'.</p></div>
+<div class="balloon" rel="89"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1004/" target="_blank">V1004</a> The 'ts' pointer was used unsafely after it was verified against nullptr. Check lines: 88, 89.</p></div>
+<div class="balloon" rel="112"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1004/" target="_blank">V1004</a> The 'ct' pointer was used unsafely after it was verified against nullptr. Check lines: 111, 112.</p></div>
+<div class="balloon" rel="133"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1004/" target="_blank">V1004</a> The 'sp' pointer was used unsafely after it was verified against nullptr. Check lines: 132, 133.</p></div>
+<div class="balloon" rel="180"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1004/" target="_blank">V1004</a> The 'ts' pointer was used unsafely after it was verified against nullptr. Check lines: 179, 180.</p></div>
+<div class="balloon" rel="201"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1004/" target="_blank">V1004</a> The 'ct' pointer was used unsafely after it was verified against nullptr. Check lines: 200, 201.</p></div>
+<div class="balloon" rel="222"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1004/" target="_blank">V1004</a> The 'sp' pointer was used unsafely after it was verified against nullptr. Check lines: 221, 222.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

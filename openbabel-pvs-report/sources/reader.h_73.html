@@ -1,0 +1,1926 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>reader.h</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">// Tencent is pleased to support the open source community by making RapidJSON available.</a>
+<a name="ln2">//</a>
+<a name="ln3">// Copyright (C) 2015 THL A29 Limited, a Tencent company, and Milo Yip. All rights reserved.</a>
+<a name="ln4">//</a>
+<a name="ln5">// Licensed under the MIT License (the &quot;License&quot;); you may not use this file except</a>
+<a name="ln6">// in compliance with the License. You may obtain a copy of the License at</a>
+<a name="ln7">//</a>
+<a name="ln8">// http://opensource.org/licenses/MIT</a>
+<a name="ln9">//</a>
+<a name="ln10">// Unless required by applicable law or agreed to in writing, software distributed</a>
+<a name="ln11">// under the License is distributed on an &quot;AS IS&quot; BASIS, WITHOUT WARRANTIES OR</a>
+<a name="ln12">// CONDITIONS OF ANY KIND, either express or implied. See the License for the</a>
+<a name="ln13">// specific language governing permissions and limitations under the License.</a>
+<a name="ln14"> </a>
+<a name="ln15">#ifndef RAPIDJSON_READER_H_</a>
+<a name="ln16">#define RAPIDJSON_READER_H_</a>
+<a name="ln17"> </a>
+<a name="ln18">/*! \file reader.h */</a>
+<a name="ln19"> </a>
+<a name="ln20">#include &quot;allocators.h&quot;</a>
+<a name="ln21">#include &quot;stream.h&quot;</a>
+<a name="ln22">#include &quot;encodedstream.h&quot;</a>
+<a name="ln23">#include &quot;internal/meta.h&quot;</a>
+<a name="ln24">#include &quot;internal/stack.h&quot;</a>
+<a name="ln25">#include &quot;internal/strtod.h&quot;</a>
+<a name="ln26">#include &lt;limits&gt;</a>
+<a name="ln27"> </a>
+<a name="ln28">#if defined(RAPIDJSON_SIMD) &amp;&amp; defined(_MSC_VER)</a>
+<a name="ln29">#include &lt;intrin.h&gt;</a>
+<a name="ln30">#pragma intrinsic(_BitScanForward)</a>
+<a name="ln31">#endif</a>
+<a name="ln32">#ifdef RAPIDJSON_SSE42</a>
+<a name="ln33">#include &lt;nmmintrin.h&gt;</a>
+<a name="ln34">#elif defined(RAPIDJSON_SSE2)</a>
+<a name="ln35">#include &lt;emmintrin.h&gt;</a>
+<a name="ln36">#endif</a>
+<a name="ln37"> </a>
+<a name="ln38">#ifdef _MSC_VER</a>
+<a name="ln39">RAPIDJSON_DIAG_PUSH</a>
+<a name="ln40">RAPIDJSON_DIAG_OFF(4127)  // conditional expression is constant</a>
+<a name="ln41">RAPIDJSON_DIAG_OFF(4702)  // unreachable code</a>
+<a name="ln42">#endif</a>
+<a name="ln43"> </a>
+<a name="ln44">#ifdef __clang__</a>
+<a name="ln45">RAPIDJSON_DIAG_PUSH</a>
+<a name="ln46">RAPIDJSON_DIAG_OFF(old-style-cast)</a>
+<a name="ln47">RAPIDJSON_DIAG_OFF(padded)</a>
+<a name="ln48">RAPIDJSON_DIAG_OFF(switch-enum)</a>
+<a name="ln49">#endif</a>
+<a name="ln50"> </a>
+<a name="ln51">#ifdef __GNUC__</a>
+<a name="ln52">RAPIDJSON_DIAG_PUSH</a>
+<a name="ln53">RAPIDJSON_DIAG_OFF(effc++)</a>
+<a name="ln54">#endif</a>
+<a name="ln55"> </a>
+<a name="ln56">//!@cond RAPIDJSON_HIDDEN_FROM_DOXYGEN</a>
+<a name="ln57">#define RAPIDJSON_NOTHING /* deliberately empty */</a>
+<a name="ln58">#ifndef RAPIDJSON_PARSE_ERROR_EARLY_RETURN</a>
+<a name="ln59">#define RAPIDJSON_PARSE_ERROR_EARLY_RETURN(value) \</a>
+<a name="ln60">    RAPIDJSON_MULTILINEMACRO_BEGIN \</a>
+<a name="ln61">    if (RAPIDJSON_UNLIKELY(HasParseError())) { return value; } \</a>
+<a name="ln62">    RAPIDJSON_MULTILINEMACRO_END</a>
+<a name="ln63">#endif</a>
+<a name="ln64">#define RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID \</a>
+<a name="ln65">    RAPIDJSON_PARSE_ERROR_EARLY_RETURN(RAPIDJSON_NOTHING)</a>
+<a name="ln66">//!@endcond</a>
+<a name="ln67"> </a>
+<a name="ln68">/*! \def RAPIDJSON_PARSE_ERROR_NORETURN</a>
+<a name="ln69">    \ingroup RAPIDJSON_ERRORS</a>
+<a name="ln70">    \brief Macro to indicate a parse error.</a>
+<a name="ln71">    \param parseErrorCode \ref rapidjson::ParseErrorCode of the error</a>
+<a name="ln72">    \param offset  position of the error in JSON input (\c size_t)</a>
+<a name="ln73"> </a>
+<a name="ln74">    This macros can be used as a customization point for the internal</a>
+<a name="ln75">    error handling mechanism of RapidJSON.</a>
+<a name="ln76"> </a>
+<a name="ln77">    A common usage model is to throw an exception instead of requiring the</a>
+<a name="ln78">    caller to explicitly check the \ref rapidjson::GenericReader::Parse's</a>
+<a name="ln79">    return value:</a>
+<a name="ln80"> </a>
+<a name="ln81">    \code</a>
+<a name="ln82">    #define RAPIDJSON_PARSE_ERROR_NORETURN(parseErrorCode,offset) \</a>
+<a name="ln83">       throw ParseException(parseErrorCode, #parseErrorCode, offset)</a>
+<a name="ln84"> </a>
+<a name="ln85">    #include &lt;stdexcept&gt;               // std::runtime_error</a>
+<a name="ln86">    #include &quot;rapidjson/error/error.h&quot; // rapidjson::ParseResult</a>
+<a name="ln87"> </a>
+<a name="ln88">    struct ParseException : std::runtime_error, rapidjson::ParseResult {</a>
+<a name="ln89">      ParseException(rapidjson::ParseErrorCode code, const char* msg, size_t offset)</a>
+<a name="ln90">        : std::runtime_error(msg), ParseResult(code, offset) {}</a>
+<a name="ln91">    };</a>
+<a name="ln92"> </a>
+<a name="ln93">    #include &quot;rapidjson/reader.h&quot;</a>
+<a name="ln94">    \endcode</a>
+<a name="ln95"> </a>
+<a name="ln96">    \see RAPIDJSON_PARSE_ERROR, rapidjson::GenericReader::Parse</a>
+<a name="ln97"> */</a>
+<a name="ln98">#ifndef RAPIDJSON_PARSE_ERROR_NORETURN</a>
+<a name="ln99">#define RAPIDJSON_PARSE_ERROR_NORETURN(parseErrorCode, offset) \</a>
+<a name="ln100">    RAPIDJSON_MULTILINEMACRO_BEGIN \</a>
+<a name="ln101">    RAPIDJSON_ASSERT(!HasParseError()); /* Error can only be assigned once */ \</a>
+<a name="ln102">    SetParseError(parseErrorCode, offset); \</a>
+<a name="ln103">    RAPIDJSON_MULTILINEMACRO_END</a>
+<a name="ln104">#endif</a>
+<a name="ln105"> </a>
+<a name="ln106">/*! \def RAPIDJSON_PARSE_ERROR</a>
+<a name="ln107">    \ingroup RAPIDJSON_ERRORS</a>
+<a name="ln108">    \brief (Internal) macro to indicate and handle a parse error.</a>
+<a name="ln109">    \param parseErrorCode \ref rapidjson::ParseErrorCode of the error</a>
+<a name="ln110">    \param offset  position of the error in JSON input (\c size_t)</a>
+<a name="ln111"> </a>
+<a name="ln112">    Invokes RAPIDJSON_PARSE_ERROR_NORETURN and stops the parsing.</a>
+<a name="ln113"> </a>
+<a name="ln114">    \see RAPIDJSON_PARSE_ERROR_NORETURN</a>
+<a name="ln115">    \hideinitializer</a>
+<a name="ln116"> */</a>
+<a name="ln117">#ifndef RAPIDJSON_PARSE_ERROR</a>
+<a name="ln118">#define RAPIDJSON_PARSE_ERROR(parseErrorCode, offset) \</a>
+<a name="ln119">    RAPIDJSON_MULTILINEMACRO_BEGIN \</a>
+<a name="ln120">    RAPIDJSON_PARSE_ERROR_NORETURN(parseErrorCode, offset); \</a>
+<a name="ln121">    RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID; \</a>
+<a name="ln122">    RAPIDJSON_MULTILINEMACRO_END</a>
+<a name="ln123">#endif</a>
+<a name="ln124"> </a>
+<a name="ln125">#include &quot;error/error.h&quot; // ParseErrorCode, ParseResult</a>
+<a name="ln126"> </a>
+<a name="ln127">RAPIDJSON_NAMESPACE_BEGIN</a>
+<a name="ln128"> </a>
+<a name="ln129">///////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln130">// ParseFlag</a>
+<a name="ln131"> </a>
+<a name="ln132">/*! \def RAPIDJSON_PARSE_DEFAULT_FLAGS</a>
+<a name="ln133">    \ingroup RAPIDJSON_CONFIG</a>
+<a name="ln134">    \brief User-defined kParseDefaultFlags definition.</a>
+<a name="ln135"> </a>
+<a name="ln136">    User can define this as any \c ParseFlag combinations.</a>
+<a name="ln137">*/</a>
+<a name="ln138">#ifndef RAPIDJSON_PARSE_DEFAULT_FLAGS</a>
+<a name="ln139">#define RAPIDJSON_PARSE_DEFAULT_FLAGS kParseNoFlags</a>
+<a name="ln140">#endif</a>
+<a name="ln141"> </a>
+<a name="ln142">//! Combination of parseFlags</a>
+<a name="ln143">/*! \see Reader::Parse, Document::Parse, Document::ParseInsitu, Document::ParseStream</a>
+<a name="ln144"> */</a>
+<a name="ln145">enum ParseFlag {</a>
+<a name="ln146">    kParseNoFlags = 0,              //!&lt; No flags are set.</a>
+<a name="ln147">    kParseInsituFlag = 1,           //!&lt; In-situ(destructive) parsing.</a>
+<a name="ln148">    kParseValidateEncodingFlag = 2, //!&lt; Validate encoding of JSON strings.</a>
+<a name="ln149">    kParseIterativeFlag = 4,        //!&lt; Iterative(constant complexity in terms of function call stack size) parsing.</a>
+<a name="ln150">    kParseStopWhenDoneFlag = 8,     //!&lt; After parsing a complete JSON root from stream, stop further processing the rest of stream. When this flag is used, parser will not generate kParseErrorDocumentRootNotSingular error.</a>
+<a name="ln151">    kParseFullPrecisionFlag = 16,   //!&lt; Parse number in full precision (but slower).</a>
+<a name="ln152">    kParseCommentsFlag = 32,        //!&lt; Allow one-line (//) and multi-line (/**/) comments.</a>
+<a name="ln153">    kParseNumbersAsStringsFlag = 64,    //!&lt; Parse all numbers (ints/doubles) as strings.</a>
+<a name="ln154">    kParseTrailingCommasFlag = 128, //!&lt; Allow trailing commas at the end of objects and arrays.</a>
+<a name="ln155">    kParseNanAndInfFlag = 256,      //!&lt; Allow parsing NaN, Inf, Infinity, -Inf and -Infinity as doubles.</a>
+<a name="ln156">    kParseDefaultFlags = RAPIDJSON_PARSE_DEFAULT_FLAGS  //!&lt; Default parse flags. Can be customized by defining RAPIDJSON_PARSE_DEFAULT_FLAGS</a>
+<a name="ln157">};</a>
+<a name="ln158"> </a>
+<a name="ln159">///////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln160">// Handler</a>
+<a name="ln161"> </a>
+<a name="ln162">/*! \class rapidjson::Handler</a>
+<a name="ln163">    \brief Concept for receiving events from GenericReader upon parsing.</a>
+<a name="ln164">    The functions return true if no error occurs. If they return false,</a>
+<a name="ln165">    the event publisher should terminate the process.</a>
+<a name="ln166">\code</a>
+<a name="ln167">concept Handler {</a>
+<a name="ln168">    typename Ch;</a>
+<a name="ln169"> </a>
+<a name="ln170">    bool Null();</a>
+<a name="ln171">    bool Bool(bool b);</a>
+<a name="ln172">    bool Int(int i);</a>
+<a name="ln173">    bool Uint(unsigned i);</a>
+<a name="ln174">    bool Int64(int64_t i);</a>
+<a name="ln175">    bool Uint64(uint64_t i);</a>
+<a name="ln176">    bool Double(double d);</a>
+<a name="ln177">    /// enabled via kParseNumbersAsStringsFlag, string is not null-terminated (use length)</a>
+<a name="ln178">    bool RawNumber(const Ch* str, SizeType length, bool copy);</a>
+<a name="ln179">    bool String(const Ch* str, SizeType length, bool copy);</a>
+<a name="ln180">    bool StartObject();</a>
+<a name="ln181">    bool Key(const Ch* str, SizeType length, bool copy);</a>
+<a name="ln182">    bool EndObject(SizeType memberCount);</a>
+<a name="ln183">    bool StartArray();</a>
+<a name="ln184">    bool EndArray(SizeType elementCount);</a>
+<a name="ln185">};</a>
+<a name="ln186">\endcode</a>
+<a name="ln187">*/</a>
+<a name="ln188">///////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln189">// BaseReaderHandler</a>
+<a name="ln190"> </a>
+<a name="ln191">//! Default implementation of Handler.</a>
+<a name="ln192">/*! This can be used as base class of any reader handler.</a>
+<a name="ln193">    \note implements Handler concept</a>
+<a name="ln194">*/</a>
+<a name="ln195">template&lt;typename Encoding = UTF8&lt;&gt;, typename Derived = void&gt;</a>
+<a name="ln196">struct BaseReaderHandler {</a>
+<a name="ln197">    typedef typename Encoding::Ch Ch;</a>
+<a name="ln198"> </a>
+<a name="ln199">    typedef typename internal::SelectIf&lt;internal::IsSame&lt;Derived, void&gt;, BaseReaderHandler, Derived&gt;::Type Override;</a>
+<a name="ln200"> </a>
+<a name="ln201">    bool Default() { return true; }</a>
+<a name="ln202">    bool Null() { return static_cast&lt;Override&amp;&gt;(*this).Default(); }</a>
+<a name="ln203">    bool Bool(bool) { return static_cast&lt;Override&amp;&gt;(*this).Default(); }</a>
+<a name="ln204">    bool Int(int) { return static_cast&lt;Override&amp;&gt;(*this).Default(); }</a>
+<a name="ln205">    bool Uint(unsigned) { return static_cast&lt;Override&amp;&gt;(*this).Default(); }</a>
+<a name="ln206">    bool Int64(int64_t) { return static_cast&lt;Override&amp;&gt;(*this).Default(); }</a>
+<a name="ln207">    bool Uint64(uint64_t) { return static_cast&lt;Override&amp;&gt;(*this).Default(); }</a>
+<a name="ln208">    bool Double(double) { return static_cast&lt;Override&amp;&gt;(*this).Default(); }</a>
+<a name="ln209">    /// enabled via kParseNumbersAsStringsFlag, string is not null-terminated (use length)</a>
+<a name="ln210">    bool RawNumber(const Ch* str, SizeType len, bool copy) { return static_cast&lt;Override&amp;&gt;(*this).String(str, len, copy); }</a>
+<a name="ln211">    bool String(const Ch*, SizeType, bool) { return static_cast&lt;Override&amp;&gt;(*this).Default(); }</a>
+<a name="ln212">    bool StartObject() { return static_cast&lt;Override&amp;&gt;(*this).Default(); }</a>
+<a name="ln213">    bool Key(const Ch* str, SizeType len, bool copy) { return static_cast&lt;Override&amp;&gt;(*this).String(str, len, copy); }</a>
+<a name="ln214">    bool EndObject(SizeType) { return static_cast&lt;Override&amp;&gt;(*this).Default(); }</a>
+<a name="ln215">    bool StartArray() { return static_cast&lt;Override&amp;&gt;(*this).Default(); }</a>
+<a name="ln216">    bool EndArray(SizeType) { return static_cast&lt;Override&amp;&gt;(*this).Default(); }</a>
+<a name="ln217">};</a>
+<a name="ln218"> </a>
+<a name="ln219">///////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln220">// StreamLocalCopy</a>
+<a name="ln221"> </a>
+<a name="ln222">namespace internal {</a>
+<a name="ln223"> </a>
+<a name="ln224">template&lt;typename Stream, int = StreamTraits&lt;Stream&gt;::copyOptimization&gt;</a>
+<a name="ln225">class StreamLocalCopy;</a>
+<a name="ln226"> </a>
+<a name="ln227">//! Do copy optimization.</a>
+<a name="ln228">template&lt;typename Stream&gt;</a>
+<a name="ln229">class StreamLocalCopy&lt;Stream, 1&gt; {</a>
+<a name="ln230">public:</a>
+<a name="ln231">    StreamLocalCopy(Stream&amp; original) : s(original), original_(original) {}</a>
+<a name="ln232">    ~StreamLocalCopy() { original_ = s; }</a>
+<a name="ln233"> </a>
+<a name="ln234">    Stream s;</a>
+<a name="ln235"> </a>
+<a name="ln236">private:</a>
+<a name="ln237">    StreamLocalCopy&amp; operator=(const StreamLocalCopy&amp;) /* = delete */;</a>
+<a name="ln238"> </a>
+<a name="ln239">    Stream&amp; original_;</a>
+<a name="ln240">};</a>
+<a name="ln241"> </a>
+<a name="ln242">//! Keep reference.</a>
+<a name="ln243">template&lt;typename Stream&gt;</a>
+<a name="ln244">class StreamLocalCopy&lt;Stream, 0&gt; {</a>
+<a name="ln245">public:</a>
+<a name="ln246">    StreamLocalCopy(Stream&amp; original) : s(original) {}</a>
+<a name="ln247"> </a>
+<a name="ln248">    Stream&amp; s;</a>
+<a name="ln249"> </a>
+<a name="ln250">private:</a>
+<a name="ln251">    StreamLocalCopy&amp; operator=(const StreamLocalCopy&amp;) /* = delete */;</a>
+<a name="ln252">};</a>
+<a name="ln253"> </a>
+<a name="ln254">} // namespace internal</a>
+<a name="ln255"> </a>
+<a name="ln256">///////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln257">// SkipWhitespace</a>
+<a name="ln258"> </a>
+<a name="ln259">//! Skip the JSON white spaces in a stream.</a>
+<a name="ln260">/*! \param is A input stream for skipping white spaces.</a>
+<a name="ln261">    \note This function has SSE2/SSE4.2 specialization.</a>
+<a name="ln262">*/</a>
+<a name="ln263">template&lt;typename InputStream&gt;</a>
+<a name="ln264">void SkipWhitespace(InputStream&amp; is) {</a>
+<a name="ln265">    internal::StreamLocalCopy&lt;InputStream&gt; copy(is);</a>
+<a name="ln266">    InputStream&amp; s(copy.s);</a>
+<a name="ln267"> </a>
+<a name="ln268">    typename InputStream::Ch c;</a>
+<a name="ln269">    while ((c = s.Peek()) == ' ' || c == '\n' || c == '\r' || c == '\t')</a>
+<a name="ln270">        s.Take();</a>
+<a name="ln271">}</a>
+<a name="ln272"> </a>
+<a name="ln273">inline const char* SkipWhitespace(const char* p, const char* end) {</a>
+<a name="ln274">    while (p != end &amp;&amp; (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t'))</a>
+<a name="ln275">        ++p;</a>
+<a name="ln276">    return p;</a>
+<a name="ln277">}</a>
+<a name="ln278"> </a>
+<a name="ln279">#ifdef RAPIDJSON_SSE42</a>
+<a name="ln280">//! Skip whitespace with SSE 4.2 pcmpistrm instruction, testing 16 8-byte characters at once.</a>
+<a name="ln281">inline const char *SkipWhitespace_SIMD(const char* p) {</a>
+<a name="ln282">    // Fast return for single non-whitespace</a>
+<a name="ln283">    if (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t')</a>
+<a name="ln284">        ++p;</a>
+<a name="ln285">    else</a>
+<a name="ln286">        return p;</a>
+<a name="ln287"> </a>
+<a name="ln288">    // 16-byte align to the next boundary</a>
+<a name="ln289">    const char* nextAligned = reinterpret_cast&lt;const char*&gt;((reinterpret_cast&lt;size_t&gt;(p) + 15) &amp; static_cast&lt;size_t&gt;(~15));</a>
+<a name="ln290">    while (p != nextAligned)</a>
+<a name="ln291">        if (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t')</a>
+<a name="ln292">            ++p;</a>
+<a name="ln293">        else</a>
+<a name="ln294">            return p;</a>
+<a name="ln295"> </a>
+<a name="ln296">    // The rest of string using SIMD</a>
+<a name="ln297">    static const char whitespace[16] = &quot; \n\r\t&quot;;</a>
+<a name="ln298">    const __m128i w = _mm_loadu_si128(reinterpret_cast&lt;const __m128i *&gt;(&amp;whitespace[0]));</a>
+<a name="ln299"> </a>
+<a name="ln300">    for (;; p += 16) {</a>
+<a name="ln301">        const __m128i s = _mm_load_si128(reinterpret_cast&lt;const __m128i *&gt;(p));</a>
+<a name="ln302">        const int r = _mm_cvtsi128_si32(_mm_cmpistrm(w, s, _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_BIT_MASK | _SIDD_NEGATIVE_POLARITY));</a>
+<a name="ln303">        if (r != 0) {   // some of characters is non-whitespace</a>
+<a name="ln304">#ifdef _MSC_VER         // Find the index of first non-whitespace</a>
+<a name="ln305">            unsigned long offset;</a>
+<a name="ln306">            _BitScanForward(&amp;offset, r);</a>
+<a name="ln307">            return p + offset;</a>
+<a name="ln308">#else</a>
+<a name="ln309">            return p + __builtin_ffs(r) - 1;</a>
+<a name="ln310">#endif</a>
+<a name="ln311">        }</a>
+<a name="ln312">    }</a>
+<a name="ln313">}</a>
+<a name="ln314"> </a>
+<a name="ln315">inline const char *SkipWhitespace_SIMD(const char* p, const char* end) {</a>
+<a name="ln316">    // Fast return for single non-whitespace</a>
+<a name="ln317">    if (p != end &amp;&amp; (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t'))</a>
+<a name="ln318">        ++p;</a>
+<a name="ln319">    else</a>
+<a name="ln320">        return p;</a>
+<a name="ln321"> </a>
+<a name="ln322">    // The middle of string using SIMD</a>
+<a name="ln323">    static const char whitespace[16] = &quot; \n\r\t&quot;;</a>
+<a name="ln324">    const __m128i w = _mm_loadu_si128(reinterpret_cast&lt;const __m128i *&gt;(&amp;whitespace[0]));</a>
+<a name="ln325"> </a>
+<a name="ln326">    for (; p &lt;= end - 16; p += 16) {</a>
+<a name="ln327">        const __m128i s = _mm_loadu_si128(reinterpret_cast&lt;const __m128i *&gt;(p));</a>
+<a name="ln328">        const int r = _mm_cvtsi128_si32(_mm_cmpistrm(w, s, _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_BIT_MASK | _SIDD_NEGATIVE_POLARITY));</a>
+<a name="ln329">        if (r != 0) {   // some of characters is non-whitespace</a>
+<a name="ln330">#ifdef _MSC_VER         // Find the index of first non-whitespace</a>
+<a name="ln331">            unsigned long offset;</a>
+<a name="ln332">            _BitScanForward(&amp;offset, r);</a>
+<a name="ln333">            return p + offset;</a>
+<a name="ln334">#else</a>
+<a name="ln335">            return p + __builtin_ffs(r) - 1;</a>
+<a name="ln336">#endif</a>
+<a name="ln337">        }</a>
+<a name="ln338">    }</a>
+<a name="ln339"> </a>
+<a name="ln340">    return SkipWhitespace(p, end);</a>
+<a name="ln341">}</a>
+<a name="ln342"> </a>
+<a name="ln343">#elif defined(RAPIDJSON_SSE2)</a>
+<a name="ln344"> </a>
+<a name="ln345">//! Skip whitespace with SSE2 instructions, testing 16 8-byte characters at once.</a>
+<a name="ln346">inline const char *SkipWhitespace_SIMD(const char* p) {</a>
+<a name="ln347">    // Fast return for single non-whitespace</a>
+<a name="ln348">    if (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t')</a>
+<a name="ln349">        ++p;</a>
+<a name="ln350">    else</a>
+<a name="ln351">        return p;</a>
+<a name="ln352"> </a>
+<a name="ln353">    // 16-byte align to the next boundary</a>
+<a name="ln354">    const char* nextAligned = reinterpret_cast&lt;const char*&gt;((reinterpret_cast&lt;size_t&gt;(p) + 15) &amp; static_cast&lt;size_t&gt;(~15));</a>
+<a name="ln355">    while (p != nextAligned)</a>
+<a name="ln356">        if (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t')</a>
+<a name="ln357">            ++p;</a>
+<a name="ln358">        else</a>
+<a name="ln359">            return p;</a>
+<a name="ln360"> </a>
+<a name="ln361">    // The rest of string</a>
+<a name="ln362">    #define C16(c) { c, c, c, c, c, c, c, c, c, c, c, c, c, c, c, c }</a>
+<a name="ln363">    static const char whitespaces[4][16] = { C16(' '), C16('\n'), C16('\r'), C16('\t') };</a>
+<a name="ln364">    #undef C16</a>
+<a name="ln365"> </a>
+<a name="ln366">    const __m128i w0 = _mm_loadu_si128(reinterpret_cast&lt;const __m128i *&gt;(&amp;whitespaces[0][0]));</a>
+<a name="ln367">    const __m128i w1 = _mm_loadu_si128(reinterpret_cast&lt;const __m128i *&gt;(&amp;whitespaces[1][0]));</a>
+<a name="ln368">    const __m128i w2 = _mm_loadu_si128(reinterpret_cast&lt;const __m128i *&gt;(&amp;whitespaces[2][0]));</a>
+<a name="ln369">    const __m128i w3 = _mm_loadu_si128(reinterpret_cast&lt;const __m128i *&gt;(&amp;whitespaces[3][0]));</a>
+<a name="ln370"> </a>
+<a name="ln371">    for (;; p += 16) {</a>
+<a name="ln372">        const __m128i s = _mm_load_si128(reinterpret_cast&lt;const __m128i *&gt;(p));</a>
+<a name="ln373">        __m128i x = _mm_cmpeq_epi8(s, w0);</a>
+<a name="ln374">        x = _mm_or_si128(x, _mm_cmpeq_epi8(s, w1));</a>
+<a name="ln375">        x = _mm_or_si128(x, _mm_cmpeq_epi8(s, w2));</a>
+<a name="ln376">        x = _mm_or_si128(x, _mm_cmpeq_epi8(s, w3));</a>
+<a name="ln377">        unsigned short r = static_cast&lt;unsigned short&gt;(~_mm_movemask_epi8(x));</a>
+<a name="ln378">        if (r != 0) {   // some of characters may be non-whitespace</a>
+<a name="ln379">#ifdef _MSC_VER         // Find the index of first non-whitespace</a>
+<a name="ln380">            unsigned long offset;</a>
+<a name="ln381">            _BitScanForward(&amp;offset, r);</a>
+<a name="ln382">            return p + offset;</a>
+<a name="ln383">#else</a>
+<a name="ln384">            return p + __builtin_ffs(r) - 1;</a>
+<a name="ln385">#endif</a>
+<a name="ln386">        }</a>
+<a name="ln387">    }</a>
+<a name="ln388">}</a>
+<a name="ln389"> </a>
+<a name="ln390">inline const char *SkipWhitespace_SIMD(const char* p, const char* end) {</a>
+<a name="ln391">    // Fast return for single non-whitespace</a>
+<a name="ln392">    if (p != end &amp;&amp; (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t'))</a>
+<a name="ln393">        ++p;</a>
+<a name="ln394">    else</a>
+<a name="ln395">        return p;</a>
+<a name="ln396"> </a>
+<a name="ln397">    // The rest of string</a>
+<a name="ln398">    #define C16(c) { c, c, c, c, c, c, c, c, c, c, c, c, c, c, c, c }</a>
+<a name="ln399">    static const char whitespaces[4][16] = { C16(' '), C16('\n'), C16('\r'), C16('\t') };</a>
+<a name="ln400">    #undef C16</a>
+<a name="ln401"> </a>
+<a name="ln402">    const __m128i w0 = _mm_loadu_si128(reinterpret_cast&lt;const __m128i *&gt;(&amp;whitespaces[0][0]));</a>
+<a name="ln403">    const __m128i w1 = _mm_loadu_si128(reinterpret_cast&lt;const __m128i *&gt;(&amp;whitespaces[1][0]));</a>
+<a name="ln404">    const __m128i w2 = _mm_loadu_si128(reinterpret_cast&lt;const __m128i *&gt;(&amp;whitespaces[2][0]));</a>
+<a name="ln405">    const __m128i w3 = _mm_loadu_si128(reinterpret_cast&lt;const __m128i *&gt;(&amp;whitespaces[3][0]));</a>
+<a name="ln406"> </a>
+<a name="ln407">    for (; p &lt;= end - 16; p += 16) {</a>
+<a name="ln408">        const __m128i s = _mm_loadu_si128(reinterpret_cast&lt;const __m128i *&gt;(p));</a>
+<a name="ln409">        __m128i x = _mm_cmpeq_epi8(s, w0);</a>
+<a name="ln410">        x = _mm_or_si128(x, _mm_cmpeq_epi8(s, w1));</a>
+<a name="ln411">        x = _mm_or_si128(x, _mm_cmpeq_epi8(s, w2));</a>
+<a name="ln412">        x = _mm_or_si128(x, _mm_cmpeq_epi8(s, w3));</a>
+<a name="ln413">        unsigned short r = static_cast&lt;unsigned short&gt;(~_mm_movemask_epi8(x));</a>
+<a name="ln414">        if (r != 0) {   // some of characters may be non-whitespace</a>
+<a name="ln415">#ifdef _MSC_VER         // Find the index of first non-whitespace</a>
+<a name="ln416">            unsigned long offset;</a>
+<a name="ln417">            _BitScanForward(&amp;offset, r);</a>
+<a name="ln418">            return p + offset;</a>
+<a name="ln419">#else</a>
+<a name="ln420">            return p + __builtin_ffs(r) - 1;</a>
+<a name="ln421">#endif</a>
+<a name="ln422">        }</a>
+<a name="ln423">    }</a>
+<a name="ln424"> </a>
+<a name="ln425">    return SkipWhitespace(p, end);</a>
+<a name="ln426">}</a>
+<a name="ln427"> </a>
+<a name="ln428">#endif // RAPIDJSON_SSE2</a>
+<a name="ln429"> </a>
+<a name="ln430">#ifdef RAPIDJSON_SIMD</a>
+<a name="ln431">//! Template function specialization for InsituStringStream</a>
+<a name="ln432">template&lt;&gt; inline void SkipWhitespace(InsituStringStream&amp; is) {</a>
+<a name="ln433">    is.src_ = const_cast&lt;char*&gt;(SkipWhitespace_SIMD(is.src_));</a>
+<a name="ln434">}</a>
+<a name="ln435"> </a>
+<a name="ln436">//! Template function specialization for StringStream</a>
+<a name="ln437">template&lt;&gt; inline void SkipWhitespace(StringStream&amp; is) {</a>
+<a name="ln438">    is.src_ = SkipWhitespace_SIMD(is.src_);</a>
+<a name="ln439">}</a>
+<a name="ln440"> </a>
+<a name="ln441">template&lt;&gt; inline void SkipWhitespace(EncodedInputStream&lt;UTF8&lt;&gt;, MemoryStream&gt;&amp; is) {</a>
+<a name="ln442">    is.is_.src_ = SkipWhitespace_SIMD(is.is_.src_, is.is_.end_);</a>
+<a name="ln443">}</a>
+<a name="ln444">#endif // RAPIDJSON_SIMD</a>
+<a name="ln445"> </a>
+<a name="ln446">///////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln447">// GenericReader</a>
+<a name="ln448"> </a>
+<a name="ln449">//! SAX-style JSON parser. Use \ref Reader for UTF8 encoding and default allocator.</a>
+<a name="ln450">/*! GenericReader parses JSON text from a stream, and send events synchronously to an</a>
+<a name="ln451">    object implementing Handler concept.</a>
+<a name="ln452"> </a>
+<a name="ln453">    It needs to allocate a stack for storing a single decoded string during</a>
+<a name="ln454">    non-destructive parsing.</a>
+<a name="ln455"> </a>
+<a name="ln456">    For in-situ parsing, the decoded string is directly written to the source</a>
+<a name="ln457">    text string, no temporary buffer is required.</a>
+<a name="ln458"> </a>
+<a name="ln459">    A GenericReader object can be reused for parsing multiple JSON text.</a>
+<a name="ln460"> </a>
+<a name="ln461">    \tparam SourceEncoding Encoding of the input stream.</a>
+<a name="ln462">    \tparam TargetEncoding Encoding of the parse output.</a>
+<a name="ln463">    \tparam StackAllocator Allocator type for stack.</a>
+<a name="ln464">*/</a>
+<a name="ln465">template &lt;typename SourceEncoding, typename TargetEncoding, typename StackAllocator = CrtAllocator&gt;</a>
+<a name="ln466">class GenericReader {</a>
+<a name="ln467">public:</a>
+<a name="ln468">    typedef typename SourceEncoding::Ch Ch; //!&lt; SourceEncoding character type</a>
+<a name="ln469"> </a>
+<a name="ln470">    //! Constructor.</a>
+<a name="ln471">    /*! \param stackAllocator Optional allocator for allocating stack memory. (Only use for non-destructive parsing)</a>
+<a name="ln472">        \param stackCapacity stack capacity in bytes for storing a single decoded string.  (Only use for non-destructive parsing)</a>
+<a name="ln473">    */</a>
+<a name="ln474">    GenericReader(StackAllocator* stackAllocator = 0, size_t stackCapacity = kDefaultStackCapacity) : stack_(stackAllocator, stackCapacity), parseResult_() {}</a>
+<a name="ln475"> </a>
+<a name="ln476">    //! Parse JSON text.</a>
+<a name="ln477">    /*! \tparam parseFlags Combination of \ref ParseFlag.</a>
+<a name="ln478">        \tparam InputStream Type of input stream, implementing Stream concept.</a>
+<a name="ln479">        \tparam Handler Type of handler, implementing Handler concept.</a>
+<a name="ln480">        \param is Input stream to be parsed.</a>
+<a name="ln481">        \param handler The handler to receive events.</a>
+<a name="ln482">        \return Whether the parsing is successful.</a>
+<a name="ln483">    */</a>
+<a name="ln484">    template &lt;unsigned parseFlags, typename InputStream, typename Handler&gt;</a>
+<a name="ln485">    ParseResult Parse(InputStream&amp; is, Handler&amp; handler) {</a>
+<a name="ln486">        if (parseFlags &amp; kParseIterativeFlag)</a>
+<a name="ln487">            return IterativeParse&lt;parseFlags&gt;(is, handler);</a>
+<a name="ln488"> </a>
+<a name="ln489">        parseResult_.Clear();</a>
+<a name="ln490"> </a>
+<a name="ln491">        ClearStackOnExit scope(*this);</a>
+<a name="ln492"> </a>
+<a name="ln493">        SkipWhitespaceAndComments&lt;parseFlags&gt;(is);</a>
+<a name="ln494">        RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);</a>
+<a name="ln495"> </a>
+<a name="ln496">        if (RAPIDJSON_UNLIKELY(is.Peek() == '\0')) {</a>
+<a name="ln497">            RAPIDJSON_PARSE_ERROR_NORETURN(kParseErrorDocumentEmpty, is.Tell());</a>
+<a name="ln498">            RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);</a>
+<a name="ln499">        }</a>
+<a name="ln500">        else {</a>
+<a name="ln501">            ParseValue&lt;parseFlags&gt;(is, handler);</a>
+<a name="ln502">            RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);</a>
+<a name="ln503"> </a>
+<a name="ln504">            if (!(parseFlags &amp; kParseStopWhenDoneFlag)) {</a>
+<a name="ln505">                SkipWhitespaceAndComments&lt;parseFlags&gt;(is);</a>
+<a name="ln506">                RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);</a>
+<a name="ln507"> </a>
+<a name="ln508">                if (RAPIDJSON_UNLIKELY(is.Peek() != '\0')) {</a>
+<a name="ln509">                    RAPIDJSON_PARSE_ERROR_NORETURN(kParseErrorDocumentRootNotSingular, is.Tell());</a>
+<a name="ln510">                    RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);</a>
+<a name="ln511">                }</a>
+<a name="ln512">            }</a>
+<a name="ln513">        }</a>
+<a name="ln514"> </a>
+<a name="ln515">        return parseResult_;</a>
+<a name="ln516">    }</a>
+<a name="ln517"> </a>
+<a name="ln518">    //! Parse JSON text (with \ref kParseDefaultFlags)</a>
+<a name="ln519">    /*! \tparam InputStream Type of input stream, implementing Stream concept</a>
+<a name="ln520">        \tparam Handler Type of handler, implementing Handler concept.</a>
+<a name="ln521">        \param is Input stream to be parsed.</a>
+<a name="ln522">        \param handler The handler to receive events.</a>
+<a name="ln523">        \return Whether the parsing is successful.</a>
+<a name="ln524">    */</a>
+<a name="ln525">    template &lt;typename InputStream, typename Handler&gt;</a>
+<a name="ln526">    ParseResult Parse(InputStream&amp; is, Handler&amp; handler) {</a>
+<a name="ln527">        return Parse&lt;kParseDefaultFlags&gt;(is, handler);</a>
+<a name="ln528">    }</a>
+<a name="ln529"> </a>
+<a name="ln530">    //! Whether a parse error has occured in the last parsing.</a>
+<a name="ln531">    bool HasParseError() const { return parseResult_.IsError(); }</a>
+<a name="ln532"> </a>
+<a name="ln533">    //! Get the \ref ParseErrorCode of last parsing.</a>
+<a name="ln534">    ParseErrorCode GetParseErrorCode() const { return parseResult_.Code(); }</a>
+<a name="ln535"> </a>
+<a name="ln536">    //! Get the position of last parsing error in input, 0 otherwise.</a>
+<a name="ln537">    size_t GetErrorOffset() const { return parseResult_.Offset(); }</a>
+<a name="ln538"> </a>
+<a name="ln539">protected:</a>
+<a name="ln540">    void SetParseError(ParseErrorCode code, size_t offset) { parseResult_.Set(code, offset); }</a>
+<a name="ln541"> </a>
+<a name="ln542">private:</a>
+<a name="ln543">    // Prohibit copy constructor &amp; assignment operator.</a>
+<a name="ln544">    GenericReader(const GenericReader&amp;);</a>
+<a name="ln545">    GenericReader&amp; operator=(const GenericReader&amp;);</a>
+<a name="ln546"> </a>
+<a name="ln547">    void ClearStack() { stack_.Clear(); }</a>
+<a name="ln548"> </a>
+<a name="ln549">    // clear stack on any exit from ParseStream, e.g. due to exception</a>
+<a name="ln550">    struct ClearStackOnExit {</a>
+<a name="ln551">        explicit ClearStackOnExit(GenericReader&amp; r) : r_(r) {}</a>
+<a name="ln552">        ~ClearStackOnExit() { r_.ClearStack(); }</a>
+<a name="ln553">    private:</a>
+<a name="ln554">        GenericReader&amp; r_;</a>
+<a name="ln555">        ClearStackOnExit(const ClearStackOnExit&amp;);</a>
+<a name="ln556">        ClearStackOnExit&amp; operator=(const ClearStackOnExit&amp;);</a>
+<a name="ln557">    };</a>
+<a name="ln558"> </a>
+<a name="ln559">    template&lt;unsigned parseFlags, typename InputStream&gt;</a>
+<a name="ln560">    void SkipWhitespaceAndComments(InputStream&amp; is) {</a>
+<a name="ln561">        SkipWhitespace(is);</a>
+<a name="ln562"> </a>
+<a name="ln563">        if (parseFlags &amp; kParseCommentsFlag) {</a>
+<a name="ln564">            while (RAPIDJSON_UNLIKELY(Consume(is, '/'))) {</a>
+<a name="ln565">                if (Consume(is, '*')) {</a>
+<a name="ln566">                    while (true) {</a>
+<a name="ln567">                        if (RAPIDJSON_UNLIKELY(is.Peek() == '\0'))</a>
+<a name="ln568">                            RAPIDJSON_PARSE_ERROR(kParseErrorUnspecificSyntaxError, is.Tell());</a>
+<a name="ln569">                        else if (Consume(is, '*')) {</a>
+<a name="ln570">                            if (Consume(is, '/'))</a>
+<a name="ln571">                                break;</a>
+<a name="ln572">                        }</a>
+<a name="ln573">                        else</a>
+<a name="ln574">                            is.Take();</a>
+<a name="ln575">                    }</a>
+<a name="ln576">                }</a>
+<a name="ln577">                else if (RAPIDJSON_LIKELY(Consume(is, '/')))</a>
+<a name="ln578">                    while (is.Peek() != '\0' &amp;&amp; is.Take() != '\n');</a>
+<a name="ln579">                else</a>
+<a name="ln580">                    RAPIDJSON_PARSE_ERROR(kParseErrorUnspecificSyntaxError, is.Tell());</a>
+<a name="ln581"> </a>
+<a name="ln582">                SkipWhitespace(is);</a>
+<a name="ln583">            }</a>
+<a name="ln584">        }</a>
+<a name="ln585">    }</a>
+<a name="ln586"> </a>
+<a name="ln587">    // Parse object: { string : value, ... }</a>
+<a name="ln588">    template&lt;unsigned parseFlags, typename InputStream, typename Handler&gt;</a>
+<a name="ln589">    void ParseObject(InputStream&amp; is, Handler&amp; handler) {</a>
+<a name="ln590">        RAPIDJSON_ASSERT(is.Peek() == '{');</a>
+<a name="ln591">        is.Take();  // Skip '{'</a>
+<a name="ln592"> </a>
+<a name="ln593">        if (RAPIDJSON_UNLIKELY(!handler.StartObject()))</a>
+<a name="ln594">            RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());</a>
+<a name="ln595"> </a>
+<a name="ln596">        SkipWhitespaceAndComments&lt;parseFlags&gt;(is);</a>
+<a name="ln597">        RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;</a>
+<a name="ln598"> </a>
+<a name="ln599">        if (Consume(is, '}')) {</a>
+<a name="ln600">            if (RAPIDJSON_UNLIKELY(!handler.EndObject(0)))  // empty object</a>
+<a name="ln601">                RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());</a>
+<a name="ln602">            return;</a>
+<a name="ln603">        }</a>
+<a name="ln604"> </a>
+<a name="ln605">        for (SizeType memberCount = 0;;) {</a>
+<a name="ln606">            if (RAPIDJSON_UNLIKELY(is.Peek() != '&quot;'))</a>
+<a name="ln607">                RAPIDJSON_PARSE_ERROR(kParseErrorObjectMissName, is.Tell());</a>
+<a name="ln608"> </a>
+<a name="ln609">            ParseString&lt;parseFlags&gt;(is, handler, true);</a>
+<a name="ln610">            RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;</a>
+<a name="ln611"> </a>
+<a name="ln612">            SkipWhitespaceAndComments&lt;parseFlags&gt;(is);</a>
+<a name="ln613">            RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;</a>
+<a name="ln614"> </a>
+<a name="ln615">            if (RAPIDJSON_UNLIKELY(!Consume(is, ':')))</a>
+<a name="ln616">                RAPIDJSON_PARSE_ERROR(kParseErrorObjectMissColon, is.Tell());</a>
+<a name="ln617"> </a>
+<a name="ln618">            SkipWhitespaceAndComments&lt;parseFlags&gt;(is);</a>
+<a name="ln619">            RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;</a>
+<a name="ln620"> </a>
+<a name="ln621">            ParseValue&lt;parseFlags&gt;(is, handler);</a>
+<a name="ln622">            RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;</a>
+<a name="ln623"> </a>
+<a name="ln624">            SkipWhitespaceAndComments&lt;parseFlags&gt;(is);</a>
+<a name="ln625">            RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;</a>
+<a name="ln626"> </a>
+<a name="ln627">            ++memberCount;</a>
+<a name="ln628"> </a>
+<a name="ln629">            switch (is.Peek()) {</a>
+<a name="ln630">                case ',':</a>
+<a name="ln631">                    is.Take();</a>
+<a name="ln632">                    SkipWhitespaceAndComments&lt;parseFlags&gt;(is);</a>
+<a name="ln633">                    RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;</a>
+<a name="ln634">                    break;</a>
+<a name="ln635">                case '}':</a>
+<a name="ln636">                    is.Take();</a>
+<a name="ln637">                    if (RAPIDJSON_UNLIKELY(!handler.EndObject(memberCount)))</a>
+<a name="ln638">                        RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());</a>
+<a name="ln639">                    return;</a>
+<a name="ln640">                default:</a>
+<a name="ln641">                    RAPIDJSON_PARSE_ERROR(kParseErrorObjectMissCommaOrCurlyBracket, is.Tell()); break; // This useless break is only for making warning and coverage happy</a>
+<a name="ln642">            }</a>
+<a name="ln643"> </a>
+<a name="ln644">            if (parseFlags &amp; kParseTrailingCommasFlag) {</a>
+<a name="ln645">                if (is.Peek() == '}') {</a>
+<a name="ln646">                    if (RAPIDJSON_UNLIKELY(!handler.EndObject(memberCount)))</a>
+<a name="ln647">                        RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());</a>
+<a name="ln648">                    is.Take();</a>
+<a name="ln649">                    return;</a>
+<a name="ln650">                }</a>
+<a name="ln651">            }</a>
+<a name="ln652">        }</a>
+<a name="ln653">    }</a>
+<a name="ln654"> </a>
+<a name="ln655">    // Parse array: [ value, ... ]</a>
+<a name="ln656">    template&lt;unsigned parseFlags, typename InputStream, typename Handler&gt;</a>
+<a name="ln657">    void ParseArray(InputStream&amp; is, Handler&amp; handler) {</a>
+<a name="ln658">        RAPIDJSON_ASSERT(is.Peek() == '[');</a>
+<a name="ln659">        is.Take();  // Skip '['</a>
+<a name="ln660"> </a>
+<a name="ln661">        if (RAPIDJSON_UNLIKELY(!handler.StartArray()))</a>
+<a name="ln662">            RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());</a>
+<a name="ln663"> </a>
+<a name="ln664">        SkipWhitespaceAndComments&lt;parseFlags&gt;(is);</a>
+<a name="ln665">        RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;</a>
+<a name="ln666"> </a>
+<a name="ln667">        if (Consume(is, ']')) {</a>
+<a name="ln668">            if (RAPIDJSON_UNLIKELY(!handler.EndArray(0))) // empty array</a>
+<a name="ln669">                RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());</a>
+<a name="ln670">            return;</a>
+<a name="ln671">        }</a>
+<a name="ln672"> </a>
+<a name="ln673">        for (SizeType elementCount = 0;;) {</a>
+<a name="ln674">            ParseValue&lt;parseFlags&gt;(is, handler);</a>
+<a name="ln675">            RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;</a>
+<a name="ln676"> </a>
+<a name="ln677">            ++elementCount;</a>
+<a name="ln678">            SkipWhitespaceAndComments&lt;parseFlags&gt;(is);</a>
+<a name="ln679">            RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;</a>
+<a name="ln680"> </a>
+<a name="ln681">            if (Consume(is, ',')) {</a>
+<a name="ln682">                SkipWhitespaceAndComments&lt;parseFlags&gt;(is);</a>
+<a name="ln683">                RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;</a>
+<a name="ln684">            }</a>
+<a name="ln685">            else if (Consume(is, ']')) {</a>
+<a name="ln686">                if (RAPIDJSON_UNLIKELY(!handler.EndArray(elementCount)))</a>
+<a name="ln687">                    RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());</a>
+<a name="ln688">                return;</a>
+<a name="ln689">            }</a>
+<a name="ln690">            else</a>
+<a name="ln691">                RAPIDJSON_PARSE_ERROR(kParseErrorArrayMissCommaOrSquareBracket, is.Tell());</a>
+<a name="ln692"> </a>
+<a name="ln693">            if (parseFlags &amp; kParseTrailingCommasFlag) {</a>
+<a name="ln694">                if (is.Peek() == ']') {</a>
+<a name="ln695">                    if (RAPIDJSON_UNLIKELY(!handler.EndArray(elementCount)))</a>
+<a name="ln696">                        RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());</a>
+<a name="ln697">                    is.Take();</a>
+<a name="ln698">                    return;</a>
+<a name="ln699">                }</a>
+<a name="ln700">            }</a>
+<a name="ln701">        }</a>
+<a name="ln702">    }</a>
+<a name="ln703"> </a>
+<a name="ln704">    template&lt;unsigned parseFlags, typename InputStream, typename Handler&gt;</a>
+<a name="ln705">    void ParseNull(InputStream&amp; is, Handler&amp; handler) {</a>
+<a name="ln706">        RAPIDJSON_ASSERT(is.Peek() == 'n');</a>
+<a name="ln707">        is.Take();</a>
+<a name="ln708"> </a>
+<a name="ln709">        if (RAPIDJSON_LIKELY(Consume(is, 'u') &amp;&amp; Consume(is, 'l') &amp;&amp; Consume(is, 'l'))) {</a>
+<a name="ln710">            if (RAPIDJSON_UNLIKELY(!handler.Null()))</a>
+<a name="ln711">                RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());</a>
+<a name="ln712">        }</a>
+<a name="ln713">        else</a>
+<a name="ln714">            RAPIDJSON_PARSE_ERROR(kParseErrorValueInvalid, is.Tell());</a>
+<a name="ln715">    }</a>
+<a name="ln716"> </a>
+<a name="ln717">    template&lt;unsigned parseFlags, typename InputStream, typename Handler&gt;</a>
+<a name="ln718">    void ParseTrue(InputStream&amp; is, Handler&amp; handler) {</a>
+<a name="ln719">        RAPIDJSON_ASSERT(is.Peek() == 't');</a>
+<a name="ln720">        is.Take();</a>
+<a name="ln721"> </a>
+<a name="ln722">        if (RAPIDJSON_LIKELY(Consume(is, 'r') &amp;&amp; Consume(is, 'u') &amp;&amp; Consume(is, 'e'))) {</a>
+<a name="ln723">            if (RAPIDJSON_UNLIKELY(!handler.Bool(true)))</a>
+<a name="ln724">                RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());</a>
+<a name="ln725">        }</a>
+<a name="ln726">        else</a>
+<a name="ln727">            RAPIDJSON_PARSE_ERROR(kParseErrorValueInvalid, is.Tell());</a>
+<a name="ln728">    }</a>
+<a name="ln729"> </a>
+<a name="ln730">    template&lt;unsigned parseFlags, typename InputStream, typename Handler&gt;</a>
+<a name="ln731">    void ParseFalse(InputStream&amp; is, Handler&amp; handler) {</a>
+<a name="ln732">        RAPIDJSON_ASSERT(is.Peek() == 'f');</a>
+<a name="ln733">        is.Take();</a>
+<a name="ln734"> </a>
+<a name="ln735">        if (RAPIDJSON_LIKELY(Consume(is, 'a') &amp;&amp; Consume(is, 'l') &amp;&amp; Consume(is, 's') &amp;&amp; Consume(is, 'e'))) {</a>
+<a name="ln736">            if (RAPIDJSON_UNLIKELY(!handler.Bool(false)))</a>
+<a name="ln737">                RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());</a>
+<a name="ln738">        }</a>
+<a name="ln739">        else</a>
+<a name="ln740">            RAPIDJSON_PARSE_ERROR(kParseErrorValueInvalid, is.Tell());</a>
+<a name="ln741">    }</a>
+<a name="ln742"> </a>
+<a name="ln743">    template&lt;typename InputStream&gt;</a>
+<a name="ln744">    RAPIDJSON_FORCEINLINE static bool Consume(InputStream&amp; is, typename InputStream::Ch expect) {</a>
+<a name="ln745">        if (RAPIDJSON_LIKELY(is.Peek() == expect)) {</a>
+<a name="ln746">            is.Take();</a>
+<a name="ln747">            return true;</a>
+<a name="ln748">        }</a>
+<a name="ln749">        else</a>
+<a name="ln750">            return false;</a>
+<a name="ln751">    }</a>
+<a name="ln752"> </a>
+<a name="ln753">    // Helper function to parse four hexidecimal digits in \uXXXX in ParseString().</a>
+<a name="ln754">    template&lt;typename InputStream&gt;</a>
+<a name="ln755">    unsigned ParseHex4(InputStream&amp; is, size_t escapeOffset) {</a>
+<a name="ln756">        unsigned codepoint = 0;</a>
+<a name="ln757">        for (int i = 0; i &lt; 4; i++) {</a>
+<a name="ln758">            Ch c = is.Peek();</a>
+<a name="ln759">            codepoint &lt;&lt;= 4;</a>
+<a name="ln760">            codepoint += static_cast&lt;unsigned&gt;(c);</a>
+<a name="ln761">            if (c &gt;= '0' &amp;&amp; c &lt;= '9')</a>
+<a name="ln762">                codepoint -= '0';</a>
+<a name="ln763">            else if (c &gt;= 'A' &amp;&amp; c &lt;= 'F')</a>
+<a name="ln764">                codepoint -= 'A' - 10;</a>
+<a name="ln765">            else if (c &gt;= 'a' &amp;&amp; c &lt;= 'f')</a>
+<a name="ln766">                codepoint -= 'a' - 10;</a>
+<a name="ln767">            else {</a>
+<a name="ln768">                RAPIDJSON_PARSE_ERROR_NORETURN(kParseErrorStringUnicodeEscapeInvalidHex, escapeOffset);</a>
+<a name="ln769">                RAPIDJSON_PARSE_ERROR_EARLY_RETURN(0);</a>
+<a name="ln770">            }</a>
+<a name="ln771">            is.Take();</a>
+<a name="ln772">        }</a>
+<a name="ln773">        return codepoint;</a>
+<a name="ln774">    }</a>
+<a name="ln775"> </a>
+<a name="ln776">    template &lt;typename CharType&gt;</a>
+<a name="ln777">    class StackStream {</a>
+<a name="ln778">    public:</a>
+<a name="ln779">        typedef CharType Ch;</a>
+<a name="ln780"> </a>
+<a name="ln781">        StackStream(internal::Stack&lt;StackAllocator&gt;&amp; stack) : stack_(stack), length_(0) {}</a>
+<a name="ln782">        RAPIDJSON_FORCEINLINE void Put(Ch c) {</a>
+<a name="ln783">            *stack_.template Push&lt;Ch&gt;() = c;</a>
+<a name="ln784">            ++length_;</a>
+<a name="ln785">        }</a>
+<a name="ln786"> </a>
+<a name="ln787">        RAPIDJSON_FORCEINLINE void* Push(SizeType count) {</a>
+<a name="ln788">            length_ += count;</a>
+<a name="ln789">            return stack_.template Push&lt;Ch&gt;(count);</a>
+<a name="ln790">        }</a>
+<a name="ln791"> </a>
+<a name="ln792">        size_t Length() const { return length_; }</a>
+<a name="ln793"> </a>
+<a name="ln794">        Ch* Pop() {</a>
+<a name="ln795">            return stack_.template Pop&lt;Ch&gt;(length_);</a>
+<a name="ln796">        }</a>
+<a name="ln797"> </a>
+<a name="ln798">    private:</a>
+<a name="ln799">        StackStream(const StackStream&amp;);</a>
+<a name="ln800">        StackStream&amp; operator=(const StackStream&amp;);</a>
+<a name="ln801"> </a>
+<a name="ln802">        internal::Stack&lt;StackAllocator&gt;&amp; stack_;</a>
+<a name="ln803">        SizeType length_;</a>
+<a name="ln804">    };</a>
+<a name="ln805"> </a>
+<a name="ln806">    // Parse string and generate String event. Different code paths for kParseInsituFlag.</a>
+<a name="ln807">    template&lt;unsigned parseFlags, typename InputStream, typename Handler&gt;</a>
+<a name="ln808">    void ParseString(InputStream&amp; is, Handler&amp; handler, bool isKey = false) {</a>
+<a name="ln809">        internal::StreamLocalCopy&lt;InputStream&gt; copy(is);</a>
+<a name="ln810">        InputStream&amp; s(copy.s);</a>
+<a name="ln811"> </a>
+<a name="ln812">        RAPIDJSON_ASSERT(s.Peek() == '\&quot;');</a>
+<a name="ln813">        s.Take();  // Skip '\&quot;'</a>
+<a name="ln814"> </a>
+<a name="ln815">        bool success = false;</a>
+<a name="ln816">        if (parseFlags &amp; kParseInsituFlag) {</a>
+<a name="ln817">            typename InputStream::Ch *head = s.PutBegin();</a>
+<a name="ln818">            ParseStringToStream&lt;parseFlags, SourceEncoding, SourceEncoding&gt;(s, s);</a>
+<a name="ln819">            RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;</a>
+<a name="ln820">            size_t length = s.PutEnd(head) - 1;</a>
+<a name="ln821">            RAPIDJSON_ASSERT(length &lt;= 0xFFFFFFFF);</a>
+<a name="ln822">            const typename TargetEncoding::Ch* const str = reinterpret_cast&lt;typename TargetEncoding::Ch*&gt;(head);</a>
+<a name="ln823">            success = (isKey ? handler.Key(str, SizeType(length), false) : handler.String(str, SizeType(length), false));</a>
+<a name="ln824">        }</a>
+<a name="ln825">        else {</a>
+<a name="ln826">            StackStream&lt;typename TargetEncoding::Ch&gt; stackStream(stack_);</a>
+<a name="ln827">            ParseStringToStream&lt;parseFlags, SourceEncoding, TargetEncoding&gt;(s, stackStream);</a>
+<a name="ln828">            RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;</a>
+<a name="ln829">            SizeType length = static_cast&lt;SizeType&gt;(stackStream.Length()) - 1;</a>
+<a name="ln830">            const typename TargetEncoding::Ch* const str = stackStream.Pop();</a>
+<a name="ln831">            success = (isKey ? handler.Key(str, length, true) : handler.String(str, length, true));</a>
+<a name="ln832">        }</a>
+<a name="ln833">        if (RAPIDJSON_UNLIKELY(!success))</a>
+<a name="ln834">            RAPIDJSON_PARSE_ERROR(kParseErrorTermination, s.Tell());</a>
+<a name="ln835">    }</a>
+<a name="ln836"> </a>
+<a name="ln837">    // Parse string to an output is</a>
+<a name="ln838">    // This function handles the prefix/suffix double quotes, escaping, and optional encoding validation.</a>
+<a name="ln839">    template&lt;unsigned parseFlags, typename SEncoding, typename TEncoding, typename InputStream, typename OutputStream&gt;</a>
+<a name="ln840">    RAPIDJSON_FORCEINLINE void ParseStringToStream(InputStream&amp; is, OutputStream&amp; os) {</a>
+<a name="ln841">//!@cond RAPIDJSON_HIDDEN_FROM_DOXYGEN</a>
+<a name="ln842">#define Z16 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</a>
+<a name="ln843">        static const char escape[256] = {</a>
+<a name="ln844">            Z16, Z16, 0, 0,'\&quot;', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,'/',</a>
+<a name="ln845">            Z16, Z16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,'\\', 0, 0, 0,</a>
+<a name="ln846">            0, 0,'\b', 0, 0, 0,'\f', 0, 0, 0, 0, 0, 0, 0,'\n', 0,</a>
+<a name="ln847">            0, 0,'\r', 0,'\t', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,</a>
+<a name="ln848">            Z16, Z16, Z16, Z16, Z16, Z16, Z16, Z16</a>
+<a name="ln849">        };</a>
+<a name="ln850">#undef Z16</a>
+<a name="ln851">//!@endcond</a>
+<a name="ln852"> </a>
+<a name="ln853">        for (;;) {</a>
+<a name="ln854">            // Scan and copy string before &quot;\\\&quot;&quot; or &lt; 0x20. This is an optional optimzation.</a>
+<a name="ln855">            if (!(parseFlags &amp; kParseValidateEncodingFlag))</a>
+<a name="ln856">                ScanCopyUnescapedString(is, os);</a>
+<a name="ln857"> </a>
+<a name="ln858">            Ch c = is.Peek();</a>
+<a name="ln859">            if (RAPIDJSON_UNLIKELY(c == '\\')) {    // Escape</a>
+<a name="ln860">                size_t escapeOffset = is.Tell();    // For invalid escaping, report the inital '\\' as error offset</a>
+<a name="ln861">                is.Take();</a>
+<a name="ln862">                Ch e = is.Peek();</a>
+<a name="ln863">                if ((sizeof(Ch) == 1 || unsigned(e) &lt; 256) &amp;&amp; RAPIDJSON_LIKELY(escape[static_cast&lt;unsigned char&gt;(e)])) {</a>
+<a name="ln864">                    is.Take();</a>
+<a name="ln865">                    os.Put(static_cast&lt;typename TEncoding::Ch&gt;(escape[static_cast&lt;unsigned char&gt;(e)]));</a>
+<a name="ln866">                }</a>
+<a name="ln867">                else if (RAPIDJSON_LIKELY(e == 'u')) {    // Unicode</a>
+<a name="ln868">                    is.Take();</a>
+<a name="ln869">                    unsigned codepoint = ParseHex4(is, escapeOffset);</a>
+<a name="ln870">                    RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;</a>
+<a name="ln871">                    if (RAPIDJSON_UNLIKELY(codepoint &gt;= 0xD800 &amp;&amp; codepoint &lt;= 0xDBFF)) {</a>
+<a name="ln872">                        // Handle UTF-16 surrogate pair</a>
+<a name="ln873">                        if (RAPIDJSON_UNLIKELY(!Consume(is, '\\') || !Consume(is, 'u')))</a>
+<a name="ln874">                            RAPIDJSON_PARSE_ERROR(kParseErrorStringUnicodeSurrogateInvalid, escapeOffset);</a>
+<a name="ln875">                        unsigned codepoint2 = ParseHex4(is, escapeOffset);</a>
+<a name="ln876">                        RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;</a>
+<a name="ln877">                        if (RAPIDJSON_UNLIKELY(codepoint2 &lt; 0xDC00 || codepoint2 &gt; 0xDFFF))</a>
+<a name="ln878">                            RAPIDJSON_PARSE_ERROR(kParseErrorStringUnicodeSurrogateInvalid, escapeOffset);</a>
+<a name="ln879">                        codepoint = (((codepoint - 0xD800) &lt;&lt; 10) | (codepoint2 - 0xDC00)) + 0x10000;</a>
+<a name="ln880">                    }</a>
+<a name="ln881">                    TEncoding::Encode(os, codepoint);</a>
+<a name="ln882">                }</a>
+<a name="ln883">                else</a>
+<a name="ln884">                    RAPIDJSON_PARSE_ERROR(kParseErrorStringEscapeInvalid, escapeOffset);</a>
+<a name="ln885">            }</a>
+<a name="ln886">            else if (RAPIDJSON_UNLIKELY(c == '&quot;')) {    // Closing double quote</a>
+<a name="ln887">                is.Take();</a>
+<a name="ln888">                os.Put('\0');   // null-terminate the string</a>
+<a name="ln889">                return;</a>
+<a name="ln890">            }</a>
+<a name="ln891">            else if (RAPIDJSON_UNLIKELY(static_cast&lt;unsigned&gt;(c) &lt; 0x20)) { // RFC 4627: unescaped = %x20-21 / %x23-5B / %x5D-10FFFF</a>
+<a name="ln892">                if (c == '\0')</a>
+<a name="ln893">                    RAPIDJSON_PARSE_ERROR(kParseErrorStringMissQuotationMark, is.Tell());</a>
+<a name="ln894">                else</a>
+<a name="ln895">                    RAPIDJSON_PARSE_ERROR(kParseErrorStringEscapeInvalid, is.Tell());</a>
+<a name="ln896">            }</a>
+<a name="ln897">            else {</a>
+<a name="ln898">                size_t offset = is.Tell();</a>
+<a name="ln899">                if (RAPIDJSON_UNLIKELY((parseFlags &amp; kParseValidateEncodingFlag ?</a>
+<a name="ln900">                    !Transcoder&lt;SEncoding, TEncoding&gt;::Validate(is, os) :</a>
+<a name="ln901">                    !Transcoder&lt;SEncoding, TEncoding&gt;::Transcode(is, os))))</a>
+<a name="ln902">                    RAPIDJSON_PARSE_ERROR(kParseErrorStringInvalidEncoding, offset);</a>
+<a name="ln903">            }</a>
+<a name="ln904">        }</a>
+<a name="ln905">    }</a>
+<a name="ln906"> </a>
+<a name="ln907">    template&lt;typename InputStream, typename OutputStream&gt;</a>
+<a name="ln908">    static RAPIDJSON_FORCEINLINE void ScanCopyUnescapedString(InputStream&amp;, OutputStream&amp;) {</a>
+<a name="ln909">            // Do nothing for generic version</a>
+<a name="ln910">    }</a>
+<a name="ln911"> </a>
+<a name="ln912">#if defined(RAPIDJSON_SSE2) || defined(RAPIDJSON_SSE42)</a>
+<a name="ln913">    // StringStream -&gt; StackStream&lt;char&gt;</a>
+<a name="ln914">    static RAPIDJSON_FORCEINLINE void ScanCopyUnescapedString(StringStream&amp; is, StackStream&lt;char&gt;&amp; os) {</a>
+<a name="ln915">        const char* p = is.src_;</a>
+<a name="ln916"> </a>
+<a name="ln917">        // Scan one by one until alignment (unaligned load may cross page boundary and cause crash)</a>
+<a name="ln918">        const char* nextAligned = reinterpret_cast&lt;const char*&gt;((reinterpret_cast&lt;size_t&gt;(p) + 15) &amp; static_cast&lt;size_t&gt;(~15));</a>
+<a name="ln919">        while (p != nextAligned)</a>
+<a name="ln920">            if (RAPIDJSON_UNLIKELY(*p == '\&quot;') || RAPIDJSON_UNLIKELY(*p == '\\') || RAPIDJSON_UNLIKELY(static_cast&lt;unsigned&gt;(*p) &lt; 0x20)) {</a>
+<a name="ln921">                is.src_ = p;</a>
+<a name="ln922">                return;</a>
+<a name="ln923">            }</a>
+<a name="ln924">            else</a>
+<a name="ln925">                os.Put(*p++);</a>
+<a name="ln926"> </a>
+<a name="ln927">        // The rest of string using SIMD</a>
+<a name="ln928">        static const char dquote[16] = { '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;' };</a>
+<a name="ln929">        static const char bslash[16] = { '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\' };</a>
+<a name="ln930">        static const char space[16]  = { 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19 };</a>
+<a name="ln931">        const __m128i dq = _mm_loadu_si128(reinterpret_cast&lt;const __m128i *&gt;(&amp;dquote[0]));</a>
+<a name="ln932">        const __m128i bs = _mm_loadu_si128(reinterpret_cast&lt;const __m128i *&gt;(&amp;bslash[0]));</a>
+<a name="ln933">        const __m128i sp = _mm_loadu_si128(reinterpret_cast&lt;const __m128i *&gt;(&amp;space[0]));</a>
+<a name="ln934"> </a>
+<a name="ln935">        for (;; p += 16) {</a>
+<a name="ln936">            const __m128i s = _mm_load_si128(reinterpret_cast&lt;const __m128i *&gt;(p));</a>
+<a name="ln937">            const __m128i t1 = _mm_cmpeq_epi8(s, dq);</a>
+<a name="ln938">            const __m128i t2 = _mm_cmpeq_epi8(s, bs);</a>
+<a name="ln939">            const __m128i t3 = _mm_cmpeq_epi8(_mm_max_epu8(s, sp), sp); // s &lt; 0x20 &lt;=&gt; max(s, 0x19) == 0x19</a>
+<a name="ln940">            const __m128i x = _mm_or_si128(_mm_or_si128(t1, t2), t3);</a>
+<a name="ln941">            unsigned short r = static_cast&lt;unsigned short&gt;(_mm_movemask_epi8(x));</a>
+<a name="ln942">            if (RAPIDJSON_UNLIKELY(r != 0)) {   // some of characters is escaped</a>
+<a name="ln943">                SizeType length;</a>
+<a name="ln944">    #ifdef _MSC_VER         // Find the index of first escaped</a>
+<a name="ln945">                unsigned long offset;</a>
+<a name="ln946">                _BitScanForward(&amp;offset, r);</a>
+<a name="ln947">                length = offset;</a>
+<a name="ln948">    #else</a>
+<a name="ln949">                length = static_cast&lt;SizeType&gt;(__builtin_ffs(r) - 1);</a>
+<a name="ln950">    #endif</a>
+<a name="ln951">                char* q = reinterpret_cast&lt;char*&gt;(os.Push(length));</a>
+<a name="ln952">                for (size_t i = 0; i &lt; length; i++)</a>
+<a name="ln953">                    q[i] = p[i];</a>
+<a name="ln954"> </a>
+<a name="ln955">                p += length;</a>
+<a name="ln956">                break;</a>
+<a name="ln957">            }</a>
+<a name="ln958">            _mm_storeu_si128(reinterpret_cast&lt;__m128i *&gt;(os.Push(16)), s);</a>
+<a name="ln959">        }</a>
+<a name="ln960"> </a>
+<a name="ln961">        is.src_ = p;</a>
+<a name="ln962">    }</a>
+<a name="ln963"> </a>
+<a name="ln964">    // InsituStringStream -&gt; InsituStringStream</a>
+<a name="ln965">    static RAPIDJSON_FORCEINLINE void ScanCopyUnescapedString(InsituStringStream&amp; is, InsituStringStream&amp; os) {</a>
+<a name="ln966">        RAPIDJSON_ASSERT(&amp;is == &amp;os);</a>
+<a name="ln967">        (void)os;</a>
+<a name="ln968"> </a>
+<a name="ln969">        if (is.src_ == is.dst_) {</a>
+<a name="ln970">            SkipUnescapedString(is);</a>
+<a name="ln971">            return;</a>
+<a name="ln972">        }</a>
+<a name="ln973"> </a>
+<a name="ln974">        char* p = is.src_;</a>
+<a name="ln975">        char *q = is.dst_;</a>
+<a name="ln976"> </a>
+<a name="ln977">        // Scan one by one until alignment (unaligned load may cross page boundary and cause crash)</a>
+<a name="ln978">        const char* nextAligned = reinterpret_cast&lt;const char*&gt;((reinterpret_cast&lt;size_t&gt;(p) + 15) &amp; static_cast&lt;size_t&gt;(~15));</a>
+<a name="ln979">        while (p != nextAligned)</a>
+<a name="ln980">            if (RAPIDJSON_UNLIKELY(*p == '\&quot;') || RAPIDJSON_UNLIKELY(*p == '\\') || RAPIDJSON_UNLIKELY(static_cast&lt;unsigned&gt;(*p) &lt; 0x20)) {</a>
+<a name="ln981">                is.src_ = p;</a>
+<a name="ln982">                is.dst_ = q;</a>
+<a name="ln983">                return;</a>
+<a name="ln984">            }</a>
+<a name="ln985">            else</a>
+<a name="ln986">                *q++ = *p++;</a>
+<a name="ln987"> </a>
+<a name="ln988">        // The rest of string using SIMD</a>
+<a name="ln989">        static const char dquote[16] = { '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;' };</a>
+<a name="ln990">        static const char bslash[16] = { '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\' };</a>
+<a name="ln991">        static const char space[16] = { 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19 };</a>
+<a name="ln992">        const __m128i dq = _mm_loadu_si128(reinterpret_cast&lt;const __m128i *&gt;(&amp;dquote[0]));</a>
+<a name="ln993">        const __m128i bs = _mm_loadu_si128(reinterpret_cast&lt;const __m128i *&gt;(&amp;bslash[0]));</a>
+<a name="ln994">        const __m128i sp = _mm_loadu_si128(reinterpret_cast&lt;const __m128i *&gt;(&amp;space[0]));</a>
+<a name="ln995"> </a>
+<a name="ln996">        for (;; p += 16, q += 16) {</a>
+<a name="ln997">            const __m128i s = _mm_load_si128(reinterpret_cast&lt;const __m128i *&gt;(p));</a>
+<a name="ln998">            const __m128i t1 = _mm_cmpeq_epi8(s, dq);</a>
+<a name="ln999">            const __m128i t2 = _mm_cmpeq_epi8(s, bs);</a>
+<a name="ln1000">            const __m128i t3 = _mm_cmpeq_epi8(_mm_max_epu8(s, sp), sp); // s &lt; 0x20 &lt;=&gt; max(s, 0x19) == 0x19</a>
+<a name="ln1001">            const __m128i x = _mm_or_si128(_mm_or_si128(t1, t2), t3);</a>
+<a name="ln1002">            unsigned short r = static_cast&lt;unsigned short&gt;(_mm_movemask_epi8(x));</a>
+<a name="ln1003">            if (RAPIDJSON_UNLIKELY(r != 0)) {   // some of characters is escaped</a>
+<a name="ln1004">                size_t length;</a>
+<a name="ln1005">#ifdef _MSC_VER         // Find the index of first escaped</a>
+<a name="ln1006">                unsigned long offset;</a>
+<a name="ln1007">                _BitScanForward(&amp;offset, r);</a>
+<a name="ln1008">                length = offset;</a>
+<a name="ln1009">#else</a>
+<a name="ln1010">                length = static_cast&lt;size_t&gt;(__builtin_ffs(r) - 1);</a>
+<a name="ln1011">#endif</a>
+<a name="ln1012">                for (const char* pend = p + length; p != pend; )</a>
+<a name="ln1013">                    *q++ = *p++;</a>
+<a name="ln1014">                break;</a>
+<a name="ln1015">            }</a>
+<a name="ln1016">            _mm_storeu_si128(reinterpret_cast&lt;__m128i *&gt;(q), s);</a>
+<a name="ln1017">        }</a>
+<a name="ln1018"> </a>
+<a name="ln1019">        is.src_ = p;</a>
+<a name="ln1020">        is.dst_ = q;</a>
+<a name="ln1021">    }</a>
+<a name="ln1022"> </a>
+<a name="ln1023">    // When read/write pointers are the same for insitu stream, just skip unescaped characters</a>
+<a name="ln1024">    static RAPIDJSON_FORCEINLINE void SkipUnescapedString(InsituStringStream&amp; is) {</a>
+<a name="ln1025">        RAPIDJSON_ASSERT(is.src_ == is.dst_);</a>
+<a name="ln1026">        char* p = is.src_;</a>
+<a name="ln1027"> </a>
+<a name="ln1028">        // Scan one by one until alignment (unaligned load may cross page boundary and cause crash)</a>
+<a name="ln1029">        const char* nextAligned = reinterpret_cast&lt;const char*&gt;((reinterpret_cast&lt;size_t&gt;(p) + 15) &amp; static_cast&lt;size_t&gt;(~15));</a>
+<a name="ln1030">        for (; p != nextAligned; p++)</a>
+<a name="ln1031">            if (RAPIDJSON_UNLIKELY(*p == '\&quot;') || RAPIDJSON_UNLIKELY(*p == '\\') || RAPIDJSON_UNLIKELY(static_cast&lt;unsigned&gt;(*p) &lt; 0x20)) {</a>
+<a name="ln1032">                is.src_ = is.dst_ = p;</a>
+<a name="ln1033">                return;</a>
+<a name="ln1034">            }</a>
+<a name="ln1035"> </a>
+<a name="ln1036">        // The rest of string using SIMD</a>
+<a name="ln1037">        static const char dquote[16] = { '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;', '\&quot;' };</a>
+<a name="ln1038">        static const char bslash[16] = { '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\' };</a>
+<a name="ln1039">        static const char space[16] = { 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19, 0x19 };</a>
+<a name="ln1040">        const __m128i dq = _mm_loadu_si128(reinterpret_cast&lt;const __m128i *&gt;(&amp;dquote[0]));</a>
+<a name="ln1041">        const __m128i bs = _mm_loadu_si128(reinterpret_cast&lt;const __m128i *&gt;(&amp;bslash[0]));</a>
+<a name="ln1042">        const __m128i sp = _mm_loadu_si128(reinterpret_cast&lt;const __m128i *&gt;(&amp;space[0]));</a>
+<a name="ln1043"> </a>
+<a name="ln1044">        for (;; p += 16) {</a>
+<a name="ln1045">            const __m128i s = _mm_load_si128(reinterpret_cast&lt;const __m128i *&gt;(p));</a>
+<a name="ln1046">            const __m128i t1 = _mm_cmpeq_epi8(s, dq);</a>
+<a name="ln1047">            const __m128i t2 = _mm_cmpeq_epi8(s, bs);</a>
+<a name="ln1048">            const __m128i t3 = _mm_cmpeq_epi8(_mm_max_epu8(s, sp), sp); // s &lt; 0x20 &lt;=&gt; max(s, 0x19) == 0x19</a>
+<a name="ln1049">            const __m128i x = _mm_or_si128(_mm_or_si128(t1, t2), t3);</a>
+<a name="ln1050">            unsigned short r = static_cast&lt;unsigned short&gt;(_mm_movemask_epi8(x));</a>
+<a name="ln1051">            if (RAPIDJSON_UNLIKELY(r != 0)) {   // some of characters is escaped</a>
+<a name="ln1052">                size_t length;</a>
+<a name="ln1053">#ifdef _MSC_VER         // Find the index of first escaped</a>
+<a name="ln1054">                unsigned long offset;</a>
+<a name="ln1055">                _BitScanForward(&amp;offset, r);</a>
+<a name="ln1056">                length = offset;</a>
+<a name="ln1057">#else</a>
+<a name="ln1058">                length = static_cast&lt;size_t&gt;(__builtin_ffs(r) - 1);</a>
+<a name="ln1059">#endif</a>
+<a name="ln1060">                p += length;</a>
+<a name="ln1061">                break;</a>
+<a name="ln1062">            }</a>
+<a name="ln1063">        }</a>
+<a name="ln1064"> </a>
+<a name="ln1065">        is.src_ = is.dst_ = p;</a>
+<a name="ln1066">    }</a>
+<a name="ln1067">#endif</a>
+<a name="ln1068"> </a>
+<a name="ln1069">    template&lt;typename InputStream, bool backup, bool pushOnTake&gt;</a>
+<a name="ln1070">    class NumberStream;</a>
+<a name="ln1071"> </a>
+<a name="ln1072">    template&lt;typename InputStream&gt;</a>
+<a name="ln1073">    class NumberStream&lt;InputStream, false, false&gt; {</a>
+<a name="ln1074">    public:</a>
+<a name="ln1075">        typedef typename InputStream::Ch Ch;</a>
+<a name="ln1076"> </a>
+<a name="ln1077">        NumberStream(GenericReader&amp; reader, InputStream&amp; s) : is(s) { (void)reader;  }</a>
+<a name="ln1078">        ~NumberStream() {}</a>
+<a name="ln1079"> </a>
+<a name="ln1080">        RAPIDJSON_FORCEINLINE Ch Peek() const { return is.Peek(); }</a>
+<a name="ln1081">        RAPIDJSON_FORCEINLINE Ch TakePush() { return is.Take(); }</a>
+<a name="ln1082">        RAPIDJSON_FORCEINLINE Ch Take() { return is.Take(); }</a>
+<a name="ln1083">		  RAPIDJSON_FORCEINLINE void Push(char) {}</a>
+<a name="ln1084"> </a>
+<a name="ln1085">        size_t Tell() { return is.Tell(); }</a>
+<a name="ln1086">        size_t Length() { return 0; }</a>
+<a name="ln1087">        const char* Pop() { return 0; }</a>
+<a name="ln1088"> </a>
+<a name="ln1089">    protected:</a>
+<a name="ln1090">        NumberStream&amp; operator=(const NumberStream&amp;);</a>
+<a name="ln1091"> </a>
+<a name="ln1092">        InputStream&amp; is;</a>
+<a name="ln1093">    };</a>
+<a name="ln1094"> </a>
+<a name="ln1095">    template&lt;typename InputStream&gt;</a>
+<a name="ln1096">    class NumberStream&lt;InputStream, true, false&gt; : public NumberStream&lt;InputStream, false, false&gt; {</a>
+<a name="ln1097">        typedef NumberStream&lt;InputStream, false, false&gt; Base;</a>
+<a name="ln1098">    public:</a>
+<a name="ln1099">        NumberStream(GenericReader&amp; reader, InputStream&amp; is) : Base(reader, is), stackStream(reader.stack_) {}</a>
+<a name="ln1100">        ~NumberStream() {}</a>
+<a name="ln1101"> </a>
+<a name="ln1102">        RAPIDJSON_FORCEINLINE Ch TakePush() {</a>
+<a name="ln1103">            stackStream.Put(static_cast&lt;char&gt;(Base::is.Peek()));</a>
+<a name="ln1104">            return Base::is.Take();</a>
+<a name="ln1105">        }</a>
+<a name="ln1106"> </a>
+<a name="ln1107">        RAPIDJSON_FORCEINLINE void Push(char c) {</a>
+<a name="ln1108">            stackStream.Put(c);</a>
+<a name="ln1109">        }</a>
+<a name="ln1110"> </a>
+<a name="ln1111">        size_t Length() { return stackStream.Length(); }</a>
+<a name="ln1112"> </a>
+<a name="ln1113">        const char* Pop() {</a>
+<a name="ln1114">            stackStream.Put('\0');</a>
+<a name="ln1115">            return stackStream.Pop();</a>
+<a name="ln1116">        }</a>
+<a name="ln1117"> </a>
+<a name="ln1118">    private:</a>
+<a name="ln1119">        StackStream&lt;char&gt; stackStream;</a>
+<a name="ln1120">    };</a>
+<a name="ln1121"> </a>
+<a name="ln1122">    template&lt;typename InputStream&gt;</a>
+<a name="ln1123">    class NumberStream&lt;InputStream, true, true&gt; : public NumberStream&lt;InputStream, true, false&gt; {</a>
+<a name="ln1124">        typedef NumberStream&lt;InputStream, true, false&gt; Base;</a>
+<a name="ln1125">    public:</a>
+<a name="ln1126">        NumberStream(GenericReader&amp; reader, InputStream&amp; is) : Base(reader, is) {}</a>
+<a name="ln1127">        ~NumberStream() {}</a>
+<a name="ln1128"> </a>
+<a name="ln1129">        RAPIDJSON_FORCEINLINE Ch Take() { return Base::TakePush(); }</a>
+<a name="ln1130">    };</a>
+<a name="ln1131"> </a>
+<a name="ln1132">    template&lt;unsigned parseFlags, typename InputStream, typename Handler&gt;</a>
+<a name="ln1133">    void ParseNumber(InputStream&amp; is, Handler&amp; handler) {</a>
+<a name="ln1134">        internal::StreamLocalCopy&lt;InputStream&gt; copy(is);</a>
+<a name="ln1135">        NumberStream&lt;InputStream,</a>
+<a name="ln1136">            ((parseFlags &amp; kParseNumbersAsStringsFlag) != 0) ?</a>
+<a name="ln1137">                ((parseFlags &amp; kParseInsituFlag) == 0) :</a>
+<a name="ln1138">                ((parseFlags &amp; kParseFullPrecisionFlag) != 0),</a>
+<a name="ln1139">            (parseFlags &amp; kParseNumbersAsStringsFlag) != 0 &amp;&amp;</a>
+<a name="ln1140">                (parseFlags &amp; kParseInsituFlag) == 0&gt; s(*this, copy.s);</a>
+<a name="ln1141"> </a>
+<a name="ln1142">        size_t startOffset = s.Tell();</a>
+<a name="ln1143">        double d = 0.0;</a>
+<a name="ln1144">        bool useNanOrInf = false;</a>
+<a name="ln1145"> </a>
+<a name="ln1146">        // Parse minus</a>
+<a name="ln1147">        bool minus = Consume(s, '-');</a>
+<a name="ln1148"> </a>
+<a name="ln1149">        // Parse int: zero / ( digit1-9 *DIGIT )</a>
+<a name="ln1150">        unsigned i = 0;</a>
+<a name="ln1151">        uint64_t i64 = 0;</a>
+<a name="ln1152">        bool use64bit = false;</a>
+<a name="ln1153">        int significandDigit = 0;</a>
+<a name="ln1154">        if (RAPIDJSON_UNLIKELY(s.Peek() == '0')) {</a>
+<a name="ln1155">            i = 0;</a>
+<a name="ln1156">            s.TakePush();</a>
+<a name="ln1157">        }</a>
+<a name="ln1158">        else if (RAPIDJSON_LIKELY(s.Peek() &gt;= '1' &amp;&amp; s.Peek() &lt;= '9')) {</a>
+<a name="ln1159">            i = static_cast&lt;unsigned&gt;(s.TakePush() - '0');</a>
+<a name="ln1160"> </a>
+<a name="ln1161">            if (minus)</a>
+<a name="ln1162">                while (RAPIDJSON_LIKELY(s.Peek() &gt;= '0' &amp;&amp; s.Peek() &lt;= '9')) {</a>
+<a name="ln1163">                    if (RAPIDJSON_UNLIKELY(i &gt;= 214748364)) { // 2^31 = 2147483648</a>
+<a name="ln1164">                        if (RAPIDJSON_LIKELY(i != 214748364 || s.Peek() &gt; '8')) {</a>
+<a name="ln1165">                            i64 = i;</a>
+<a name="ln1166">                            use64bit = true;</a>
+<a name="ln1167">                            break;</a>
+<a name="ln1168">                        }</a>
+<a name="ln1169">                    }</a>
+<a name="ln1170">                    i = i * 10 + static_cast&lt;unsigned&gt;(s.TakePush() - '0');</a>
+<a name="ln1171">                    significandDigit++;</a>
+<a name="ln1172">                }</a>
+<a name="ln1173">            else</a>
+<a name="ln1174">                while (RAPIDJSON_LIKELY(s.Peek() &gt;= '0' &amp;&amp; s.Peek() &lt;= '9')) {</a>
+<a name="ln1175">                    if (RAPIDJSON_UNLIKELY(i &gt;= 429496729)) { // 2^32 - 1 = 4294967295</a>
+<a name="ln1176">                        if (RAPIDJSON_LIKELY(i != 429496729 || s.Peek() &gt; '5')) {</a>
+<a name="ln1177">                            i64 = i;</a>
+<a name="ln1178">                            use64bit = true;</a>
+<a name="ln1179">                            break;</a>
+<a name="ln1180">                        }</a>
+<a name="ln1181">                    }</a>
+<a name="ln1182">                    i = i * 10 + static_cast&lt;unsigned&gt;(s.TakePush() - '0');</a>
+<a name="ln1183">                    significandDigit++;</a>
+<a name="ln1184">                }</a>
+<a name="ln1185">        }</a>
+<a name="ln1186">        // Parse NaN or Infinity here</a>
+<a name="ln1187">        else if ((parseFlags &amp; kParseNanAndInfFlag) &amp;&amp; RAPIDJSON_LIKELY((s.Peek() == 'I' || s.Peek() == 'N'))) {</a>
+<a name="ln1188">            useNanOrInf = true;</a>
+<a name="ln1189">            if (RAPIDJSON_LIKELY(Consume(s, 'N') &amp;&amp; Consume(s, 'a') &amp;&amp; Consume(s, 'N'))) {</a>
+<a name="ln1190">                d = std::numeric_limits&lt;double&gt;::quiet_NaN();</a>
+<a name="ln1191">            }</a>
+<a name="ln1192">            else if (RAPIDJSON_LIKELY(Consume(s, 'I') &amp;&amp; Consume(s, 'n') &amp;&amp; Consume(s, 'f'))) {</a>
+<a name="ln1193">                d = (minus ? -std::numeric_limits&lt;double&gt;::infinity() : std::numeric_limits&lt;double&gt;::infinity());</a>
+<a name="ln1194">                if (RAPIDJSON_UNLIKELY(s.Peek() == 'i' &amp;&amp; !(Consume(s, 'i') &amp;&amp; Consume(s, 'n')</a>
+<a name="ln1195">                                                            &amp;&amp; Consume(s, 'i') &amp;&amp; Consume(s, 't') &amp;&amp; Consume(s, 'y'))))</a>
+<a name="ln1196">                    RAPIDJSON_PARSE_ERROR(kParseErrorValueInvalid, s.Tell());</a>
+<a name="ln1197">            }</a>
+<a name="ln1198">            else</a>
+<a name="ln1199">                RAPIDJSON_PARSE_ERROR(kParseErrorValueInvalid, s.Tell());</a>
+<a name="ln1200">        }</a>
+<a name="ln1201">        else</a>
+<a name="ln1202">            RAPIDJSON_PARSE_ERROR(kParseErrorValueInvalid, s.Tell());</a>
+<a name="ln1203"> </a>
+<a name="ln1204">        // Parse 64bit int</a>
+<a name="ln1205">        bool useDouble = false;</a>
+<a name="ln1206">        if (use64bit) {</a>
+<a name="ln1207">            if (minus)</a>
+<a name="ln1208">                while (RAPIDJSON_LIKELY(s.Peek() &gt;= '0' &amp;&amp; s.Peek() &lt;= '9')) {</a>
+<a name="ln1209">                     if (RAPIDJSON_UNLIKELY(i64 &gt;= RAPIDJSON_UINT64_C2(0x0CCCCCCC, 0xCCCCCCCC))) // 2^63 = 9223372036854775808</a>
+<a name="ln1210">                        if (RAPIDJSON_LIKELY(i64 != RAPIDJSON_UINT64_C2(0x0CCCCCCC, 0xCCCCCCCC) || s.Peek() &gt; '8')) {</a>
+<a name="ln1211">                            d = static_cast&lt;double&gt;(i64);</a>
+<a name="ln1212">                            useDouble = true;</a>
+<a name="ln1213">                            break;</a>
+<a name="ln1214">                        }</a>
+<a name="ln1215">                    i64 = i64 * 10 + static_cast&lt;unsigned&gt;(s.TakePush() - '0');</a>
+<a name="ln1216">                    significandDigit++;</a>
+<a name="ln1217">                }</a>
+<a name="ln1218">            else</a>
+<a name="ln1219">                while (RAPIDJSON_LIKELY(s.Peek() &gt;= '0' &amp;&amp; s.Peek() &lt;= '9')) {</a>
+<a name="ln1220">                    if (RAPIDJSON_UNLIKELY(i64 &gt;= RAPIDJSON_UINT64_C2(0x19999999, 0x99999999))) // 2^64 - 1 = 18446744073709551615</a>
+<a name="ln1221">                        if (RAPIDJSON_LIKELY(i64 != RAPIDJSON_UINT64_C2(0x19999999, 0x99999999) || s.Peek() &gt; '5')) {</a>
+<a name="ln1222">                            d = static_cast&lt;double&gt;(i64);</a>
+<a name="ln1223">                            useDouble = true;</a>
+<a name="ln1224">                            break;</a>
+<a name="ln1225">                        }</a>
+<a name="ln1226">                    i64 = i64 * 10 + static_cast&lt;unsigned&gt;(s.TakePush() - '0');</a>
+<a name="ln1227">                    significandDigit++;</a>
+<a name="ln1228">                }</a>
+<a name="ln1229">        }</a>
+<a name="ln1230"> </a>
+<a name="ln1231">        // Force double for big integer</a>
+<a name="ln1232">        if (useDouble) {</a>
+<a name="ln1233">            while (RAPIDJSON_LIKELY(s.Peek() &gt;= '0' &amp;&amp; s.Peek() &lt;= '9')) {</a>
+<a name="ln1234">                if (RAPIDJSON_UNLIKELY(d &gt;= 1.7976931348623157e307)) // DBL_MAX / 10.0</a>
+<a name="ln1235">                    RAPIDJSON_PARSE_ERROR(kParseErrorNumberTooBig, startOffset);</a>
+<a name="ln1236">                d = d * 10 + (s.TakePush() - '0');</a>
+<a name="ln1237">            }</a>
+<a name="ln1238">        }</a>
+<a name="ln1239"> </a>
+<a name="ln1240">        // Parse frac = decimal-point 1*DIGIT</a>
+<a name="ln1241">        int expFrac = 0;</a>
+<a name="ln1242">        size_t decimalPosition;</a>
+<a name="ln1243">        if (Consume(s, '.')) {</a>
+<a name="ln1244">            decimalPosition = s.Length();</a>
+<a name="ln1245"> </a>
+<a name="ln1246">            if (RAPIDJSON_UNLIKELY(!(s.Peek() &gt;= '0' &amp;&amp; s.Peek() &lt;= '9')))</a>
+<a name="ln1247">                RAPIDJSON_PARSE_ERROR(kParseErrorNumberMissFraction, s.Tell());</a>
+<a name="ln1248"> </a>
+<a name="ln1249">            if (!useDouble) {</a>
+<a name="ln1250">#if RAPIDJSON_64BIT</a>
+<a name="ln1251">                // Use i64 to store significand in 64-bit architecture</a>
+<a name="ln1252">                if (!use64bit)</a>
+<a name="ln1253">                    i64 = i;</a>
+<a name="ln1254"> </a>
+<a name="ln1255">                while (RAPIDJSON_LIKELY(s.Peek() &gt;= '0' &amp;&amp; s.Peek() &lt;= '9')) {</a>
+<a name="ln1256">                    if (i64 &gt; RAPIDJSON_UINT64_C2(0x1FFFFF, 0xFFFFFFFF)) // 2^53 - 1 for fast path</a>
+<a name="ln1257">                        break;</a>
+<a name="ln1258">                    else {</a>
+<a name="ln1259">                        i64 = i64 * 10 + static_cast&lt;unsigned&gt;(s.TakePush() - '0');</a>
+<a name="ln1260">                        --expFrac;</a>
+<a name="ln1261">                        if (i64 != 0)</a>
+<a name="ln1262">                            significandDigit++;</a>
+<a name="ln1263">                    }</a>
+<a name="ln1264">                }</a>
+<a name="ln1265"> </a>
+<a name="ln1266">                d = static_cast&lt;double&gt;(i64);</a>
+<a name="ln1267">#else</a>
+<a name="ln1268">                // Use double to store significand in 32-bit architecture</a>
+<a name="ln1269">                d = static_cast&lt;double&gt;(use64bit ? i64 : i);</a>
+<a name="ln1270">#endif</a>
+<a name="ln1271">                useDouble = true;</a>
+<a name="ln1272">            }</a>
+<a name="ln1273"> </a>
+<a name="ln1274">            while (RAPIDJSON_LIKELY(s.Peek() &gt;= '0' &amp;&amp; s.Peek() &lt;= '9')) {</a>
+<a name="ln1275">                if (significandDigit &lt; 17) {</a>
+<a name="ln1276">                    d = d * 10.0 + (s.TakePush() - '0');</a>
+<a name="ln1277">                    --expFrac;</a>
+<a name="ln1278">                    if (RAPIDJSON_LIKELY(d &gt; 0.0))</a>
+<a name="ln1279">                        significandDigit++;</a>
+<a name="ln1280">                }</a>
+<a name="ln1281">                else</a>
+<a name="ln1282">                    s.TakePush();</a>
+<a name="ln1283">            }</a>
+<a name="ln1284">        }</a>
+<a name="ln1285">        else</a>
+<a name="ln1286">            decimalPosition = s.Length(); // decimal position at the end of integer.</a>
+<a name="ln1287"> </a>
+<a name="ln1288">        // Parse exp = e [ minus / plus ] 1*DIGIT</a>
+<a name="ln1289">        int exp = 0;</a>
+<a name="ln1290">        if (Consume(s, 'e') || Consume(s, 'E')) {</a>
+<a name="ln1291">            if (!useDouble) {</a>
+<a name="ln1292">                d = static_cast&lt;double&gt;(use64bit ? i64 : i);</a>
+<a name="ln1293">                useDouble = true;</a>
+<a name="ln1294">            }</a>
+<a name="ln1295"> </a>
+<a name="ln1296">            bool expMinus = false;</a>
+<a name="ln1297">            if (Consume(s, '+'))</a>
+<a name="ln1298">                ;</a>
+<a name="ln1299">            else if (Consume(s, '-'))</a>
+<a name="ln1300">                expMinus = true;</a>
+<a name="ln1301"> </a>
+<a name="ln1302">            if (RAPIDJSON_LIKELY(s.Peek() &gt;= '0' &amp;&amp; s.Peek() &lt;= '9')) {</a>
+<a name="ln1303">                exp = static_cast&lt;int&gt;(s.Take() - '0');</a>
+<a name="ln1304">                if (expMinus) {</a>
+<a name="ln1305">                    while (RAPIDJSON_LIKELY(s.Peek() &gt;= '0' &amp;&amp; s.Peek() &lt;= '9')) {</a>
+<a name="ln1306">                        exp = exp * 10 + static_cast&lt;int&gt;(s.Take() - '0');</a>
+<a name="ln1307">                        if (exp &gt;= 214748364) {                         // Issue #313: prevent overflow exponent</a>
+<a name="ln1308">                            while (RAPIDJSON_UNLIKELY(s.Peek() &gt;= '0' &amp;&amp; s.Peek() &lt;= '9'))  // Consume the rest of exponent</a>
+<a name="ln1309">                                s.Take();</a>
+<a name="ln1310">                        }</a>
+<a name="ln1311">                    }</a>
+<a name="ln1312">                }</a>
+<a name="ln1313">                else {  // positive exp</a>
+<a name="ln1314">                    int maxExp = 308 - expFrac;</a>
+<a name="ln1315">                    while (RAPIDJSON_LIKELY(s.Peek() &gt;= '0' &amp;&amp; s.Peek() &lt;= '9')) {</a>
+<a name="ln1316">                        exp = exp * 10 + static_cast&lt;int&gt;(s.Take() - '0');</a>
+<a name="ln1317">                        if (RAPIDJSON_UNLIKELY(exp &gt; maxExp))</a>
+<a name="ln1318">                            RAPIDJSON_PARSE_ERROR(kParseErrorNumberTooBig, startOffset);</a>
+<a name="ln1319">                    }</a>
+<a name="ln1320">                }</a>
+<a name="ln1321">            }</a>
+<a name="ln1322">            else</a>
+<a name="ln1323">                RAPIDJSON_PARSE_ERROR(kParseErrorNumberMissExponent, s.Tell());</a>
+<a name="ln1324"> </a>
+<a name="ln1325">            if (expMinus)</a>
+<a name="ln1326">                exp = -exp;</a>
+<a name="ln1327">        }</a>
+<a name="ln1328"> </a>
+<a name="ln1329">        // Finish parsing, call event according to the type of number.</a>
+<a name="ln1330">        bool cont = true;</a>
+<a name="ln1331"> </a>
+<a name="ln1332">        if (parseFlags &amp; kParseNumbersAsStringsFlag) {</a>
+<a name="ln1333">            if (parseFlags &amp; kParseInsituFlag) {</a>
+<a name="ln1334">                s.Pop();  // Pop stack no matter if it will be used or not.</a>
+<a name="ln1335">                typename InputStream::Ch* head = is.PutBegin();</a>
+<a name="ln1336">                const size_t length = s.Tell() - startOffset;</a>
+<a name="ln1337">                RAPIDJSON_ASSERT(length &lt;= 0xFFFFFFFF);</a>
+<a name="ln1338">                // unable to insert the \0 character here, it will erase the comma after this number</a>
+<a name="ln1339">                const typename TargetEncoding::Ch* const str = reinterpret_cast&lt;typename TargetEncoding::Ch*&gt;(head);</a>
+<a name="ln1340">                cont = handler.RawNumber(str, SizeType(length), false);</a>
+<a name="ln1341">            }</a>
+<a name="ln1342">            else {</a>
+<a name="ln1343">                SizeType numCharsToCopy = static_cast&lt;SizeType&gt;(s.Length());</a>
+<a name="ln1344">                StringStream srcStream(s.Pop());</a>
+<a name="ln1345">                StackStream&lt;typename TargetEncoding::Ch&gt; dstStream(stack_);</a>
+<a name="ln1346">                while (numCharsToCopy--) {</a>
+<a name="ln1347">                    Transcoder&lt;UTF8&lt;&gt;, TargetEncoding&gt;::Transcode(srcStream, dstStream);</a>
+<a name="ln1348">                }</a>
+<a name="ln1349">                dstStream.Put('\0');</a>
+<a name="ln1350">                const typename TargetEncoding::Ch* str = dstStream.Pop();</a>
+<a name="ln1351">                const SizeType length = static_cast&lt;SizeType&gt;(dstStream.Length()) - 1;</a>
+<a name="ln1352">                cont = handler.RawNumber(str, SizeType(length), true);</a>
+<a name="ln1353">            }</a>
+<a name="ln1354">        }</a>
+<a name="ln1355">        else {</a>
+<a name="ln1356">           size_t length = s.Length();</a>
+<a name="ln1357">           const char* decimal = s.Pop();  // Pop stack no matter if it will be used or not.</a>
+<a name="ln1358"> </a>
+<a name="ln1359">           if (useDouble) {</a>
+<a name="ln1360">               int p = exp + expFrac;</a>
+<a name="ln1361">               if (parseFlags &amp; kParseFullPrecisionFlag)</a>
+<a name="ln1362">                   d = internal::StrtodFullPrecision(d, p, decimal, length, decimalPosition, exp);</a>
+<a name="ln1363">               else</a>
+<a name="ln1364">                   d = internal::StrtodNormalPrecision(d, p);</a>
+<a name="ln1365"> </a>
+<a name="ln1366">               cont = handler.Double(minus ? -d : d);</a>
+<a name="ln1367">           }</a>
+<a name="ln1368">           else if (useNanOrInf) {</a>
+<a name="ln1369">               cont = handler.Double(d);</a>
+<a name="ln1370">           }</a>
+<a name="ln1371">           else {</a>
+<a name="ln1372">               if (use64bit) {</a>
+<a name="ln1373">                   if (minus)</a>
+<a name="ln1374">                       cont = handler.Int64(static_cast&lt;int64_t&gt;(~i64 + 1));</a>
+<a name="ln1375">                   else</a>
+<a name="ln1376">                       cont = handler.Uint64(i64);</a>
+<a name="ln1377">               }</a>
+<a name="ln1378">               else {</a>
+<a name="ln1379">                   if (minus)</a>
+<a name="ln1380">                       cont = handler.Int(static_cast&lt;int32_t&gt;(~i + 1));</a>
+<a name="ln1381">                   else</a>
+<a name="ln1382">                       cont = handler.Uint(i);</a>
+<a name="ln1383">               }</a>
+<a name="ln1384">           }</a>
+<a name="ln1385">        }</a>
+<a name="ln1386">        if (RAPIDJSON_UNLIKELY(!cont))</a>
+<a name="ln1387">            RAPIDJSON_PARSE_ERROR(kParseErrorTermination, startOffset);</a>
+<a name="ln1388">    }</a>
+<a name="ln1389"> </a>
+<a name="ln1390">    // Parse any JSON value</a>
+<a name="ln1391">    template&lt;unsigned parseFlags, typename InputStream, typename Handler&gt;</a>
+<a name="ln1392">    void ParseValue(InputStream&amp; is, Handler&amp; handler) {</a>
+<a name="ln1393">        switch (is.Peek()) {</a>
+<a name="ln1394">            case 'n': ParseNull  &lt;parseFlags&gt;(is, handler); break;</a>
+<a name="ln1395">            case 't': ParseTrue  &lt;parseFlags&gt;(is, handler); break;</a>
+<a name="ln1396">            case 'f': ParseFalse &lt;parseFlags&gt;(is, handler); break;</a>
+<a name="ln1397">            case '&quot;': ParseString&lt;parseFlags&gt;(is, handler); break;</a>
+<a name="ln1398">            case '{': ParseObject&lt;parseFlags&gt;(is, handler); break;</a>
+<a name="ln1399">            case '[': ParseArray &lt;parseFlags&gt;(is, handler); break;</a>
+<a name="ln1400">            default :</a>
+<a name="ln1401">                      ParseNumber&lt;parseFlags&gt;(is, handler);</a>
+<a name="ln1402">                      break;</a>
+<a name="ln1403"> </a>
+<a name="ln1404">        }</a>
+<a name="ln1405">    }</a>
+<a name="ln1406"> </a>
+<a name="ln1407">    // Iterative Parsing</a>
+<a name="ln1408"> </a>
+<a name="ln1409">    // States</a>
+<a name="ln1410">    enum IterativeParsingState {</a>
+<a name="ln1411">        IterativeParsingStartState = 0,</a>
+<a name="ln1412">        IterativeParsingFinishState,</a>
+<a name="ln1413">        IterativeParsingErrorState,</a>
+<a name="ln1414"> </a>
+<a name="ln1415">        // Object states</a>
+<a name="ln1416">        IterativeParsingObjectInitialState,</a>
+<a name="ln1417">        IterativeParsingMemberKeyState,</a>
+<a name="ln1418">        IterativeParsingKeyValueDelimiterState,</a>
+<a name="ln1419">        IterativeParsingMemberValueState,</a>
+<a name="ln1420">        IterativeParsingMemberDelimiterState,</a>
+<a name="ln1421">        IterativeParsingObjectFinishState,</a>
+<a name="ln1422"> </a>
+<a name="ln1423">        // Array states</a>
+<a name="ln1424">        IterativeParsingArrayInitialState,</a>
+<a name="ln1425">        IterativeParsingElementState,</a>
+<a name="ln1426">        IterativeParsingElementDelimiterState,</a>
+<a name="ln1427">        IterativeParsingArrayFinishState,</a>
+<a name="ln1428"> </a>
+<a name="ln1429">        // Single value state</a>
+<a name="ln1430">        IterativeParsingValueState</a>
+<a name="ln1431">    };</a>
+<a name="ln1432"> </a>
+<a name="ln1433">    enum { cIterativeParsingStateCount = IterativeParsingValueState + 1 };</a>
+<a name="ln1434"> </a>
+<a name="ln1435">    // Tokens</a>
+<a name="ln1436">    enum Token {</a>
+<a name="ln1437">        LeftBracketToken = 0,</a>
+<a name="ln1438">        RightBracketToken,</a>
+<a name="ln1439"> </a>
+<a name="ln1440">        LeftCurlyBracketToken,</a>
+<a name="ln1441">        RightCurlyBracketToken,</a>
+<a name="ln1442"> </a>
+<a name="ln1443">        CommaToken,</a>
+<a name="ln1444">        ColonToken,</a>
+<a name="ln1445"> </a>
+<a name="ln1446">        StringToken,</a>
+<a name="ln1447">        FalseToken,</a>
+<a name="ln1448">        TrueToken,</a>
+<a name="ln1449">        NullToken,</a>
+<a name="ln1450">        NumberToken,</a>
+<a name="ln1451"> </a>
+<a name="ln1452">        kTokenCount</a>
+<a name="ln1453">    };</a>
+<a name="ln1454"> </a>
+<a name="ln1455">    RAPIDJSON_FORCEINLINE Token Tokenize(Ch c) {</a>
+<a name="ln1456"> </a>
+<a name="ln1457">//!@cond RAPIDJSON_HIDDEN_FROM_DOXYGEN</a>
+<a name="ln1458">#define N NumberToken</a>
+<a name="ln1459">#define N16 N,N,N,N,N,N,N,N,N,N,N,N,N,N,N,N</a>
+<a name="ln1460">        // Maps from ASCII to Token</a>
+<a name="ln1461">        static const unsigned char tokenMap[256] = {</a>
+<a name="ln1462">            N16, // 00~0F</a>
+<a name="ln1463">            N16, // 10~1F</a>
+<a name="ln1464">            N, N, StringToken, N, N, N, N, N, N, N, N, N, CommaToken, N, N, N, // 20~2F</a>
+<a name="ln1465">            N, N, N, N, N, N, N, N, N, N, ColonToken, N, N, N, N, N, // 30~3F</a>
+<a name="ln1466">            N16, // 40~4F</a>
+<a name="ln1467">            N, N, N, N, N, N, N, N, N, N, N, LeftBracketToken, N, RightBracketToken, N, N, // 50~5F</a>
+<a name="ln1468">            N, N, N, N, N, N, FalseToken, N, N, N, N, N, N, N, NullToken, N, // 60~6F</a>
+<a name="ln1469">            N, N, N, N, TrueToken, N, N, N, N, N, N, LeftCurlyBracketToken, N, RightCurlyBracketToken, N, N, // 70~7F</a>
+<a name="ln1470">            N16, N16, N16, N16, N16, N16, N16, N16 // 80~FF</a>
+<a name="ln1471">        };</a>
+<a name="ln1472">#undef N</a>
+<a name="ln1473">#undef N16</a>
+<a name="ln1474">//!@endcond</a>
+<a name="ln1475"> </a>
+<a name="ln1476">        if (sizeof(Ch) == 1 || static_cast&lt;unsigned&gt;(c) &lt; 256)</a>
+<a name="ln1477">            return static_cast&lt;Token&gt;(tokenMap[static_cast&lt;unsigned char&gt;(c)]);</a>
+<a name="ln1478">        else</a>
+<a name="ln1479">            return NumberToken;</a>
+<a name="ln1480">    }</a>
+<a name="ln1481"> </a>
+<a name="ln1482">    RAPIDJSON_FORCEINLINE IterativeParsingState Predict(IterativeParsingState state, Token token) {</a>
+<a name="ln1483">        // current state x one lookahead token -&gt; new state</a>
+<a name="ln1484">        static const char G[cIterativeParsingStateCount][kTokenCount] = {</a>
+<a name="ln1485">            // Start</a>
+<a name="ln1486">            {</a>
+<a name="ln1487">                IterativeParsingArrayInitialState,  // Left bracket</a>
+<a name="ln1488">                IterativeParsingErrorState,         // Right bracket</a>
+<a name="ln1489">                IterativeParsingObjectInitialState, // Left curly bracket</a>
+<a name="ln1490">                IterativeParsingErrorState,         // Right curly bracket</a>
+<a name="ln1491">                IterativeParsingErrorState,         // Comma</a>
+<a name="ln1492">                IterativeParsingErrorState,         // Colon</a>
+<a name="ln1493">                IterativeParsingValueState,         // String</a>
+<a name="ln1494">                IterativeParsingValueState,         // False</a>
+<a name="ln1495">                IterativeParsingValueState,         // True</a>
+<a name="ln1496">                IterativeParsingValueState,         // Null</a>
+<a name="ln1497">                IterativeParsingValueState          // Number</a>
+<a name="ln1498">            },</a>
+<a name="ln1499">            // Finish(sink state)</a>
+<a name="ln1500">            {</a>
+<a name="ln1501">                IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState,</a>
+<a name="ln1502">                IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState,</a>
+<a name="ln1503">                IterativeParsingErrorState</a>
+<a name="ln1504">            },</a>
+<a name="ln1505">            // Error(sink state)</a>
+<a name="ln1506">            {</a>
+<a name="ln1507">                IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState,</a>
+<a name="ln1508">                IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState,</a>
+<a name="ln1509">                IterativeParsingErrorState</a>
+<a name="ln1510">            },</a>
+<a name="ln1511">            // ObjectInitial</a>
+<a name="ln1512">            {</a>
+<a name="ln1513">                IterativeParsingErrorState,         // Left bracket</a>
+<a name="ln1514">                IterativeParsingErrorState,         // Right bracket</a>
+<a name="ln1515">                IterativeParsingErrorState,         // Left curly bracket</a>
+<a name="ln1516">                IterativeParsingObjectFinishState,  // Right curly bracket</a>
+<a name="ln1517">                IterativeParsingErrorState,         // Comma</a>
+<a name="ln1518">                IterativeParsingErrorState,         // Colon</a>
+<a name="ln1519">                IterativeParsingMemberKeyState,     // String</a>
+<a name="ln1520">                IterativeParsingErrorState,         // False</a>
+<a name="ln1521">                IterativeParsingErrorState,         // True</a>
+<a name="ln1522">                IterativeParsingErrorState,         // Null</a>
+<a name="ln1523">                IterativeParsingErrorState          // Number</a>
+<a name="ln1524">            },</a>
+<a name="ln1525">            // MemberKey</a>
+<a name="ln1526">            {</a>
+<a name="ln1527">                IterativeParsingErrorState,             // Left bracket</a>
+<a name="ln1528">                IterativeParsingErrorState,             // Right bracket</a>
+<a name="ln1529">                IterativeParsingErrorState,             // Left curly bracket</a>
+<a name="ln1530">                IterativeParsingErrorState,             // Right curly bracket</a>
+<a name="ln1531">                IterativeParsingErrorState,             // Comma</a>
+<a name="ln1532">                IterativeParsingKeyValueDelimiterState, // Colon</a>
+<a name="ln1533">                IterativeParsingErrorState,             // String</a>
+<a name="ln1534">                IterativeParsingErrorState,             // False</a>
+<a name="ln1535">                IterativeParsingErrorState,             // True</a>
+<a name="ln1536">                IterativeParsingErrorState,             // Null</a>
+<a name="ln1537">                IterativeParsingErrorState              // Number</a>
+<a name="ln1538">            },</a>
+<a name="ln1539">            // KeyValueDelimiter</a>
+<a name="ln1540">            {</a>
+<a name="ln1541">                IterativeParsingArrayInitialState,      // Left bracket(push MemberValue state)</a>
+<a name="ln1542">                IterativeParsingErrorState,             // Right bracket</a>
+<a name="ln1543">                IterativeParsingObjectInitialState,     // Left curly bracket(push MemberValue state)</a>
+<a name="ln1544">                IterativeParsingErrorState,             // Right curly bracket</a>
+<a name="ln1545">                IterativeParsingErrorState,             // Comma</a>
+<a name="ln1546">                IterativeParsingErrorState,             // Colon</a>
+<a name="ln1547">                IterativeParsingMemberValueState,       // String</a>
+<a name="ln1548">                IterativeParsingMemberValueState,       // False</a>
+<a name="ln1549">                IterativeParsingMemberValueState,       // True</a>
+<a name="ln1550">                IterativeParsingMemberValueState,       // Null</a>
+<a name="ln1551">                IterativeParsingMemberValueState        // Number</a>
+<a name="ln1552">            },</a>
+<a name="ln1553">            // MemberValue</a>
+<a name="ln1554">            {</a>
+<a name="ln1555">                IterativeParsingErrorState,             // Left bracket</a>
+<a name="ln1556">                IterativeParsingErrorState,             // Right bracket</a>
+<a name="ln1557">                IterativeParsingErrorState,             // Left curly bracket</a>
+<a name="ln1558">                IterativeParsingObjectFinishState,      // Right curly bracket</a>
+<a name="ln1559">                IterativeParsingMemberDelimiterState,   // Comma</a>
+<a name="ln1560">                IterativeParsingErrorState,             // Colon</a>
+<a name="ln1561">                IterativeParsingErrorState,             // String</a>
+<a name="ln1562">                IterativeParsingErrorState,             // False</a>
+<a name="ln1563">                IterativeParsingErrorState,             // True</a>
+<a name="ln1564">                IterativeParsingErrorState,             // Null</a>
+<a name="ln1565">                IterativeParsingErrorState              // Number</a>
+<a name="ln1566">            },</a>
+<a name="ln1567">            // MemberDelimiter</a>
+<a name="ln1568">            {</a>
+<a name="ln1569">                IterativeParsingErrorState,         // Left bracket</a>
+<a name="ln1570">                IterativeParsingErrorState,         // Right bracket</a>
+<a name="ln1571">                IterativeParsingErrorState,         // Left curly bracket</a>
+<a name="ln1572">                IterativeParsingObjectFinishState,  // Right curly bracket</a>
+<a name="ln1573">                IterativeParsingErrorState,         // Comma</a>
+<a name="ln1574">                IterativeParsingErrorState,         // Colon</a>
+<a name="ln1575">                IterativeParsingMemberKeyState,     // String</a>
+<a name="ln1576">                IterativeParsingErrorState,         // False</a>
+<a name="ln1577">                IterativeParsingErrorState,         // True</a>
+<a name="ln1578">                IterativeParsingErrorState,         // Null</a>
+<a name="ln1579">                IterativeParsingErrorState          // Number</a>
+<a name="ln1580">            },</a>
+<a name="ln1581">            // ObjectFinish(sink state)</a>
+<a name="ln1582">            {</a>
+<a name="ln1583">                IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState,</a>
+<a name="ln1584">                IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState,</a>
+<a name="ln1585">                IterativeParsingErrorState</a>
+<a name="ln1586">            },</a>
+<a name="ln1587">            // ArrayInitial</a>
+<a name="ln1588">            {</a>
+<a name="ln1589">                IterativeParsingArrayInitialState,      // Left bracket(push Element state)</a>
+<a name="ln1590">                IterativeParsingArrayFinishState,       // Right bracket</a>
+<a name="ln1591">                IterativeParsingObjectInitialState,     // Left curly bracket(push Element state)</a>
+<a name="ln1592">                IterativeParsingErrorState,             // Right curly bracket</a>
+<a name="ln1593">                IterativeParsingErrorState,             // Comma</a>
+<a name="ln1594">                IterativeParsingErrorState,             // Colon</a>
+<a name="ln1595">                IterativeParsingElementState,           // String</a>
+<a name="ln1596">                IterativeParsingElementState,           // False</a>
+<a name="ln1597">                IterativeParsingElementState,           // True</a>
+<a name="ln1598">                IterativeParsingElementState,           // Null</a>
+<a name="ln1599">                IterativeParsingElementState            // Number</a>
+<a name="ln1600">            },</a>
+<a name="ln1601">            // Element</a>
+<a name="ln1602">            {</a>
+<a name="ln1603">                IterativeParsingErrorState,             // Left bracket</a>
+<a name="ln1604">                IterativeParsingArrayFinishState,       // Right bracket</a>
+<a name="ln1605">                IterativeParsingErrorState,             // Left curly bracket</a>
+<a name="ln1606">                IterativeParsingErrorState,             // Right curly bracket</a>
+<a name="ln1607">                IterativeParsingElementDelimiterState,  // Comma</a>
+<a name="ln1608">                IterativeParsingErrorState,             // Colon</a>
+<a name="ln1609">                IterativeParsingErrorState,             // String</a>
+<a name="ln1610">                IterativeParsingErrorState,             // False</a>
+<a name="ln1611">                IterativeParsingErrorState,             // True</a>
+<a name="ln1612">                IterativeParsingErrorState,             // Null</a>
+<a name="ln1613">                IterativeParsingErrorState              // Number</a>
+<a name="ln1614">            },</a>
+<a name="ln1615">            // ElementDelimiter</a>
+<a name="ln1616">            {</a>
+<a name="ln1617">                IterativeParsingArrayInitialState,      // Left bracket(push Element state)</a>
+<a name="ln1618">                IterativeParsingArrayFinishState,       // Right bracket</a>
+<a name="ln1619">                IterativeParsingObjectInitialState,     // Left curly bracket(push Element state)</a>
+<a name="ln1620">                IterativeParsingErrorState,             // Right curly bracket</a>
+<a name="ln1621">                IterativeParsingErrorState,             // Comma</a>
+<a name="ln1622">                IterativeParsingErrorState,             // Colon</a>
+<a name="ln1623">                IterativeParsingElementState,           // String</a>
+<a name="ln1624">                IterativeParsingElementState,           // False</a>
+<a name="ln1625">                IterativeParsingElementState,           // True</a>
+<a name="ln1626">                IterativeParsingElementState,           // Null</a>
+<a name="ln1627">                IterativeParsingElementState            // Number</a>
+<a name="ln1628">            },</a>
+<a name="ln1629">            // ArrayFinish(sink state)</a>
+<a name="ln1630">            {</a>
+<a name="ln1631">                IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState,</a>
+<a name="ln1632">                IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState,</a>
+<a name="ln1633">                IterativeParsingErrorState</a>
+<a name="ln1634">            },</a>
+<a name="ln1635">            // Single Value (sink state)</a>
+<a name="ln1636">            {</a>
+<a name="ln1637">                IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState,</a>
+<a name="ln1638">                IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState,</a>
+<a name="ln1639">                IterativeParsingErrorState</a>
+<a name="ln1640">            }</a>
+<a name="ln1641">        }; // End of G</a>
+<a name="ln1642"> </a>
+<a name="ln1643">        return static_cast&lt;IterativeParsingState&gt;(G[state][token]);</a>
+<a name="ln1644">    }</a>
+<a name="ln1645"> </a>
+<a name="ln1646">    // Make an advance in the token stream and state based on the candidate destination state which was returned by Transit().</a>
+<a name="ln1647">    // May return a new state on state pop.</a>
+<a name="ln1648">    template &lt;unsigned parseFlags, typename InputStream, typename Handler&gt;</a>
+<a name="ln1649">    RAPIDJSON_FORCEINLINE IterativeParsingState Transit(IterativeParsingState src, Token token, IterativeParsingState dst, InputStream&amp; is, Handler&amp; handler) {</a>
+<a name="ln1650">        (void)token;</a>
+<a name="ln1651"> </a>
+<a name="ln1652">        switch (dst) {</a>
+<a name="ln1653">        case IterativeParsingErrorState:</a>
+<a name="ln1654">            return dst;</a>
+<a name="ln1655"> </a>
+<a name="ln1656">        case IterativeParsingObjectInitialState:</a>
+<a name="ln1657">        case IterativeParsingArrayInitialState:</a>
+<a name="ln1658">        {</a>
+<a name="ln1659">            // Push the state(Element or MemeberValue) if we are nested in another array or value of member.</a>
+<a name="ln1660">            // In this way we can get the correct state on ObjectFinish or ArrayFinish by frame pop.</a>
+<a name="ln1661">            IterativeParsingState n = src;</a>
+<a name="ln1662">            if (src == IterativeParsingArrayInitialState || src == IterativeParsingElementDelimiterState)</a>
+<a name="ln1663">                n = IterativeParsingElementState;</a>
+<a name="ln1664">            else if (src == IterativeParsingKeyValueDelimiterState)</a>
+<a name="ln1665">                n = IterativeParsingMemberValueState;</a>
+<a name="ln1666">            // Push current state.</a>
+<a name="ln1667">            *stack_.template Push&lt;SizeType&gt;(1) = n;</a>
+<a name="ln1668">            // Initialize and push the member/element count.</a>
+<a name="ln1669">            *stack_.template Push&lt;SizeType&gt;(1) = 0;</a>
+<a name="ln1670">            // Call handler</a>
+<a name="ln1671">            bool hr = (dst == IterativeParsingObjectInitialState) ? handler.StartObject() : handler.StartArray();</a>
+<a name="ln1672">            // On handler short circuits the parsing.</a>
+<a name="ln1673">            if (!hr) {</a>
+<a name="ln1674">                RAPIDJSON_PARSE_ERROR_NORETURN(kParseErrorTermination, is.Tell());</a>
+<a name="ln1675">                return IterativeParsingErrorState;</a>
+<a name="ln1676">            }</a>
+<a name="ln1677">            else {</a>
+<a name="ln1678">                is.Take();</a>
+<a name="ln1679">                return dst;</a>
+<a name="ln1680">            }</a>
+<a name="ln1681">        }</a>
+<a name="ln1682"> </a>
+<a name="ln1683">        case IterativeParsingMemberKeyState:</a>
+<a name="ln1684">            ParseString&lt;parseFlags&gt;(is, handler, true);</a>
+<a name="ln1685">            if (HasParseError())</a>
+<a name="ln1686">                return IterativeParsingErrorState;</a>
+<a name="ln1687">            else</a>
+<a name="ln1688">                return dst;</a>
+<a name="ln1689"> </a>
+<a name="ln1690">        case IterativeParsingKeyValueDelimiterState:</a>
+<a name="ln1691">            RAPIDJSON_ASSERT(token == ColonToken);</a>
+<a name="ln1692">            is.Take();</a>
+<a name="ln1693">            return dst;</a>
+<a name="ln1694"> </a>
+<a name="ln1695">        case IterativeParsingMemberValueState:</a>
+<a name="ln1696">            // Must be non-compound value. Or it would be ObjectInitial or ArrayInitial state.</a>
+<a name="ln1697">            ParseValue&lt;parseFlags&gt;(is, handler);</a>
+<a name="ln1698">            if (HasParseError()) {</a>
+<a name="ln1699">                return IterativeParsingErrorState;</a>
+<a name="ln1700">            }</a>
+<a name="ln1701">            return dst;</a>
+<a name="ln1702"> </a>
+<a name="ln1703">        case IterativeParsingElementState:</a>
+<a name="ln1704">            // Must be non-compound value. Or it would be ObjectInitial or ArrayInitial state.</a>
+<a name="ln1705">            ParseValue&lt;parseFlags&gt;(is, handler);</a>
+<a name="ln1706">            if (HasParseError()) {</a>
+<a name="ln1707">                return IterativeParsingErrorState;</a>
+<a name="ln1708">            }</a>
+<a name="ln1709">            return dst;</a>
+<a name="ln1710"> </a>
+<a name="ln1711">        case IterativeParsingMemberDelimiterState:</a>
+<a name="ln1712">        case IterativeParsingElementDelimiterState:</a>
+<a name="ln1713">            is.Take();</a>
+<a name="ln1714">            // Update member/element count.</a>
+<a name="ln1715">            *stack_.template Top&lt;SizeType&gt;() = *stack_.template Top&lt;SizeType&gt;() + 1;</a>
+<a name="ln1716">            return dst;</a>
+<a name="ln1717"> </a>
+<a name="ln1718">        case IterativeParsingObjectFinishState:</a>
+<a name="ln1719">        {</a>
+<a name="ln1720">            // Transit from delimiter is only allowed when trailing commas are enabled</a>
+<a name="ln1721">            if (!(parseFlags &amp; kParseTrailingCommasFlag) &amp;&amp; src == IterativeParsingMemberDelimiterState) {</a>
+<a name="ln1722">                RAPIDJSON_PARSE_ERROR_NORETURN(kParseErrorObjectMissName, is.Tell());</a>
+<a name="ln1723">                return IterativeParsingErrorState;</a>
+<a name="ln1724">            }</a>
+<a name="ln1725">            // Get member count.</a>
+<a name="ln1726">            SizeType c = *stack_.template Pop&lt;SizeType&gt;(1);</a>
+<a name="ln1727">            // If the object is not empty, count the last member.</a>
+<a name="ln1728">            if (src == IterativeParsingMemberValueState)</a>
+<a name="ln1729">                ++c;</a>
+<a name="ln1730">            // Restore the state.</a>
+<a name="ln1731">            IterativeParsingState n = static_cast&lt;IterativeParsingState&gt;(*stack_.template Pop&lt;SizeType&gt;(1));</a>
+<a name="ln1732">            // Transit to Finish state if this is the topmost scope.</a>
+<a name="ln1733">            if (n == IterativeParsingStartState)</a>
+<a name="ln1734">                n = IterativeParsingFinishState;</a>
+<a name="ln1735">            // Call handler</a>
+<a name="ln1736">            bool hr = handler.EndObject(c);</a>
+<a name="ln1737">            // On handler short circuits the parsing.</a>
+<a name="ln1738">            if (!hr) {</a>
+<a name="ln1739">                RAPIDJSON_PARSE_ERROR_NORETURN(kParseErrorTermination, is.Tell());</a>
+<a name="ln1740">                return IterativeParsingErrorState;</a>
+<a name="ln1741">            }</a>
+<a name="ln1742">            else {</a>
+<a name="ln1743">                is.Take();</a>
+<a name="ln1744">                return n;</a>
+<a name="ln1745">            }</a>
+<a name="ln1746">        }</a>
+<a name="ln1747"> </a>
+<a name="ln1748">        case IterativeParsingArrayFinishState:</a>
+<a name="ln1749">        {</a>
+<a name="ln1750">            // Transit from delimiter is only allowed when trailing commas are enabled</a>
+<a name="ln1751">            if (!(parseFlags &amp; kParseTrailingCommasFlag) &amp;&amp; src == IterativeParsingElementDelimiterState) {</a>
+<a name="ln1752">                RAPIDJSON_PARSE_ERROR_NORETURN(kParseErrorValueInvalid, is.Tell());</a>
+<a name="ln1753">                return IterativeParsingErrorState;</a>
+<a name="ln1754">            }</a>
+<a name="ln1755">            // Get element count.</a>
+<a name="ln1756">            SizeType c = *stack_.template Pop&lt;SizeType&gt;(1);</a>
+<a name="ln1757">            // If the array is not empty, count the last element.</a>
+<a name="ln1758">            if (src == IterativeParsingElementState)</a>
+<a name="ln1759">                ++c;</a>
+<a name="ln1760">            // Restore the state.</a>
+<a name="ln1761">            IterativeParsingState n = static_cast&lt;IterativeParsingState&gt;(*stack_.template Pop&lt;SizeType&gt;(1));</a>
+<a name="ln1762">            // Transit to Finish state if this is the topmost scope.</a>
+<a name="ln1763">            if (n == IterativeParsingStartState)</a>
+<a name="ln1764">                n = IterativeParsingFinishState;</a>
+<a name="ln1765">            // Call handler</a>
+<a name="ln1766">            bool hr = handler.EndArray(c);</a>
+<a name="ln1767">            // On handler short circuits the parsing.</a>
+<a name="ln1768">            if (!hr) {</a>
+<a name="ln1769">                RAPIDJSON_PARSE_ERROR_NORETURN(kParseErrorTermination, is.Tell());</a>
+<a name="ln1770">                return IterativeParsingErrorState;</a>
+<a name="ln1771">            }</a>
+<a name="ln1772">            else {</a>
+<a name="ln1773">                is.Take();</a>
+<a name="ln1774">                return n;</a>
+<a name="ln1775">            }</a>
+<a name="ln1776">        }</a>
+<a name="ln1777"> </a>
+<a name="ln1778">        default:</a>
+<a name="ln1779">            // This branch is for IterativeParsingValueState actually.</a>
+<a name="ln1780">            // Use `default:` rather than</a>
+<a name="ln1781">            // `case IterativeParsingValueState:` is for code coverage.</a>
+<a name="ln1782"> </a>
+<a name="ln1783">            // The IterativeParsingStartState is not enumerated in this switch-case.</a>
+<a name="ln1784">            // It is impossible for that case. And it can be caught by following assertion.</a>
+<a name="ln1785"> </a>
+<a name="ln1786">            // The IterativeParsingFinishState is not enumerated in this switch-case either.</a>
+<a name="ln1787">            // It is a &quot;derivative&quot; state which cannot triggered from Predict() directly.</a>
+<a name="ln1788">            // Therefore it cannot happen here. And it can be caught by following assertion.</a>
+<a name="ln1789">            RAPIDJSON_ASSERT(dst == IterativeParsingValueState);</a>
+<a name="ln1790"> </a>
+<a name="ln1791">            // Must be non-compound value. Or it would be ObjectInitial or ArrayInitial state.</a>
+<a name="ln1792">            ParseValue&lt;parseFlags&gt;(is, handler);</a>
+<a name="ln1793">            if (HasParseError()) {</a>
+<a name="ln1794">                return IterativeParsingErrorState;</a>
+<a name="ln1795">            }</a>
+<a name="ln1796">            return IterativeParsingFinishState;</a>
+<a name="ln1797">        }</a>
+<a name="ln1798">    }</a>
+<a name="ln1799"> </a>
+<a name="ln1800">    template &lt;typename InputStream&gt;</a>
+<a name="ln1801">    void HandleError(IterativeParsingState src, InputStream&amp; is) {</a>
+<a name="ln1802">        if (HasParseError()) {</a>
+<a name="ln1803">            // Error flag has been set.</a>
+<a name="ln1804">            return;</a>
+<a name="ln1805">        }</a>
+<a name="ln1806"> </a>
+<a name="ln1807">        switch (src) {</a>
+<a name="ln1808">        case IterativeParsingStartState:            RAPIDJSON_PARSE_ERROR(kParseErrorDocumentEmpty, is.Tell()); return;</a>
+<a name="ln1809">        case IterativeParsingFinishState:           RAPIDJSON_PARSE_ERROR(kParseErrorDocumentRootNotSingular, is.Tell()); return;</a>
+<a name="ln1810">        case IterativeParsingObjectInitialState:</a>
+<a name="ln1811">        case IterativeParsingMemberDelimiterState:  RAPIDJSON_PARSE_ERROR(kParseErrorObjectMissName, is.Tell()); return;</a>
+<a name="ln1812">        case IterativeParsingMemberKeyState:        RAPIDJSON_PARSE_ERROR(kParseErrorObjectMissColon, is.Tell()); return;</a>
+<a name="ln1813">        case IterativeParsingMemberValueState:      RAPIDJSON_PARSE_ERROR(kParseErrorObjectMissCommaOrCurlyBracket, is.Tell()); return;</a>
+<a name="ln1814">        case IterativeParsingKeyValueDelimiterState:</a>
+<a name="ln1815">        case IterativeParsingArrayInitialState:</a>
+<a name="ln1816">        case IterativeParsingElementDelimiterState: RAPIDJSON_PARSE_ERROR(kParseErrorValueInvalid, is.Tell()); return;</a>
+<a name="ln1817">        default: RAPIDJSON_ASSERT(src == IterativeParsingElementState); RAPIDJSON_PARSE_ERROR(kParseErrorArrayMissCommaOrSquareBracket, is.Tell()); return;</a>
+<a name="ln1818">        }</a>
+<a name="ln1819">    }</a>
+<a name="ln1820"> </a>
+<a name="ln1821">    template &lt;unsigned parseFlags, typename InputStream, typename Handler&gt;</a>
+<a name="ln1822">    ParseResult IterativeParse(InputStream&amp; is, Handler&amp; handler) {</a>
+<a name="ln1823">        parseResult_.Clear();</a>
+<a name="ln1824">        ClearStackOnExit scope(*this);</a>
+<a name="ln1825">        IterativeParsingState state = IterativeParsingStartState;</a>
+<a name="ln1826"> </a>
+<a name="ln1827">        SkipWhitespaceAndComments&lt;parseFlags&gt;(is);</a>
+<a name="ln1828">        RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);</a>
+<a name="ln1829">        while (is.Peek() != '\0') {</a>
+<a name="ln1830">            Token t = Tokenize(is.Peek());</a>
+<a name="ln1831">            IterativeParsingState n = Predict(state, t);</a>
+<a name="ln1832">            IterativeParsingState d = Transit&lt;parseFlags&gt;(state, t, n, is, handler);</a>
+<a name="ln1833"> </a>
+<a name="ln1834">            if (d == IterativeParsingErrorState) {</a>
+<a name="ln1835">                HandleError(state, is);</a>
+<a name="ln1836">                break;</a>
+<a name="ln1837">            }</a>
+<a name="ln1838"> </a>
+<a name="ln1839">            state = d;</a>
+<a name="ln1840"> </a>
+<a name="ln1841">            // Do not further consume streams if a root JSON has been parsed.</a>
+<a name="ln1842">            if ((parseFlags &amp; kParseStopWhenDoneFlag) &amp;&amp; state == IterativeParsingFinishState)</a>
+<a name="ln1843">                break;</a>
+<a name="ln1844"> </a>
+<a name="ln1845">            SkipWhitespaceAndComments&lt;parseFlags&gt;(is);</a>
+<a name="ln1846">            RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);</a>
+<a name="ln1847">        }</a>
+<a name="ln1848"> </a>
+<a name="ln1849">        // Handle the end of file.</a>
+<a name="ln1850">        if (state != IterativeParsingFinishState)</a>
+<a name="ln1851">            HandleError(state, is);</a>
+<a name="ln1852"> </a>
+<a name="ln1853">        return parseResult_;</a>
+<a name="ln1854">    }</a>
+<a name="ln1855"> </a>
+<a name="ln1856">    static const size_t kDefaultStackCapacity = 256;    //!&lt; Default stack capacity in bytes for storing a single decoded string.</a>
+<a name="ln1857">    internal::Stack&lt;StackAllocator&gt; stack_;  //!&lt; A stack for storing decoded string temporarily during non-destructive parsing.</a>
+<a name="ln1858">    ParseResult parseResult_;</a>
+<a name="ln1859">}; // class GenericReader</a>
+<a name="ln1860"> </a>
+<a name="ln1861">//! Reader with UTF8 encoding and default allocator.</a>
+<a name="ln1862">typedef GenericReader&lt;UTF8&lt;&gt;, UTF8&lt;&gt; &gt; Reader;</a>
+<a name="ln1863"> </a>
+<a name="ln1864">RAPIDJSON_NAMESPACE_END</a>
+<a name="ln1865"> </a>
+<a name="ln1866">#ifdef __clang__</a>
+<a name="ln1867">RAPIDJSON_DIAG_POP</a>
+<a name="ln1868">#endif</a>
+<a name="ln1869"> </a>
+<a name="ln1870"> </a>
+<a name="ln1871">#ifdef __GNUC__</a>
+<a name="ln1872">RAPIDJSON_DIAG_POP</a>
+<a name="ln1873">#endif</a>
+<a name="ln1874"> </a>
+<a name="ln1875">#ifdef _MSC_VER</a>
+<a name="ln1876">RAPIDJSON_DIAG_POP</a>
+<a name="ln1877">#endif</a>
+<a name="ln1878"> </a>
+<a name="ln1879">#endif // RAPIDJSON_READER_H_</a>
+
+</code></pre>
+<div class="balloon" rel="1304"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1051/" target="_blank">V1051</a> Consider checking for misprints. It's possible that the 'exp' should be checked here.</p></div>
+<div class="balloon" rel="1697"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 1697, 1705</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,2242 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>wln-nextmove.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Copyright (C) 2019 by NextMove Software</a>
+<a name="ln3"> </a>
+<a name="ln4">This file is part of the Open Babel project.</a>
+<a name="ln5">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln6"> </a>
+<a name="ln7">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln8">it under the terms of the GNU General Public License as published by</a>
+<a name="ln9">the Free Software Foundation version 2 of the License.</a>
+<a name="ln10"> </a>
+<a name="ln11">This program is distributed in the hope that it will be useful,</a>
+<a name="ln12">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln13">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln14">GNU General Public License for more details.</a>
+<a name="ln15">***********************************************************************/</a>
+<a name="ln16"> </a>
+<a name="ln17">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln18">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/kekulize.h&gt;</a>
+<a name="ln21"> </a>
+<a name="ln22">#include &lt;vector&gt;</a>
+<a name="ln23"> </a>
+<a name="ln24">#define PENDING_NONE   0</a>
+<a name="ln25">#define PENDING_DEPROT 1</a>
+<a name="ln26">#define PENDING_METHYL 2</a>
+<a name="ln27"> </a>
+<a name="ln28">#define STACK_NORMAL  0</a>
+<a name="ln29">#define STACK_METHYL  1</a>
+<a name="ln30">#define STACK_POLY    2</a>
+<a name="ln31">#define STACK_RING    3</a>
+<a name="ln32"> </a>
+<a name="ln33">#define STACK_SHIFT   2</a>
+<a name="ln34">#define STACK_MASK    3</a>
+<a name="ln35"> </a>
+<a name="ln36"> </a>
+<a name="ln37">unsigned int debug_wln_read = 0;</a>
+<a name="ln38"> </a>
+<a name="ln39"> </a>
+<a name="ln40"> </a>
+<a name="ln41">OpenBabel::OBAtom* NMOBMolNewAtom(OpenBabel::OBMol* mol, unsigned int elem)</a>
+<a name="ln42">{</a>
+<a name="ln43">  OpenBabel::OBAtom* result = mol-&gt;NewAtom();</a>
+<a name="ln44">  result-&gt;SetAtomicNum(elem);</a>
+<a name="ln45">  return result;</a>
+<a name="ln46">}</a>
+<a name="ln47"> </a>
+<a name="ln48"> </a>
+<a name="ln49">OpenBabel::OBBond* NMOBMolNewBond(OpenBabel::OBMol* mol,</a>
+<a name="ln50">  OpenBabel::OBAtom* beg,</a>
+<a name="ln51">  OpenBabel::OBAtom* end,</a>
+<a name="ln52">  unsigned int order, bool arom)</a>
+<a name="ln53">{</a>
+<a name="ln54">  if (!mol-&gt;AddBond(beg-&gt;GetIdx(), end-&gt;GetIdx(), order))</a>
+<a name="ln55">    return nullptr;</a>
+<a name="ln56">  OpenBabel::OBBond* bptr = mol-&gt;GetBond(mol-&gt;NumBonds() - 1);</a>
+<a name="ln57">  if (arom)</a>
+<a name="ln58">    bptr-&gt;SetAromatic();</a>
+<a name="ln59">  return bptr;</a>
+<a name="ln60">}</a>
+<a name="ln61"> </a>
+<a name="ln62"> </a>
+<a name="ln63">void NMOBAtomSetAromatic(OpenBabel::OBAtom* atm, bool arom)</a>
+<a name="ln64">{</a>
+<a name="ln65">  OpenBabel::OBMol* mol = (OpenBabel::OBMol*)atm-&gt;GetParent();</a>
+<a name="ln66">  if (mol &amp;&amp; !mol-&gt;HasAromaticPerceived())</a>
+<a name="ln67">    mol-&gt;SetAromaticPerceived();</a>
+<a name="ln68"> </a>
+<a name="ln69">  atm-&gt;SetAromatic(arom);</a>
+<a name="ln70">}</a>
+<a name="ln71"> </a>
+<a name="ln72"> </a>
+<a name="ln73">bool NMOBSanitizeMol(OpenBabel::OBMol* mol)</a>
+<a name="ln74">{</a>
+<a name="ln75">  if (!OBKekulize(mol))</a>
+<a name="ln76">    return false;</a>
+<a name="ln77">  mol-&gt;SetAromaticPerceived(false);</a>
+<a name="ln78">  return true;</a>
+<a name="ln79">}</a>
+<a name="ln80"> </a>
+<a name="ln81"> </a>
+<a name="ln82">struct WLNParser {</a>
+<a name="ln83">  OpenBabel::OBMol* mol;</a>
+<a name="ln84">  const char *orig;</a>
+<a name="ln85">  const char *ptr;</a>
+<a name="ln86"> </a>
+<a name="ln87">  std::vector&lt;unsigned int&gt; stack;</a>
+<a name="ln88">  std::vector&lt;std::vector&lt;OpenBabel::OBAtom*&gt; &gt; rings;</a>
+<a name="ln89">  std::vector&lt;OpenBabel::OBAtom*&gt; atoms;</a>
+<a name="ln90">  unsigned int pending;</a>
+<a name="ln91">  unsigned int state;</a>
+<a name="ln92">  unsigned int order;</a>
+<a name="ln93">  unsigned int slash;</a>
+<a name="ln94">  OpenBabel::OBAtom* prev;</a>
+<a name="ln95"> </a>
+<a name="ln96">  WLNParser(const char *wln, OpenBabel::OBMol* m) {</a>
+<a name="ln97">    mol = m;</a>
+<a name="ln98">    orig = wln;</a>
+<a name="ln99">    ptr = wln;</a>
+<a name="ln100"> </a>
+<a name="ln101">    pending = PENDING_NONE;</a>
+<a name="ln102">    prev = nullptr;</a>
+<a name="ln103">    slash = 0;</a>
+<a name="ln104">    order = 0;</a>
+<a name="ln105">    state = 0;</a>
+<a name="ln106">  }</a>
+<a name="ln107"> </a>
+<a name="ln108">  bool error() {</a>
+<a name="ln109">    fprintf(stderr,&quot;Error: Character %c in %s\n&quot;,*ptr,orig);</a>
+<a name="ln110">    unsigned int len = (unsigned int)(ptr-orig)+22;</a>
+<a name="ln111">    for (unsigned int i=0; i&lt;len; i++)</a>
+<a name="ln112">      fputc(' ',stderr);</a>
+<a name="ln113">    fprintf(stderr,&quot;^\n&quot;);</a>
+<a name="ln114">    return false;</a>
+<a name="ln115">  }</a>
+<a name="ln116"> </a>
+<a name="ln117">  OpenBabel::OBAtom* atom(unsigned int elem, unsigned int hcount) {</a>
+<a name="ln118">    OpenBabel::OBAtom* aptr = NMOBMolNewAtom(mol,elem);</a>
+<a name="ln119">    aptr-&gt;SetImplicitHCount(hcount);</a>
+<a name="ln120">    atoms.push_back(aptr);</a>
+<a name="ln121">    return aptr;</a>
+<a name="ln122">  }</a>
+<a name="ln123"> </a>
+<a name="ln124">  void dec_h(OpenBabel::OBAtom* aptr, unsigned int count) {</a>
+<a name="ln125">    unsigned int hcount = aptr-&gt;GetImplicitHCount();</a>
+<a name="ln126">    if (hcount &gt; count)</a>
+<a name="ln127">      aptr-&gt;SetImplicitHCount(hcount-count);</a>
+<a name="ln128">    else if (hcount)</a>
+<a name="ln129">      aptr-&gt;SetImplicitHCount(0);</a>
+<a name="ln130">  }</a>
+<a name="ln131"> </a>
+<a name="ln132">  void dec_q(OpenBabel::OBAtom* aptr, unsigned int count) {</a>
+<a name="ln133">    int charge = aptr-&gt;GetFormalCharge();</a>
+<a name="ln134">    aptr-&gt;SetFormalCharge(charge-count);</a>
+<a name="ln135">  }</a>
+<a name="ln136"> </a>
+<a name="ln137">  void fuse(OpenBabel::OBAtom* src, OpenBabel::OBAtom* dst, unsigned int order)</a>
+<a name="ln138">  {</a>
+<a name="ln139">    dec_h(src,order);</a>
+<a name="ln140">    dec_h(dst,order);</a>
+<a name="ln141">    NMOBMolNewBond(mol,src,dst,order,false);</a>
+<a name="ln142">  }</a>
+<a name="ln143"> </a>
+<a name="ln144">  void next(OpenBabel::OBAtom* aptr, unsigned int bo) {</a>
+<a name="ln145">    pending = PENDING_DEPROT;</a>
+<a name="ln146">    prev = aptr;</a>
+<a name="ln147">    order = bo;</a>
+<a name="ln148">    if (bo) {</a>
+<a name="ln149">      if (state == 0)</a>
+<a name="ln150">        state = 1;</a>
+<a name="ln151">    } else state = 2;</a>
+<a name="ln152">  }</a>
+<a name="ln153"> </a>
+<a name="ln154">  void term() {</a>
+<a name="ln155">    if (pending == PENDING_DEPROT) {</a>
+<a name="ln156">      if (order) {</a>
+<a name="ln157">        dec_q(prev,order);</a>
+<a name="ln158">        dec_h(prev,order);</a>
+<a name="ln159">      }</a>
+<a name="ln160">    } else if (pending == PENDING_METHYL) {</a>
+<a name="ln161">      if (order == 1) {</a>
+<a name="ln162">        OpenBabel::OBAtom* temp = atom(6,4);</a>
+<a name="ln163">        fuse(prev,temp,1);</a>
+<a name="ln164">      }</a>
+<a name="ln165">    }</a>
+<a name="ln166">  }</a>
+<a name="ln167"> </a>
+<a name="ln168">  void push() {</a>
+<a name="ln169">    unsigned int idx = (unsigned int)(atoms.size())-1;</a>
+<a name="ln170">    stack.push_back((idx&lt;&lt;STACK_SHIFT)+STACK_NORMAL);</a>
+<a name="ln171">  }</a>
+<a name="ln172"> </a>
+<a name="ln173">  void push_methyl() {</a>
+<a name="ln174">    unsigned int idx = (unsigned int)(atoms.size())-1;</a>
+<a name="ln175">    stack.push_back((idx&lt;&lt;STACK_SHIFT)+STACK_METHYL);</a>
+<a name="ln176">  }</a>
+<a name="ln177"> </a>
+<a name="ln178">  void push_poly() {</a>
+<a name="ln179">    unsigned int idx = (unsigned int)(atoms.size())-1;</a>
+<a name="ln180">    stack.push_back((idx&lt;&lt;STACK_SHIFT)+STACK_POLY);</a>
+<a name="ln181">  }</a>
+<a name="ln182"> </a>
+<a name="ln183">  void pop_common() {</a>
+<a name="ln184">    unsigned int top = stack.back();</a>
+<a name="ln185">    switch (top &amp; STACK_MASK) {</a>
+<a name="ln186">    case STACK_RING:</a>
+<a name="ln187">      stack.pop_back();</a>
+<a name="ln188">      rings.pop_back();</a>
+<a name="ln189">      state = 2;</a>
+<a name="ln190">      order = 0;</a>
+<a name="ln191">      if (!stack.empty() &amp;&amp; stack.back()!=STACK_RING)</a>
+<a name="ln192">        pop_common();</a>
+<a name="ln193">      return;</a>
+<a name="ln194">    case STACK_NORMAL:</a>
+<a name="ln195">      pending = PENDING_DEPROT;</a>
+<a name="ln196">      stack.pop_back();</a>
+<a name="ln197">      break;</a>
+<a name="ln198">    case STACK_POLY:</a>
+<a name="ln199">      pending = PENDING_NONE;</a>
+<a name="ln200">      break;</a>
+<a name="ln201">    case STACK_METHYL:</a>
+<a name="ln202">      pending = PENDING_METHYL;</a>
+<a name="ln203">      stack.pop_back();</a>
+<a name="ln204">      break;</a>
+<a name="ln205">    }</a>
+<a name="ln206">    prev = atoms[top&gt;&gt;STACK_SHIFT];</a>
+<a name="ln207">    order = 1;</a>
+<a name="ln208">    state = 1;</a>
+<a name="ln209">  }</a>
+<a name="ln210"> </a>
+<a name="ln211">  bool pop() {</a>
+<a name="ln212">    if (stack.empty())</a>
+<a name="ln213">      return error();</a>
+<a name="ln214">    pop_common();</a>
+<a name="ln215">    return true;</a>
+<a name="ln216">  }</a>
+<a name="ln217"> </a>
+<a name="ln218">  void may_pop() {</a>
+<a name="ln219">    if (stack.empty()|| stack.back()==STACK_RING) {</a>
+<a name="ln220">      state = 2;</a>
+<a name="ln221">      order = 0;</a>
+<a name="ln222">    } else pop_common();</a>
+<a name="ln223">  }</a>
+<a name="ln224"> </a>
+<a name="ln225">  bool double_pop() {</a>
+<a name="ln226">    if (stack.empty())</a>
+<a name="ln227">      return false;</a>
+<a name="ln228">    unsigned int top = stack.back();</a>
+<a name="ln229">    if ((top&amp;STACK_MASK) == STACK_POLY) {</a>
+<a name="ln230">      stack.pop_back();</a>
+<a name="ln231">    } else if (!pop())</a>
+<a name="ln232">      return false;</a>
+<a name="ln233">    return pop();</a>
+<a name="ln234">  }</a>
+<a name="ln235"> </a>
+<a name="ln236">  void drain() {</a>
+<a name="ln237">    term();</a>
+<a name="ln238">    while (!stack.empty()) {</a>
+<a name="ln239">      unsigned int top = stack.back();</a>
+<a name="ln240">      if ((top&amp;STACK_MASK) != STACK_POLY) {</a>
+<a name="ln241">        pop_common();</a>
+<a name="ln242">        term();</a>
+<a name="ln243">      } else stack.pop_back();</a>
+<a name="ln244">    }</a>
+<a name="ln245">  }</a>
+<a name="ln246"> </a>
+<a name="ln247">  /* Two atoms */</a>
+<a name="ln248">  OpenBabel::OBAtom* cyano() {</a>
+<a name="ln249">    OpenBabel::OBAtom* aptr = atom(6,1);</a>
+<a name="ln250">    OpenBabel::OBAtom* temp = atom(7,0);</a>
+<a name="ln251">    NMOBMolNewBond(mol,aptr,temp,3,false);</a>
+<a name="ln252">    return aptr;</a>
+<a name="ln253">  }</a>
+<a name="ln254"> </a>
+<a name="ln255">  OpenBabel::OBAtom* carbonyl() {</a>
+<a name="ln256">    OpenBabel::OBAtom* aptr = atom(6,2);</a>
+<a name="ln257">    OpenBabel::OBAtom* temp = atom(8,0);</a>
+<a name="ln258">    NMOBMolNewBond(mol,aptr,temp,2,false);</a>
+<a name="ln259">    return aptr;</a>
+<a name="ln260">  }</a>
+<a name="ln261"> </a>
+<a name="ln262">  void carbon_monoxide() {</a>
+<a name="ln263">    OpenBabel::OBAtom* aptr = atom(6,0);</a>
+<a name="ln264">    OpenBabel::OBAtom* temp = atom(8,0);</a>
+<a name="ln265">    NMOBMolNewBond(mol,aptr,temp,3,false);</a>
+<a name="ln266">    aptr-&gt;SetFormalCharge(-1);</a>
+<a name="ln267">    temp-&gt;SetFormalCharge(1);</a>
+<a name="ln268">  }</a>
+<a name="ln269"> </a>
+<a name="ln270">  OpenBabel::OBAtom* thiocarbonyl() {</a>
+<a name="ln271">    OpenBabel::OBAtom* aptr = atom(6,2);</a>
+<a name="ln272">    OpenBabel::OBAtom* temp = atom(16,0);</a>
+<a name="ln273">    NMOBMolNewBond(mol,aptr,temp,2,false);</a>
+<a name="ln274">    return aptr;</a>
+<a name="ln275">  }</a>
+<a name="ln276"> </a>
+<a name="ln277">  OpenBabel::OBAtom* diazo() {</a>
+<a name="ln278">    OpenBabel::OBAtom* aptr = atom(7,2);</a>
+<a name="ln279">    OpenBabel::OBAtom* temp = atom(7,0);</a>
+<a name="ln280">    NMOBMolNewBond(mol,aptr,temp,2,false);</a>
+<a name="ln281">    temp-&gt;SetFormalCharge(-1);</a>
+<a name="ln282">    aptr-&gt;SetFormalCharge(1);</a>
+<a name="ln283">    return aptr;</a>
+<a name="ln284">  }</a>
+<a name="ln285"> </a>
+<a name="ln286">  OpenBabel::OBAtom* diazonio() {</a>
+<a name="ln287">    OpenBabel::OBAtom* aptr = atom(7,1);</a>
+<a name="ln288">    OpenBabel::OBAtom* temp = atom(7,0);</a>
+<a name="ln289">    NMOBMolNewBond(mol,aptr,temp,3,false);</a>
+<a name="ln290">    aptr-&gt;SetFormalCharge(1);</a>
+<a name="ln291">    return aptr;</a>
+<a name="ln292">  }</a>
+<a name="ln293"> </a>
+<a name="ln294">  OpenBabel::OBAtom* nitroso() {</a>
+<a name="ln295">    OpenBabel::OBAtom* aptr = atom(7,1);</a>
+<a name="ln296">    OpenBabel::OBAtom* temp = atom(8,0);</a>
+<a name="ln297">    NMOBMolNewBond(mol,aptr,temp,2,false);</a>
+<a name="ln298">    return aptr;</a>
+<a name="ln299">  }</a>
+<a name="ln300"> </a>
+<a name="ln301">  OpenBabel::OBAtom* sulfinyl() {</a>
+<a name="ln302">    OpenBabel::OBAtom* aptr = atom(16,2);</a>
+<a name="ln303">    OpenBabel::OBAtom* temp = atom(8,0);</a>
+<a name="ln304">    NMOBMolNewBond(mol,aptr,temp,2,false);</a>
+<a name="ln305">    return aptr;</a>
+<a name="ln306">  }</a>
+<a name="ln307"> </a>
+<a name="ln308">  /* Three atoms */</a>
+<a name="ln309">  OpenBabel::OBAtom* nitro() {</a>
+<a name="ln310">    OpenBabel::OBAtom* aptr = atom(7,1);</a>
+<a name="ln311">    aptr-&gt;SetFormalCharge(1);</a>
+<a name="ln312">    OpenBabel::OBAtom* temp = atom(8,0);</a>
+<a name="ln313">    NMOBMolNewBond(mol,aptr,temp,2,false);</a>
+<a name="ln314">    temp = atom(8,0);</a>
+<a name="ln315">    NMOBMolNewBond(mol,aptr,temp,1,false);</a>
+<a name="ln316">    temp-&gt;SetFormalCharge(-1);</a>
+<a name="ln317">    return aptr;</a>
+<a name="ln318">  }</a>
+<a name="ln319"> </a>
+<a name="ln320">  OpenBabel::OBAtom* sulfonyl() {</a>
+<a name="ln321">    OpenBabel::OBAtom* aptr = atom(16,2);</a>
+<a name="ln322">    OpenBabel::OBAtom* temp = atom(8,0);</a>
+<a name="ln323">    NMOBMolNewBond(mol,aptr,temp,2,false);</a>
+<a name="ln324">    temp = atom(8,0);</a>
+<a name="ln325">    NMOBMolNewBond(mol,aptr,temp,2,false);</a>
+<a name="ln326">    return aptr;</a>
+<a name="ln327">  }</a>
+<a name="ln328"> </a>
+<a name="ln329">  /* Four atoms */</a>
+<a name="ln330">  OpenBabel::OBAtom* sulfamoyl() {</a>
+<a name="ln331">    OpenBabel::OBAtom* aptr = atom(16,1);</a>
+<a name="ln332">    OpenBabel::OBAtom* temp = atom(7,2);</a>
+<a name="ln333">    NMOBMolNewBond(mol,aptr,temp,1,false);</a>
+<a name="ln334">    temp = atom(8,0);</a>
+<a name="ln335">    NMOBMolNewBond(mol,aptr,temp,2,false);</a>
+<a name="ln336">    temp = atom(8,0);</a>
+<a name="ln337">    NMOBMolNewBond(mol,aptr,temp,2,false);</a>
+<a name="ln338">    return aptr;</a>
+<a name="ln339">  }</a>
+<a name="ln340"> </a>
+<a name="ln341">  OpenBabel::OBAtom* sulfonato() {</a>
+<a name="ln342">    OpenBabel::OBAtom* aptr = atom(16,1);</a>
+<a name="ln343">    OpenBabel::OBAtom* temp = atom(8,0);</a>
+<a name="ln344">    NMOBMolNewBond(mol,aptr,temp,2,false);</a>
+<a name="ln345">    temp = atom(8,0);</a>
+<a name="ln346">    NMOBMolNewBond(mol,aptr,temp,2,false);</a>
+<a name="ln347">    temp = atom(8,0);</a>
+<a name="ln348">    NMOBMolNewBond(mol,aptr,temp,1,false);</a>
+<a name="ln349">    temp-&gt;SetFormalCharge(-1);</a>
+<a name="ln350">    return aptr;</a>
+<a name="ln351">  }</a>
+<a name="ln352"> </a>
+<a name="ln353">  /* Five atoms */</a>
+<a name="ln354">  OpenBabel::OBAtom* perchlorate() {</a>
+<a name="ln355">    OpenBabel::OBAtom* aptr = atom(17,0);</a>
+<a name="ln356">    OpenBabel::OBAtom* temp = atom(8,0);</a>
+<a name="ln357">    NMOBMolNewBond(mol,aptr,temp,2,false);</a>
+<a name="ln358">    temp = atom(8,0);</a>
+<a name="ln359">    NMOBMolNewBond(mol,aptr,temp,2,false);</a>
+<a name="ln360">    temp = atom(8,0);</a>
+<a name="ln361">    NMOBMolNewBond(mol,aptr,temp,2,false);</a>
+<a name="ln362">    temp = atom(8,0);</a>
+<a name="ln363">    NMOBMolNewBond(mol,aptr,temp,1,false);</a>
+<a name="ln364">    temp-&gt;SetFormalCharge(-1);</a>
+<a name="ln365">    return aptr;</a>
+<a name="ln366">  }</a>
+<a name="ln367"> </a>
+<a name="ln368">  void new_ring(std::vector&lt;OpenBabel::OBAtom*&gt; &amp;ring, unsigned int size) {</a>
+<a name="ln369">    for (unsigned int i=0; i&lt;size; i++) {</a>
+<a name="ln370">      OpenBabel::OBAtom* aptr = atom(6,1);</a>
+<a name="ln371">      NMOBAtomSetAromatic(aptr,true);</a>
+<a name="ln372">      ring.push_back(aptr);</a>
+<a name="ln373">    }</a>
+<a name="ln374">    // push_ring(ring);</a>
+<a name="ln375">    stack.push_back(STACK_RING);</a>
+<a name="ln376">    rings.push_back(ring);</a>
+<a name="ln377">  }</a>
+<a name="ln378"> </a>
+<a name="ln379">  void new_cycle(std::vector&lt;OpenBabel::OBAtom*&gt; &amp;ring, unsigned int size) {</a>
+<a name="ln380">    new_ring(ring,size);</a>
+<a name="ln381">    for (unsigned int i=0; i&lt;size-1; i++)</a>
+<a name="ln382">      // NMOBMolNewBond(mol,ring[i],ring[i+1],1+(i&amp;1),true);</a>
+<a name="ln383">      NMOBMolNewBond(mol,ring[i],ring[i+1],1,true);</a>
+<a name="ln384">    NMOBMolNewBond(mol,ring[size-1],ring[0],1,true);</a>
+<a name="ln385">  }</a>
+<a name="ln386"> </a>
+<a name="ln387">  void bridge(OpenBabel::OBAtom* src, OpenBabel::OBAtom* dst) {</a>
+<a name="ln388">    src-&gt;SetImplicitHCount(0);</a>
+<a name="ln389">    dst-&gt;SetImplicitHCount(0);</a>
+<a name="ln390">    NMOBMolNewBond(mol,src,dst,1,true);</a>
+<a name="ln391">  }</a>
+<a name="ln392"> </a>
+<a name="ln393">  void new_ring36(std::vector&lt;OpenBabel::OBAtom*&gt; &amp;ring) {</a>
+<a name="ln394">    new_cycle(ring,7);</a>
+<a name="ln395">    bridge(ring[0],ring[2]);</a>
+<a name="ln396">  }</a>
+<a name="ln397"> </a>
+<a name="ln398">  void new_ring45(std::vector&lt;OpenBabel::OBAtom*&gt; &amp;ring) {</a>
+<a name="ln399">    new_cycle(ring,7);</a>
+<a name="ln400">    bridge(ring[0],ring[3]);</a>
+<a name="ln401">  }</a>
+<a name="ln402"> </a>
+<a name="ln403">  void new_ring55(std::vector&lt;OpenBabel::OBAtom*&gt; &amp;ring) {</a>
+<a name="ln404">    new_cycle(ring,8);</a>
+<a name="ln405">    bridge(ring[0],ring[4]);</a>
+<a name="ln406">  }</a>
+<a name="ln407"> </a>
+<a name="ln408">  void new_ring56(std::vector&lt;OpenBabel::OBAtom*&gt; &amp;ring) {</a>
+<a name="ln409">    new_cycle(ring,9);</a>
+<a name="ln410">    bridge(ring[0],ring[4]);</a>
+<a name="ln411">  }</a>
+<a name="ln412"> </a>
+<a name="ln413">  void new_ring57(std::vector&lt;OpenBabel::OBAtom*&gt; &amp;ring) {</a>
+<a name="ln414">    new_cycle(ring,10);</a>
+<a name="ln415">    bridge(ring[0],ring[4]);</a>
+<a name="ln416">  }</a>
+<a name="ln417"> </a>
+<a name="ln418">  void new_ring66(std::vector&lt;OpenBabel::OBAtom*&gt; &amp;ring) {</a>
+<a name="ln419">    new_cycle(ring,10);</a>
+<a name="ln420">    bridge(ring[0],ring[5]);</a>
+<a name="ln421">  }</a>
+<a name="ln422"> </a>
+<a name="ln423">  void new_ring67(std::vector&lt;OpenBabel::OBAtom*&gt; &amp;ring) {</a>
+<a name="ln424">    new_cycle(ring,11);</a>
+<a name="ln425">    bridge(ring[0],ring[5]);</a>
+<a name="ln426">  }</a>
+<a name="ln427"> </a>
+<a name="ln428">  OpenBabel::OBAtom* benzene() {</a>
+<a name="ln429">    std::vector&lt;OpenBabel::OBAtom*&gt; ring;</a>
+<a name="ln430">    new_cycle(ring,6);</a>
+<a name="ln431">    return ring[0];</a>
+<a name="ln432">  }</a>
+<a name="ln433"> </a>
+<a name="ln434">  bool term1(OpenBabel::OBAtom* aptr) {</a>
+<a name="ln435">    if (state == 0) {</a>
+<a name="ln436">      next(aptr,1);</a>
+<a name="ln437">    } else if (order == 1) {</a>
+<a name="ln438">      fuse(prev,aptr,1);</a>
+<a name="ln439">      may_pop();</a>
+<a name="ln440">    } else return error();</a>
+<a name="ln441">    return true;</a>
+<a name="ln442">  }</a>
+<a name="ln443"> </a>
+<a name="ln444">  bool degree1(OpenBabel::OBAtom* aptr) {</a>
+<a name="ln445">    if (state == 0) {</a>
+<a name="ln446">      next(aptr,1);</a>
+<a name="ln447">    } else if (order == 1) {</a>
+<a name="ln448">      fuse(prev,aptr,1);</a>
+<a name="ln449">      next(aptr,0);</a>
+<a name="ln450">    } else return error();</a>
+<a name="ln451">    return true;</a>
+<a name="ln452">  }</a>
+<a name="ln453"> </a>
+<a name="ln454">  bool degree2(OpenBabel::OBAtom* aptr) {</a>
+<a name="ln455">    if (order == 1) {</a>
+<a name="ln456">      fuse(prev,aptr,1);</a>
+<a name="ln457">      next(aptr,1);</a>
+<a name="ln458">    } else return error();</a>
+<a name="ln459">    return true;</a>
+<a name="ln460">  }</a>
+<a name="ln461"> </a>
+<a name="ln462">  bool alkane() {</a>
+<a name="ln463">    unsigned int len = (*ptr++ - '0');</a>
+<a name="ln464">    while(*ptr&gt;='0' &amp;&amp; *ptr&lt;='9')</a>
+<a name="ln465">      len = 10*len + (*ptr++ - '0');</a>
+<a name="ln466">    for (unsigned int i=0; i&lt;len; i++) {</a>
+<a name="ln467">      OpenBabel::OBAtom* temp = atom(6,4);</a>
+<a name="ln468">      if (order)</a>
+<a name="ln469">        fuse(prev,temp,order);</a>
+<a name="ln470">      prev = temp;</a>
+<a name="ln471">      order = 1;</a>
+<a name="ln472">    }</a>
+<a name="ln473">    next(prev,order);</a>
+<a name="ln474">    pending = PENDING_NONE;</a>
+<a name="ln475">    return true;</a>
+<a name="ln476">  }</a>
+<a name="ln477"> </a>
+<a name="ln478">  bool poly(unsigned int elem) {</a>
+<a name="ln479">    if (state == 0) {</a>
+<a name="ln480">      prev = atom(elem,0);</a>
+<a name="ln481">      push_poly();</a>
+<a name="ln482">      state = 1;</a>
+<a name="ln483">    } else if (state == 1) {</a>
+<a name="ln484">      OpenBabel::OBAtom* temp = atom(elem,0);</a>
+<a name="ln485">      fuse(prev,temp,order);</a>
+<a name="ln486">      pending = PENDING_NONE;</a>
+<a name="ln487">      push_poly();</a>
+<a name="ln488">      prev = temp;</a>
+<a name="ln489">    } else return error();</a>
+<a name="ln490">    pending = PENDING_NONE;</a>
+<a name="ln491">    order = 1;</a>
+<a name="ln492">    return true;</a>
+<a name="ln493">  }</a>
+<a name="ln494"> </a>
+<a name="ln495">  void unsaturate(OpenBabel::OBAtom* src, OpenBabel::OBAtom* dst) {</a>
+<a name="ln496">    OpenBabel::OBBond* bptr = src-&gt;GetBond(dst);</a>
+<a name="ln497">    if (bptr)</a>
+<a name="ln498">      bptr-&gt;SetBondOrder(2);</a>
+<a name="ln499">    NMOBAtomSetAromatic(src,false);</a>
+<a name="ln500">    NMOBAtomSetAromatic(dst,false);</a>
+<a name="ln501">  }</a>
+<a name="ln502"> </a>
+<a name="ln503">  void unsaturate2(OpenBabel::OBAtom* src, OpenBabel::OBAtom* dst) {</a>
+<a name="ln504">    OpenBabel::OBBond* bptr = src-&gt;GetBond(dst);</a>
+<a name="ln505">    if (bptr)</a>
+<a name="ln506">      bptr-&gt;SetBondOrder(3);</a>
+<a name="ln507">    NMOBAtomSetAromatic(src,false);</a>
+<a name="ln508">    NMOBAtomSetAromatic(dst,false);</a>
+<a name="ln509">    src-&gt;SetImplicitHCount(0);</a>
+<a name="ln510">    dst-&gt;SetImplicitHCount(0);</a>
+<a name="ln511">  }</a>
+<a name="ln512"> </a>
+<a name="ln513">  bool atend(const char *ptr) {</a>
+<a name="ln514">    switch (*ptr) {</a>
+<a name="ln515">    case '\0':</a>
+<a name="ln516">    case '\t':</a>
+<a name="ln517">    case ' ':</a>
+<a name="ln518">    case '&amp;':</a>
+<a name="ln519">      return true;</a>
+<a name="ln520">    }</a>
+<a name="ln521">    return false;</a>
+<a name="ln522">  }</a>
+<a name="ln523"> </a>
+<a name="ln524">  bool atend() {</a>
+<a name="ln525">    return atend(ptr);</a>
+<a name="ln526">  }</a>
+<a name="ln527"> </a>
+<a name="ln528">  // ptr points to 'L' or 'T'</a>
+<a name="ln529">  bool parse_ring() {</a>
+<a name="ln530">    unsigned int size = 0;</a>
+<a name="ln531">    if (ptr[1]&gt;='3' &amp;&amp; ptr[1]&lt;='9') {</a>
+<a name="ln532">      size = ptr[1]-'0';</a>
+<a name="ln533">      ptr += 2;</a>
+<a name="ln534">    } else if (ptr[1]=='-' &amp;&amp;</a>
+<a name="ln535">               ptr[2]&gt;='1' &amp;&amp; ptr[2]&lt;='9' &amp;&amp;</a>
+<a name="ln536">               ptr[3]&gt;='0' &amp;&amp; ptr[3]&lt;='9' &amp;&amp;</a>
+<a name="ln537">               ptr[4]=='-') {</a>
+<a name="ln538">      size = 10*(ptr[2]-'0') + (ptr[3]-'0');</a>
+<a name="ln539">      ptr += 5;</a>
+<a name="ln540">    } else return error();</a>
+<a name="ln541"> </a>
+<a name="ln542">    bool done = false;</a>
+<a name="ln543">    std::vector&lt;OpenBabel::OBAtom*&gt; ring;</a>
+<a name="ln544">    switch (size) {</a>
+<a name="ln545">    case 3:</a>
+<a name="ln546">      if (ptr[0]=='6') {</a>
+<a name="ln547">        new_ring36(ring);</a>
+<a name="ln548">        done = true;</a>
+<a name="ln549">        size = 7;</a>
+<a name="ln550">        ptr++;</a>
+<a name="ln551">      }</a>
+<a name="ln552">      break;</a>
+<a name="ln553">    case 4:</a>
+<a name="ln554">      if (ptr[0]=='5') {</a>
+<a name="ln555">        new_ring45(ring);</a>
+<a name="ln556">        done = true;</a>
+<a name="ln557">        size = 7;</a>
+<a name="ln558">        ptr++;</a>
+<a name="ln559">      }</a>
+<a name="ln560">      break;</a>
+<a name="ln561">    case 5:</a>
+<a name="ln562">      if (ptr[0]=='5') {</a>
+<a name="ln563">        new_ring55(ring);</a>
+<a name="ln564">        done  = true;</a>
+<a name="ln565">        size = 8;</a>
+<a name="ln566">        ptr++;</a>
+<a name="ln567">      } else if (ptr[0]=='6') {</a>
+<a name="ln568">        new_ring56(ring);</a>
+<a name="ln569">        done = true;</a>
+<a name="ln570">        size = 9;</a>
+<a name="ln571">        ptr++;</a>
+<a name="ln572">      } else if (ptr[0]=='7') {</a>
+<a name="ln573">        new_ring57(ring);</a>
+<a name="ln574">        done = true;</a>
+<a name="ln575">        size = 10;</a>
+<a name="ln576">        ptr++;</a>
+<a name="ln577">      }</a>
+<a name="ln578">      break;</a>
+<a name="ln579">    case 6:</a>
+<a name="ln580">      if (ptr[0]=='6') {</a>
+<a name="ln581">        new_ring66(ring);</a>
+<a name="ln582">        done = true;</a>
+<a name="ln583">        size = 10;</a>
+<a name="ln584">        ptr++;</a>
+<a name="ln585">      } else if (ptr[0]=='7') {</a>
+<a name="ln586">        new_ring67(ring);</a>
+<a name="ln587">        done = true;</a>
+<a name="ln588">        size = 11;</a>
+<a name="ln589">        ptr++;</a>
+<a name="ln590">      }</a>
+<a name="ln591">      break;</a>
+<a name="ln592">    }</a>
+<a name="ln593"> </a>
+<a name="ln594">    if (!done)</a>
+<a name="ln595">      new_cycle(ring,size);</a>
+<a name="ln596"> </a>
+<a name="ln597">    if (debug_wln_read)</a>
+<a name="ln598">      printf(&quot;DEBUG: ring size=%u ptr=%s\n&quot;,size,ptr);</a>
+<a name="ln599"> </a>
+<a name="ln600">    unsigned int loc = 0;</a>
+<a name="ln601">    unsigned int elem = 0;</a>
+<a name="ln602">    unsigned int hcount = 0;</a>
+<a name="ln603">    OpenBabel::OBAtom* aptr;</a>
+<a name="ln604"> </a>
+<a name="ln605">    for (;;) {</a>
+<a name="ln606">    if (debug_wln_read)</a>
+<a name="ln607">      printf(&quot;DEBUG: loc=%u ptr=%s\n&quot;,loc,ptr);</a>
+<a name="ln608">    switch(*ptr) {</a>
+<a name="ln609">    case 'H':</a>
+<a name="ln610">      if (loc &gt;= size)</a>
+<a name="ln611">        return error();</a>
+<a name="ln612">      aptr = ring[loc];</a>
+<a name="ln613">      aptr-&gt;SetImplicitHCount(2);</a>
+<a name="ln614">      NMOBAtomSetAromatic(aptr,false);</a>
+<a name="ln615">      ptr++;</a>
+<a name="ln616">      if (*ptr != 'J')</a>
+<a name="ln617">        return error();</a>
+<a name="ln618">      ptr++;</a>
+<a name="ln619">      return true;</a>
+<a name="ln620"> </a>
+<a name="ln621">    case 'J':</a>
+<a name="ln622">      ptr++;</a>
+<a name="ln623">      return true;</a>
+<a name="ln624"> </a>
+<a name="ln625">    case 'K':</a>
+<a name="ln626">      if (loc &gt;= size)</a>
+<a name="ln627">        return error();</a>
+<a name="ln628">      aptr = ring[loc];</a>
+<a name="ln629">      aptr-&gt;SetAtomicNum(7);</a>
+<a name="ln630">      aptr-&gt;SetFormalCharge(1);</a>
+<a name="ln631">      aptr-&gt;SetImplicitHCount(0);</a>
+<a name="ln632">      loc++;</a>
+<a name="ln633">      ptr++;</a>
+<a name="ln634">      continue;</a>
+<a name="ln635"> </a>
+<a name="ln636">    case 'M':</a>
+<a name="ln637">      if (loc &gt;= size)</a>
+<a name="ln638">        return error();</a>
+<a name="ln639">      aptr = ring[loc];</a>
+<a name="ln640">      aptr-&gt;SetAtomicNum(7);</a>
+<a name="ln641">      NMOBAtomSetAromatic(aptr,false);</a>
+<a name="ln642">      aptr-&gt;SetImplicitHCount(1);</a>
+<a name="ln643">      loc++;</a>
+<a name="ln644">      ptr++;</a>
+<a name="ln645">      continue;</a>
+<a name="ln646"> </a>
+<a name="ln647">    case 'N':</a>
+<a name="ln648">      if (loc &gt;= size)</a>
+<a name="ln649">        return error();</a>
+<a name="ln650">      aptr = ring[loc];</a>
+<a name="ln651">      aptr-&gt;SetAtomicNum(7);</a>
+<a name="ln652">      aptr-&gt;SetImplicitHCount(0);</a>
+<a name="ln653">      loc++;</a>
+<a name="ln654">      ptr++;</a>
+<a name="ln655">      continue;</a>
+<a name="ln656"> </a>
+<a name="ln657">    case 'O':</a>
+<a name="ln658">      if (loc &gt;= size)</a>
+<a name="ln659">        return error();</a>
+<a name="ln660">      aptr = ring[loc];</a>
+<a name="ln661">      aptr-&gt;SetAtomicNum(8);</a>
+<a name="ln662">      NMOBAtomSetAromatic(aptr,false);</a>
+<a name="ln663">      aptr-&gt;SetImplicitHCount(0);</a>
+<a name="ln664">      loc++;</a>
+<a name="ln665">      ptr++;</a>
+<a name="ln666">      continue;</a>
+<a name="ln667"> </a>
+<a name="ln668">    case 'S':</a>
+<a name="ln669">      if (loc &gt;= size)</a>
+<a name="ln670">        return error();</a>
+<a name="ln671">      aptr = ring[loc];</a>
+<a name="ln672">      aptr-&gt;SetAtomicNum(16);</a>
+<a name="ln673">      aptr-&gt;SetImplicitHCount(0);</a>
+<a name="ln674">      NMOBAtomSetAromatic(aptr,false);</a>
+<a name="ln675">      loc++;</a>
+<a name="ln676">      ptr++;</a>
+<a name="ln677">      if (*ptr == 'W') {</a>
+<a name="ln678">        NMOBMolNewBond(mol,aptr,atom(8,0),2,false);</a>
+<a name="ln679">        NMOBMolNewBond(mol,aptr,atom(8,0),2,false);</a>
+<a name="ln680">        ptr++;</a>
+<a name="ln681">      }</a>
+<a name="ln682">      continue;</a>
+<a name="ln683"> </a>
+<a name="ln684">    case 'T':</a>
+<a name="ln685">      for (unsigned int i=0; i&lt;size; i++) {</a>
+<a name="ln686">        aptr = ring[i];</a>
+<a name="ln687">        if (aptr-&gt;IsAromatic() &amp;&amp;</a>
+<a name="ln688">            aptr-&gt;GetAtomicNum()==6) {</a>
+<a name="ln689">          unsigned int hcount = aptr-&gt;GetImplicitHCount();</a>
+<a name="ln690">          aptr-&gt;SetImplicitHCount(hcount+1);</a>
+<a name="ln691">          NMOBAtomSetAromatic(aptr,false);</a>
+<a name="ln692">        }</a>
+<a name="ln693">      }</a>
+<a name="ln694">      ptr++;</a>
+<a name="ln695">      if (*ptr != 'J')</a>
+<a name="ln696">        return error();</a>
+<a name="ln697">      ptr++;</a>
+<a name="ln698">      return true;</a>
+<a name="ln699"> </a>
+<a name="ln700">    case 'U':</a>
+<a name="ln701">      if (loc+1 &gt;= size)</a>
+<a name="ln702">        return error();</a>
+<a name="ln703">      if (ptr[1]=='U') {</a>
+<a name="ln704">        unsaturate2(ring[loc],ring[loc+1]);</a>
+<a name="ln705">        ptr += 2;</a>
+<a name="ln706">      } else {</a>
+<a name="ln707">        unsaturate(ring[loc],ring[loc+1]);</a>
+<a name="ln708">        ptr++;</a>
+<a name="ln709">      }</a>
+<a name="ln710">      continue;</a>
+<a name="ln711"> </a>
+<a name="ln712">    case 'V':</a>
+<a name="ln713">      if (loc &gt;= size)</a>
+<a name="ln714">        return error();</a>
+<a name="ln715">      aptr = ring[loc];</a>
+<a name="ln716">      fuse(aptr,atom(8,0),2);</a>
+<a name="ln717">      NMOBAtomSetAromatic(aptr,false);</a>
+<a name="ln718">      loc++;</a>
+<a name="ln719">      ptr++;</a>
+<a name="ln720">      continue;</a>
+<a name="ln721"> </a>
+<a name="ln722">    case 'X':</a>
+<a name="ln723">    case 'Y':</a>
+<a name="ln724">      if (loc &gt;= size)</a>
+<a name="ln725">        return error();</a>
+<a name="ln726">      aptr = ring[loc];</a>
+<a name="ln727">      aptr-&gt;SetImplicitHCount(2);</a>
+<a name="ln728">      NMOBAtomSetAromatic(aptr,false);</a>
+<a name="ln729">      loc++;</a>
+<a name="ln730">      ptr++;</a>
+<a name="ln731">      continue;</a>
+<a name="ln732"> </a>
+<a name="ln733">    case ' ':</a>
+<a name="ln734">      if (ptr[1]&gt;='A' &amp;&amp; ptr[1]&lt;='Z') {</a>
+<a name="ln735">        loc = ptr[1]-'A';</a>
+<a name="ln736">        if (loc &gt;= size)</a>
+<a name="ln737">          return error();</a>
+<a name="ln738">        ptr += 2;</a>
+<a name="ln739">        // Check the following character</a>
+<a name="ln740">        switch (*ptr) {</a>
+<a name="ln741">        case 'H':</a>
+<a name="ln742">        case 'K':</a>
+<a name="ln743">        case 'M':</a>
+<a name="ln744">        case 'N':</a>
+<a name="ln745">        case 'O':</a>
+<a name="ln746">        case 'S':</a>
+<a name="ln747">        case 'U':</a>
+<a name="ln748">        case 'V':</a>
+<a name="ln749">        case 'X':</a>
+<a name="ln750">        case 'Y':</a>
+<a name="ln751">        case '-':</a>
+<a name="ln752">          break;</a>
+<a name="ln753">        default:</a>
+<a name="ln754">          return error();</a>
+<a name="ln755">        }</a>
+<a name="ln756">        continue;</a>
+<a name="ln757">      }</a>
+<a name="ln758">      break;</a>
+<a name="ln759">    case '-':</a>
+<a name="ln760">      elem = 0;</a>
+<a name="ln761">      switch (ptr[1]) {</a>
+<a name="ln762">      case 'A':</a>
+<a name="ln763">        if (ptr[2]=='S' &amp;&amp; ptr[3]=='-') {  // -AS-</a>
+<a name="ln764">          elem = 33;</a>
+<a name="ln765">          ptr += 4;</a>
+<a name="ln766">        }</a>
+<a name="ln767">        break;</a>
+<a name="ln768">      case 'G':</a>
+<a name="ln769">        if (ptr[2]=='E' &amp;&amp; ptr[3]=='-') {  // -GE-</a>
+<a name="ln770">          elem = 32;</a>
+<a name="ln771">          ptr += 4;</a>
+<a name="ln772">        }</a>
+<a name="ln773">        break;</a>
+<a name="ln774">      case 'H':</a>
+<a name="ln775">        if (ptr[2]=='G' &amp;&amp; ptr[3]=='-') {  // -HG-</a>
+<a name="ln776">          elem = 80;</a>
+<a name="ln777">          ptr += 4;</a>
+<a name="ln778">        }</a>
+<a name="ln779">        break;</a>
+<a name="ln780">      case 'S':</a>
+<a name="ln781">        if (ptr[2]=='B' &amp;&amp; ptr[3]=='-') {  // -SB-</a>
+<a name="ln782">          elem = 51;</a>
+<a name="ln783">          ptr += 4;</a>
+<a name="ln784">        } else</a>
+<a name="ln785">        if (ptr[2]=='E' &amp;&amp; ptr[3]=='-') {  // -SE-</a>
+<a name="ln786">          elem = 34;</a>
+<a name="ln787">          ptr += 4;</a>
+<a name="ln788">        } else</a>
+<a name="ln789">        if (ptr[2]=='I' &amp;&amp; ptr[3]=='-') {  // -SI-</a>
+<a name="ln790">          elem = 14;</a>
+<a name="ln791">          ptr += 4;</a>
+<a name="ln792">        } else</a>
+<a name="ln793">        if (ptr[2]=='N' &amp;&amp; ptr[3]=='-') {  // -SN-</a>
+<a name="ln794">          elem = 50;</a>
+<a name="ln795">          ptr += 4;</a>
+<a name="ln796">        }</a>
+<a name="ln797">        break;</a>
+<a name="ln798">      }</a>
+<a name="ln799">      if (!elem)</a>
+<a name="ln800">        return error();</a>
+<a name="ln801">      if (loc &gt;= size)</a>
+<a name="ln802">        return error();</a>
+<a name="ln803">      hcount = 0;</a>
+<a name="ln804">      if (*ptr == 'H') {</a>
+<a name="ln805">        if (ptr[1] == 'H') {</a>
+<a name="ln806">          hcount = 2;</a>
+<a name="ln807">          ptr += 2;</a>
+<a name="ln808">        }  else {</a>
+<a name="ln809">          hcount = 1;</a>
+<a name="ln810">          ptr++;</a>
+<a name="ln811">        }</a>
+<a name="ln812">      }</a>
+<a name="ln813">      aptr = ring[loc];</a>
+<a name="ln814">      aptr-&gt;SetAtomicNum(elem);</a>
+<a name="ln815">      aptr-&gt;SetImplicitHCount(hcount);</a>
+<a name="ln816">      NMOBAtomSetAromatic(aptr,false);</a>
+<a name="ln817">      loc++;</a>
+<a name="ln818">      continue;</a>
+<a name="ln819">    }</a>
+<a name="ln820">    return error();</a>
+<a name="ln821">    }</a>
+<a name="ln822">  }</a>
+<a name="ln823"> </a>
+<a name="ln824">  bool parse() {</a>
+<a name="ln825">    ptr = orig;</a>
+<a name="ln826">    if (ptr[0]=='W' &amp;&amp; ptr[1]=='L' &amp;&amp; ptr[2]=='N' &amp;&amp;</a>
+<a name="ln827">        ptr[3]==':' &amp;&amp; ptr[4]==' ')</a>
+<a name="ln828">      ptr += 5;</a>
+<a name="ln829">    for(;;) {</a>
+<a name="ln830">    if (debug_wln_read)</a>
+<a name="ln831">      printf(&quot;DEBUG: state=%u order=%u ptr=%s\n&quot;,state,order,ptr);</a>
+<a name="ln832">    switch (*ptr) {</a>
+<a name="ln833">    case '\t':</a>
+<a name="ln834">      mol-&gt;SetTitle(ptr+1);</a>
+<a name="ln835">      /* fall through */</a>
+<a name="ln836">    case '\0':</a>
+<a name="ln837">      if (state == 0)</a>
+<a name="ln838">        return error();</a>
+<a name="ln839">      drain();</a>
+<a name="ln840">      return true;</a>
+<a name="ln841"> </a>
+<a name="ln842">    case 'B':</a>
+<a name="ln843">      if (order==1) {</a>
+<a name="ln844">        OpenBabel::OBAtom* temp = atom(5,3);</a>
+<a name="ln845">        fuse(prev,temp,order);</a>
+<a name="ln846">        pending = PENDING_DEPROT;</a>
+<a name="ln847">        push();</a>
+<a name="ln848">        prev = temp;</a>
+<a name="ln849">        order = 1;</a>
+<a name="ln850">        ptr++;</a>
+<a name="ln851">        continue;</a>
+<a name="ln852">      }</a>
+<a name="ln853">      break;</a>
+<a name="ln854"> </a>
+<a name="ln855">    case 'C':</a>
+<a name="ln856">      if (order == 3) {</a>
+<a name="ln857">        OpenBabel::OBAtom* temp = atom(6,4);</a>
+<a name="ln858">        fuse(prev,temp,3);</a>
+<a name="ln859">        next(temp,1);</a>
+<a name="ln860">        ptr++;</a>
+<a name="ln861">        continue;</a>
+<a name="ln862">      }</a>
+<a name="ln863">      if (ptr[1]=='N') {  // CN</a>
+<a name="ln864">        if (order == 1) {</a>
+<a name="ln865">          if (!degree1(cyano()))</a>
+<a name="ln866">            return false;</a>
+<a name="ln867">          ptr += 2;</a>
+<a name="ln868">          continue;</a>
+<a name="ln869">        }</a>
+<a name="ln870">      }</a>
+<a name="ln871">      if (ptr[1]=='U') {  // CU</a>
+<a name="ln872">        if (order == 2) {</a>
+<a name="ln873">          OpenBabel::OBAtom* temp = atom(6,0);</a>
+<a name="ln874">          fuse(prev,temp,2);</a>
+<a name="ln875">          next(temp,2);</a>
+<a name="ln876">          ptr += 2;</a>
+<a name="ln877">          continue;</a>
+<a name="ln878">        }</a>
+<a name="ln879">      }</a>
+<a name="ln880">      break;</a>
+<a name="ln881"> </a>
+<a name="ln882">    case 'E':</a>
+<a name="ln883">      if (!term1(atom(35,1)))</a>
+<a name="ln884">        return false;</a>
+<a name="ln885">      ptr++;</a>
+<a name="ln886">      continue;</a>
+<a name="ln887"> </a>
+<a name="ln888">    case 'F':</a>
+<a name="ln889">      if (!term1(atom(9,1)))</a>
+<a name="ln890">        return false;</a>
+<a name="ln891">      ptr++;</a>
+<a name="ln892">      continue;</a>
+<a name="ln893"> </a>
+<a name="ln894">    case 'G':</a>
+<a name="ln895">      if (!term1(atom(17,1)))</a>
+<a name="ln896">        return false;</a>
+<a name="ln897">      ptr++;</a>
+<a name="ln898">      continue;</a>
+<a name="ln899"> </a>
+<a name="ln900">    case 'H':</a>
+<a name="ln901">      if (order == 1) {</a>
+<a name="ln902">        may_pop();</a>
+<a name="ln903">        ptr++;</a>
+<a name="ln904">        continue;</a>
+<a name="ln905">      }</a>
+<a name="ln906">      break;</a>
+<a name="ln907"> </a>
+<a name="ln908">    case 'I':</a>
+<a name="ln909">      if (!term1(atom(53,1)))</a>
+<a name="ln910">        return false;</a>
+<a name="ln911">      ptr++;</a>
+<a name="ln912">      continue;</a>
+<a name="ln913"> </a>
+<a name="ln914">    case 'K':</a>
+<a name="ln915">      if (order == 1) {</a>
+<a name="ln916">        OpenBabel::OBAtom* temp = atom(7,4);</a>
+<a name="ln917">        temp-&gt;SetFormalCharge(1);</a>
+<a name="ln918">        fuse(prev,temp,order);</a>
+<a name="ln919">        pending = PENDING_METHYL;</a>
+<a name="ln920">        push_methyl();</a>
+<a name="ln921">        push_methyl();</a>
+<a name="ln922">        prev = temp;</a>
+<a name="ln923">        order = 1;</a>
+<a name="ln924">        ptr++;</a>
+<a name="ln925">        continue;</a>
+<a name="ln926">      }</a>
+<a name="ln927">      break;</a>
+<a name="ln928"> </a>
+<a name="ln929">    case 'L':</a>
+<a name="ln930">      if (state == 0) {</a>
+<a name="ln931">        if (!parse_ring())</a>
+<a name="ln932">          return false;</a>
+<a name="ln933">        state = 2;</a>
+<a name="ln934">        order = 0;</a>
+<a name="ln935">        continue;</a>
+<a name="ln936">      }</a>
+<a name="ln937">      break;</a>
+<a name="ln938"> </a>
+<a name="ln939">    case 'M':</a>
+<a name="ln940">      if (order == 2) {</a>
+<a name="ln941">        OpenBabel::OBAtom* temp = atom(7,3);</a>
+<a name="ln942">        fuse(prev,temp,2);</a>
+<a name="ln943">        next(temp,0);</a>
+<a name="ln944">        ptr++;</a>
+<a name="ln945">        continue;</a>
+<a name="ln946">      }</a>
+<a name="ln947">      if (ptr[1]=='U') {  // MU</a>
+<a name="ln948">        if (state == 0) {</a>
+<a name="ln949">          next(atom(7,3),2);</a>
+<a name="ln950">          ptr += 2;</a>
+<a name="ln951">          continue;</a>
+<a name="ln952">        }</a>
+<a name="ln953">      }</a>
+<a name="ln954">      if (!degree2(atom(7,3)))</a>
+<a name="ln955">        return false;</a>
+<a name="ln956">      ptr++;</a>
+<a name="ln957">      continue;</a>
+<a name="ln958"> </a>
+<a name="ln959">    case 'N':</a>
+<a name="ln960">      if (order == 3) {</a>
+<a name="ln961">        OpenBabel::OBAtom* temp = atom(7,0);</a>
+<a name="ln962">        fuse(prev,temp,3);</a>
+<a name="ln963">        next(temp,0);</a>
+<a name="ln964">        ptr++;</a>
+<a name="ln965">        continue;</a>
+<a name="ln966">      }</a>
+<a name="ln967">      if (order == 2) {</a>
+<a name="ln968">        OpenBabel::OBAtom* temp = atom(7,3);</a>
+<a name="ln969">        fuse(prev,temp,2);</a>
+<a name="ln970">        next(temp,1);</a>
+<a name="ln971">        ptr++;</a>
+<a name="ln972">        continue;</a>
+<a name="ln973">      }</a>
+<a name="ln974">      if (ptr[1]=='C') {  // NC</a>
+<a name="ln975">        if (state == 0) {</a>
+<a name="ln976">          if (!degree1(cyano()))</a>
+<a name="ln977">            return false;</a>
+<a name="ln978">          ptr += 2;</a>
+<a name="ln979">          continue;</a>
+<a name="ln980">        }</a>
+<a name="ln981">      }</a>
+<a name="ln982">      if (ptr[1]=='N') {  // NN</a>
+<a name="ln983">        if (ptr[2]=='U') {  // NNU</a>
+<a name="ln984">          if (state == 0) {</a>
+<a name="ln985">            next(diazo(),2);</a>
+<a name="ln986">            ptr += 3;</a>
+<a name="ln987">            continue;</a>
+<a name="ln988">          }</a>
+<a name="ln989">        }</a>
+<a name="ln990">        if (!degree1(diazonio()))</a>
+<a name="ln991">          return false;</a>
+<a name="ln992">        ptr += 2;</a>
+<a name="ln993">        continue;</a>
+<a name="ln994">      }</a>
+<a name="ln995">      if (ptr[1]=='O') {  // NO</a>
+<a name="ln996">        if (order == 1) {</a>
+<a name="ln997">          if (!degree1(nitroso()))</a>
+<a name="ln998">            return false;</a>
+<a name="ln999">          ptr += 2;</a>
+<a name="ln1000">          continue;</a>
+<a name="ln1001">        }</a>
+<a name="ln1002">      }</a>
+<a name="ln1003">      if (ptr[1]=='U') {  // NU</a>
+<a name="ln1004">        if (order == 1) {</a>
+<a name="ln1005">          OpenBabel::OBAtom* temp = atom(7,0);</a>
+<a name="ln1006">          fuse(prev,temp,1);</a>
+<a name="ln1007">          next(temp,2);</a>
+<a name="ln1008">          ptr += 2;</a>
+<a name="ln1009">          continue;</a>
+<a name="ln1010">        }</a>
+<a name="ln1011">      }</a>
+<a name="ln1012">      if (ptr[1]=='W') {  // NW</a>
+<a name="ln1013">        if (order == 1) {</a>
+<a name="ln1014">          if (!term1(nitro()))</a>
+<a name="ln1015">            return false;</a>
+<a name="ln1016">          ptr += 2;</a>
+<a name="ln1017">          continue;</a>
+<a name="ln1018">        }</a>
+<a name="ln1019">      }</a>
+<a name="ln1020">      if (order == 1) {</a>
+<a name="ln1021">        OpenBabel::OBAtom* temp = atom(7,3);</a>
+<a name="ln1022">        fuse(prev,temp,order);</a>
+<a name="ln1023">        pending = PENDING_DEPROT;</a>
+<a name="ln1024">        prev = temp;</a>
+<a name="ln1025">        order = 1;</a>
+<a name="ln1026">        push();</a>
+<a name="ln1027">        ptr++;</a>
+<a name="ln1028">        continue;</a>
+<a name="ln1029">      }</a>
+<a name="ln1030">      break;</a>
+<a name="ln1031"> </a>
+<a name="ln1032">    case 'O':</a>
+<a name="ln1033">      if (order == 2) {</a>
+<a name="ln1034">        OpenBabel::OBAtom* temp = atom(8,0);</a>
+<a name="ln1035">        fuse(prev,temp,2);</a>
+<a name="ln1036">        next(temp,0);</a>
+<a name="ln1037">        ptr++;</a>
+<a name="ln1038">        continue;</a>
+<a name="ln1039">      }</a>
+<a name="ln1040">      if (ptr[1]=='C') {  // OC</a>
+<a name="ln1041">        if (state == 0) {</a>
+<a name="ln1042">          if (atend(ptr+2)) {</a>
+<a name="ln1043">            carbon_monoxide();</a>
+<a name="ln1044">            state = 2;</a>
+<a name="ln1045">          } else</a>
+<a name="ln1046">            next(carbonyl(),2);</a>
+<a name="ln1047">          ptr += 2;</a>
+<a name="ln1048">          continue;</a>
+<a name="ln1049">        }</a>
+<a name="ln1050">      }</a>
+<a name="ln1051">      if (ptr[1]=='K') {  // OK</a>
+<a name="ln1052">        if (state == 0) {</a>
+<a name="ln1053">          prev = atom(8,0);</a>
+<a name="ln1054">          prev-&gt;SetFormalCharge(-1);</a>
+<a name="ln1055">          next(prev,1);</a>
+<a name="ln1056">          ptr++;</a>
+<a name="ln1057">          continue;</a>
+<a name="ln1058">        }</a>
+<a name="ln1059">      }</a>
+<a name="ln1060">      if (ptr[1]=='N') {  // ON</a>
+<a name="ln1061">        if (state == 0) {</a>
+<a name="ln1062">          next(nitroso(),1);</a>
+<a name="ln1063">          ptr += 2;</a>
+<a name="ln1064">          continue;</a>
+<a name="ln1065">        }</a>
+<a name="ln1066">      }</a>
+<a name="ln1067">      if (ptr[1]=='S' &amp;&amp; ptr[2]=='W') {  // OSW</a>
+<a name="ln1068">        if (state == 0) {</a>
+<a name="ln1069">          next(sulfonato(),1);</a>
+<a name="ln1070">          ptr += 3;</a>
+<a name="ln1071">          continue;</a>
+<a name="ln1072">        }</a>
+<a name="ln1073">      }</a>
+<a name="ln1074">      if (ptr[1]=='S') {  // OS</a>
+<a name="ln1075">        if (state == 0) {</a>
+<a name="ln1076">          prev = atom(16,2);</a>
+<a name="ln1077">          push();</a>
+<a name="ln1078">          NMOBMolNewBond(mol,prev,atom(8,0),2,false);</a>
+<a name="ln1079">          pending = PENDING_DEPROT;</a>
+<a name="ln1080">          state = 1;</a>
+<a name="ln1081">          order = 1;</a>
+<a name="ln1082">          ptr += 2;</a>
+<a name="ln1083">          continue;</a>
+<a name="ln1084">        }</a>
+<a name="ln1085">      }</a>
+<a name="ln1086">      if (ptr[1]=='V') {  // OV</a>
+<a name="ln1087">        if (state == 0) {</a>
+<a name="ln1088">          OpenBabel::OBAtom* temp = atom(8,0);</a>
+<a name="ln1089">          temp-&gt;SetFormalCharge(-1);</a>
+<a name="ln1090">          next(temp,1);</a>
+<a name="ln1091">          ptr++;</a>
+<a name="ln1092">          continue;</a>
+<a name="ln1093">        }</a>
+<a name="ln1094">      }</a>
+<a name="ln1095">      // Handle O-AS-R and friends</a>
+<a name="ln1096">      if (state == 0) {</a>
+<a name="ln1097">        next(atom(8,2),2);</a>
+<a name="ln1098">        ptr++;</a>
+<a name="ln1099">        continue;</a>
+<a name="ln1100">      }</a>
+<a name="ln1101">      if (!degree2(atom(8,2)))</a>
+<a name="ln1102">        return false;</a>
+<a name="ln1103">      ptr++;</a>
+<a name="ln1104">      continue;</a>
+<a name="ln1105"> </a>
+<a name="ln1106">    case 'P':</a>
+<a name="ln1107">      if (state == 0) {</a>
+<a name="ln1108">        if (!term1(atom(15,3)))</a>
+<a name="ln1109">          return false;</a>
+<a name="ln1110">      } else if (state == 1) {</a>
+<a name="ln1111">        OpenBabel::OBAtom* temp = atom(15,3);</a>
+<a name="ln1112">        fuse(prev,temp,order);</a>
+<a name="ln1113">        next(temp,1);</a>
+<a name="ln1114">      } else break;</a>
+<a name="ln1115">      pending = PENDING_NONE;</a>
+<a name="ln1116">      push_poly();</a>
+<a name="ln1117">      ptr++;</a>
+<a name="ln1118">      if (ptr[0]=='O' &amp;&amp; ptr[1]=='&amp;') {  // PO&amp;</a>
+<a name="ln1119">        OpenBabel::OBAtom* temp = atom(8,0);</a>
+<a name="ln1120">        NMOBMolNewBond(mol,prev,temp,2,false);</a>
+<a name="ln1121">        ptr += 2;</a>
+<a name="ln1122">      } else if (ptr[0]=='S' &amp;&amp; ptr[1]=='&amp;') {  // PS&amp;</a>
+<a name="ln1123">        OpenBabel::OBAtom* temp = atom(16,0);</a>
+<a name="ln1124">        NMOBMolNewBond(mol,prev,temp,2,false);</a>
+<a name="ln1125">        ptr += 2;</a>
+<a name="ln1126">      }</a>
+<a name="ln1127">      continue;</a>
+<a name="ln1128"> </a>
+<a name="ln1129">    case 'Q':</a>
+<a name="ln1130">      if (!term1(atom(8,2)))</a>
+<a name="ln1131">        return false;</a>
+<a name="ln1132">      ptr++;</a>
+<a name="ln1133">      continue;</a>
+<a name="ln1134"> </a>
+<a name="ln1135">    case 'R':</a>
+<a name="ln1136">      if (!degree1(benzene()))</a>
+<a name="ln1137">        return false;</a>
+<a name="ln1138">      ptr++;</a>
+<a name="ln1139">      continue;</a>
+<a name="ln1140"> </a>
+<a name="ln1141">    case 'S':</a>
+<a name="ln1142">      if (order == 2) {</a>
+<a name="ln1143">        OpenBabel::OBAtom* temp = atom(16,0);</a>
+<a name="ln1144">        fuse(prev,temp,2);</a>
+<a name="ln1145">        next(temp,0);</a>
+<a name="ln1146">        ptr++;</a>
+<a name="ln1147">        continue;</a>
+<a name="ln1148">      }</a>
+<a name="ln1149">      if (ptr[1]=='C') {</a>
+<a name="ln1150">        if (state == 0) {</a>
+<a name="ln1151">          next(thiocarbonyl(),2);</a>
+<a name="ln1152">          ptr += 2;</a>
+<a name="ln1153">          continue;</a>
+<a name="ln1154">        }</a>
+<a name="ln1155">      }</a>
+<a name="ln1156">      if (ptr[1]=='H') {</a>
+<a name="ln1157">        if (!degree1(atom(16,2)))</a>
+<a name="ln1158">          return false;</a>
+<a name="ln1159">        ptr += 2;</a>
+<a name="ln1160">        continue;</a>
+<a name="ln1161">      }</a>
+<a name="ln1162">      if (ptr[1]=='O' &amp;&amp; ptr[2]=='&amp;') {  // SO&amp;</a>
+<a name="ln1163">        if (!degree2(sulfinyl()))</a>
+<a name="ln1164">          return false;</a>
+<a name="ln1165">        ptr += 3;</a>
+<a name="ln1166">        continue;</a>
+<a name="ln1167">      }</a>
+<a name="ln1168">      if (ptr[1]=='U') {</a>
+<a name="ln1169">        if (state == 0) {</a>
+<a name="ln1170">          next(atom(16,2),2);</a>
+<a name="ln1171">          ptr += 2;</a>
+<a name="ln1172">          continue;</a>
+<a name="ln1173">        }</a>
+<a name="ln1174">      }</a>
+<a name="ln1175">      if (ptr[1]=='W') {</a>
+<a name="ln1176">        if (!degree2(sulfonyl()))</a>
+<a name="ln1177">          return false;</a>
+<a name="ln1178">        ptr += 2;</a>
+<a name="ln1179">        continue;</a>
+<a name="ln1180">      }</a>
+<a name="ln1181">      if (ptr[1]=='Z' &amp;&amp; ptr[2]=='W') {  // SZW</a>
+<a name="ln1182">        if (order == 1) {</a>
+<a name="ln1183">          if (!term1(sulfamoyl()))</a>
+<a name="ln1184">            return false;</a>
+<a name="ln1185">          ptr += 3;</a>
+<a name="ln1186">          continue;</a>
+<a name="ln1187">        }</a>
+<a name="ln1188">      }</a>
+<a name="ln1189">      if (state == 0) {</a>
+<a name="ln1190">        next(atom(16,2),2);</a>
+<a name="ln1191">        ptr++;</a>
+<a name="ln1192">        continue;</a>
+<a name="ln1193">      }</a>
+<a name="ln1194">      if (!degree2(atom(16,2)))</a>
+<a name="ln1195">        return false;</a>
+<a name="ln1196">      ptr++;</a>
+<a name="ln1197">      continue;</a>
+<a name="ln1198"> </a>
+<a name="ln1199">    case 'T':</a>
+<a name="ln1200">      if (state == 0) {</a>
+<a name="ln1201">        if (!parse_ring())</a>
+<a name="ln1202">          return false;</a>
+<a name="ln1203">        state = 2;</a>
+<a name="ln1204">        order = 0;</a>
+<a name="ln1205">        continue;</a>
+<a name="ln1206">      }</a>
+<a name="ln1207">      break;</a>
+<a name="ln1208"> </a>
+<a name="ln1209">    case 'U':</a>
+<a name="ln1210">      if (order != 1)</a>
+<a name="ln1211">        return error();</a>
+<a name="ln1212">      if (ptr[1]=='U') {</a>
+<a name="ln1213">        order = 3;</a>
+<a name="ln1214">        ptr += 2;</a>
+<a name="ln1215">      } else {</a>
+<a name="ln1216">        order = 2;</a>
+<a name="ln1217">        ptr++;</a>
+<a name="ln1218">      }</a>
+<a name="ln1219">      continue;</a>
+<a name="ln1220"> </a>
+<a name="ln1221">    case 'V':</a>
+<a name="ln1222">      if (ptr[1]=='H') {</a>
+<a name="ln1223">        if (state == 0) {</a>
+<a name="ln1224">          /* degree1 */</a>
+<a name="ln1225">          next(carbonyl(),1);</a>
+<a name="ln1226">          ptr += 2;</a>
+<a name="ln1227">          continue;</a>
+<a name="ln1228">        }</a>
+<a name="ln1229">      }</a>
+<a name="ln1230">      if (!degree2(carbonyl()))</a>
+<a name="ln1231">        return false;</a>
+<a name="ln1232">      ptr++;</a>
+<a name="ln1233">      continue;</a>
+<a name="ln1234"> </a>
+<a name="ln1235">    case 'W':</a>
+<a name="ln1236">      if (ptr[1]=='G' &amp;&amp; ptr[2]=='W') {  // WGW</a>
+<a name="ln1237">        if (state == 0) {</a>
+<a name="ln1238">          next(perchlorate(),0);</a>
+<a name="ln1239">          ptr += 3;</a>
+<a name="ln1240">          continue;</a>
+<a name="ln1241">        }</a>
+<a name="ln1242">      }</a>
+<a name="ln1243">      if (ptr[1]=='N') {  // WN</a>
+<a name="ln1244">        // degree1(nitro(1))</a>
+<a name="ln1245">        if (state == 0) {</a>
+<a name="ln1246">          next(nitro(),1);</a>
+<a name="ln1247">          ptr += 2;</a>
+<a name="ln1248">          continue;</a>
+<a name="ln1249">        }</a>
+<a name="ln1250">      }</a>
+<a name="ln1251">      if (ptr[1]=='P' &amp;&amp; ptr[2]=='H') {  // WPH</a>
+<a name="ln1252">        if (state == 0) {</a>
+<a name="ln1253">          prev = atom(15,1);</a>
+<a name="ln1254">          OpenBabel::OBAtom* temp = atom(8,1);</a>
+<a name="ln1255">          NMOBMolNewBond(mol,prev,temp,1,false);</a>
+<a name="ln1256">          temp = atom(8,0);</a>
+<a name="ln1257">          temp-&gt;SetFormalCharge(-1);</a>
+<a name="ln1258">          NMOBMolNewBond(mol,prev,temp,1,false);</a>
+<a name="ln1259">          next(prev,1);</a>
+<a name="ln1260">          ptr += 3;</a>
+<a name="ln1261">          continue;</a>
+<a name="ln1262">        }</a>
+<a name="ln1263">      }</a>
+<a name="ln1264">      if (ptr[1]=='S' &amp;&amp; ptr[2]=='Q') {  // WSQ</a>
+<a name="ln1265">        if (state == 0) {</a>
+<a name="ln1266">          prev = atom(16,1);</a>
+<a name="ln1267">          NMOBMolNewBond(mol,prev,atom(8,0),2,false);</a>
+<a name="ln1268">          NMOBMolNewBond(mol,prev,atom(8,0),2,false);</a>
+<a name="ln1269">          NMOBMolNewBond(mol,prev,atom(8,1),1,false);</a>
+<a name="ln1270">          pending = PENDING_DEPROT;</a>
+<a name="ln1271">          state = 1;</a>
+<a name="ln1272">          order = 1;</a>
+<a name="ln1273">          ptr += 3;</a>
+<a name="ln1274">          continue;</a>
+<a name="ln1275">        }</a>
+<a name="ln1276">      }</a>
+<a name="ln1277">      if (ptr[1]=='S') {  // WS</a>
+<a name="ln1278">        if (state == 0) {</a>
+<a name="ln1279">          prev = atom(16,2);</a>
+<a name="ln1280">          push();</a>
+<a name="ln1281">          NMOBMolNewBond(mol,prev,atom(8,0),2,false);</a>
+<a name="ln1282">          NMOBMolNewBond(mol,prev,atom(8,0),2,false);</a>
+<a name="ln1283">          pending = PENDING_DEPROT;</a>
+<a name="ln1284">          state = 1;</a>
+<a name="ln1285">          order = 1;</a>
+<a name="ln1286">          ptr += 2;</a>
+<a name="ln1287">          continue;</a>
+<a name="ln1288">        }</a>
+<a name="ln1289">      }</a>
+<a name="ln1290">      break;</a>
+<a name="ln1291"> </a>
+<a name="ln1292">    case 'X':</a>
+<a name="ln1293">      if (order==1 || order==2) {</a>
+<a name="ln1294">        OpenBabel::OBAtom* temp = atom(6,4);</a>
+<a name="ln1295">        fuse(prev,temp,order);</a>
+<a name="ln1296">        pending = PENDING_METHYL;</a>
+<a name="ln1297">        push_methyl();</a>
+<a name="ln1298">        push_methyl();</a>
+<a name="ln1299">        prev = temp;</a>
+<a name="ln1300">        order = 1;</a>
+<a name="ln1301">        ptr++;</a>
+<a name="ln1302">        continue;</a>
+<a name="ln1303">      }</a>
+<a name="ln1304">      break;</a>
+<a name="ln1305"> </a>
+<a name="ln1306">    case 'Y':</a>
+<a name="ln1307">      if (order==1 || order==2) {</a>
+<a name="ln1308">        OpenBabel::OBAtom* temp = atom(6,4);</a>
+<a name="ln1309">        fuse(prev,temp,order);</a>
+<a name="ln1310">        pending = PENDING_METHYL;</a>
+<a name="ln1311">        push_methyl();</a>
+<a name="ln1312">        prev = temp;</a>
+<a name="ln1313">        order = 1;</a>
+<a name="ln1314">        ptr++;</a>
+<a name="ln1315">        continue;</a>
+<a name="ln1316">      }</a>
+<a name="ln1317">      break;</a>
+<a name="ln1318"> </a>
+<a name="ln1319">    case 'Z':</a>
+<a name="ln1320">      if (!term1(atom(7,3)))</a>
+<a name="ln1321">        return false;</a>
+<a name="ln1322">      ptr++;</a>
+<a name="ln1323">      continue;</a>
+<a name="ln1324"> </a>
+<a name="ln1325">    case '-':</a>
+<a name="ln1326">      switch (ptr[1]) {</a>
+<a name="ln1327">      case 'A':</a>
+<a name="ln1328">        if (ptr[2]=='G' &amp;&amp; ptr[3]=='-') {  // -AG-</a>
+<a name="ln1329">          if (state == 0 &amp;&amp; atend(ptr+4)) {</a>
+<a name="ln1330">            prev = atom(47,0);</a>
+<a name="ln1331">            prev-&gt;SetFormalCharge(1);</a>
+<a name="ln1332">            state = 2;</a>
+<a name="ln1333">            ptr += 4;</a>
+<a name="ln1334">            continue;</a>
+<a name="ln1335">          }</a>
+<a name="ln1336">          if (!poly(47))</a>
+<a name="ln1337">            return false;</a>
+<a name="ln1338">          ptr += 4;</a>
+<a name="ln1339">          continue;</a>
+<a name="ln1340">        }</a>
+<a name="ln1341">        if (ptr[2]=='S' &amp;&amp; ptr[3]=='-') {  // -AS-</a>
+<a name="ln1342">          if (!poly(33))</a>
+<a name="ln1343">            return false;</a>
+<a name="ln1344">          ptr += 4;</a>
+<a name="ln1345">          continue;</a>
+<a name="ln1346">        }</a>
+<a name="ln1347">        break;</a>
+<a name="ln1348">      case 'B':</a>
+<a name="ln1349">        if (ptr[2]=='A' &amp;&amp; ptr[3]=='-') {  // -BA-</a>
+<a name="ln1350">          if (!poly(56))</a>
+<a name="ln1351">            return false;</a>
+<a name="ln1352">          ptr += 4;</a>
+<a name="ln1353">          continue;</a>
+<a name="ln1354">        }</a>
+<a name="ln1355">        if (ptr[2]=='I' &amp;&amp; ptr[3]=='-') {  // -BI-</a>
+<a name="ln1356">          if (!poly(83))</a>
+<a name="ln1357">            return false;</a>
+<a name="ln1358">          ptr += 4;</a>
+<a name="ln1359">          continue;</a>
+<a name="ln1360">        }</a>
+<a name="ln1361">        break;</a>
+<a name="ln1362">      case 'C':</a>
+<a name="ln1363">        if (ptr[2]=='A' &amp;&amp; ptr[3]=='-') {  // -CA-</a>
+<a name="ln1364">          if (state == 0 &amp;&amp; atend(ptr+4)) {</a>
+<a name="ln1365">            prev = atom(20,0);</a>
+<a name="ln1366">            prev-&gt;SetFormalCharge(2);</a>
+<a name="ln1367">            state = 2;</a>
+<a name="ln1368">            ptr += 4;</a>
+<a name="ln1369">            continue;</a>
+<a name="ln1370">          }</a>
+<a name="ln1371">          if (!poly(20))</a>
+<a name="ln1372">            return false;</a>
+<a name="ln1373">          ptr += 4;</a>
+<a name="ln1374">          continue;</a>
+<a name="ln1375">        }</a>
+<a name="ln1376">        if (ptr[2]=='D' &amp;&amp; ptr[3]=='-') {  // -CD-</a>
+<a name="ln1377">          if (!poly(48))</a>
+<a name="ln1378">            return false;</a>
+<a name="ln1379">          ptr += 4;</a>
+<a name="ln1380">          continue;</a>
+<a name="ln1381">        }</a>
+<a name="ln1382">        if (ptr[2]=='U' &amp;&amp; ptr[3]=='-') {  // -CU-</a>
+<a name="ln1383">          if (!poly(29))</a>
+<a name="ln1384">            return false;</a>
+<a name="ln1385">          ptr += 4;</a>
+<a name="ln1386">          continue;</a>
+<a name="ln1387">        }</a>
+<a name="ln1388">        break;</a>
+<a name="ln1389">      case 'E':</a>
+<a name="ln1390">        if (ptr[2]=='-') {  // -E-</a>
+<a name="ln1391">          if (!poly(35))</a>
+<a name="ln1392">            return false;</a>
+<a name="ln1393">          ptr += 3;</a>
+<a name="ln1394">          continue;</a>
+<a name="ln1395">        }</a>
+<a name="ln1396">        break;</a>
+<a name="ln1397">      case 'F':</a>
+<a name="ln1398">        if (ptr[2]=='E' &amp;&amp; ptr[3]=='-') {  // -FE-</a>
+<a name="ln1399">          if (!poly(26))</a>
+<a name="ln1400">            return false;</a>
+<a name="ln1401">          ptr += 4;</a>
+<a name="ln1402">          continue;</a>
+<a name="ln1403">        }</a>
+<a name="ln1404">        break;</a>
+<a name="ln1405">      case 'G':</a>
+<a name="ln1406">        if (ptr[2]=='-') {  // -G-</a>
+<a name="ln1407">          if (!poly(17))</a>
+<a name="ln1408">            return false;</a>
+<a name="ln1409">          ptr += 3;</a>
+<a name="ln1410">          continue;</a>
+<a name="ln1411">        }</a>
+<a name="ln1412">        if (ptr[2]=='A' &amp;&amp; ptr[3]=='-') {  // -GA-</a>
+<a name="ln1413">          if (!poly(31))</a>
+<a name="ln1414">            return false;</a>
+<a name="ln1415">          ptr += 4;</a>
+<a name="ln1416">          continue;</a>
+<a name="ln1417">        }</a>
+<a name="ln1418">        if (ptr[2]=='E' &amp;&amp; ptr[3]=='-') {  // -GE-</a>
+<a name="ln1419">          if (!poly(32))</a>
+<a name="ln1420">            return false;</a>
+<a name="ln1421">          ptr += 4;</a>
+<a name="ln1422">          continue;</a>
+<a name="ln1423">        }</a>
+<a name="ln1424">        break;</a>
+<a name="ln1425">      case 'H':</a>
+<a name="ln1426">        if (ptr[2]=='G' &amp;&amp; ptr[3]=='-') {  // -HG-</a>
+<a name="ln1427">          if (!poly(80))</a>
+<a name="ln1428">            return false;</a>
+<a name="ln1429">          ptr += 4;</a>
+<a name="ln1430">          continue;</a>
+<a name="ln1431">        }</a>
+<a name="ln1432">        break;</a>
+<a name="ln1433">      case 'I':</a>
+<a name="ln1434">        if (ptr[2]=='-') {  // -I-</a>
+<a name="ln1435">          if (!poly(53))</a>
+<a name="ln1436">            return false;</a>
+<a name="ln1437">          ptr += 3;</a>
+<a name="ln1438">          continue;</a>
+<a name="ln1439">        }</a>
+<a name="ln1440">        if (ptr[2]=='N' &amp;&amp; ptr[3]=='-') {  // -IN-</a>
+<a name="ln1441">          if (!poly(49))</a>
+<a name="ln1442">            return false;</a>
+<a name="ln1443">          ptr += 4;</a>
+<a name="ln1444">          continue;</a>
+<a name="ln1445">        }</a>
+<a name="ln1446">        break;</a>
+<a name="ln1447">      case 'K':</a>
+<a name="ln1448">        if (ptr[2]=='A' &amp;&amp; ptr[3]=='-') {  // -KA-</a>
+<a name="ln1449">          if (state == 0 &amp;&amp; atend(ptr+4)) {</a>
+<a name="ln1450">            prev = atom(19,0);</a>
+<a name="ln1451">            prev-&gt;SetFormalCharge(1);</a>
+<a name="ln1452">            state = 2;</a>
+<a name="ln1453">            ptr += 4;</a>
+<a name="ln1454">            continue;</a>
+<a name="ln1455">          }</a>
+<a name="ln1456">        }</a>
+<a name="ln1457">        break;</a>
+<a name="ln1458">      case 'L':</a>
+<a name="ln1459">        if (ptr[2]=='I' &amp;&amp; ptr[3]=='-') {  // -LI-</a>
+<a name="ln1460">          if (state == 0 &amp;&amp; atend(ptr+4)) {</a>
+<a name="ln1461">            prev = atom(3,0);</a>
+<a name="ln1462">            prev-&gt;SetFormalCharge(1);</a>
+<a name="ln1463">            state = 2;</a>
+<a name="ln1464">            ptr += 4;</a>
+<a name="ln1465">            continue;</a>
+<a name="ln1466">          }</a>
+<a name="ln1467">        }</a>
+<a name="ln1468">        break;</a>
+<a name="ln1469">      case 'M':</a>
+<a name="ln1470">        if (ptr[2]=='G' &amp;&amp; ptr[3]=='-') {  // -MG-</a>
+<a name="ln1471">          if (state == 0 &amp;&amp; atend(ptr+4)) {</a>
+<a name="ln1472">            prev = atom(12,0);</a>
+<a name="ln1473">            prev-&gt;SetFormalCharge(2);</a>
+<a name="ln1474">            state = 2;</a>
+<a name="ln1475">            ptr += 4;</a>
+<a name="ln1476">            continue;</a>
+<a name="ln1477">          }</a>
+<a name="ln1478">          if (!poly(12))</a>
+<a name="ln1479">            return false;</a>
+<a name="ln1480">          ptr += 4;</a>
+<a name="ln1481">          continue;</a>
+<a name="ln1482">        }</a>
+<a name="ln1483">        if (ptr[2]=='N' &amp;&amp; ptr[3]=='-') {  // -MN-</a>
+<a name="ln1484">          if (!poly(25))</a>
+<a name="ln1485">            return false;</a>
+<a name="ln1486">          ptr += 4;</a>
+<a name="ln1487">          continue;</a>
+<a name="ln1488">        }</a>
+<a name="ln1489">        break;</a>
+<a name="ln1490">      case 'N':</a>
+<a name="ln1491">        if (ptr[2]=='A' &amp;&amp; ptr[3]=='-') {  // -NA-</a>
+<a name="ln1492">          if (state == 0 &amp;&amp; atend(ptr+4)) {</a>
+<a name="ln1493">            prev = atom(11,0);</a>
+<a name="ln1494">            prev-&gt;SetFormalCharge(1);</a>
+<a name="ln1495">            state = 2;</a>
+<a name="ln1496">            ptr += 4;</a>
+<a name="ln1497">            continue;</a>
+<a name="ln1498">          }</a>
+<a name="ln1499">          if (!poly(11))</a>
+<a name="ln1500">            return false;</a>
+<a name="ln1501">          ptr += 4;</a>
+<a name="ln1502">          continue;</a>
+<a name="ln1503">        }</a>
+<a name="ln1504">        if (ptr[2]=='I' &amp;&amp; ptr[3]=='-') {  // -NI-</a>
+<a name="ln1505">          if (!poly(28))</a>
+<a name="ln1506">            return false;</a>
+<a name="ln1507">          ptr += 4;</a>
+<a name="ln1508">          continue;</a>
+<a name="ln1509">        }</a>
+<a name="ln1510">        break;</a>
+<a name="ln1511">      case 'P':</a>
+<a name="ln1512">        if (ptr[2]=='B' &amp;&amp; ptr[3]=='-') {  // -PB-</a>
+<a name="ln1513">          if (!poly(82))</a>
+<a name="ln1514">            return false;</a>
+<a name="ln1515">          ptr += 4;</a>
+<a name="ln1516">          continue;</a>
+<a name="ln1517">        }</a>
+<a name="ln1518">        if (ptr[2]=='T' &amp;&amp; ptr[3]=='-') {  // -PT-</a>
+<a name="ln1519">          if (!poly(78))</a>
+<a name="ln1520">            return false;</a>
+<a name="ln1521">          ptr += 4;</a>
+<a name="ln1522">          continue;</a>
+<a name="ln1523">        }</a>
+<a name="ln1524">        break;</a>
+<a name="ln1525">      case 'S':</a>
+<a name="ln1526">        if (ptr[2]=='B' &amp;&amp; ptr[3]=='-') {  // -SB-</a>
+<a name="ln1527">          if (!poly(51))</a>
+<a name="ln1528">            return false;</a>
+<a name="ln1529">          ptr += 4;</a>
+<a name="ln1530">          continue;</a>
+<a name="ln1531">        }</a>
+<a name="ln1532">        if (ptr[2]=='E' &amp;&amp; ptr[3]=='-') {  // -SE-</a>
+<a name="ln1533">          if (!poly(34))</a>
+<a name="ln1534">            return false;</a>
+<a name="ln1535">          ptr += 4;</a>
+<a name="ln1536">          continue;</a>
+<a name="ln1537">        }</a>
+<a name="ln1538">        if (ptr[2]=='I' &amp;&amp; ptr[3]=='-') {  // -SI-</a>
+<a name="ln1539">          if (!poly(14))</a>
+<a name="ln1540">            return false;</a>
+<a name="ln1541">          ptr += 4;</a>
+<a name="ln1542">          continue;</a>
+<a name="ln1543">        }</a>
+<a name="ln1544">        if (ptr[2]=='N' &amp;&amp; ptr[3]=='-') {  // -SN-</a>
+<a name="ln1545">          if (!poly(50))</a>
+<a name="ln1546">            return false;</a>
+<a name="ln1547">          ptr += 4;</a>
+<a name="ln1548">          continue;</a>
+<a name="ln1549">        }</a>
+<a name="ln1550">        if (ptr[2]=='R' &amp;&amp; ptr[3]=='-') {  // -SR-</a>
+<a name="ln1551">          if (!poly(38))</a>
+<a name="ln1552">            return false;</a>
+<a name="ln1553">          ptr += 4;</a>
+<a name="ln1554">          continue;</a>
+<a name="ln1555">        }</a>
+<a name="ln1556">        break;</a>
+<a name="ln1557">      case 'T':</a>
+<a name="ln1558">        if (ptr[2]=='L' &amp;&amp; ptr[3]=='-') {  // -TL-</a>
+<a name="ln1559">          if (!poly(81))</a>
+<a name="ln1560">            return false;</a>
+<a name="ln1561">          ptr += 4;</a>
+<a name="ln1562">          continue;</a>
+<a name="ln1563">        }</a>
+<a name="ln1564">        break;</a>
+<a name="ln1565">      case 'U':</a>
+<a name="ln1566">        if (ptr[2]=='R' &amp;&amp; ptr[3]=='-') {  // -UR-</a>
+<a name="ln1567">          if (!poly(92))</a>
+<a name="ln1568">            return false;</a>
+<a name="ln1569">          ptr += 4;</a>
+<a name="ln1570">          continue;</a>
+<a name="ln1571">        }</a>
+<a name="ln1572">        break;</a>
+<a name="ln1573">      case 'V':</a>
+<a name="ln1574">        if (ptr[2]=='A' &amp;&amp; ptr[3]=='-') {  // -VA-</a>
+<a name="ln1575">          if (!poly(23))</a>
+<a name="ln1576">            return false;</a>
+<a name="ln1577">          ptr += 4;</a>
+<a name="ln1578">          continue;</a>
+<a name="ln1579">        }</a>
+<a name="ln1580">        break;</a>
+<a name="ln1581">      case 'W':</a>
+<a name="ln1582">        if (ptr[2]=='O' &amp;&amp; ptr[3]=='-') {  // -WO-</a>
+<a name="ln1583">          if (!poly(74))</a>
+<a name="ln1584">            return false;</a>
+<a name="ln1585">          ptr += 4;</a>
+<a name="ln1586">          continue;</a>
+<a name="ln1587">        }</a>
+<a name="ln1588">        break;</a>
+<a name="ln1589">      case 'Z':</a>
+<a name="ln1590">        if (ptr[2]=='N' &amp;&amp; ptr[3]=='-') {  // -ZN-</a>
+<a name="ln1591">          if (!poly(30))</a>
+<a name="ln1592">            return false;</a>
+<a name="ln1593">          ptr += 4;</a>
+<a name="ln1594">          continue;</a>
+<a name="ln1595">        }</a>
+<a name="ln1596">        break;</a>
+<a name="ln1597">      case ' ':</a>
+<a name="ln1598">        if (ptr[2]&gt;='A' &amp;&amp; ptr[2]&lt;='Z' &amp;&amp;</a>
+<a name="ln1599">            (ptr[3]=='L' || ptr[3]=='T')) {  // &quot;- [A-Z][LT]&quot; e.g. &quot;- AL&quot;</a>
+<a name="ln1600">          if (order==1 || order==2) {</a>
+<a name="ln1601">            const char *loc_ptr = ptr+2;</a>
+<a name="ln1602">            unsigned int loc = *loc_ptr-'A';</a>
+<a name="ln1603">            ptr += 3;</a>
+<a name="ln1604">            if (!parse_ring())</a>
+<a name="ln1605">              return false;</a>
+<a name="ln1606">            if (loc &gt;= rings.back().size()) {</a>
+<a name="ln1607">              ptr = loc_ptr;</a>
+<a name="ln1608">              return error();</a>
+<a name="ln1609">            }</a>
+<a name="ln1610">            fuse(prev,rings.back()[loc],order);</a>
+<a name="ln1611">            state = 2;</a>
+<a name="ln1612">            order = 0;</a>
+<a name="ln1613">            continue;</a>
+<a name="ln1614">          }</a>
+<a name="ln1615">        }</a>
+<a name="ln1616">        break;</a>
+<a name="ln1617">      }</a>
+<a name="ln1618">      break;</a>
+<a name="ln1619"> </a>
+<a name="ln1620">    case '&amp;':</a>
+<a name="ln1621">      term();</a>
+<a name="ln1622">      if (ptr[1]=='&amp;') {</a>
+<a name="ln1623">        if (!double_pop())</a>
+<a name="ln1624">          return false;</a>
+<a name="ln1625">        ptr += 2;</a>
+<a name="ln1626">        continue;</a>
+<a name="ln1627">      }</a>
+<a name="ln1628">      if (!pop())</a>
+<a name="ln1629">        return false;</a>
+<a name="ln1630">      ptr++;</a>
+<a name="ln1631">      continue;</a>
+<a name="ln1632"> </a>
+<a name="ln1633">    case ' ':</a>
+<a name="ln1634">      if (ptr[1]=='&amp;') {</a>
+<a name="ln1635">        if (state != 0) {</a>
+<a name="ln1636">          drain();</a>
+<a name="ln1637">          pending = PENDING_NONE;</a>
+<a name="ln1638">          prev = nullptr;</a>
+<a name="ln1639">          rings.clear();</a>
+<a name="ln1640">          state = 0;</a>
+<a name="ln1641">          order = 0;</a>
+<a name="ln1642">          ptr += 2;</a>
+<a name="ln1643">          continue;</a>
+<a name="ln1644">        }</a>
+<a name="ln1645">      }</a>
+<a name="ln1646">      if (ptr[1]&gt;='A' &amp;&amp; ptr[1]&lt;='Z') {</a>
+<a name="ln1647">        if (rings.empty())</a>
+<a name="ln1648">          return error();</a>
+<a name="ln1649">        term();</a>
+<a name="ln1650">        unsigned int loc = ptr[1]-'A';</a>
+<a name="ln1651">        if (loc &lt; rings.back().size()) {</a>
+<a name="ln1652">          prev = rings.back()[loc];</a>
+<a name="ln1653">          pending = PENDING_METHYL;</a>
+<a name="ln1654">          order = 1;</a>
+<a name="ln1655">          state = 1;</a>
+<a name="ln1656">          ptr += 2;</a>
+<a name="ln1657">          continue;</a>
+<a name="ln1658">        }</a>
+<a name="ln1659">      }</a>
+<a name="ln1660">      break;</a>
+<a name="ln1661"> </a>
+<a name="ln1662">    default:</a>
+<a name="ln1663">      if (*ptr&gt;='1' &amp;&amp; *ptr&lt;='9') {</a>
+<a name="ln1664">        if (!alkane())</a>
+<a name="ln1665">          return false;</a>
+<a name="ln1666">        continue;</a>
+<a name="ln1667">      }</a>
+<a name="ln1668">      break;</a>
+<a name="ln1669">    }</a>
+<a name="ln1670">    return error();</a>
+<a name="ln1671">    }</a>
+<a name="ln1672">  }</a>
+<a name="ln1673"> </a>
+<a name="ln1674">  // ptr is E, F, G or I</a>
+<a name="ln1675">  int parse_inorganic_halide(unsigned int cation, unsigned int count,</a>
+<a name="ln1676">                             unsigned int anion) {</a>
+<a name="ln1677">    if (count != 1)</a>
+<a name="ln1678">      return 0;</a>
+<a name="ln1679">    if (ptr[1]&gt;='2' &amp;&amp; ptr[1]&lt;='9' &amp;&amp; !ptr[2]) {</a>
+<a name="ln1680">      count = ptr[1]-'0';</a>
+<a name="ln1681">    } else if (!ptr[1]) {</a>
+<a name="ln1682">      count = 1;</a>
+<a name="ln1683">    } else return 0;</a>
+<a name="ln1684"> </a>
+<a name="ln1685">    prev = atom(cation,0);</a>
+<a name="ln1686">    for (unsigned int i=0; i&lt;count; i++) {</a>
+<a name="ln1687">      OpenBabel::OBAtom* temp = atom(anion,0);</a>
+<a name="ln1688">      NMOBMolNewBond(mol,prev,temp,1,false);</a>
+<a name="ln1689">    }</a>
+<a name="ln1690">    return 1;</a>
+<a name="ln1691">  }</a>
+<a name="ln1692"> </a>
+<a name="ln1693">  // ptr is O or S, or ptr-1 is SE or TE</a>
+<a name="ln1694">  int parse_inorganic_oxide(unsigned int cation, unsigned int count,</a>
+<a name="ln1695">                            unsigned int anion) {</a>
+<a name="ln1696">    if (count == 1) {</a>
+<a name="ln1697">      if (ptr[1]&gt;='2' &amp;&amp; ptr[1]&lt;='9' &amp;&amp; !ptr[2]) {</a>
+<a name="ln1698">        count = ptr[1]-'0';</a>
+<a name="ln1699">      } else if (!ptr[1]) {</a>
+<a name="ln1700">        count = 1;</a>
+<a name="ln1701">      } else return 0;</a>
+<a name="ln1702">      prev = atom(cation,0);</a>
+<a name="ln1703">      for (unsigned int i=0; i&lt;count; i++) {</a>
+<a name="ln1704">        OpenBabel::OBAtom* temp = atom(anion,0);</a>
+<a name="ln1705">        NMOBMolNewBond(mol,prev,temp,2,false);</a>
+<a name="ln1706">      }</a>
+<a name="ln1707">      return 1;</a>
+<a name="ln1708">    } else if (count == 2) {</a>
+<a name="ln1709">      if (!ptr[1]) {</a>
+<a name="ln1710">        prev = atom(anion,0);</a>
+<a name="ln1711">        NMOBMolNewBond(mol,prev,atom(cation,0),1,false);</a>
+<a name="ln1712">        NMOBMolNewBond(mol,prev,atom(cation,0),1,false);</a>
+<a name="ln1713">        return 1;</a>
+<a name="ln1714">      } else if (ptr[1]=='3' &amp;&amp; !ptr[2]) {</a>
+<a name="ln1715">        prev = atom(anion,0);</a>
+<a name="ln1716">        OpenBabel::OBAtom* temp = atom(cation,0);</a>
+<a name="ln1717">        NMOBMolNewBond(mol,temp,atom(anion,0),2,false);</a>
+<a name="ln1718">        NMOBMolNewBond(mol,prev,temp,1,false);</a>
+<a name="ln1719">        temp = atom(cation,0);</a>
+<a name="ln1720">        NMOBMolNewBond(mol,temp,atom(anion,0),2,false);</a>
+<a name="ln1721">        NMOBMolNewBond(mol,prev,temp,1,false);</a>
+<a name="ln1722">        return 1;</a>
+<a name="ln1723">      } else if (ptr[1]=='5' &amp;&amp; !ptr[2]) {</a>
+<a name="ln1724">        prev = atom(anion,0);</a>
+<a name="ln1725">        OpenBabel::OBAtom* temp = atom(cation,0);</a>
+<a name="ln1726">        NMOBMolNewBond(mol,temp,atom(anion,0),2,false);</a>
+<a name="ln1727">        NMOBMolNewBond(mol,temp,atom(anion,0),2,false);</a>
+<a name="ln1728">        NMOBMolNewBond(mol,prev,temp,1,false);</a>
+<a name="ln1729">        temp = atom(cation,0);</a>
+<a name="ln1730">        NMOBMolNewBond(mol,temp,atom(anion,0),2,false);</a>
+<a name="ln1731">        NMOBMolNewBond(mol,temp,atom(anion,0),2,false);</a>
+<a name="ln1732">        NMOBMolNewBond(mol,prev,temp,1,false);</a>
+<a name="ln1733">        return 1;</a>
+<a name="ln1734">      }</a>
+<a name="ln1735">    }</a>
+<a name="ln1736">    return 0;</a>
+<a name="ln1737">  }</a>
+<a name="ln1738"> </a>
+<a name="ln1739">#define WLN_BORATE     1</a>
+<a name="ln1740">#define WLN_CARBONATE  2</a>
+<a name="ln1741">#define WLN_CARBONYL   3</a>
+<a name="ln1742">#define WLN_CYANIDE    4</a>
+<a name="ln1743">#define WLN_NITRATE    5</a>
+<a name="ln1744">#define WLN_NITRITE    6</a>
+<a name="ln1745">#define WLN_SULFATE    7</a>
+<a name="ln1746">#define WLN_SULFITE    8</a>
+<a name="ln1747"> </a>
+<a name="ln1748">  // ptr is after anion, i.e. multiplier or done.</a>
+<a name="ln1749">  int parse_inorganic_salt(unsigned int cation, unsigned int ccount,</a>
+<a name="ln1750">                           unsigned int anion, unsigned int acharge)</a>
+<a name="ln1751">  {</a>
+<a name="ln1752">    unsigned int acount;</a>
+<a name="ln1753">    if (ptr[0]=='*' &amp;&amp; ptr[1]&gt;='2' &amp;&amp; ptr[1]&lt;='9' &amp;&amp; !ptr[2]) {</a>
+<a name="ln1754">      acount = ptr[1]-'0';</a>
+<a name="ln1755">    } else if (!ptr[0]) {</a>
+<a name="ln1756">      acount = 1;</a>
+<a name="ln1757">    } else return 0;</a>
+<a name="ln1758"> </a>
+<a name="ln1759">    if (ccount != acount*acharge) {</a>
+<a name="ln1760">      unsigned int ccharge = (acount*acharge)/ccount;</a>
+<a name="ln1761">      if (ccount*ccharge != acount*acharge)</a>
+<a name="ln1762">        return 0;</a>
+<a name="ln1763">      for (unsigned int i=0; i&lt;ccount; i++) {</a>
+<a name="ln1764">        prev = atom(cation,0);</a>
+<a name="ln1765">        prev-&gt;SetFormalCharge(ccharge);</a>
+<a name="ln1766">      }</a>
+<a name="ln1767">      cation = 0;</a>
+<a name="ln1768">    }</a>
+<a name="ln1769">    </a>
+<a name="ln1770">    OpenBabel::OBAtom* temp;</a>
+<a name="ln1771"> </a>
+<a name="ln1772">    for (unsigned int i=0; i&lt;acount; i++) {</a>
+<a name="ln1773">      switch (anion) {</a>
+<a name="ln1774">      case WLN_BORATE:</a>
+<a name="ln1775">        prev = atom(5,0);</a>
+<a name="ln1776">        temp = atom(8,0);</a>
+<a name="ln1777">        NMOBMolNewBond(mol,prev,temp,1,false);</a>
+<a name="ln1778">        if (cation)</a>
+<a name="ln1779">          NMOBMolNewBond(mol,temp,atom(cation,0),1,false);</a>
+<a name="ln1780">        else temp-&gt;SetFormalCharge(-1);</a>
+<a name="ln1781">        temp = atom(8,0);</a>
+<a name="ln1782">        NMOBMolNewBond(mol,prev,temp,1,false);</a>
+<a name="ln1783">        if (cation)</a>
+<a name="ln1784">          NMOBMolNewBond(mol,temp,atom(cation,0),1,false);</a>
+<a name="ln1785">        else temp-&gt;SetFormalCharge(-1);</a>
+<a name="ln1786">        temp = atom(8,0);</a>
+<a name="ln1787">        NMOBMolNewBond(mol,prev,temp,1,false);</a>
+<a name="ln1788">        if (cation)</a>
+<a name="ln1789">          NMOBMolNewBond(mol,temp,atom(cation,0),1,false);</a>
+<a name="ln1790">        else temp-&gt;SetFormalCharge(-1);</a>
+<a name="ln1791">        break;</a>
+<a name="ln1792">      case WLN_CARBONATE:</a>
+<a name="ln1793">        prev = atom(6,0);</a>
+<a name="ln1794">        NMOBMolNewBond(mol,prev,atom(8,0),2,false);</a>
+<a name="ln1795">        temp = atom(8,0);</a>
+<a name="ln1796">        NMOBMolNewBond(mol,prev,temp,1,false);</a>
+<a name="ln1797">        if (cation)</a>
+<a name="ln1798">          NMOBMolNewBond(mol,temp,atom(cation,0),1,false);</a>
+<a name="ln1799">        else temp-&gt;SetFormalCharge(-1);</a>
+<a name="ln1800">        temp = atom(8,0);</a>
+<a name="ln1801">        NMOBMolNewBond(mol,prev,temp,1,false);</a>
+<a name="ln1802">        if (cation)</a>
+<a name="ln1803">          NMOBMolNewBond(mol,temp,atom(cation,0),1,false);</a>
+<a name="ln1804">        else temp-&gt;SetFormalCharge(-1);</a>
+<a name="ln1805">        break;</a>
+<a name="ln1806">      case WLN_SULFATE:</a>
+<a name="ln1807">        prev = atom(16,0);</a>
+<a name="ln1808">        NMOBMolNewBond(mol,prev,atom(8,0),2,false);</a>
+<a name="ln1809">        NMOBMolNewBond(mol,prev,atom(8,0),2,false);</a>
+<a name="ln1810">        temp = atom(8,0);</a>
+<a name="ln1811">        NMOBMolNewBond(mol,prev,temp,1,false);</a>
+<a name="ln1812">        if (cation)</a>
+<a name="ln1813">          NMOBMolNewBond(mol,temp,atom(cation,0),1,false);</a>
+<a name="ln1814">        else temp-&gt;SetFormalCharge(-1);</a>
+<a name="ln1815">        temp = atom(8,0);</a>
+<a name="ln1816">        NMOBMolNewBond(mol,prev,temp,1,false);</a>
+<a name="ln1817">        if (cation)</a>
+<a name="ln1818">          NMOBMolNewBond(mol,temp,atom(cation,0),1,false);</a>
+<a name="ln1819">        else temp-&gt;SetFormalCharge(-1);</a>
+<a name="ln1820">        break;</a>
+<a name="ln1821">      case WLN_SULFITE:</a>
+<a name="ln1822">        prev = atom(16,0);</a>
+<a name="ln1823">        NMOBMolNewBond(mol,prev,atom(8,0),2,false);</a>
+<a name="ln1824">        temp = atom(8,0);</a>
+<a name="ln1825">        NMOBMolNewBond(mol,prev,temp,1,false);</a>
+<a name="ln1826">        if (cation)</a>
+<a name="ln1827">          NMOBMolNewBond(mol,temp,atom(cation,0),1,false);</a>
+<a name="ln1828">        else temp-&gt;SetFormalCharge(-1);</a>
+<a name="ln1829">        temp = atom(8,0);</a>
+<a name="ln1830">        NMOBMolNewBond(mol,prev,temp,1,false);</a>
+<a name="ln1831">        if (cation)</a>
+<a name="ln1832">          NMOBMolNewBond(mol,temp,atom(cation,0),1,false);</a>
+<a name="ln1833">        else temp-&gt;SetFormalCharge(-1);</a>
+<a name="ln1834">        break;</a>
+<a name="ln1835">      }</a>
+<a name="ln1836">    }</a>
+<a name="ln1837">    return 1;</a>
+<a name="ln1838">  }</a>
+<a name="ln1839"> </a>
+<a name="ln1840">  // ptr is after anion, i.e. multiplier or done.</a>
+<a name="ln1841">  int parse_inorganic_salt1(unsigned int cation, unsigned int ccount,</a>
+<a name="ln1842">                            unsigned int anion)</a>
+<a name="ln1843">  {</a>
+<a name="ln1844">    unsigned int acount;</a>
+<a name="ln1845">    if (ptr[0]=='*' &amp;&amp; ptr[1]&gt;='2' &amp;&amp; ptr[1]&lt;='9' &amp;&amp; !ptr[2]) {</a>
+<a name="ln1846">      acount = ptr[1]-'0';</a>
+<a name="ln1847">    } else if (!ptr[0]) {</a>
+<a name="ln1848">      acount = 1;</a>
+<a name="ln1849">    } else return 0;</a>
+<a name="ln1850"> </a>
+<a name="ln1851">    if (ccount == 1) {</a>
+<a name="ln1852">      prev = atom(cation,0);</a>
+<a name="ln1853">    } else return 0;</a>
+<a name="ln1854"> </a>
+<a name="ln1855">    OpenBabel::OBAtom* temp;</a>
+<a name="ln1856">    OpenBabel::OBAtom* temp2;</a>
+<a name="ln1857"> </a>
+<a name="ln1858">    for (unsigned int i=0; i&lt;acount; i++) {</a>
+<a name="ln1859">      switch (anion) {</a>
+<a name="ln1860">      case WLN_CARBONYL:</a>
+<a name="ln1861">        temp = atom(6,0);</a>
+<a name="ln1862">        NMOBMolNewBond(mol,temp,atom(8,0),2,false);</a>
+<a name="ln1863">        break;</a>
+<a name="ln1864">      case WLN_CYANIDE:</a>
+<a name="ln1865">        temp = atom(6,0);</a>
+<a name="ln1866">        NMOBMolNewBond(mol,temp,atom(7,0),3,false);</a>
+<a name="ln1867">        break;</a>
+<a name="ln1868">      case WLN_NITRATE:</a>
+<a name="ln1869">        temp2 = atom(7,0);</a>
+<a name="ln1870">        temp2-&gt;SetFormalCharge(1);</a>
+<a name="ln1871">        NMOBMolNewBond(mol,atom(8,0),temp2,2,false);</a>
+<a name="ln1872">        temp = atom(8,0);</a>
+<a name="ln1873">        temp-&gt;SetFormalCharge(-1);</a>
+<a name="ln1874">        NMOBMolNewBond(mol,temp2,temp,1,false);</a>
+<a name="ln1875">        temp = atom(8,0);</a>
+<a name="ln1876">        NMOBMolNewBond(mol,temp2,temp,1,false);</a>
+<a name="ln1877">        break;</a>
+<a name="ln1878">      case WLN_NITRITE:</a>
+<a name="ln1879">        temp = atom(8,0);</a>
+<a name="ln1880">        temp2 = atom(7,0);</a>
+<a name="ln1881">        NMOBMolNewBond(mol,temp,temp2,2,false);</a>
+<a name="ln1882">        temp = atom(8,0);</a>
+<a name="ln1883">        NMOBMolNewBond(mol,temp,temp2,1,false);</a>
+<a name="ln1884">        break;</a>
+<a name="ln1885">      default:</a>
+<a name="ln1886">        /* Internal error */</a>
+<a name="ln1887">        return 0;</a>
+<a name="ln1888">      }</a>
+<a name="ln1889">      if (ccount == 1)</a>
+<a name="ln1890">        NMOBMolNewBond(mol,prev,temp,1,false);</a>
+<a name="ln1891">      else temp-&gt;SetFormalCharge(-1);</a>
+<a name="ln1892">    }</a>
+<a name="ln1893">    return 1;</a>
+<a name="ln1894">  }</a>
+<a name="ln1895"> </a>
+<a name="ln1896">  // 1 success, -1 failure, 0 unknown</a>
+<a name="ln1897">  int parse_inorganic() {</a>
+<a name="ln1898">    ptr = orig;</a>
+<a name="ln1899">    if (ptr[0]=='W' &amp;&amp; ptr[1]=='L' &amp;&amp; ptr[2]=='N' &amp;&amp;</a>
+<a name="ln1900">        ptr[3]==':' &amp;&amp; ptr[4]==' ')</a>
+<a name="ln1901">      ptr += 5;</a>
+<a name="ln1902"> </a>
+<a name="ln1903">    unsigned int cation = 0;</a>
+<a name="ln1904">    switch (*ptr) {</a>
+<a name="ln1905">    case 'A':</a>
+<a name="ln1906">      if (ptr[1]=='L')  // AL</a>
+<a name="ln1907">        cation = 13;</a>
+<a name="ln1908">      else if (ptr[1]=='G')  // AG</a>
+<a name="ln1909">        cation = 47;</a>
+<a name="ln1910">      else if (ptr[1]=='U')  // AU</a>
+<a name="ln1911">        cation = 79;</a>
+<a name="ln1912">      break;</a>
+<a name="ln1913">    case 'B':</a>
+<a name="ln1914">      if (ptr[1]=='A')  // BA</a>
+<a name="ln1915">        cation = 56;</a>
+<a name="ln1916">      else if (ptr[1]=='E')  // BE</a>
+<a name="ln1917">        cation = 4;</a>
+<a name="ln1918">      break;</a>
+<a name="ln1919">    case 'C':</a>
+<a name="ln1920">      if (ptr[1]=='A')  // CA</a>
+<a name="ln1921">        cation = 20;</a>
+<a name="ln1922">      else if (ptr[1]=='D')  // CD</a>
+<a name="ln1923">        cation = 48;</a>
+<a name="ln1924">      else if (ptr[1]=='E')  // CE</a>
+<a name="ln1925">        cation = 58;</a>
+<a name="ln1926">      else if (ptr[1]=='N')  // CN</a>
+<a name="ln1927">        cation = 112;</a>
+<a name="ln1928">      else if (ptr[1]=='O')  // CO</a>
+<a name="ln1929">        cation = 27;</a>
+<a name="ln1930">      else if (ptr[1]=='R')  // CR</a>
+<a name="ln1931">        cation = 24;</a>
+<a name="ln1932">      else if (ptr[1]=='S')  // CS</a>
+<a name="ln1933">        cation = 55;</a>
+<a name="ln1934">      else if (ptr[1]=='U')  // CU</a>
+<a name="ln1935">        cation = 29;</a>
+<a name="ln1936">      break;</a>
+<a name="ln1937">    case 'D':</a>
+<a name="ln1938">      if (ptr[1]=='Y')  // DY</a>
+<a name="ln1939">        cation = 66;</a>
+<a name="ln1940">      break;</a>
+<a name="ln1941">    case 'E':</a>
+<a name="ln1942">      if (ptr[1]=='R')  // ER</a>
+<a name="ln1943">        cation = 68;</a>
+<a name="ln1944">      else if (ptr[1]=='S')  // ES</a>
+<a name="ln1945">        cation = 99;</a>
+<a name="ln1946">      else if (ptr[1]=='U')  // EU</a>
+<a name="ln1947">        cation = 63;</a>
+<a name="ln1948">      break;</a>
+<a name="ln1949">    case 'F':</a>
+<a name="ln1950">      if (ptr[1]=='E')  // FE</a>
+<a name="ln1951">        cation = 26;</a>
+<a name="ln1952">      break;</a>
+<a name="ln1953">    case 'G':</a>
+<a name="ln1954">      if (ptr[1]=='A')  // GA</a>
+<a name="ln1955">        cation = 31;</a>
+<a name="ln1956">      else if (ptr[1]=='D')  // GD</a>
+<a name="ln1957">        cation = 64;</a>
+<a name="ln1958">      else if (ptr[1]=='E')  // GE</a>
+<a name="ln1959">        cation = 32;</a>
+<a name="ln1960">      break;</a>
+<a name="ln1961">    case 'H':</a>
+<a name="ln1962">      if (ptr[1]=='G')  // HG</a>
+<a name="ln1963">        cation = 80;</a>
+<a name="ln1964">      else if (ptr[1]=='O')  // HO</a>
+<a name="ln1965">        cation = 67;</a>
+<a name="ln1966">      break;</a>
+<a name="ln1967">    case 'I':</a>
+<a name="ln1968">      if (ptr[1]=='N')  // IN</a>
+<a name="ln1969">        cation = 49;</a>
+<a name="ln1970">      break;</a>
+<a name="ln1971">    case 'K':</a>
+<a name="ln1972">      if (ptr[1]=='A')  // KA</a>
+<a name="ln1973">        cation = 19;</a>
+<a name="ln1974">      break;</a>
+<a name="ln1975">    case 'L':</a>
+<a name="ln1976">      if (ptr[1]=='A')  // LA</a>
+<a name="ln1977">        cation = 57;</a>
+<a name="ln1978">      else if (ptr[1]=='I')  // LI</a>
+<a name="ln1979">        cation = 3;</a>
+<a name="ln1980">      else if (ptr[1]=='U')  // LU</a>
+<a name="ln1981">        cation = 71;</a>
+<a name="ln1982">      break;</a>
+<a name="ln1983">    case 'M':</a>
+<a name="ln1984">      if (ptr[1]=='G')  // MG</a>
+<a name="ln1985">        cation = 12;</a>
+<a name="ln1986">      else if (ptr[1]=='N')  // MN</a>
+<a name="ln1987">        cation = 25;</a>
+<a name="ln1988">      else if (ptr[1]=='O')  // MO</a>
+<a name="ln1989">        cation = 42;</a>
+<a name="ln1990">      break;</a>
+<a name="ln1991">    case 'N':</a>
+<a name="ln1992">      if (ptr[1]=='A')  // NA</a>
+<a name="ln1993">        cation = 11;</a>
+<a name="ln1994">      else if (ptr[1]=='D')  // ND</a>
+<a name="ln1995">        cation = 60;</a>
+<a name="ln1996">      else if (ptr[1]=='I')  // NI</a>
+<a name="ln1997">        cation = 28;</a>
+<a name="ln1998">      break;</a>
+<a name="ln1999">    case 'P':</a>
+<a name="ln2000">      if (ptr[1]=='A')  // PA</a>
+<a name="ln2001">        cation = 91;</a>
+<a name="ln2002">      else if (ptr[1]=='B')  // PB</a>
+<a name="ln2003">        cation = 82;</a>
+<a name="ln2004">      else if (ptr[1]=='D')  // PD</a>
+<a name="ln2005">        cation = 46;</a>
+<a name="ln2006">      else if (ptr[1]=='M')  // PM</a>
+<a name="ln2007">        cation = 61;</a>
+<a name="ln2008">      else if (ptr[1]=='O')  // PO</a>
+<a name="ln2009">        cation = 84;</a>
+<a name="ln2010">      else if (ptr[1]=='R')  // PR</a>
+<a name="ln2011">        cation = 59;</a>
+<a name="ln2012">      else if (ptr[1]=='T')  // PT</a>
+<a name="ln2013">        cation = 78;</a>
+<a name="ln2014">      else if (ptr[1]=='U')  // PU</a>
+<a name="ln2015">        cation = 94;</a>
+<a name="ln2016">      break;</a>
+<a name="ln2017">    case 'R':</a>
+<a name="ln2018">      if (ptr[1]=='A')  // RA</a>
+<a name="ln2019">        cation = 88;</a>
+<a name="ln2020">      else if (ptr[1]=='B')  // RB</a>
+<a name="ln2021">        cation = 37;</a>
+<a name="ln2022">      else if (ptr[1]=='E')  // RE</a>
+<a name="ln2023">        cation = 75;</a>
+<a name="ln2024">      else if (ptr[1]=='F')  // RF</a>
+<a name="ln2025">        cation = 104;</a>
+<a name="ln2026">      else if (ptr[1]=='H')  // RH</a>
+<a name="ln2027">        cation = 45;</a>
+<a name="ln2028">      else if (ptr[1]=='N')  // RN</a>
+<a name="ln2029">        cation = 86;</a>
+<a name="ln2030">      else if (ptr[1]=='U')  // RU</a>
+<a name="ln2031">        cation = 44;</a>
+<a name="ln2032">      break;</a>
+<a name="ln2033">    case 'S':</a>
+<a name="ln2034">      if (ptr[1]=='B')  // SB</a>
+<a name="ln2035">        cation = 51;</a>
+<a name="ln2036">      else if (ptr[1]=='C')  // SC</a>
+<a name="ln2037">        cation = 21;</a>
+<a name="ln2038">      else if (ptr[1]=='E')  // SE</a>
+<a name="ln2039">        cation = 34;</a>
+<a name="ln2040">      else if (ptr[1]=='G')  // SG</a>
+<a name="ln2041">        cation = 106;</a>
+<a name="ln2042">      else if (ptr[1]=='I')  // SI</a>
+<a name="ln2043">        cation = 14;</a>
+<a name="ln2044">      else if (ptr[1]=='M')  // SM</a>
+<a name="ln2045">        cation = 62;</a>
+<a name="ln2046">      else if (ptr[1]=='N')  // SN</a>
+<a name="ln2047">        cation = 50;</a>
+<a name="ln2048">      else if (ptr[1]=='R')  // SR</a>
+<a name="ln2049">        cation = 38;</a>
+<a name="ln2050">      break;</a>
+<a name="ln2051">    case 'T':</a>
+<a name="ln2052">      if (ptr[1]=='A')  // TA</a>
+<a name="ln2053">        cation = 73;</a>
+<a name="ln2054">      else if (ptr[1]=='B')  // TB</a>
+<a name="ln2055">        cation = 65;</a>
+<a name="ln2056">      else if (ptr[1]=='C')  // TC</a>
+<a name="ln2057">        cation = 43;</a>
+<a name="ln2058">      else if (ptr[1]=='H')  // TH</a>
+<a name="ln2059">        cation = 90;</a>
+<a name="ln2060">      else if (ptr[1]=='I')  // TI</a>
+<a name="ln2061">        cation = 22;</a>
+<a name="ln2062">      else if (ptr[1]=='L')  // TL</a>
+<a name="ln2063">        cation = 81;</a>
+<a name="ln2064">      else if (ptr[1]=='M')  // TM</a>
+<a name="ln2065">        cation = 69;</a>
+<a name="ln2066">      break;</a>
+<a name="ln2067">    case 'U':</a>
+<a name="ln2068">      if (ptr[1]=='R')  // UR</a>
+<a name="ln2069">        cation = 92;</a>
+<a name="ln2070">      break;</a>
+<a name="ln2071">    case 'V':</a>
+<a name="ln2072">      if (ptr[1]=='A')  // VA</a>
+<a name="ln2073">        cation = 23;</a>
+<a name="ln2074">      break;</a>
+<a name="ln2075">    case 'W':</a>
+<a name="ln2076">      if (ptr[1]=='O')  // WO</a>
+<a name="ln2077">        cation = 74;</a>
+<a name="ln2078">      break;</a>
+<a name="ln2079">    case 'X':</a>
+<a name="ln2080">      if (ptr[1]=='E')  // XE</a>
+<a name="ln2081">        cation = 54;</a>
+<a name="ln2082">      break;</a>
+<a name="ln2083">    case 'Y':</a>
+<a name="ln2084">      if (ptr[1]=='T')  // YT</a>
+<a name="ln2085">        cation = 39;</a>
+<a name="ln2086">      break;</a>
+<a name="ln2087">    case 'Z':</a>
+<a name="ln2088">      if (ptr[1]=='N')  // ZN</a>
+<a name="ln2089">        cation = 30;</a>
+<a name="ln2090">      else if (ptr[1]=='R')  // ZR</a>
+<a name="ln2091">        cation = 40;</a>
+<a name="ln2092">      break;</a>
+<a name="ln2093">    }</a>
+<a name="ln2094"> </a>
+<a name="ln2095">    if (!cation)</a>
+<a name="ln2096">      return 0;</a>
+<a name="ln2097">    unsigned int count;</a>
+<a name="ln2098">    if (ptr[2]&gt;='2' &amp;&amp; ptr[2]&lt;='9' &amp;&amp; ptr[3]==' ') {</a>
+<a name="ln2099">      count = ptr[2]-'0';</a>
+<a name="ln2100">      ptr += 4;</a>
+<a name="ln2101">    } else if (ptr[2]==' ') {</a>
+<a name="ln2102">      count = 1;</a>
+<a name="ln2103">      ptr += 3;</a>
+<a name="ln2104">    } else return 0;</a>
+<a name="ln2105"> </a>
+<a name="ln2106">    switch (*ptr) {</a>
+<a name="ln2107">    case 'B':</a>
+<a name="ln2108">      if (ptr[1]=='-' &amp;&amp; ptr[2]=='O' &amp;&amp; ptr[3]=='3') {  // B-O3</a>
+<a name="ln2109">        ptr += 4;</a>
+<a name="ln2110">        return parse_inorganic_salt(cation,count,WLN_BORATE,3);</a>
+<a name="ln2111">      }</a>
+<a name="ln2112">      break;</a>
+<a name="ln2113">    case 'C':</a>
+<a name="ln2114">      if (ptr[1]=='-' &amp;&amp; ptr[2]=='N') {  // C-N</a>
+<a name="ln2115">        ptr += 3;</a>
+<a name="ln2116">        return parse_inorganic_salt1(cation,count,WLN_CYANIDE);</a>
+<a name="ln2117">      }</a>
+<a name="ln2118">      if (ptr[1]=='-' &amp;&amp; ptr[2]=='O' &amp;&amp; ptr[3]=='3') {  // C-O3</a>
+<a name="ln2119">        ptr += 4;</a>
+<a name="ln2120">        return parse_inorganic_salt(cation,count,WLN_CARBONATE,2);</a>
+<a name="ln2121">      }</a>
+<a name="ln2122">      if (ptr[1]=='-' &amp;&amp; ptr[2]=='O') {  // C-O</a>
+<a name="ln2123">        ptr += 3;</a>
+<a name="ln2124">        return parse_inorganic_salt1(cation,count,WLN_CARBONYL);</a>
+<a name="ln2125">      }</a>
+<a name="ln2126">      if (ptr[1]=='N') {</a>
+<a name="ln2127">        ptr += 2;</a>
+<a name="ln2128">        return parse_inorganic_salt1(cation,count,WLN_CYANIDE);</a>
+<a name="ln2129">      }</a>
+<a name="ln2130">      break;</a>
+<a name="ln2131">    case 'E':</a>
+<a name="ln2132">      return parse_inorganic_halide(cation,count,35);</a>
+<a name="ln2133">    case 'F':</a>
+<a name="ln2134">      return parse_inorganic_halide(cation,count,9);</a>
+<a name="ln2135">    case 'G':</a>
+<a name="ln2136">      return parse_inorganic_halide(cation,count,17);</a>
+<a name="ln2137">    case 'I':</a>
+<a name="ln2138">      return parse_inorganic_halide(cation,count,53);</a>
+<a name="ln2139">    case 'N':</a>
+<a name="ln2140">      if (ptr[1]=='-' &amp;&amp; ptr[2]=='O' &amp;&amp; ptr[3]=='2') {</a>
+<a name="ln2141">        ptr += 4;</a>
+<a name="ln2142">        return parse_inorganic_salt1(cation,count,WLN_NITRITE);</a>
+<a name="ln2143">      }</a>
+<a name="ln2144">      if (ptr[1]=='-' &amp;&amp; ptr[2]=='O' &amp;&amp; ptr[3]=='3') {</a>
+<a name="ln2145">        ptr += 4;</a>
+<a name="ln2146">        return parse_inorganic_salt1(cation,count,WLN_NITRATE);</a>
+<a name="ln2147">      }</a>
+<a name="ln2148">      break;</a>
+<a name="ln2149">    case 'O':</a>
+<a name="ln2150">      return parse_inorganic_oxide(cation,count,8);</a>
+<a name="ln2151">    case 'S':</a>
+<a name="ln2152">      if (ptr[1]=='-' &amp;&amp; ptr[2]=='O' &amp;&amp; ptr[3]=='3') {  // S-O3</a>
+<a name="ln2153">        ptr += 4;</a>
+<a name="ln2154">        return parse_inorganic_salt(cation,count,WLN_SULFITE,2);</a>
+<a name="ln2155">      }</a>
+<a name="ln2156">      if (ptr[1]=='-' &amp;&amp; ptr[2]=='O' &amp;&amp; ptr[3]=='4') {  // S-O4</a>
+<a name="ln2157">        ptr += 4;</a>
+<a name="ln2158">        return parse_inorganic_salt(cation,count,WLN_SULFATE,2);</a>
+<a name="ln2159">      }</a>
+<a name="ln2160">      if (ptr[1]=='E') {</a>
+<a name="ln2161">        ptr++;</a>
+<a name="ln2162">        return parse_inorganic_oxide(cation,count,34);</a>
+<a name="ln2163">      }</a>
+<a name="ln2164">      return parse_inorganic_oxide(cation,count,16);</a>
+<a name="ln2165">    case 'T':</a>
+<a name="ln2166">      if (ptr[1]=='E') {</a>
+<a name="ln2167">        ptr++;</a>
+<a name="ln2168">        return parse_inorganic_oxide(cation,count,52);</a>
+<a name="ln2169">      }</a>
+<a name="ln2170">      break;</a>
+<a name="ln2171">    }</a>
+<a name="ln2172">    return 0;</a>
+<a name="ln2173">  }</a>
+<a name="ln2174">};</a>
+<a name="ln2175"> </a>
+<a name="ln2176"> </a>
+<a name="ln2177">bool NMReadWLN(const char *ptr, OpenBabel::OBMol* mol)</a>
+<a name="ln2178">{</a>
+<a name="ln2179">  WLNParser wp(ptr,mol);</a>
+<a name="ln2180">  int result = wp.parse_inorganic();</a>
+<a name="ln2181">  if (result == 0) {</a>
+<a name="ln2182">    if (!wp.parse())</a>
+<a name="ln2183">      return false;</a>
+<a name="ln2184">  } else if (result &lt; 0)</a>
+<a name="ln2185">    return false;</a>
+<a name="ln2186"> </a>
+<a name="ln2187">  mol-&gt;SetDimension(0);</a>
+<a name="ln2188">  return NMOBSanitizeMol(mol);</a>
+<a name="ln2189">}</a>
+<a name="ln2190"> </a>
+
+</code></pre>
+<div class="balloon" rel="490"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v519/" target="_blank">V519</a> The 'pending' variable is assigned values twice successively. Perhaps this is a mistake. Check lines: 486, 490.</p></div>
+<div class="balloon" rel="930"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1037/" target="_blank">V1037</a> Two or more case-branches perform the same actions. Check lines: 930, 1200</p></div>
+<div class="balloon" rel="1682"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'count' variable was assigned the same value.</p></div>
+<div class="balloon" rel="1700"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'count' variable was assigned the same value.</p></div>
+<div class="balloon" rel="1776"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v761/" target="_blank">V761</a> Nine identical blocks of text were found.</p></div>
+<div class="balloon" rel="1889"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'ccount == 1' is always true.</p></div>
+<div class="balloon" rel="2184"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'result < 0' is always false.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,2319 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>ichicano.c</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/*</a>
+<a name="ln2"> * International Chemical Identifier (InChI)</a>
+<a name="ln3"> * Version 1</a>
+<a name="ln4"> * Software version 1.04</a>
+<a name="ln5"> * September 9, 2011</a>
+<a name="ln6"> *</a>
+<a name="ln7"> * The InChI library and programs are free software developed under the</a>
+<a name="ln8"> * auspices of the International Union of Pure and Applied Chemistry (IUPAC).</a>
+<a name="ln9"> * Originally developed at NIST. Modifications and additions by IUPAC </a>
+<a name="ln10"> * and the InChI Trust.</a>
+<a name="ln11"> *</a>
+<a name="ln12"> * IUPAC/InChI-Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln13"> * Software version 1.0.</a>
+<a name="ln14"> * Copyright (C) IUPAC and InChI Trust Limited</a>
+<a name="ln15"> * </a>
+<a name="ln16"> * This library is free software; you can redistribute it and/or modify it under the </a>
+<a name="ln17"> * terms of the IUPAC/InChI Trust Licence for the International Chemical Identifier </a>
+<a name="ln18"> * (InChI) Software version 1.0; either version 1.0 of the License, or </a>
+<a name="ln19"> * (at your option) any later version.</a>
+<a name="ln20"> * </a>
+<a name="ln21"> * This library is distributed in the hope that it will be useful, </a>
+<a name="ln22"> * but WITHOUT ANY WARRANTY; without even the implied warranty of </a>
+<a name="ln23"> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  </a>
+<a name="ln24"> * See the IUPAC/InChI Trust Licence for the International Chemical Identifier (InChI) </a>
+<a name="ln25"> * Software version 1.0 for more details.</a>
+<a name="ln26"> * </a>
+<a name="ln27"> * You should have received a copy of the IUPAC/InChI Trust Licence for the </a>
+<a name="ln28"> * International Chemical Identifier (InChI) Software version 1.0 along with </a>
+<a name="ln29"> * this library; if not, write to:</a>
+<a name="ln30"> * </a>
+<a name="ln31"> * The InChI Trust</a>
+<a name="ln32"> * c/o FIZ CHEMIE Berlin</a>
+<a name="ln33"> * Franklinstrasse 11</a>
+<a name="ln34"> * 10587 Berlin</a>
+<a name="ln35"> * GERMANY</a>
+<a name="ln36"> * </a>
+<a name="ln37"> */</a>
+<a name="ln38"> </a>
+<a name="ln39"> </a>
+<a name="ln40">#include &lt;stdio.h&gt;</a>
+<a name="ln41">#include &lt;stdlib.h&gt;</a>
+<a name="ln42">#include &lt;string.h&gt;</a>
+<a name="ln43">#include &lt;ctype.h&gt;</a>
+<a name="ln44"> </a>
+<a name="ln45">#include &quot;mode.h&quot;</a>
+<a name="ln46"> </a>
+<a name="ln47">#include &quot;ichitime.h&quot;</a>
+<a name="ln48">#include &quot;ichi.h&quot;</a>
+<a name="ln49">#include &quot;util.h&quot;</a>
+<a name="ln50">#include &quot;extr_ct.h&quot;</a>
+<a name="ln51">#include &quot;ichitaut.h&quot;</a>
+<a name="ln52">#include &quot;inpdef.h&quot;</a>
+<a name="ln53">#include &quot;ichinorm.h&quot;</a>
+<a name="ln54">#include &quot;ichicant.h&quot;</a>
+<a name="ln55">#include &quot;ichicano.h&quot;</a>
+<a name="ln56">#include &quot;ichicomn.h&quot;</a>
+<a name="ln57"> </a>
+<a name="ln58">#include &quot;ichicomp.h&quot;</a>
+<a name="ln59"> </a>
+<a name="ln60">/****************************************************************************</a>
+<a name="ln61"> *</a>
+<a name="ln62"> *   Globals for sorting</a>
+<a name="ln63"> */</a>
+<a name="ln64"> </a>
+<a name="ln65">const NEIGH_LIST      *pNeighList_RankForSort; </a>
+<a name="ln66">const ATOM_INVARIANT2 *pAtomInvariant2ForSort;</a>
+<a name="ln67">const AT_NUMB         *pNeighborsForSort;</a>
+<a name="ln68">const AT_RANK         *pn_RankForSort;</a>
+<a name="ln69"> </a>
+<a name="ln70">AT_RANK nMaxAtNeighRankForSort;</a>
+<a name="ln71"> </a>
+<a name="ln72">int nNumCompNeighborsRanksCountEql;</a>
+<a name="ln73"> </a>
+<a name="ln74"> </a>
+<a name="ln75">#define tsort insertions_sort</a>
+<a name="ln76"> </a>
+<a name="ln77">/* local prototypes */</a>
+<a name="ln78"> </a>
+<a name="ln79"> </a>
+<a name="ln80">void FillOutAtomInvariant( sp_ATOM* at, int num_atoms, int num_at_tg, ATOM_INVARIANT* pAtomInvariant, CANON_STAT* pCS );</a>
+<a name="ln81"> </a>
+<a name="ln82">int Canon_INChI1(  int num_atoms, int num_at_tg, sp_ATOM* at, CANON_STAT* pCS, INCHI_MODE nMode);</a>
+<a name="ln83">int Canon_INChI2(  int num_atoms, int num_at_tg, sp_ATOM* at, CANON_STAT* pCS, INCHI_MODE nMode);</a>
+<a name="ln84">int Canon_INChI3(int num_atoms, int num_at_tg, sp_ATOM* at, </a>
+<a name="ln85">                 CANON_STAT* pCS, INCHI_MODE nMode, int bTautFtcn);</a>
+<a name="ln86"> </a>
+<a name="ln87"> </a>
+<a name="ln88">#ifdef COMPILE_ANSI_ONLY</a>
+<a name="ln89"> </a>
+<a name="ln90">static clock_t InchiClock(void);</a>
+<a name="ln91"> </a>
+<a name="ln92">#ifdef INCHI_USETIMES</a>
+<a name="ln93">static clock_t InchiClock(void)</a>
+<a name="ln94">{</a>
+<a name="ln95">    struct tms buf;</a>
+<a name="ln96">    clock_t c = times( &amp;buf );</a>
+<a name="ln97">    if ( c != (clock_t)-1 ) {</a>
+<a name="ln98">        return buf.tms_utime;</a>
+<a name="ln99">    }</a>
+<a name="ln100">    return 0;</a>
+<a name="ln101">}</a>
+<a name="ln102">#else</a>
+<a name="ln103">static clock_t InchiClock(void)</a>
+<a name="ln104">{</a>
+<a name="ln105">    clock_t c = clock();</a>
+<a name="ln106">    if ( c != (clock_t)-1 ) {</a>
+<a name="ln107">        return c;</a>
+<a name="ln108">    }</a>
+<a name="ln109">    return 0;</a>
+<a name="ln110">}</a>
+<a name="ln111">#endif</a>
+<a name="ln112"> </a>
+<a name="ln113">#define INCHI_MSEC(X)    (long)((1000.0/(double)CLOCKS_PER_SEC)*(X))</a>
+<a name="ln114">#define INCHI_CLOCK_T(X) (clock_t)( (double)(X) / 1000.0 * (double)CLOCKS_PER_SEC )</a>
+<a name="ln115">const clock_t FullMaxClock = (clock_t)(-1);</a>
+<a name="ln116">const clock_t HalfMaxClock = (clock_t)(-1) / 2;</a>
+<a name="ln117">clock_t MaxPositiveClock = 0;</a>
+<a name="ln118">clock_t MinNegativeClock = 0;</a>
+<a name="ln119">clock_t HalfMaxPositiveClock = 0;</a>
+<a name="ln120">clock_t HalfMinNegativeClock = 0;</a>
+<a name="ln121"> </a>
+<a name="ln122">static void FillMaxMinClock(void); /* keep compiler happy */</a>
+<a name="ln123"> </a>
+<a name="ln124">static void FillMaxMinClock(void)</a>
+<a name="ln125">{</a>
+<a name="ln126">    if ( !MaxPositiveClock ) {</a>
+<a name="ln127">        clock_t valPos=0, val1 = 1;</a>
+<a name="ln128">        while ( 0 &lt; ((val1 &lt;&lt;= 1), (val1 |= 1)) ) {</a>
+<a name="ln129">            valPos = val1;</a>
+<a name="ln130">        }</a>
+<a name="ln131">        MaxPositiveClock =  valPos;</a>
+<a name="ln132">        MinNegativeClock = -valPos;</a>
+<a name="ln133">        HalfMaxPositiveClock = MaxPositiveClock / 2;</a>
+<a name="ln134">        HalfMinNegativeClock = MinNegativeClock / 2;</a>
+<a name="ln135">    }</a>
+<a name="ln136">}</a>
+<a name="ln137"> </a>
+<a name="ln138"> </a>
+<a name="ln139">/******** get current process time ****************************************/</a>
+<a name="ln140">void InchiTimeGet( inchiTime *TickEnd )</a>
+<a name="ln141">{</a>
+<a name="ln142">    TickEnd-&gt;clockTime = InchiClock();</a>
+<a name="ln143">}</a>
+<a name="ln144">/******** returns difference TickEnd - TickStart in milliseconds **********/</a>
+<a name="ln145">long InchiTimeMsecDiff( inchiTime *TickEnd, inchiTime *TickStart )</a>
+<a name="ln146">{</a>
+<a name="ln147">    if ( FullMaxClock &gt; 0 ) {</a>
+<a name="ln148">        clock_t delta;</a>
+<a name="ln149">        if ( !TickEnd || !TickStart )</a>
+<a name="ln150">            return 0;</a>
+<a name="ln151">        /* clock_t is unsigned */</a>
+<a name="ln152">        if ( TickEnd-&gt;clockTime &gt; TickStart-&gt;clockTime ) {</a>
+<a name="ln153">            if ( TickEnd-&gt;clockTime &gt; HalfMaxClock &amp;&amp;</a>
+<a name="ln154">                 TickEnd-&gt;clockTime - TickStart-&gt;clockTime &gt; HalfMaxClock ) {</a>
+<a name="ln155">                /* overflow in TickStart-&gt;clockTime, actually TickStart-&gt;clockTime was later */</a>
+<a name="ln156">                delta = (FullMaxClock - TickEnd-&gt;clockTime) + TickStart-&gt;clockTime;</a>
+<a name="ln157">                return -INCHI_MSEC(delta);</a>
+<a name="ln158">            }</a>
+<a name="ln159">            delta = TickEnd-&gt;clockTime - TickStart-&gt;clockTime;</a>
+<a name="ln160">            return INCHI_MSEC(delta);</a>
+<a name="ln161">        } else</a>
+<a name="ln162">        if ( TickEnd-&gt;clockTime &lt; TickStart-&gt;clockTime ) {</a>
+<a name="ln163">            if ( TickStart-&gt;clockTime &gt; HalfMaxClock &amp;&amp;</a>
+<a name="ln164">                 TickStart-&gt;clockTime - TickEnd-&gt;clockTime &gt; HalfMaxClock ) {</a>
+<a name="ln165">                /* overflow in TickEnd-&gt;clockTime, actually TickEnd-&gt;clockTime was later */</a>
+<a name="ln166">                delta = (FullMaxClock - TickStart-&gt;clockTime) + TickEnd-&gt;clockTime;</a>
+<a name="ln167">                return INCHI_MSEC(delta);</a>
+<a name="ln168">            }</a>
+<a name="ln169">            delta = TickStart-&gt;clockTime - TickEnd-&gt;clockTime;</a>
+<a name="ln170">            return -INCHI_MSEC(delta);</a>
+<a name="ln171">        }</a>
+<a name="ln172">        return 0; /* TickEnd-&gt;clockTime == TickStart-&gt;clockTime */</a>
+<a name="ln173">    } else {</a>
+<a name="ln174">        /* may happen under Win32 only where clock_t is SIGNED long */</a>
+<a name="ln175">        clock_t delta;</a>
+<a name="ln176">        FillMaxMinClock( );</a>
+<a name="ln177">        if ( !TickEnd || !TickStart )</a>
+<a name="ln178">            return 0;</a>
+<a name="ln179">        if ( (TickEnd-&gt;clockTime &gt;= 0 &amp;&amp; TickStart-&gt;clockTime &gt;= 0) ||</a>
+<a name="ln180">             (TickEnd-&gt;clockTime &lt;= 0 &amp;&amp; TickStart-&gt;clockTime &lt;= 0)) {</a>
+<a name="ln181">            delta = TickEnd-&gt;clockTime - TickStart-&gt;clockTime;</a>
+<a name="ln182">        } else</a>
+<a name="ln183">        if ( TickEnd-&gt;clockTime &gt;= HalfMaxPositiveClock &amp;&amp;</a>
+<a name="ln184">             TickStart-&gt;clockTime &lt;= HalfMinNegativeClock ) {</a>
+<a name="ln185">            /* end is earlier than start */</a>
+<a name="ln186">            delta = (MaxPositiveClock - TickEnd-&gt;clockTime) + (TickStart-&gt;clockTime - MinNegativeClock);</a>
+<a name="ln187">            delta = -delta;</a>
+<a name="ln188">        } else</a>
+<a name="ln189">        if ( TickEnd-&gt;clockTime &lt;= HalfMinNegativeClock &amp;&amp;</a>
+<a name="ln190">             TickStart-&gt;clockTime &gt;= HalfMaxPositiveClock ) {</a>
+<a name="ln191">            /* start was earlier than end */</a>
+<a name="ln192">            delta = (MaxPositiveClock - TickStart-&gt;clockTime) + (TickEnd-&gt;clockTime - MinNegativeClock);</a>
+<a name="ln193">        } else {</a>
+<a name="ln194">            /* there was no overflow, clock passed zero */</a>
+<a name="ln195">            delta = TickEnd-&gt;clockTime - TickStart-&gt;clockTime;</a>
+<a name="ln196">        }</a>
+<a name="ln197">        return INCHI_MSEC(delta);</a>
+<a name="ln198">    }</a>
+<a name="ln199">}</a>
+<a name="ln200">/******************* get elapsed time from TickStart ************************/</a>
+<a name="ln201">long InchiTimeElapsed( inchiTime *TickStart )</a>
+<a name="ln202">{</a>
+<a name="ln203">    inchiTime TickEnd;</a>
+<a name="ln204">    if ( !TickStart )</a>
+<a name="ln205">        return 0;</a>
+<a name="ln206">    InchiTimeGet( &amp;TickEnd );</a>
+<a name="ln207">    return InchiTimeMsecDiff( &amp;TickEnd, TickStart );</a>
+<a name="ln208">}</a>
+<a name="ln209">/******************* add number of milliseconds to time *********************/</a>
+<a name="ln210">void InchiTimeAddMsec( inchiTime *TickEnd, unsigned long nNumMsec )</a>
+<a name="ln211">{</a>
+<a name="ln212">    clock_t delta;</a>
+<a name="ln213">    if ( !TickEnd )</a>
+<a name="ln214">        return;</a>
+<a name="ln215">    if ( FullMaxClock &gt; 0 ) {</a>
+<a name="ln216">        /* clock_t is unsigned */</a>
+<a name="ln217">        delta = INCHI_CLOCK_T(nNumMsec);</a>
+<a name="ln218">        TickEnd-&gt;clockTime += delta;</a>
+<a name="ln219">    } else {</a>
+<a name="ln220">        /* may happen under Win32 only where clock_t is SIGNED long */</a>
+<a name="ln221">        /* clock_t is unsigned */</a>
+<a name="ln222">        FillMaxMinClock( );</a>
+<a name="ln223">        delta = INCHI_CLOCK_T(nNumMsec);</a>
+<a name="ln224">        TickEnd-&gt;clockTime += delta;</a>
+<a name="ln225">    }</a>
+<a name="ln226">}</a>
+<a name="ln227">/******************* check whether time has expired *********************/</a>
+<a name="ln228">int bInchiTimeIsOver( inchiTime *TickStart )</a>
+<a name="ln229">{</a>
+<a name="ln230">    if ( FullMaxClock &gt; 0 ) {</a>
+<a name="ln231">        clock_t clockCurrTime;</a>
+<a name="ln232">        if ( !TickStart )</a>
+<a name="ln233">            return 0;</a>
+<a name="ln234">        clockCurrTime = InchiClock();</a>
+<a name="ln235">        /* clock_t is unsigned */</a>
+<a name="ln236">        if ( TickStart-&gt;clockTime &gt; clockCurrTime ) {</a>
+<a name="ln237">            if ( TickStart-&gt;clockTime &gt; HalfMaxClock &amp;&amp;</a>
+<a name="ln238">                 TickStart-&gt;clockTime - clockCurrTime &gt; HalfMaxClock ) {</a>
+<a name="ln239">                /* overflow in clockCurrTime, actually clockCurrTime was later */</a>
+<a name="ln240">                return 1;</a>
+<a name="ln241">            }</a>
+<a name="ln242">            return 0;</a>
+<a name="ln243">        } else</a>
+<a name="ln244">        if ( TickStart-&gt;clockTime &lt; clockCurrTime ) {</a>
+<a name="ln245">            if ( clockCurrTime &gt; HalfMaxClock &amp;&amp;</a>
+<a name="ln246">                 clockCurrTime - TickStart-&gt;clockTime &gt; HalfMaxClock ) {</a>
+<a name="ln247">                /* overflow in TickStart-&gt;clockTime, actually TickStart-&gt;clockTime was later */</a>
+<a name="ln248">                return 0;</a>
+<a name="ln249">            }</a>
+<a name="ln250">            return 1;</a>
+<a name="ln251">        }</a>
+<a name="ln252">        return 0; /* TickStart-&gt;clockTime == clockCurrTime */</a>
+<a name="ln253">    } else {</a>
+<a name="ln254">        /* may happen under Win32 only where clock_t is SIGNED long */</a>
+<a name="ln255">        clock_t clockCurrTime;</a>
+<a name="ln256">        FillMaxMinClock( );</a>
+<a name="ln257">        if ( !TickStart )</a>
+<a name="ln258">            return 0;</a>
+<a name="ln259">        clockCurrTime = InchiClock();</a>
+<a name="ln260">        if ( (clockCurrTime &gt;= 0 &amp;&amp; TickStart-&gt;clockTime &gt;= 0) ||</a>
+<a name="ln261">             (clockCurrTime &lt;= 0 &amp;&amp; TickStart-&gt;clockTime &lt;= 0)) {</a>
+<a name="ln262">            return (clockCurrTime &gt; TickStart-&gt;clockTime);</a>
+<a name="ln263">        } else</a>
+<a name="ln264">        if ( clockCurrTime &gt;= HalfMaxPositiveClock &amp;&amp;</a>
+<a name="ln265">             TickStart-&gt;clockTime &lt;= HalfMinNegativeClock ) {</a>
+<a name="ln266">            /* curr is earlier than start */</a>
+<a name="ln267">            return 0;</a>
+<a name="ln268">        } else</a>
+<a name="ln269">        if ( clockCurrTime &lt;= HalfMinNegativeClock &amp;&amp;</a>
+<a name="ln270">             TickStart-&gt;clockTime &gt;= HalfMaxPositiveClock ) {</a>
+<a name="ln271">            /* start was earlier than curr */</a>
+<a name="ln272">            return 1;</a>
+<a name="ln273">        } else {</a>
+<a name="ln274">            /* there was no overflow, clock passed zero */</a>
+<a name="ln275">            return (clockCurrTime &gt; TickStart-&gt;clockTime);</a>
+<a name="ln276">        }</a>
+<a name="ln277">    }</a>
+<a name="ln278">}</a>
+<a name="ln279"> </a>
+<a name="ln280">#else</a>
+<a name="ln281"> </a>
+<a name="ln282">/******** get current process time ****************************************/</a>
+<a name="ln283">void InchiTimeGet( inchiTime *TickEnd )</a>
+<a name="ln284">{</a>
+<a name="ln285">    if ( TickEnd ) {</a>
+<a name="ln286">        struct _timeb timeb;</a>
+<a name="ln287">        _ftime( &amp;timeb );</a>
+<a name="ln288">        TickEnd-&gt;clockTime = (unsigned long)timeb.time;</a>
+<a name="ln289">        TickEnd-&gt;millitime = (long)timeb.millitm;</a>
+<a name="ln290">    }</a>
+<a name="ln291">}</a>
+<a name="ln292">/******** returns difference TickEnd - TickStart in milliseconds **********/</a>
+<a name="ln293">long InchiTimeMsecDiff( inchiTime *TickEnd, inchiTime *TickStart )</a>
+<a name="ln294">{</a>
+<a name="ln295">    long delta;</a>
+<a name="ln296">    if ( !TickEnd || !TickStart ) {</a>
+<a name="ln297">        return 0;</a>
+<a name="ln298">    }</a>
+<a name="ln299">    if ( TickEnd-&gt;clockTime &gt;= TickStart-&gt;clockTime ) {</a>
+<a name="ln300">        delta = (long)(TickEnd-&gt;clockTime - TickStart-&gt;clockTime);</a>
+<a name="ln301">        delta *= 1000;</a>
+<a name="ln302">        delta += TickEnd-&gt;millitime - TickStart-&gt;millitime;</a>
+<a name="ln303">    } else {</a>
+<a name="ln304">        delta = -(long)(TickStart-&gt;clockTime - TickEnd-&gt;clockTime);</a>
+<a name="ln305">        delta *= 1000;</a>
+<a name="ln306">        delta += TickEnd-&gt;millitime - TickStart-&gt;millitime;</a>
+<a name="ln307">    }</a>
+<a name="ln308">    return delta;</a>
+<a name="ln309">}</a>
+<a name="ln310">/******************* get elapsed time from TickStart ************************/</a>
+<a name="ln311">long InchiTimeElapsed( inchiTime *TickStart )</a>
+<a name="ln312">{</a>
+<a name="ln313">    inchiTime TickEnd;</a>
+<a name="ln314">    if ( !TickStart )</a>
+<a name="ln315">        return 0;</a>
+<a name="ln316">    InchiTimeGet( &amp;TickEnd );</a>
+<a name="ln317">    return InchiTimeMsecDiff( &amp;TickEnd, TickStart );</a>
+<a name="ln318">}</a>
+<a name="ln319">/******************* add number of milliseconds to time *********************/</a>
+<a name="ln320">void InchiTimeAddMsec( inchiTime *TickEnd, unsigned long nNumMsec )</a>
+<a name="ln321">{</a>
+<a name="ln322">    long delta;</a>
+<a name="ln323">    if ( !TickEnd )</a>
+<a name="ln324">        return;</a>
+<a name="ln325">    TickEnd-&gt;clockTime += nNumMsec / 1000;</a>
+<a name="ln326">    delta = nNumMsec % 1000 + TickEnd-&gt;millitime;</a>
+<a name="ln327">    TickEnd-&gt;clockTime += delta / 1000;</a>
+<a name="ln328">    TickEnd-&gt;millitime = delta % 1000;</a>
+<a name="ln329">}</a>
+<a name="ln330">/******************* check whether time has expired *********************/</a>
+<a name="ln331">int bInchiTimeIsOver( inchiTime *TickEnd )</a>
+<a name="ln332">{</a>
+<a name="ln333">    struct _timeb timeb;</a>
+<a name="ln334">    if ( !TickEnd )</a>
+<a name="ln335">        return 0;</a>
+<a name="ln336">    _ftime( &amp;timeb );</a>
+<a name="ln337">    if ( TickEnd-&gt;clockTime &gt; (unsigned long)timeb.time )</a>
+<a name="ln338">        return 0;</a>
+<a name="ln339">    if ( TickEnd-&gt;clockTime &lt; (unsigned long)timeb.time ||</a>
+<a name="ln340">         TickEnd-&gt;millitime &lt; (long)timeb.millitm ) {</a>
+<a name="ln341">        return 1;</a>
+<a name="ln342">    }</a>
+<a name="ln343">    return 0;</a>
+<a name="ln344">}</a>
+<a name="ln345">#endif</a>
+<a name="ln346"> </a>
+<a name="ln347"> </a>
+<a name="ln348">/****************************************************************************/</a>
+<a name="ln349">/* length of canonic representation in sizeof(AT_NUMB) units */</a>
+<a name="ln350">int GetCanonLengths( int num_at,  sp_ATOM* at, ATOM_SIZES *s, T_GROUP_INFO *t_group_info )</a>
+<a name="ln351">{ /* include taut. groups as additional &quot;atoms&quot; to the connection table 07-22-2002 */</a>
+<a name="ln352">    int  i, nNumCT, nNumBonds, nNumTBonds=0, nNumDblBondsStereo=0, nNumAsymCarbStereo=0, nNumIsotopic=0;</a>
+<a name="ln353">    T_GROUP *t_group = (s-&gt;nLenLinearCTTautomer &amp;&amp; t_group_info)? t_group_info-&gt;t_group : NULL;</a>
+<a name="ln354">    for (nNumBonds = 0, i = 0; i &lt; num_at; i ++ ) {</a>
+<a name="ln355">        nNumBonds   += at[i].valence;</a>
+<a name="ln356">        if ( at[i].iso_sort_key ) {</a>
+<a name="ln357">            nNumIsotopic ++;  /* not including tautomeric endpoints that are isotopic only due to mobile atoms */</a>
+<a name="ln358">        }</a>
+<a name="ln359"> </a>
+<a name="ln360">        if ( at[i].parity &gt; 0 ) {  /* ignore hydrogen isotope parities in at[i].parity2 */</a>
+<a name="ln361">            int j = 0, nStereoBondsToAtom=0;  /* number of stereo double bonds at this atom */</a>
+<a name="ln362">            int k;</a>
+<a name="ln363">            for ( ; j &lt; MAX_NUM_STEREO_BONDS &amp;&amp; (k=at[i].stereo_bond_neighbor[j]); j ++ ) {</a>
+<a name="ln364">                nStereoBondsToAtom += (at[k-1].parity &gt; 0);</a>
+<a name="ln365">            }</a>
+<a name="ln366">            nNumDblBondsStereo += nStereoBondsToAtom;</a>
+<a name="ln367">            nNumAsymCarbStereo += !j;</a>
+<a name="ln368">        }</a>
+<a name="ln369">    }</a>
+<a name="ln370">    nNumDblBondsStereo /= 2;</a>
+<a name="ln371">    nNumBonds          /= 2;</a>
+<a name="ln372"> </a>
+<a name="ln373">    s-&gt;nLenBonds = inchi_max( s-&gt;nLenBonds, nNumBonds );</a>
+<a name="ln374">    nNumCT     = nNumBonds; /* total number of neighbors in the CT */</a>
+<a name="ln375"> </a>
+<a name="ln376">#if ( CT_ATOMID != CT_ATOMID_DONTINCLUDE )</a>
+<a name="ln377">    nNumCT    += num_at;</a>
+<a name="ln378">#endif</a>
+<a name="ln379"> </a>
+<a name="ln380">    s-&gt;nLenCTAtOnly = inchi_max(s-&gt;nLenCTAtOnly, nNumCT);</a>
+<a name="ln381"> </a>
+<a name="ln382">    if ( t_group ) {</a>
+<a name="ln383">        for ( i = 0; i &lt; t_group_info-&gt;num_t_groups; i ++ ) {</a>
+<a name="ln384">            nNumTBonds += t_group[i].nNumEndpoints;</a>
+<a name="ln385">        }</a>
+<a name="ln386">        nNumCT    += nNumTBonds;</a>
+<a name="ln387">#if ( CT_ATOMID != CT_ATOMID_DONTINCLUDE )</a>
+<a name="ln388">        nNumCT    += t_group_info-&gt;num_t_groups;</a>
+<a name="ln389">#endif</a>
+<a name="ln390">    }</a>
+<a name="ln391"> </a>
+<a name="ln392">    nNumCT                    = inchi_max( 1, nNumCT ); /* keep GetBaseCanonRanking() happy */</a>
+<a name="ln393">    s-&gt;nLenCT                 = inchi_max(s-&gt;nLenCT, nNumCT);</a>
+<a name="ln394">    s-&gt;nLenIsotopic           = inchi_max(s-&gt;nLenIsotopic, nNumIsotopic);</a>
+<a name="ln395">    s-&gt;nLenLinearCTStereoDble = inchi_max(s-&gt;nLenLinearCTStereoDble, nNumDblBondsStereo);</a>
+<a name="ln396">    s-&gt;nLenLinearCTStereoCarb = inchi_max(s-&gt;nLenLinearCTStereoCarb, nNumAsymCarbStereo);</a>
+<a name="ln397">    if ( t_group_info )</a>
+<a name="ln398">        s-&gt;nLenIsotopicEndpoints  = inchi_max(s-&gt;nLenIsotopicEndpoints, t_group_info-&gt;nNumIsotopicEndpoints);</a>
+<a name="ln399"> </a>
+<a name="ln400">    return 0;</a>
+<a name="ln401">}</a>
+<a name="ln402">/****************************************************************************/</a>
+<a name="ln403">int DeAllocateCS( CANON_STAT *pCS )</a>
+<a name="ln404">{</a>
+<a name="ln405">#define LOCAL_FREE(X) do{if(X){inchi_free(X); X=NULL;}}while(0)    </a>
+<a name="ln406"> </a>
+<a name="ln407">    /* connection table */</a>
+<a name="ln408">    LOCAL_FREE( pCS-&gt;LinearCT );</a>
+<a name="ln409">    LOCAL_FREE( pCS-&gt;nCanonOrd );</a>
+<a name="ln410">    LOCAL_FREE( pCS-&gt;nSymmRank );</a>
+<a name="ln411">    LOCAL_FREE( pCS-&gt;nNum_H    );</a>
+<a name="ln412">    LOCAL_FREE( pCS-&gt;nNum_H_fixed );</a>
+<a name="ln413">    LOCAL_FREE( pCS-&gt;nExchgIsoH );</a>
+<a name="ln414">    /* isotopic */</a>
+<a name="ln415">    LOCAL_FREE( pCS-&gt;LinearCTIsotopic );</a>
+<a name="ln416">    LOCAL_FREE( pCS-&gt;nSymmRankIsotopic );</a>
+<a name="ln417">    LOCAL_FREE( pCS-&gt;nCanonOrdIsotopic );</a>
+<a name="ln418">    /* isotopic tautomeric */</a>
+<a name="ln419">    LOCAL_FREE( pCS-&gt;LinearCTIsotopicTautomer );</a>
+<a name="ln420">    LOCAL_FREE( pCS-&gt;nCanonOrdIsotopicTaut );</a>
+<a name="ln421">    LOCAL_FREE( pCS-&gt;nSymmRankIsotopicTaut );</a>
+<a name="ln422">    /* stereo */</a>
+<a name="ln423">    LOCAL_FREE( pCS-&gt;LinearCTStereoDble );</a>
+<a name="ln424">    LOCAL_FREE( pCS-&gt;LinearCTStereoCarb );</a>
+<a name="ln425">    LOCAL_FREE( pCS-&gt;LinearCTStereoDbleInv );</a>
+<a name="ln426">    LOCAL_FREE( pCS-&gt;LinearCTStereoCarbInv );</a>
+<a name="ln427">    LOCAL_FREE( pCS-&gt;nCanonOrdStereo );</a>
+<a name="ln428">    LOCAL_FREE( pCS-&gt;nCanonOrdStereoInv );</a>
+<a name="ln429">    LOCAL_FREE( pCS-&gt;nCanonOrdStereoTaut );</a>
+<a name="ln430">    /* isotopic stereo */</a>
+<a name="ln431">    LOCAL_FREE( pCS-&gt;LinearCTIsotopicStereoDble );</a>
+<a name="ln432">    LOCAL_FREE( pCS-&gt;LinearCTIsotopicStereoCarb );</a>
+<a name="ln433">    LOCAL_FREE( pCS-&gt;LinearCTIsotopicStereoDbleInv );</a>
+<a name="ln434">    LOCAL_FREE( pCS-&gt;LinearCTIsotopicStereoCarbInv );</a>
+<a name="ln435">    LOCAL_FREE( pCS-&gt;bRankUsedForStereo );</a>
+<a name="ln436">    LOCAL_FREE( pCS-&gt;bAtomUsedForStereo );</a>
+<a name="ln437"> </a>
+<a name="ln438">    LOCAL_FREE( pCS-&gt;nCanonOrdIsotopicStereo );</a>
+<a name="ln439">    LOCAL_FREE( pCS-&gt;nCanonOrdIsotopicStereoInv );</a>
+<a name="ln440">    LOCAL_FREE( pCS-&gt;nCanonOrdIsotopicStereoTaut );</a>
+<a name="ln441">    /* tautomeric part of the connection table */</a>
+<a name="ln442">    LOCAL_FREE( pCS-&gt;LinearCTTautomer );</a>
+<a name="ln443">    LOCAL_FREE( pCS-&gt;nCanonOrdTaut );</a>
+<a name="ln444">    LOCAL_FREE( pCS-&gt;nSymmRankTaut );</a>
+<a name="ln445"> </a>
+<a name="ln446">    LOCAL_FREE( pCS-&gt;LinearCT2 );</a>
+<a name="ln447"> </a>
+<a name="ln448">    /* for establishing constitutional equivalence */</a>
+<a name="ln449">    LOCAL_FREE( pCS-&gt;nPrevAtomNumber );</a>
+<a name="ln450"> </a>
+<a name="ln451">    FreeNeighList( pCS-&gt;NeighList );</a>
+<a name="ln452">    pCS-&gt;NeighList = NULL;</a>
+<a name="ln453"> </a>
+<a name="ln454">    /* set zero lengths */</a>
+<a name="ln455">    pCS-&gt;nMaxLenLinearCTStereoDble = 0;</a>
+<a name="ln456">    pCS-&gt;nLenLinearCTStereoDble    = 0;</a>
+<a name="ln457">    pCS-&gt;nMaxLenLinearCTStereoCarb = 0;</a>
+<a name="ln458">    pCS-&gt;nLenLinearCTStereoCarb    = 0;</a>
+<a name="ln459">    pCS-&gt;nMaxLenLinearCTIsotopicStereoDble = 0;</a>
+<a name="ln460">    pCS-&gt;nLenLinearCTIsotopicStereoDble = 0;</a>
+<a name="ln461">    pCS-&gt;nMaxLenLinearCTIsotopicStereoCarb = 0;</a>
+<a name="ln462">    pCS-&gt;nLenLinearCTIsotopicStereoCarb = 0;</a>
+<a name="ln463">    pCS-&gt;nMaxLenLinearCTTautomer = 0;</a>
+<a name="ln464">    pCS-&gt;nLenLinearCTTautomer = 0;</a>
+<a name="ln465">    pCS-&gt;nMaxLenLinearCTIsotopic  = 0;</a>
+<a name="ln466">    pCS-&gt;nLenLinearCTIsotopic  = 0;</a>
+<a name="ln467">    pCS-&gt;nMaxLenLinearCTIsotopicTautomer = 0;</a>
+<a name="ln468">    pCS-&gt;nLenLinearCTIsotopicTautomer = 0;</a>
+<a name="ln469"> </a>
+<a name="ln470">    /* set canon numbering lengths to zero */</a>
+<a name="ln471">    pCS-&gt;nLenCanonOrd = 0;</a>
+<a name="ln472">    pCS-&gt;nLenCanonOrdIsotopic = 0;</a>
+<a name="ln473">    pCS-&gt;nLenCanonOrdIsotopicTaut = 0;</a>
+<a name="ln474">    pCS-&gt;nLenCanonOrdStereo = 0;</a>
+<a name="ln475">    pCS-&gt;nLenCanonOrdStereoTaut = 0;</a>
+<a name="ln476">    pCS-&gt;nLenCanonOrdIsotopicStereo = 0;</a>
+<a name="ln477">    pCS-&gt;nLenCanonOrdIsotopicStereoTaut = 0;</a>
+<a name="ln478">    pCS-&gt;nLenCanonOrdTaut       = 0;</a>
+<a name="ln479"> </a>
+<a name="ln480">    return 0;</a>
+<a name="ln481"> </a>
+<a name="ln482">#undef LOCAL_FREE</a>
+<a name="ln483">}</a>
+<a name="ln484">/****************************************************************************/</a>
+<a name="ln485">int AllocateCS( CANON_STAT *pCS, int num_at, int num_at_tg, int nLenCT, int nLenCTAtOnly,</a>
+<a name="ln486">                     int nLenLinearCTStereoDble, int nLenLinearCTIsotopicStereoDble,</a>
+<a name="ln487">                     int nLenLinearCTStereoCarb, int nLenLinearCTIsotopicStereoCarb,</a>
+<a name="ln488">                     int nLenLinearCTTautomer, int nLenLinearCTIsotopicTautomer,</a>
+<a name="ln489">                     int nLenIsotopic, INCHI_MODE nMode, BCN *pBCN )</a>
+<a name="ln490">{</a>
+<a name="ln491">#define pCS_CALLOC(PTR,TYPE,LEN) (pCS-&gt;PTR=(TYPE*)inchi_calloc((size_t)(LEN),sizeof(*pCS-&gt;PTR)))</a>
+<a name="ln492"> </a>
+<a name="ln493">    int num_err = 0;</a>
+<a name="ln494">    int num_t_groups = num_at_tg - num_at;</a>
+<a name="ln495"> </a>
+<a name="ln496">    pCS-&gt;nMode = nMode;</a>
+<a name="ln497">    /* connection table */</a>
+<a name="ln498">    if ( (nMode &amp; CMODE_CT) &amp;&amp; nLenCT &gt; 0 ) {</a>
+<a name="ln499">        num_err += !pCS_CALLOC(LinearCT, AT_NUMB, nLenCT);</a>
+<a name="ln500">        pCS-&gt;nMaxLenLinearCT    = </a>
+<a name="ln501">        pCS-&gt;nLenLinearCT       = nLenCT;</a>
+<a name="ln502">        pCS-&gt;nLenLinearCTAtOnly = nLenCTAtOnly;</a>
+<a name="ln503">        num_err += !pCS_CALLOC(nCanonOrd, AT_RANK, num_at_tg); </a>
+<a name="ln504">        num_err += !pCS_CALLOC(nSymmRank, AT_RANK, num_at_tg);</a>
+<a name="ln505">        if ( pBCN ) {</a>
+<a name="ln506">            num_err += !pCS_CALLOC(nNum_H, S_CHAR, num_at);</a>
+<a name="ln507">            num_err += !pCS_CALLOC(nNum_H_fixed, S_CHAR, num_at);</a>
+<a name="ln508">            num_err += !pCS_CALLOC(nExchgIsoH, S_CHAR, num_at);</a>
+<a name="ln509">        }</a>
+<a name="ln510">    }</a>
+<a name="ln511">    /* isotopic */</a>
+<a name="ln512">    if ( (nMode &amp; CMODE_ISO) &amp;&amp; nLenIsotopic &gt; 0 ) {</a>
+<a name="ln513">        num_err += !pCS_CALLOC(LinearCTIsotopic, AT_ISOTOPIC, nLenIsotopic);</a>
+<a name="ln514">        pCS-&gt;nMaxLenLinearCTIsotopic =</a>
+<a name="ln515">        pCS-&gt;nLenLinearCTIsotopic    = nLenIsotopic;</a>
+<a name="ln516">    }</a>
+<a name="ln517">    /* isotopic tautomeric */</a>
+<a name="ln518">    if ( (nMode &amp; CMODE_ISO) &amp;&amp; CANON_MODE_TAUT == (nMode &amp; CANON_MODE_TAUT) ) {</a>
+<a name="ln519">        if ( nLenLinearCTIsotopicTautomer &gt; 0 ) {</a>
+<a name="ln520">            num_err += !pCS_CALLOC(LinearCTIsotopicTautomer, AT_ISO_TGROUP, nLenLinearCTIsotopicTautomer);</a>
+<a name="ln521">            pCS-&gt;nMaxLenLinearCTIsotopicTautomer =</a>
+<a name="ln522">            pCS-&gt;nLenLinearCTIsotopicTautomer    = nLenLinearCTIsotopicTautomer;</a>
+<a name="ln523">        }</a>
+<a name="ln524">        if ( num_t_groups &gt; 0 ) {</a>
+<a name="ln525">            num_err += !pCS_CALLOC(nCanonOrdIsotopicTaut, AT_RANK, num_t_groups);</a>
+<a name="ln526">            num_err += !pCS_CALLOC(nSymmRankIsotopicTaut, AT_RANK, num_t_groups);</a>
+<a name="ln527">        }</a>
+<a name="ln528">    }</a>
+<a name="ln529">    /* isotopic atoms &amp; t-groups */</a>
+<a name="ln530">    if ( (nMode &amp; CMODE_ISO) /*&amp;&amp; nLenIsotopic &gt; 0*/ ||</a>
+<a name="ln531">         ((nMode &amp; CMODE_ISO) &amp;&amp; CANON_MODE_TAUT == (nMode &amp; CANON_MODE_TAUT) &amp;&amp;</a>
+<a name="ln532">         nLenLinearCTIsotopicTautomer &gt; 0)</a>
+<a name="ln533">        ) {</a>
+<a name="ln534">        num_err += !pCS_CALLOC(nSymmRankIsotopic, AT_RANK, num_at_tg);</a>
+<a name="ln535">        num_err += !pCS_CALLOC(nCanonOrdIsotopic, AT_RANK, num_at_tg); </a>
+<a name="ln536">    }</a>
+<a name="ln537">    /* stereo */</a>
+<a name="ln538">    if ( (nMode &amp; CMODE_STEREO) &amp;&amp; nLenLinearCTStereoDble &gt; 0 ) {</a>
+<a name="ln539">        num_err += !pCS_CALLOC(LinearCTStereoDble, AT_STEREO_DBLE, nLenLinearCTStereoDble);</a>
+<a name="ln540">        num_err += !pCS_CALLOC(LinearCTStereoDbleInv, AT_STEREO_DBLE, nLenLinearCTStereoDble);</a>
+<a name="ln541">        pCS-&gt;nLenLinearCTStereoDbleInv =</a>
+<a name="ln542">        pCS-&gt;nMaxLenLinearCTStereoDble =</a>
+<a name="ln543">        pCS-&gt;nLenLinearCTStereoDble    = nLenLinearCTStereoDble;</a>
+<a name="ln544">    }</a>
+<a name="ln545">    if ( (nMode &amp; CMODE_STEREO) &amp;&amp; nLenLinearCTStereoCarb &gt; 0 ) {</a>
+<a name="ln546">        num_err += !pCS_CALLOC(LinearCTStereoCarb, AT_STEREO_CARB, nLenLinearCTStereoCarb);</a>
+<a name="ln547">        num_err += !pCS_CALLOC(LinearCTStereoCarbInv, AT_STEREO_CARB, nLenLinearCTStereoCarb);</a>
+<a name="ln548">        pCS-&gt;nLenLinearCTStereoCarbInv =</a>
+<a name="ln549">        pCS-&gt;nMaxLenLinearCTStereoCarb =</a>
+<a name="ln550">        pCS-&gt;nLenLinearCTStereoCarb    = nLenLinearCTStereoCarb;</a>
+<a name="ln551">    }</a>
+<a name="ln552">    if ( (nMode &amp; CMODE_STEREO) &amp;&amp; (nLenLinearCTStereoDble &gt; 0 || nLenLinearCTStereoCarb &gt; 0 ) ) {</a>
+<a name="ln553">        num_err += !pCS_CALLOC(nCanonOrdStereo, AT_RANK, num_at_tg);</a>
+<a name="ln554">        num_err += !pCS_CALLOC(nCanonOrdStereoInv, AT_RANK, num_at_tg);</a>
+<a name="ln555">        if ( (nMode &amp; CMODE_TAUT) &amp;&amp; nLenLinearCTTautomer &gt; 0 &amp;&amp; num_t_groups &gt; 0 ) {</a>
+<a name="ln556">            num_err += !pCS_CALLOC(nCanonOrdStereoTaut, AT_RANK, num_t_groups);</a>
+<a name="ln557">        }</a>
+<a name="ln558">    }</a>
+<a name="ln559">    /* isotopic stereo */</a>
+<a name="ln560">    if ( (nMode &amp; CMODE_ISO_STEREO) &amp;&amp; nLenLinearCTIsotopicStereoDble &gt; 0 ) {</a>
+<a name="ln561">        num_err += !pCS_CALLOC(LinearCTIsotopicStereoDble, AT_STEREO_DBLE, nLenLinearCTIsotopicStereoDble);</a>
+<a name="ln562">        num_err += !pCS_CALLOC(LinearCTIsotopicStereoDbleInv, AT_STEREO_DBLE, nLenLinearCTIsotopicStereoDble);</a>
+<a name="ln563">        pCS-&gt;nLenLinearCTIsotopicStereoDbleInv = </a>
+<a name="ln564">        pCS-&gt;nMaxLenLinearCTIsotopicStereoDble =</a>
+<a name="ln565">        pCS-&gt;nLenLinearCTIsotopicStereoDble    = nLenLinearCTIsotopicStereoDble;</a>
+<a name="ln566">    }</a>
+<a name="ln567">    if ( (nMode &amp; CMODE_ISO_STEREO) &amp;&amp; nLenLinearCTIsotopicStereoCarb &gt; 0 ) {</a>
+<a name="ln568">        num_err += !pCS_CALLOC(LinearCTIsotopicStereoCarb, AT_STEREO_CARB, nLenLinearCTIsotopicStereoCarb);</a>
+<a name="ln569">        num_err += !pCS_CALLOC(LinearCTIsotopicStereoCarbInv, AT_STEREO_CARB, nLenLinearCTIsotopicStereoCarb);</a>
+<a name="ln570">        pCS-&gt;nLenLinearCTIsotopicStereoCarbInv =</a>
+<a name="ln571">        pCS-&gt;nMaxLenLinearCTIsotopicStereoCarb =</a>
+<a name="ln572">        pCS-&gt;nLenLinearCTIsotopicStereoCarb    = nLenLinearCTIsotopicStereoCarb;</a>
+<a name="ln573">    }</a>
+<a name="ln574">    if ( (nMode &amp; CMODE_ISO_STEREO) &amp;&amp; (nLenLinearCTIsotopicStereoDble &gt; 0 || nLenLinearCTIsotopicStereoCarb &gt; 0 ) ) {</a>
+<a name="ln575">        num_err += !pCS_CALLOC(nCanonOrdIsotopicStereo, AT_RANK, num_at_tg);</a>
+<a name="ln576">        num_err += !pCS_CALLOC(nCanonOrdIsotopicStereoInv, AT_RANK, num_at_tg);</a>
+<a name="ln577">        if ( (nMode &amp; CMODE_TAUT) &amp;&amp; nLenLinearCTTautomer &gt; 0 &amp;&amp; num_t_groups &gt; 0 ) {</a>
+<a name="ln578">            num_err += !pCS_CALLOC(nCanonOrdIsotopicStereoTaut, AT_RANK, num_t_groups);</a>
+<a name="ln579">        }</a>
+<a name="ln580">    }</a>
+<a name="ln581">    if ( ((nMode &amp; CMODE_STEREO) &amp;&amp; (nLenLinearCTStereoDble &gt; 0 || nLenLinearCTStereoCarb &gt; 0 )) ||</a>
+<a name="ln582">         ((nMode &amp; CMODE_ISO_STEREO) &amp;&amp; (nLenLinearCTIsotopicStereoDble &gt; 0 || nLenLinearCTIsotopicStereoCarb &gt; 0 )) ) {</a>
+<a name="ln583">        num_err += !pCS_CALLOC(bRankUsedForStereo, S_CHAR, num_at);</a>
+<a name="ln584">        num_err += !pCS_CALLOC(bAtomUsedForStereo, S_CHAR, num_at);</a>
+<a name="ln585">    }</a>
+<a name="ln586">    /* tautomeric part of the connection table */</a>
+<a name="ln587">    if ( (nMode &amp; CMODE_CT) &amp;&amp; (nMode &amp; CMODE_TAUT) &amp;&amp; nLenLinearCTTautomer &gt; 0 ) {</a>
+<a name="ln588">        num_err += !pCS_CALLOC(LinearCTTautomer, AT_TAUTOMER, nLenLinearCTTautomer);</a>
+<a name="ln589">        pCS-&gt;nMaxLenLinearCTTautomer =</a>
+<a name="ln590">        pCS-&gt;nLenLinearCTTautomer    = nLenLinearCTTautomer;</a>
+<a name="ln591">        if ( num_t_groups &gt; 0 ) {</a>
+<a name="ln592">            num_err += !pCS_CALLOC(nCanonOrdTaut, AT_RANK, num_t_groups);</a>
+<a name="ln593">            num_err += !pCS_CALLOC(nSymmRankTaut, AT_RANK, num_t_groups);</a>
+<a name="ln594">        }</a>
+<a name="ln595">    }</a>
+<a name="ln596">    </a>
+<a name="ln597">    if ( nMode &amp; CMODE_CT )</a>
+<a name="ln598">    num_err += !pCS_CALLOC(LinearCT2, AT_NUMB, nLenCT);</a>
+<a name="ln599"> </a>
+<a name="ln600">    /* for establishing constitutional equivalence */</a>
+<a name="ln601">    num_err += !pCS_CALLOC(nPrevAtomNumber, AT_RANK, num_at_tg);</a>
+<a name="ln602"> </a>
+<a name="ln603">    /* set canon numbering lengths to zero */</a>
+<a name="ln604">    pCS-&gt;nLenCanonOrd = 0;</a>
+<a name="ln605">    pCS-&gt;nLenCanonOrdIsotopic = 0;</a>
+<a name="ln606">    pCS-&gt;nLenCanonOrdIsotopicTaut = 0;</a>
+<a name="ln607">    pCS-&gt;nLenCanonOrdStereo = 0;</a>
+<a name="ln608">    pCS-&gt;nLenCanonOrdStereoTaut = 0;</a>
+<a name="ln609">    pCS-&gt;nLenCanonOrdIsotopicStereo = 0;</a>
+<a name="ln610">    pCS-&gt;nLenCanonOrdIsotopicStereoTaut = 0;</a>
+<a name="ln611">    pCS-&gt;nLenCanonOrdTaut       = 0;</a>
+<a name="ln612"> </a>
+<a name="ln613"> </a>
+<a name="ln614">    if ( num_err ) {</a>
+<a name="ln615">        DeAllocateCS( pCS );</a>
+<a name="ln616">        return CT_OUT_OF_RAM;  /*  &lt;BRKPT&gt; */</a>
+<a name="ln617">    }</a>
+<a name="ln618">    return 0;</a>
+<a name="ln619"> </a>
+<a name="ln620">#undef pCS_CALLOC</a>
+<a name="ln621">}</a>
+<a name="ln622">/****************************************************************************/</a>
+<a name="ln623">#define COMPARE_WITH_CT(CT, CTLEN, VALUE, CONDITION) \</a>
+<a name="ln624">    if ( CONDITION ) { \</a>
+<a name="ln625">        if ( (VALUE) CT_GREATER_THAN (CT)[CTLEN] ) \</a>
+<a name="ln626">            return 1; /* not a minimal CT */ \</a>
+<a name="ln627">        (CONDITION) = (VALUE) == (CT)[CTLEN]; \</a>
+<a name="ln628">    } \</a>
+<a name="ln629">    (CT)[CTLEN] = VALUE; \</a>
+<a name="ln630">    (CTLEN)++</a>
+<a name="ln631"> </a>
+<a name="ln632">#define COMPARE_WITH_CTVAL(CTVAL, VALUE, CONDITION) \</a>
+<a name="ln633">    if ( CONDITION ) { \</a>
+<a name="ln634">        if ( (VALUE) CT_GREATER_THAN (CTVAL) ) \</a>
+<a name="ln635">            return 1; /* not a minimal CT */ \</a>
+<a name="ln636">        (CONDITION) = (VALUE) == (CTVAL); \</a>
+<a name="ln637">    } \</a>
+<a name="ln638">    (CTVAL) = VALUE</a>
+<a name="ln639"> </a>
+<a name="ln640">#define COMPARE_WITH_CT2(CT, CTLEN, VALUE, CONDITION, OPER) \</a>
+<a name="ln641">    if ( CONDITION ) { \</a>
+<a name="ln642">        if ( (VALUE) CT_GREATER_THAN (CT)[CTLEN] ) { \</a>
+<a name="ln643">            (OPER); \</a>
+<a name="ln644">            return 1; /* not a minimal CT */ \</a>
+<a name="ln645">        } \</a>
+<a name="ln646">        (CONDITION) = (VALUE) == (CT)[CTLEN]; \</a>
+<a name="ln647">    } \</a>
+<a name="ln648">    (CT)[CTLEN] = VALUE; \</a>
+<a name="ln649">    (CTLEN)++</a>
+<a name="ln650"> </a>
+<a name="ln651">/****************************************************************************/</a>
+<a name="ln652">int FillIsotopicAtLinearCT(int num_atoms, sp_ATOM* at, </a>
+<a name="ln653">                           const AT_RANK *nAtomNumber,</a>
+<a name="ln654">                           AT_ISOTOPIC *LinearCTIsotopic, </a>
+<a name="ln655">                           int nMaxLenLinearCTIsotopic, int *pnLenLinearCTIsotopic)</a>
+<a name="ln656">{</a>
+<a name="ln657">    /* at[i].init_rank = initial ranks before canonizing */</a>
+<a name="ln658">    /* nRank[i]  = new ordering number for atoms: nRank=1,2,.. */</a>
+<a name="ln659">    /* nAtomNumber[r] = orig. atom number= 0,1,...  for r = nRank-1  */</a>
+<a name="ln660">    /* nRank[nAtomNumber[r]] = r; r = 0,1,... */</a>
+<a name="ln661">    /* nAtomNumber[nRank[i]-1] = i; */</a>
+<a name="ln662"> </a>
+<a name="ln663">    int  i, k, rank;</a>
+<a name="ln664">    int  nLinearCTIsotopicLen=0;</a>
+<a name="ln665"> </a>
+<a name="ln666">    /* the following parts of the &quot;name&quot; should be compared */</a>
+<a name="ln667">    /* after the connection table comparison is done */</a>
+<a name="ln668">    /* to avoid wrong difference sign. So, these parts */</a>
+<a name="ln669">    /* go to a separate buffers. */</a>
+<a name="ln670">    if ( LinearCTIsotopic &amp;&amp; nMaxLenLinearCTIsotopic &gt; 0 ) {</a>
+<a name="ln671">        memset( LinearCTIsotopic, 0, nMaxLenLinearCTIsotopic * sizeof(LinearCTIsotopic[0]) );</a>
+<a name="ln672">    } else {</a>
+<a name="ln673">        return 0;</a>
+<a name="ln674">    }</a>
+<a name="ln675"> </a>
+<a name="ln676">    /* rank = nRank[nAtomNumber[rank-1]] -- proposed atoms canon. numbers */</a>
+<a name="ln677">    for ( rank = 1; rank &lt;= num_atoms; rank ++ ) {</a>
+<a name="ln678"> </a>
+<a name="ln679">        i = (int)nAtomNumber[rank-1];  /* current atom */</a>
+<a name="ln680"> </a>
+<a name="ln681">        /****************************************************</a>
+<a name="ln682">             add isotopic atom info to LinearCTIsotopic</a>
+<a name="ln683">        *****************************************************/</a>
+<a name="ln684"> </a>
+<a name="ln685">        /* if the atom itself is not isotopic then add it only if */</a>
+<a name="ln686">        /* the atom is not an endpoint AND has attached T or D or 1H.  */</a>
+<a name="ln687">        k = ( !at[i].endpoint &amp;&amp; !(at[i].cFlags &amp; AT_FLAG_ISO_H_POINT) &amp;&amp; (at[i].num_iso_H[0] || at[i].num_iso_H[1] || at[i].num_iso_H[2]) );</a>
+<a name="ln688">        if ( at[i].iso_atw_diff || k ) {</a>
+<a name="ln689">            if ( CHECK_OVERFLOW(nLinearCTIsotopicLen, nMaxLenLinearCTIsotopic) )</a>
+<a name="ln690">                return CT_OVERFLOW;  /*  &lt;BRKPT&gt; */</a>
+<a name="ln691">            LinearCTIsotopic[nLinearCTIsotopicLen].at_num       = (AT_RANK)rank;</a>
+<a name="ln692">            LinearCTIsotopic[nLinearCTIsotopicLen].iso_atw_diff = at[i].iso_atw_diff;</a>
+<a name="ln693">            LinearCTIsotopic[nLinearCTIsotopicLen].num_1H       = (NUM_H)(k? at[i].num_iso_H[0] : 0);</a>
+<a name="ln694">            LinearCTIsotopic[nLinearCTIsotopicLen].num_D        = (NUM_H)(k? at[i].num_iso_H[1] : 0);</a>
+<a name="ln695">            LinearCTIsotopic[nLinearCTIsotopicLen].num_T        = (NUM_H)(k? at[i].num_iso_H[2] : 0);</a>
+<a name="ln696">            nLinearCTIsotopicLen ++;</a>
+<a name="ln697">        }</a>
+<a name="ln698"> </a>
+<a name="ln699">    } /* end of cycle over all atoms. */</a>
+<a name="ln700"> </a>
+<a name="ln701">    if ( LinearCTIsotopic ) {</a>
+<a name="ln702">        if ( *pnLenLinearCTIsotopic ) {</a>
+<a name="ln703">            if ( *pnLenLinearCTIsotopic != nLinearCTIsotopicLen )</a>
+<a name="ln704">                return CT_LEN_MISMATCH;  /*  &lt;BRKPT&gt; */</a>
+<a name="ln705">        }else</a>
+<a name="ln706">            *pnLenLinearCTIsotopic = nLinearCTIsotopicLen;</a>
+<a name="ln707">    }</a>
+<a name="ln708"> </a>
+<a name="ln709">    /* Return value: &gt;0 =&gt; OK */</a>
+<a name="ln710">    return nLinearCTIsotopicLen;</a>
+<a name="ln711">}</a>
+<a name="ln712"> </a>
+<a name="ln713">/****************************************************************************/</a>
+<a name="ln714">int FillTautLinearCT2(int num_atoms, int num_at_tg, int bIsoTaut,</a>
+<a name="ln715">                      const AT_RANK *nRank, const AT_RANK *nAtomNumber, </a>
+<a name="ln716">                      const AT_RANK *nSymmRank, const AT_RANK *nRankIso, </a>
+<a name="ln717">                      const AT_RANK *nAtomNumberIso, const AT_RANK *nSymmRankIso,</a>
+<a name="ln718">                      AT_TAUTOMER   *LinearCTTautomer, </a>
+<a name="ln719">                      int nMaxLenLinearCTTautomer, int *pnLenLinearCTTautomer,</a>
+<a name="ln720">                      AT_ISO_TGROUP *LinearCTIsotopicTautomer, </a>
+<a name="ln721">                      int nMaxLenLinearCTIsotopicTautomer, </a>
+<a name="ln722">                      int *pnLenLinearCTIsotopicTautomer,</a>
+<a name="ln723">                      T_GROUP_INFO *t_group_info)</a>
+<a name="ln724">{</a>
+<a name="ln725">    /* nRank[i]  = Canonical numbers of atoms,.. */</a>
+<a name="ln726">    /* nAtomNumber[r] = orig. atom number= 0,1,...  for r = nRank-1  */</a>
+<a name="ln727">    /* nRank[nAtomNumber[r]] = r; r = 0,1,... */</a>
+<a name="ln728">    /* nAtomNumber[nRank[i]-1] = i; */</a>
+<a name="ln729"> </a>
+<a name="ln730">    T_GROUP *t_group;</a>
+<a name="ln731"> </a>
+<a name="ln732">    int      i, j, len=0, g, num_num, offset, max_len = 0, len_iso=0;</a>
+<a name="ln733">    const static int max_num_num = sizeof(t_group-&gt;num)/sizeof(t_group-&gt;num[0]);</a>
+<a name="ln734">    const static int max_num_iso = sizeof(LinearCTIsotopicTautomer-&gt;num)/sizeof(LinearCTIsotopicTautomer-&gt;num[0])+T_NUM_NO_ISOTOPIC;</a>
+<a name="ln735"> </a>
+<a name="ln736">    /****************************************************************************</a>
+<a name="ln737">    </a>
+<a name="ln738">                   Tautomeric groups 07-22-2002, modified 12-2003</a>
+<a name="ln739">    </a>
+<a name="ln740">    ****************************************************************************/</a>
+<a name="ln741"> </a>
+<a name="ln742">    if ( num_at_tg &gt; num_atoms &amp;&amp; t_group_info &amp;&amp; t_group_info-&gt;num_t_groups ) {</a>
+<a name="ln743">        int        num_t_groups      = t_group_info-&gt;num_t_groups;</a>
+<a name="ln744">        AT_NUMB   *tGroupNumber      = t_group_info-&gt;tGroupNumber;</a>
+<a name="ln745">        AT_NUMB   *tSymmRank         = tGroupNumber + TGSO_SYMM_RANK*num_t_groups;  /*  equivalence */</a>
+<a name="ln746">        AT_NUMB   *tiSymmRank        = tGroupNumber + TGSO_SYMM_IRANK*num_t_groups;</a>
+<a name="ln747">        AT_NUMB   *tiGroupNumber     = tGroupNumber + TGSO_SYMM_IORDER*num_t_groups;</a>
+<a name="ln748">        AT_RANK    nOffset           = (AT_RANK)num_atoms;</a>
+<a name="ln749">        /*  Fill Canonical ranks and Symmetry Ranks */</a>
+<a name="ln750">        /* memcpy( tPrevGroupNumber, tGroupNumber, num_t_groups*sizeof(tPrevGroupNumber[0])); */</a>
+<a name="ln751">        for ( i = num_atoms, j = 0; i &lt; num_at_tg; i ++, j ++ ) {</a>
+<a name="ln752">            /* tPrevGroupNumber[j] = */</a>
+<a name="ln753">            tGroupNumber[j] = nAtomNumber[i] - nOffset;</a>
+<a name="ln754">            tSymmRank[j]    = nSymmRank[i]   - nOffset;</a>
+<a name="ln755">            if ( bIsoTaut ) {</a>
+<a name="ln756">                tiGroupNumber[j] = nAtomNumberIso[i] - nOffset;</a>
+<a name="ln757">                tiSymmRank[j]    = nSymmRankIso[i]   - nOffset;</a>
+<a name="ln758">            }</a>
+<a name="ln759">        }</a>
+<a name="ln760">        /*  Sort enpoints within each tautomeric group according to the canonical ranks */</a>
+<a name="ln761">        pn_RankForSort = nRank;</a>
+<a name="ln762">        for ( i = 0; i &lt; num_t_groups; i ++ ) {</a>
+<a name="ln763">            qsort( t_group_info-&gt;nEndpointAtomNumber + (int)t_group_info-&gt;t_group[i].nFirstEndpointAtNoPos,</a>
+<a name="ln764">                   t_group_info-&gt;t_group[i].nNumEndpoints,</a>
+<a name="ln765">                   sizeof(t_group_info-&gt;nEndpointAtomNumber[0]),</a>
+<a name="ln766">                   CompRank );</a>
+<a name="ln767">        }</a>
+<a name="ln768">        /* fill out LinearCTTautomer */</a>
+<a name="ln769">        if ( nMaxLenLinearCTTautomer ) {</a>
+<a name="ln770">            max_len = T_GROUP_HDR_LEN * t_group_info-&gt;num_t_groups + t_group_info-&gt;nNumEndpoints+1;</a>
+<a name="ln771">            if ( max_len &gt; nMaxLenLinearCTTautomer )</a>
+<a name="ln772">                return CT_OVERFLOW;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln773">        }</a>
+<a name="ln774">    </a>
+<a name="ln775">        /****************************************************************</a>
+<a name="ln776">         * tautomer group format (#: is an offset)</a>
+<a name="ln777">         ****************************************************************</a>
+<a name="ln778">         *             HEADER (T_GROUP_HDR_LEN=3+3iso)</a>
+<a name="ln779">         * 0:       N = number of endpoints   ( t_group-&gt;nNumEndpoints )</a>
+<a name="ln780">         * 1:       number of mobile groups   ( t_group-&gt;num[0] )</a>
+<a name="ln781">         * 2:       number of neg. charges    ( t_group-&gt;num[1] )  {note: T_NUM_NO_ISOTOPIC=2}</a>
+<a name="ln782">         *             ENDPOINT RANKS</a>
+<a name="ln783">         * 3..N+2:  sorted tautomer group endpoint ranks; the sorting order is in</a>
+<a name="ln784">         *          t_group_info-&gt;nEndpointAtomNumber[t_group-&gt;nFirstEndpointAtNoPos+j], j=0..N-1</a>
+<a name="ln785">         *</a>
+<a name="ln786">         * End mark : N==0</a>
+<a name="ln787">         ****************************************************************/</a>
+<a name="ln788">        /* num_num = t_group_info-&gt;bIgnoreIsotopic? T_NUM_NO_ISOTOPIC : max_num_num; */</a>
+<a name="ln789">        num_num = max_num_num; /*  always include isotopic info; ignore it at the CT comparison step. */</a>
+<a name="ln790">        for ( i = 0; i &lt; t_group_info-&gt;num_t_groups; i ++ ) {</a>
+<a name="ln791">            g = tGroupNumber[i]; /*  ith tautomeric group number in canonical order */</a>
+<a name="ln792">            t_group = t_group_info-&gt;t_group + g;</a>
+<a name="ln793">            /*******************************************************</a>
+<a name="ln794">             * Tautomer non-isotopic part: LinearCTTautomer</a>
+<a name="ln795">             *******************************************************/</a>
+<a name="ln796">            /*  check length */</a>
+<a name="ln797">            if ( CHECK_OVERFLOW(len + T_GROUP_HDR_LEN + t_group-&gt;nNumEndpoints, max_len) )</a>
+<a name="ln798">                return CT_OVERFLOW;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln799"> </a>
+<a name="ln800">            /*  t_group header: number of endpoints */</a>
+<a name="ln801">            LinearCTTautomer[len++] = t_group-&gt;nNumEndpoints;</a>
+<a name="ln802">            /*  t_group header: */</a>
+<a name="ln803">            /*  (a) number of mobile groups in the t_group (number of H + number of (-) ) and */</a>
+<a name="ln804">            /*  (b) number of mobile negative charges (-) in the t_group */</a>
+<a name="ln805">            for ( j = 0; j &lt; T_NUM_NO_ISOTOPIC; j ++ ) {</a>
+<a name="ln806">                LinearCTTautomer[len++] = t_group-&gt;num[j];</a>
+<a name="ln807">            }</a>
+<a name="ln808">            /*  t_group endpoint ranks link the group to the tautomeric endpoint atoms in the structure */</a>
+<a name="ln809">            /*  according to their ranks */</a>
+<a name="ln810">            for ( j = 0, offset = t_group-&gt;nFirstEndpointAtNoPos; j &lt; t_group-&gt;nNumEndpoints; j ++ ) {</a>
+<a name="ln811">                LinearCTTautomer[len++] = nRank[(int)t_group_info-&gt;nEndpointAtomNumber[offset+j]];</a>
+<a name="ln812">            }</a>
+<a name="ln813">        }</a>
+<a name="ln814">        if ( nMaxLenLinearCTTautomer ) {</a>
+<a name="ln815">            LinearCTTautomer[len++] = 0; /*  or CT_INITVALUE ??? */</a>
+<a name="ln816">            if ( len != max_len ) {</a>
+<a name="ln817">                len = -len; /*  program error */ /*   &lt;BRKPT&gt; */</a>
+<a name="ln818">            } else</a>
+<a name="ln819">            if ( *pnLenLinearCTTautomer &amp;&amp; *pnLenLinearCTTautomer != len ) {</a>
+<a name="ln820">                return CT_LEN_MISMATCH;</a>
+<a name="ln821">            } else {</a>
+<a name="ln822">                *pnLenLinearCTTautomer = len;</a>
+<a name="ln823">            }</a>
+<a name="ln824">        } else {</a>
+<a name="ln825">            *pnLenLinearCTTautomer = 0;</a>
+<a name="ln826">        }</a>
+<a name="ln827">        /******************************************************************</a>
+<a name="ln828">         * Isotopic Tautomeric mobile groups part: LinearCTIsotopicTautomer</a>
+<a name="ln829">         ******************************************************************/</a>
+<a name="ln830">        if ( nMaxLenLinearCTIsotopicTautomer &amp;&amp; !t_group_info-&gt;nNumIsotopicEndpoints ) {</a>
+<a name="ln831">            for ( i = 0; i &lt; t_group_info-&gt;num_t_groups; i ++ ) {</a>
+<a name="ln832">                g = tiGroupNumber[i]; /*  ith tautomeric group number in canonical order */</a>
+<a name="ln833">                t_group = t_group_info-&gt;t_group + g;</a>
+<a name="ln834">                /*  find if mobile hydrogens are isotopic */</a>
+<a name="ln835">                if ( !t_group-&gt;iWeight ) {</a>
+<a name="ln836">                    continue; /* no isotopic H */</a>
+<a name="ln837">                }</a>
+<a name="ln838">                if ( CHECK_OVERFLOW(len_iso, nMaxLenLinearCTIsotopicTautomer) )</a>
+<a name="ln839">                    return CT_OVERFLOW;  /*   &lt;BRKPT&gt; */</a>
+<a name="ln840">                for ( j = T_NUM_NO_ISOTOPIC; j &lt; max_num_num &amp;&amp; j &lt; max_num_iso; j ++ ) {</a>
+<a name="ln841">                     /*  num_T, num_D, num_1H */</a>
+<a name="ln842">                    LinearCTIsotopicTautomer[len_iso].num[j-T_NUM_NO_ISOTOPIC] = t_group-&gt;num[j];</a>
+<a name="ln843">                }</a>
+<a name="ln844">                /*  link to tautomer group LinearCTTautomer[i]:  */</a>
+<a name="ln845">                LinearCTIsotopicTautomer[len_iso++].tgroup_num = (AT_NUMB)(i + 1); /*  t_group isotopic rank */</a>
+<a name="ln846">            }</a>
+<a name="ln847">        }</a>
+<a name="ln848">        if ( nMaxLenLinearCTIsotopicTautomer ) {</a>
+<a name="ln849">            if ( *pnLenLinearCTIsotopicTautomer &amp;&amp; *pnLenLinearCTIsotopicTautomer != len_iso ) {</a>
+<a name="ln850">                return CT_LEN_MISMATCH;</a>
+<a name="ln851">            }</a>
+<a name="ln852">            *pnLenLinearCTIsotopicTautomer = len_iso;</a>
+<a name="ln853">        } else {</a>
+<a name="ln854">            *pnLenLinearCTIsotopicTautomer = 0;</a>
+<a name="ln855">        }</a>
+<a name="ln856"> </a>
+<a name="ln857">    }</a>
+<a name="ln858">    return len;</a>
+<a name="ln859">}</a>
+<a name="ln860">/****************************************************************************</a>
+<a name="ln861"> *</a>
+<a name="ln862"> *   Update a linear connection table out of final ranks</a>
+<a name="ln863"> */</a>
+<a name="ln864">int UpdateFullLinearCT( int num_atoms, int num_at_tg, sp_ATOM* at, AT_RANK *nRank, AT_RANK *nAtomNumber,</a>
+<a name="ln865">                        CANON_STAT* pCS, int bFirstTime )</a>
+<a name="ln866">{</a>
+<a name="ln867">    /* at[i].init_rank = initial ranks before canonizing */</a>
+<a name="ln868">    /* nRank[i]  = new ordering number for atoms: nRank=1,2,.. */</a>
+<a name="ln869">    /* nAtomNumber[r] = orig. atom number= 0,1,...  for r = nRank-1  */</a>
+<a name="ln870">    /* nRank[nAtomNumber[r]] = r; r = 0,1,... */</a>
+<a name="ln871">    /* nAtomNumber[nRank[i]-1] = i; */</a>
+<a name="ln872"> </a>
+<a name="ln873">    AT_NUMB nNeighborNumber[MAXVAL];</a>
+<a name="ln874">    int  i, j, k, num_neigh, rank, bCompare; /*, nRetVal; */</a>
+<a name="ln875"> </a>
+<a name="ln876">    T_GROUP_INFO *t_group_info        = NULL;</a>
+<a name="ln877">    T_GROUP      *t_group             = NULL;</a>
+<a name="ln878">    AT_NUMB      *nEndpointAtomNumber = NULL;</a>
+<a name="ln879"> </a>
+<a name="ln880">    int  nCTLen=0, nCTLenAtOnly=0;</a>
+<a name="ln881"> </a>
+<a name="ln882">    AT_NUMB         r_neigh;</a>
+<a name="ln883">    AT_NUMB        *LinearCT           = pCS-&gt;LinearCT;</a>
+<a name="ln884"> </a>
+<a name="ln885">    /* the following parts of the &quot;name&quot; should be compared */</a>
+<a name="ln886">    /* after the connection table comparison is done */</a>
+<a name="ln887">    /* to avoid wrong difference sign. So, these parts */</a>
+<a name="ln888">    /* go to a separate buffers. */</a>
+<a name="ln889">    /* -- currently not used at all at all -- */</a>
+<a name="ln890"> </a>
+<a name="ln891">#if CT_ATOMID != CT_ATOMID_DONTINCLUDE</a>
+<a name="ln892">    AT_NUMB          r0_at_type;</a>
+<a name="ln893">#endif</a>
+<a name="ln894"> </a>
+<a name="ln895">    bCompare = bFirstTime? 0 : 1;</a>
+<a name="ln896">    </a>
+<a name="ln897">    if ( num_at_tg &gt; num_atoms ) {</a>
+<a name="ln898">        t_group_info        = pCS-&gt;t_group_info;</a>
+<a name="ln899">        t_group             = t_group_info-&gt;t_group;</a>
+<a name="ln900">    } else {</a>
+<a name="ln901">        t_group_info        = NULL;</a>
+<a name="ln902">        t_group             = NULL;</a>
+<a name="ln903">    }</a>
+<a name="ln904"> </a>
+<a name="ln905">    /**********************************************************************/</a>
+<a name="ln906">    /*                                                                    */</a>
+<a name="ln907">    /*    CYCLE 1: FILL OUT  CONNECTION TABLE(S) FOR ALL ATOMS            */</a>
+<a name="ln908">    /*      ** NOT INCLUDING ISOTOPIC ATOMS AND 1H, 2H(D), 3H(T) **       */</a>
+<a name="ln909">    /*                                                                    */</a>
+<a name="ln910">    /* rank = nRank[nAtomNumber[rank-1]] -- proposed atoms canon. numbers */</a>
+<a name="ln911">    /**********************************************************************/</a>
+<a name="ln912">    for ( rank = 1; rank &lt;= num_atoms; rank ++ ) {</a>
+<a name="ln913">        i = (int)nAtomNumber[rank-1];  /* current atom */</a>
+<a name="ln914">#if ( CT_ATOMID == CT_ATOMID_IS_CURRANK )</a>
+<a name="ln915">        r0_at_type = (AT_NUMB)rank; /* current Rank */</a>
+<a name="ln916">#else</a>
+<a name="ln917">#if ( CT_ATOMID == CT_ATOMID_IS_INITRANK )</a>
+<a name="ln918">        r0_at_type = (AT_NUMB)at[i].init_rank; /* chemical + neighborhood ID */</a>
+<a name="ln919">#else</a>
+<a name="ln920">#if ( CT_ATOMID == CT_ATOMID_DONTINCLUDE )</a>
+<a name="ln921">#else</a>
+<a name="ln922"> #error Undefined or wrong definition of CT_ATOMID</a>
+<a name="ln923">#endif</a>
+<a name="ln924">#endif</a>
+<a name="ln925">#endif</a>
+<a name="ln926">        </a>
+<a name="ln927">        /* add atom to the CT */</a>
+<a name="ln928">#if ( CT_ATOMID != CT_ATOMID_DONTINCLUDE )</a>
+<a name="ln929">        if ( CHECK_OVERFLOW(nCTLen, pCS-&gt;nMaxLenLinearCT) )</a>
+<a name="ln930">            return CT_OVERFLOW;  /*  &lt;BRKPT&gt; */</a>
+<a name="ln931">        COMPARE_WITH_CT(LinearCT, nCTLen, r0_at_type, bCompare);</a>
+<a name="ln932">#endif</a>
+<a name="ln933">        /*******************************************************</a>
+<a name="ln934">             add neighbors and (if required) bonds to CT</a>
+<a name="ln935">        ********************************************************/</a>
+<a name="ln936">        </a>
+<a name="ln937">        /* sort neighbors */</a>
+<a name="ln938">        num_neigh = at[i].valence;</a>
+<a name="ln939">        for ( k = 0; k &lt; num_neigh; k ++) {</a>
+<a name="ln940">            nNeighborNumber[k] = (AT_NUMB)k;</a>
+<a name="ln941">        }</a>
+<a name="ln942">        pNeighborsForSort = at[i].neighbor;</a>
+<a name="ln943">        pn_RankForSort    = nRank;</a>
+<a name="ln944">        insertions_sort( nNeighborNumber, (size_t)num_neigh, sizeof(nNeighborNumber[0]), CompNeighborsAT_NUMBER );</a>
+<a name="ln945"> </a>
+<a name="ln946">        for ( k = 0; k &lt; num_neigh; k ++) {</a>
+<a name="ln947">            /* rank = (new current atom Rank) */</a>
+<a name="ln948">            if ( (int)(r_neigh = (AT_NUMB)nRank[(int)at[i].neighbor[(int)nNeighborNumber[k]]])</a>
+<a name="ln949">                                                              CT_NEIGH_SMALLER_THAN rank ) {</a>
+<a name="ln950">                if ( CHECK_OVERFLOW(nCTLen, pCS-&gt;nMaxLenLinearCT) )</a>
+<a name="ln951">                    return CT_OVERFLOW;  /*  &lt;BRKPT&gt; */</a>
+<a name="ln952">                COMPARE_WITH_CT( LinearCT, nCTLen, r_neigh, bCompare);</a>
+<a name="ln953">            }</a>
+<a name="ln954">        }</a>
+<a name="ln955">        </a>
+<a name="ln956">        /* add CT row delimiter */</a>
+<a name="ln957"> </a>
+<a name="ln958">    } /* end of cycle over all atoms. */</a>
+<a name="ln959"> </a>
+<a name="ln960">    nCTLenAtOnly = nCTLen;</a>
+<a name="ln961"> </a>
+<a name="ln962">    /**************************************************************</a>
+<a name="ln963">    </a>
+<a name="ln964">                Tautomeric groups 07-22-2002</a>
+<a name="ln965">    </a>
+<a name="ln966">    ***************************************************************/</a>
+<a name="ln967"> </a>
+<a name="ln968">    for ( rank = num_atoms + 1; rank &lt;= num_at_tg; rank ++ ) {</a>
+<a name="ln969">        j = (int)nAtomNumber[rank-1];  /* current &quot;atom&quot; */</a>
+<a name="ln970">        i = j - num_atoms;             /* current t-group */</a>
+<a name="ln971">#if ( CT_ATOMID == CT_ATOMID_IS_CURRANK )</a>
+<a name="ln972">        r0_at_type = (AT_NUMB)rank; /* current Rank */</a>
+<a name="ln973">#else</a>
+<a name="ln974">#if ( CT_ATOMID == CT_ATOMID_IS_INITRANK )</a>
+<a name="ln975">        r0_at_type = (AT_NUMB)rank; /* current Rank or  (AT_NUMB)at[i].init_rank; ==&gt; chemical + neighborhood ID */</a>
+<a name="ln976">#else</a>
+<a name="ln977">#if ( CT_ATOMID == CT_ATOMID_DONTINCLUDE )</a>
+<a name="ln978">#else</a>
+<a name="ln979">  #error Undefined or wrong definition of CT_ATOMID</a>
+<a name="ln980">#endif</a>
+<a name="ln981">#endif</a>
+<a name="ln982">#endif</a>
+<a name="ln983"> </a>
+<a name="ln984">        /* add atom to the CT */</a>
+<a name="ln985">#if ( CT_ATOMID != CT_ATOMID_DONTINCLUDE )</a>
+<a name="ln986">        if ( CHECK_OVERFLOW(nCTLen, pCS-&gt;nMaxLenLinearCT) )</a>
+<a name="ln987">            return CT_OVERFLOW;  /*  &lt;BRKPT&gt; */</a>
+<a name="ln988">        COMPARE_WITH_CT(LinearCT, nCTLen, r0_at_type, bCompare);</a>
+<a name="ln989">#endif</a>
+<a name="ln990">        </a>
+<a name="ln991">        /*******************************************************</a>
+<a name="ln992">              add neighbors and (if required) bonds to CT</a>
+<a name="ln993">        ********************************************************/</a>
+<a name="ln994">        </a>
+<a name="ln995">        /* sort endpoints */</a>
+<a name="ln996">        nEndpointAtomNumber = t_group_info-&gt;nEndpointAtomNumber+(int)t_group[i].nFirstEndpointAtNoPos;</a>
+<a name="ln997">        pn_RankForSort      = nRank;</a>
+<a name="ln998">        num_neigh           = (int)t_group[i].nNumEndpoints;</a>
+<a name="ln999">        insertions_sort( nEndpointAtomNumber, (size_t)num_neigh, sizeof(nEndpointAtomNumber[0]), CompRank);</a>
+<a name="ln1000"> </a>
+<a name="ln1001">        for ( k = 0; k &lt; num_neigh; k ++) {</a>
+<a name="ln1002">            /* rank = (new current atom Rank) */</a>
+<a name="ln1003">            if ( (int)(r_neigh = (AT_NUMB)nRank[(int)nEndpointAtomNumber[k]])</a>
+<a name="ln1004">                                                              CT_NEIGH_SMALLER_THAN rank ) {</a>
+<a name="ln1005">                if ( CHECK_OVERFLOW(nCTLen, pCS-&gt;nMaxLenLinearCT) )</a>
+<a name="ln1006">                    return CT_OVERFLOW;  /*  &lt;BRKPT&gt; */</a>
+<a name="ln1007">                COMPARE_WITH_CT( LinearCT, nCTLen, r_neigh, bCompare);</a>
+<a name="ln1008">            }</a>
+<a name="ln1009">        }</a>
+<a name="ln1010">    } /* end of cycle over all tautomeric groups. */</a>
+<a name="ln1011"> </a>
+<a name="ln1012">    /* compare bonds types */</a>
+<a name="ln1013">    /* compare elements */</a>
+<a name="ln1014"> </a>
+<a name="ln1015">    if ( LinearCT ) {</a>
+<a name="ln1016">        </a>
+<a name="ln1017">        if ( pCS-&gt;nLenLinearCT ) {</a>
+<a name="ln1018">            if ( pCS-&gt;nLenLinearCT != nCTLen )</a>
+<a name="ln1019">                return CT_LEN_MISMATCH;  /*  &lt;BRKPT&gt; */</a>
+<a name="ln1020">        } else {</a>
+<a name="ln1021">            pCS-&gt;nLenLinearCT       = nCTLen;</a>
+<a name="ln1022">        }</a>
+<a name="ln1023">        </a>
+<a name="ln1024">        if ( pCS-&gt;nLenLinearCT ) {</a>
+<a name="ln1025">            if ( pCS-&gt;nLenLinearCTAtOnly != nCTLenAtOnly )</a>
+<a name="ln1026">                return CT_LEN_MISMATCH;  /*  &lt;BRKPT&gt; */</a>
+<a name="ln1027">        } else {</a>
+<a name="ln1028">            pCS-&gt;nLenLinearCTAtOnly = nCTLenAtOnly;</a>
+<a name="ln1029">        }</a>
+<a name="ln1030"> </a>
+<a name="ln1031">    }</a>
+<a name="ln1032"> </a>
+<a name="ln1033">    /* Return: 0=&gt; identical CT; -1=&gt; new CT is smaller than the previous one */</a>
+<a name="ln1034">    return (bCompare-1);</a>
+<a name="ln1035">}</a>
+<a name="ln1036"> </a>
+<a name="ln1037">/*********************************************************************************************/</a>
+<a name="ln1038">/* if (*bChanged &amp; 1) then nSymmRank has been rearranged because for some r</a>
+<a name="ln1039">                           min{i: r=nSymmRank[nAtomNumber[i]]}+1 != r</a>
+<a name="ln1040">   if (*bChanged &amp; 2) then ranks nTempRank[] from nSymmRank[] differ from input nCurrRank[]</a>
+<a name="ln1041">   </a>
+<a name="ln1042">     on exit:</a>
+<a name="ln1043">    </a>
+<a name="ln1044">    nSymmRank[] have been updated if (*bChanged &amp; 1)</a>
+<a name="ln1045">    nCurrRank[] have been updated if (*bChanged &amp; 1)</a>
+<a name="ln1046">    nTempRank[] is always same as nCurrRank[]</a>
+<a name="ln1047">    nAtomNumber[] have been sorted so that</a>
+<a name="ln1048">        (i &lt; j) &lt;=&gt; (nSymmRank[nAtomNumber[i]] &lt;= nSymmRank[nAtomNumber[j]])</a>
+<a name="ln1049">*/</a>
+<a name="ln1050">int FixCanonEquivalenceInfo( int num_at_tg, AT_RANK *nSymmRank, AT_RANK *nCurrRank,</a>
+<a name="ln1051">                             AT_RANK *nTempRank, AT_NUMB *nAtomNumber, int *bChanged)</a>
+<a name="ln1052">{</a>
+<a name="ln1053">        int nNumDiffRanks, bChangeSymmRank, bChangeCurrRank=0;</a>
+<a name="ln1054">        /* sort equivalence information */</a>
+<a name="ln1055">        /*</a>
+<a name="ln1056">        int i;</a>
+<a name="ln1057">        for ( i = 0; i &lt; num_at_tg; i ++ ) {</a>
+<a name="ln1058">            nAtomNumber[i] = i;</a>
+<a name="ln1059">        }</a>
+<a name="ln1060">        */</a>
+<a name="ln1061">        pn_RankForSort = nSymmRank; /* minimal class representatives: min ranks for equiv. atoms */</a>
+<a name="ln1062">        qsort( nAtomNumber, num_at_tg, sizeof(nAtomNumber[0]), CompRanksOrd );</a>
+<a name="ln1063">        </a>
+<a name="ln1064">        /* convert equivalence information nSymmRank[] into ranks array nTempRank[] */</a>
+<a name="ln1065">        /* eq. info contains min. possible ranks for eq. atoms; nCurrRank contains max. possible ranks */</a>
+<a name="ln1066">        nNumDiffRanks = SortedEquInfoToRanks( nSymmRank/*inp*/, nTempRank/*out*/, nAtomNumber, num_at_tg, &amp;bChangeSymmRank );</a>
+<a name="ln1067">        /* check whether nCurrRank is same as new initial ranks calculated from nSymmRank[] */</a>
+<a name="ln1068">        bChangeCurrRank = memcmp( nCurrRank, nTempRank, num_at_tg*sizeof(nTempRank[0]));</a>
+<a name="ln1069">        </a>
+<a name="ln1070">        /*-----------------------------------------------------------------------</a>
+<a name="ln1071">        if ( bChangeSymmRank || bChangeCurrRank ) {</a>
+<a name="ln1072">             This is the case when the initial equitable partitioning does not produce</a>
+<a name="ln1073">             constitutionally equivalent classes of atoms.</a>
+<a name="ln1074">             Rebuild nSymmRank[] according to the new nCurrRank[] := nTempRank[]</a>
+<a name="ln1075">             For such structures the found canonical numbers of the constitutionally equivalent atoms</a>
+<a name="ln1076">             are not contiguous (see nCanonRank and nSymmRank examples below). Here arrays</a>
+<a name="ln1077">             nCurrRank, nAtomNumber, and nSymmRank are changed so that later the</a>
+<a name="ln1078">             contiguous canonical numbers for equivalent atoms can be obtained</a>
+<a name="ln1079">             (see GetCanonRanking under</a>
+<a name="ln1080">             &quot;III. Get final canonical numbering (no stereo, no isotopic)&quot;.</a>
+<a name="ln1081">            </a>
+<a name="ln1082">             Example: for CAS=37520-11-9 (ID=21247: Ethane, 1,2-dicyclopropyl-),</a>
+<a name="ln1083">            </a>
+<a name="ln1084">                         the numbers are the &quot;final canon. numbers, nCanonRank&quot;</a>
+<a name="ln1085">              1</a>
+<a name="ln1086">            </a>
+<a name="ln1087">              HC   7    5         3</a>
+<a name="ln1088">               | \</a>
+<a name="ln1089">               |  &gt;CH--CH2        CH</a>
+<a name="ln1090">               | /       \      / |</a>
+<a name="ln1091">              HC        H2C--CH&lt;  |</a>
+<a name="ln1092">                                \ |</a>
+<a name="ln1093">              2          6    8   CH</a>
+<a name="ln1094">            </a>
+<a name="ln1095">                                  4</a>
+<a name="ln1096">            </a>
+<a name="ln1097">             the arrays (arranged according to ordering in nAtomNumberTemp) are:</a>
+<a name="ln1098">                                     before SortedEquInfoToRanks  after SortedRanksToEquInfo</a>
+<a name="ln1099">             orig. atom nos.,nAtomNumberTemp:  {4 5 6 7 0 1 2 3}   {4 5 6 7 0 1 2 3}</a>
+<a name="ln1100">             order numbers for sorted  ranks:  {0 1 2 3 4 5 6 7}   {0 1 2 3 4 5 6 7}</a>
+<a name="ln1101">             canonical numbering, nCanonRank:  {1 2 5 6 3 4 7 8}   {1 2 5 6 3 4 7 8}</a>
+<a name="ln1102">             constit. equivalence, nSymmRank:  {1 1 1 1 3 3 7 7}   {1 1 1 1 5 5 7 7} used later</a>
+<a name="ln1103">             initial equivalence,  nCurrRank:  {6 6 6 6 6 6 8 8}   {4 4 4 4 6 6 8 8} used later</a>
+<a name="ln1104">             initial numbering,  nAtomNumber:  {2 3 4 7 0 1 6 7}   {0 1 2 3 4 5 6 7} used later</a>
+<a name="ln1105">             final, no stereo, no isotopic, after  III. GetCanonRanking:</a>
+<a name="ln1106">             final canon. numbers, nCanonRank:                     {1 2 3 4 5 6 7 8} final</a>
+<a name="ln1107">        }</a>
+<a name="ln1108">        ----------------------------------------------------------------------------------*/</a>
+<a name="ln1109">        if ( bChangeCurrRank ) {</a>
+<a name="ln1110">            memcpy( nCurrRank,   nTempRank,       num_at_tg*sizeof(nCurrRank[0]) );</a>
+<a name="ln1111">        }</a>
+<a name="ln1112">        if ( bChangeSymmRank ) {</a>
+<a name="ln1113">            SortedRanksToEquInfo( nSymmRank/*out*/, nTempRank/*inp*/, nAtomNumber, num_at_tg );</a>
+<a name="ln1114">        }</a>
+<a name="ln1115">        if ( bChanged ) {</a>
+<a name="ln1116">            *bChanged = (0 != bChangeSymmRank) | 2*(0 != bChangeCurrRank);</a>
+<a name="ln1117">        }</a>
+<a name="ln1118">        return nNumDiffRanks;</a>
+<a name="ln1119">}</a>
+<a name="ln1120">/* isotopic canonicalization */</a>
+<a name="ln1121">/***********************************************************************</a>
+<a name="ln1122"> *</a>
+<a name="ln1123"> *  Canon_INChI  (former GetCanonRankingUsingEquivInfo)</a>
+<a name="ln1124"> *</a>
+<a name="ln1125"> */</a>
+<a name="ln1126">int Canon_INChI3(int num_atoms, int num_at_tg, sp_ATOM* at, </a>
+<a name="ln1127">                 CANON_STAT* pCS, INCHI_MODE nMode, int bTautFtcn)</a>
+<a name="ln1128">{</a>
+<a name="ln1129">/****************************************************************</a>
+<a name="ln1130"> </a>
+<a name="ln1131">0.    Initiation, Prepare initial ranks for GetCanonRanking()</a>
+<a name="ln1132"> </a>
+<a name="ln1133">I.    Find constitutionally equivalent atoms and possibly canonical numbering</a>
+<a name="ln1134">I.1      Set tautomer=On, stereo=isotopic=Off</a>
+<a name="ln1135">I.2      GetCanonRanking(): Find constitutionally equivalent atoms and possibly canonical numbering</a>
+<a name="ln1136">1.3      Fix canonical equivalence info if needed (if the fix is needed then the numbering is not canonical)</a>
+<a name="ln1137"> </a>
+<a name="ln1138">II.   Get final non-isotopic canonical numbering. Simultaneously obtain non-minimal isotopic and stereo CTs</a>
+<a name="ln1139">         GetCanonRanking() with pCS-&gt;bKeepSymmRank = 1</a>
+<a name="ln1140">         FillOutStereoParities() (create initial stereo descriptors)</a>
+<a name="ln1141">         save non-isotopic canonicalization final results</a>
+<a name="ln1142">         hide isotopic and tautomeric results (for historical reasons only)</a>
+<a name="ln1143"> </a>
+<a name="ln1144"> </a>
+<a name="ln1145">III.  Find constitutionally equivalent isotopic atoms (for isotopic stereo canonicalization)</a>
+<a name="ln1146">III.1    Allocate more memory</a>
+<a name="ln1147">III.2    fill allocated memory with the initial data</a>
+<a name="ln1148">III.3    duplicate, save old and add isotopic info to the new pCS-&gt;t_group_info</a>
+<a name="ln1149">III.4    Prepare initial isotopic ranks for GetCanonRanking()</a>
+<a name="ln1150">III.5    GetCanonRanking() to Find constitutionally equivalent ISOTOPIC atoms and tautomer groups</a>
+<a name="ln1151">III.6    Fix canonical isotopic equivalence information and derive ranks out of it</a>
+<a name="ln1152"> </a>
+<a name="ln1153">IV.      Prepare a second Rank/AtomNumber Stack for mapping.</a>
+<a name="ln1154"> </a>
+<a name="ln1155">V.    Optimize isotopic part (optimized)</a>
+<a name="ln1156">         map_isotopic_atoms2()</a>
+<a name="ln1157">         save isotopic canonical numbering</a>
+<a name="ln1158"> </a>
+<a name="ln1159">VI.   Optimize stereo descriptors (optimized)</a>
+<a name="ln1160">         map_stereo_bonds4()</a>
+<a name="ln1161"> </a>
+<a name="ln1162"> </a>
+<a name="ln1163">VII. Optimize isotopic stereo descriptors (optimized)</a>
+<a name="ln1164">         SwitchAtomStereoAndIsotopicStereo()</a>
+<a name="ln1165">         SetCtToIsotopicStereo()</a>
+<a name="ln1166">         FillOutStereoParities()</a>
+<a name="ln1167">         SetUseAtomForStereo()</a>
+<a name="ln1168">         map_stereo_bonds4()</a>
+<a name="ln1169"> </a>
+<a name="ln1170">         SwitchAtomStereoAndIsotopicStereo()</a>
+<a name="ln1171">         SetCtToNonIsotopicStereo()</a>
+<a name="ln1172"> </a>
+<a name="ln1173"> </a>
+<a name="ln1174"> </a>
+<a name="ln1175"> </a>
+<a name="ln1176">*****************************************************************/</a>
+<a name="ln1177">    </a>
+<a name="ln1178">    int     nRet = 0, i, n;</a>
+<a name="ln1179"> </a>
+<a name="ln1180"> </a>
+<a name="ln1181">    /********************************************************</a>
+<a name="ln1182">              input non-stereo canonical info</a>
+<a name="ln1183">     ********************************************************/</a>
+<a name="ln1184">    BCN            *pBCN             = pCS-&gt;pBCN;</a>
+<a name="ln1185">    FTCN           *ftcn             = pBCN-&gt;ftcn + bTautFtcn;</a>
+<a name="ln1186">    </a>
+<a name="ln1187">    /********************************************************</a>
+<a name="ln1188">              set mode flags</a>
+<a name="ln1189">     ********************************************************/</a>
+<a name="ln1190">    /* tautomeric structure */</a>
+<a name="ln1191">    int bTaut     = (num_at_tg &gt; num_atoms) &amp;&amp; pCS-&gt;t_group_info &amp;&amp; pCS-&gt;t_group_info-&gt;num_t_groups &amp;&amp; pCS-&gt;t_group_info-&gt;t_group;</a>
+<a name="ln1192">    /* special case: induced by exchangable isotopic H inequivalence of atoms in formally non-tautomeric structure */</a>
+<a name="ln1193">    int bIsoXchgH = pCS-&gt;t_group_info &amp;&amp; pCS-&gt;t_group_info-&gt;nNumIsotopicEndpoints &gt; 1 &amp;&amp;</a>
+<a name="ln1194">                    pCS-&gt;t_group_info-&gt;nIsotopicEndpointAtomNumber &amp;&amp; pCS-&gt;t_group_info-&gt;nIsotopicEndpointAtomNumber[0] &amp;&amp;</a>
+<a name="ln1195">                    (pCS-&gt;t_group_info-&gt;bTautFlagsDone &amp; (TG_FLAG_FOUND_ISOTOPIC_H_DONE|TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE))</a>
+<a name="ln1196">                   /* &amp;&amp; (ftcn-&gt;nCanonFlags &amp; CANON_FLAG_ISO_TAUT_DIFF)*/;</a>
+<a name="ln1197">    int bHasIsotopicCanonData = (ftcn-&gt;PartitionCtIso.AtNumber &amp;&amp; ftcn-&gt;PartitionCtIso.Rank &amp;&amp; ftcn-&gt;nSymmRankCtIso);</a>
+<a name="ln1198">    /* bHasIsotopicCanonData==0 means</a>
+<a name="ln1199">     *       (1) No isotopic atoms in the component OR </a>
+<a name="ln1200">     *       (2) the component has only exchangable isotopic H that do not change canonical numbering and equivalence.</a>
+<a name="ln1201">     */</a>
+<a name="ln1202">    T_GROUP_INFO *t_group_info1 = bTaut? pCS-&gt;t_group_info : NULL;</a>
+<a name="ln1203">    /*int bIsoXchgH = t_group_info1 &amp;&amp; t_group_info1-&gt;nNumIsotopicEndpoints &amp;&amp; t_group_info1-&gt;nIsotopicEndpointAtomNumber;*/</a>
+<a name="ln1204">    /* isotopic canonicalization */</a>
+<a name="ln1205">    int bCanonIsotopic = bHasIsotopicCanonData &amp;&amp; ( nMode &amp; CMODE_ISO ) &amp;&amp; ( pCS-&gt;LinearCTIsotopic || pCS-&gt;LinearCTIsotopicTautomer || bIsoXchgH );</a>
+<a name="ln1206">    /* stereo canonicalization */</a>
+<a name="ln1207">    int bCanonStereo   = ( nMode &amp; CMODE_STEREO ) &amp;&amp; ( pCS-&gt;LinearCTStereoDble || pCS-&gt;LinearCTStereoCarb );</a>
+<a name="ln1208">    /* stereo isotopic canonicalization */</a>
+<a name="ln1209">    int bCanonIsoStereo = bHasIsotopicCanonData &amp;&amp; ( nMode &amp; CMODE_ISO_STEREO ) &amp;&amp; (pCS-&gt;LinearCTIsotopicStereoDble || pCS-&gt;LinearCTIsotopicStereoCarb) &amp;&amp; bCanonIsotopic;</a>
+<a name="ln1210">    int bIsoTaut = (bTaut &amp;&amp; bCanonIsotopic);</a>
+<a name="ln1211"> </a>
+<a name="ln1212">    int            bIgnoreIsotopicInputGroups;</a>
+<a name="ln1213">    int            bIgnoreIsotopicInputAtoms;</a>
+<a name="ln1214">    </a>
+<a name="ln1215">    AT_RANK       **pRankStack1      = pBCN-&gt;pRankStack;</a>
+<a name="ln1216">    int             nRankStackLen    = pBCN-&gt;nMaxLenRankStack;</a>
+<a name="ln1217">    int             num_max          = pBCN-&gt;num_max;     /* allocation lengths in *pRankStack1[] */</a>
+<a name="ln1218">    NEIGH_LIST     *NeighList        = ftcn-&gt;NeighList;</a>
+<a name="ln1219"> </a>
+<a name="ln1220">    int             nNumCurrRanks    = 0;</a>
+<a name="ln1221">    AT_RANK        *nTempRank        = NULL;</a>
+<a name="ln1222"> </a>
+<a name="ln1223">    AT_RANK        *nSymmRank                  = NULL;</a>
+<a name="ln1224">    </a>
+<a name="ln1225">    AT_RANK        *nAtomNumber                = NULL;</a>
+<a name="ln1226">    AT_RANK        *nRank                      = NULL;</a>
+<a name="ln1227"> </a>
+<a name="ln1228">    AT_RANK       **pRankStack2 = NULL;</a>
+<a name="ln1229">    AT_RANK        *nCanonRankStereo          = NULL;</a>
+<a name="ln1230">    AT_RANK        *nCanonRankStereoInv       = NULL;</a>
+<a name="ln1231">    AT_RANK        *nSymmStereo               = NULL;</a>
+<a name="ln1232"> </a>
+<a name="ln1233">    AT_RANK        *nCanonRankIsotopicStereo          = NULL;</a>
+<a name="ln1234">    AT_RANK        *nCanonRankIsotopicStereoInv       = NULL;</a>
+<a name="ln1235"> </a>
+<a name="ln1236">    CUR_TREE *cur_tree = NULL;</a>
+<a name="ln1237">    CUR_TREE CurrentTree;</a>
+<a name="ln1238"> </a>
+<a name="ln1239"> </a>
+<a name="ln1240">    /*AT_ISO_TGROUP  *LinearCTIsotopicTautomer  = NULL; */</a>
+<a name="ln1241"> </a>
+<a name="ln1242">    </a>
+<a name="ln1243">    CANON_STAT   CS2;</a>
+<a name="ln1244">    CANON_STAT* pCS2 = &amp;CS2;</a>
+<a name="ln1245"> </a>
+<a name="ln1246">    inchiTime   ulStartTime, ulEndTime;</a>
+<a name="ln1247">    /*=========== Mode Bits (low 8 bits, bit 0 is Least Significant Bit) ===========</a>
+<a name="ln1248">    </a>
+<a name="ln1249">      Mode      Bits       Description                                </a>
+<a name="ln1250">       '0' c    0          Only one connection table canonicalization </a>
+<a name="ln1251">       '1' C    1          Recalculate CT using fixed nSymmRank       </a>
+<a name="ln1252">       '2' i    1|2        Isotopic canonicalization (internal)       </a>
+<a name="ln1253">       '3' I    1|2|4      Isotopic canonicalization (output)</a>
+<a name="ln1254">       '4' s    1|8        Stereo canonicalization                    </a>
+<a name="ln1255">       '5' S    1|2|4|16   Stereo isotopic canonicalization           </a>
+<a name="ln1256">       '6' A    1|2|4|8|16 Output All                                 </a>
+<a name="ln1257"> </a>
+<a name="ln1258">      --- high 8 bits ----</a>
+<a name="ln1259">      --- obsolete, only historical interest. ------</a>
+<a name="ln1260">      1-2 : 0 =&gt; at[i].init_rank from Morgan+NeighList</a>
+<a name="ln1261">            1 =&gt; at[i].init_rank from Atom Invariants</a>
+<a name="ln1262">            2 =&gt; at[i].init_rank from nSymmRank[]</a>
+<a name="ln1263">                 (at[i].init_rank is included in LinearCT</a>
+<a name="ln1264">                       depending on CT_ATOMID definition)</a>
+<a name="ln1265">      3   : 1 =&gt; Get Stereo canonical info</a>
+<a name="ln1266">      4   : 1 =&gt; Get Isotopic canonical info</a>
+<a name="ln1267">      5   : 1 =&gt; Get Charge/Radical canonical info</a>
+<a name="ln1268">    ==================================================================*/</a>
+<a name="ln1269">    /*int             nOutputMode = 0;*/ /* obsolete */</a>
+<a name="ln1270"> </a>
+<a name="ln1271"> </a>
+<a name="ln1272">    int bSwitchedAtomToIsotopic = 0;</a>
+<a name="ln1273"> </a>
+<a name="ln1274"> </a>
+<a name="ln1275">    /* vABParityUnknown holds actual value of an internal constant signifying       */</a>
+<a name="ln1276">    /* unknown parity: either the same as for undefined parity (default==standard)  */</a>
+<a name="ln1277">    /*  or a specific one (non-std; requested by SLUUD switch).                     */</a>
+<a name="ln1278">    int vABParityUnknown = AB_PARITY_UNDF;</a>
+<a name="ln1279">    if ( 0 != ( nMode &amp; REQ_MODE_DIFF_UU_STEREO) ) </a>
+<a name="ln1280">    {</a>
+<a name="ln1281">        /* Make labels for unknown and undefined stereo different */</a>
+<a name="ln1282">        vABParityUnknown = AB_PARITY_UNKN;</a>
+<a name="ln1283">    }</a>
+<a name="ln1284"> </a>
+<a name="ln1285"> </a>
+<a name="ln1286">    InchiTimeGet( &amp;ulStartTime );</a>
+<a name="ln1287">    </a>
+<a name="ln1288"> </a>
+<a name="ln1289"> </a>
+<a name="ln1290"> </a>
+<a name="ln1291">    *pCS2 = *pCS;  /* save input information and pointers to allocated memory */</a>
+<a name="ln1292"> </a>
+<a name="ln1293">    /* set &quot;ignore isotopic differences in tautomer groups&quot; true */</a>
+<a name="ln1294">    if ( bTaut ) {</a>
+<a name="ln1295">        /* save request for isotopic tautomeric groups */</a>
+<a name="ln1296">        bIgnoreIsotopicInputGroups = pCS-&gt;t_group_info-&gt;bIgnoreIsotopic;</a>
+<a name="ln1297">        pCS-&gt;t_group_info-&gt;bIgnoreIsotopic = 1;</a>
+<a name="ln1298">    } else {</a>
+<a name="ln1299">        bIgnoreIsotopicInputGroups = 1;</a>
+<a name="ln1300">    }</a>
+<a name="ln1301">    /* save request for isotopic name */</a>
+<a name="ln1302">    bIgnoreIsotopicInputAtoms = pCS-&gt;bIgnoreIsotopic;</a>
+<a name="ln1303">    /* set &quot;ignore isotopic differences in atoms&quot; true */</a>
+<a name="ln1304">    pCS-&gt;bIgnoreIsotopic      = 1;</a>
+<a name="ln1305"> </a>
+<a name="ln1306"> </a>
+<a name="ln1307">    /* save non-isotopic and isotopic canonicalization results */</a>
+<a name="ln1308">    pCS-&gt;nCanonFlags = ftcn-&gt;nCanonFlags;</a>
+<a name="ln1309">    /* 1. non-isotopic */</a>
+<a name="ln1310"> </a>
+<a name="ln1311">    /* linear CT, H */</a>
+<a name="ln1312">    memcpy( pCS-&gt;LinearCT,        ftcn-&gt;LinearCt,             ftcn-&gt;nLenLinearCt * sizeof(pCS-&gt;LinearCT[0]) );</a>
+<a name="ln1313">    if ( pCS-&gt;nNum_H &amp;&amp; ftcn-&gt;nNumH ) {</a>
+<a name="ln1314">        for ( i = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln1315">            pCS-&gt;nNum_H[i] = /*(S_CHAR)*/(CHAR_MASK &amp; ftcn-&gt;nNumH[i]);</a>
+<a name="ln1316">        }</a>
+<a name="ln1317">    }</a>
+<a name="ln1318">    if ( pCS-&gt;nNum_H_fixed &amp;&amp; ftcn-&gt;nNumHFixH ) {</a>
+<a name="ln1319">        for ( i = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln1320">            pCS-&gt;nNum_H_fixed[i] = /*(S_CHAR)*/(CHAR_MASK &amp; ftcn-&gt;nNumHFixH[i]);</a>
+<a name="ln1321">        }</a>
+<a name="ln1322">    }</a>
+<a name="ln1323">    pCS-&gt;nLenLinearCT        = ftcn-&gt;nLenLinearCt;      </a>
+<a name="ln1324">    pCS-&gt;nLenLinearCTAtOnly  = ftcn-&gt;nLenLinearCtAtOnly;</a>
+<a name="ln1325"> </a>
+<a name="ln1326">    /* save non-isotopic atoms equivalence and numbering */</a>
+<a name="ln1327">    if ( pCS-&gt;nSymmRank ) {</a>
+<a name="ln1328">        memcpy( pCS-&gt;nSymmRank, ftcn-&gt;nSymmRankCt,          num_at_tg * sizeof(pCS-&gt;nSymmRank[0]) );</a>
+<a name="ln1329">    }</a>
+<a name="ln1330">    if ( pCS-&gt;nCanonOrd ) {</a>
+<a name="ln1331">        memcpy( pCS-&gt;nCanonOrd, ftcn-&gt;PartitionCt.AtNumber, num_at_tg * sizeof(pCS-&gt;nCanonOrd[0]) );</a>
+<a name="ln1332">        pCS-&gt;nLenCanonOrd = num_atoms;</a>
+<a name="ln1333">    }</a>
+<a name="ln1334">    if ( ftcn-&gt;iso_exchg_atnos &amp;&amp; pCS-&gt;nExchgIsoH ) {</a>
+<a name="ln1335">        for ( i = 0; i &lt; num_atoms; i ++ ) {</a>
+<a name="ln1336">            pCS-&gt;nExchgIsoH[i] = !ftcn-&gt;iso_exchg_atnos[i]; /* (pCS-&gt;nExchgIsoH[i]==1) =&gt; tautomeric or hetero atoms that may exchange isotopic H */</a>
+<a name="ln1337">        }</a>
+<a name="ln1338">    }</a>
+<a name="ln1339">    /* 2. isotopic */</a>
+<a name="ln1340"> </a>
+<a name="ln1341">    if ( bCanonIsotopic ) {</a>
+<a name="ln1342">        /* linear CT, num_H are same as non-isotopic */</a>
+<a name="ln1343">        /* save atoms equivalence and numbering */</a>
+<a name="ln1344">        if ( pCS-&gt;nSymmRankIsotopic ) {</a>
+<a name="ln1345">            memcpy( pCS-&gt;nSymmRankIsotopic, ftcn-&gt;nSymmRankCtIso, num_at_tg * sizeof(pCS-&gt;nSymmRankIsotopic[0]));</a>
+<a name="ln1346">        }</a>
+<a name="ln1347">        if ( pCS-&gt;nCanonOrdIsotopic ) {</a>
+<a name="ln1348">            memcpy( pCS-&gt;nCanonOrdIsotopic, ftcn-&gt;PartitionCtIso.AtNumber, num_at_tg * sizeof(pCS-&gt;nCanonOrdIsotopic[0]) );</a>
+<a name="ln1349">            pCS-&gt;nLenCanonOrdIsotopic = num_at_tg;</a>
+<a name="ln1350">        }</a>
+<a name="ln1351">        nRet = FillIsotopicAtLinearCT( num_atoms, at, ftcn-&gt;PartitionCtIso.AtNumber,</a>
+<a name="ln1352">                                   pCS-&gt;LinearCTIsotopic, pCS-&gt;nMaxLenLinearCTIsotopic, &amp;pCS-&gt;nLenLinearCTIsotopic );</a>
+<a name="ln1353">        if ( RETURNED_ERROR(nRet) ) {</a>
+<a name="ln1354">            goto exit_function;</a>
+<a name="ln1355">        }</a>
+<a name="ln1356">        if ( nRet &lt; 0 ) {</a>
+<a name="ln1357">            nRet = CT_TAUCOUNT_ERR;</a>
+<a name="ln1358">            goto exit_function;</a>
+<a name="ln1359">        }</a>
+<a name="ln1360">    } else {</a>
+<a name="ln1361">        pCS-&gt;nMaxLenLinearCTIsotopic = 0;</a>
+<a name="ln1362">        pCS-&gt;nMaxLenLinearCTIsotopicTautomer = 0;</a>
+<a name="ln1363">    }</a>
+<a name="ln1364"> </a>
+<a name="ln1365">    /* fill out tautomeric groups, isotopic and non-isotopic tautomeric CT and t_group_info1-&gt;tGroupNumber */</a>
+<a name="ln1366">    if ( bTaut ) {</a>
+<a name="ln1367">        bIsoTaut = bIsoTaut &amp;&amp; ftcn-&gt;PartitionCtIso.Rank &amp;&amp;</a>
+<a name="ln1368">                   ftcn-&gt;PartitionCtIso.AtNumber &amp;&amp; ftcn-&gt;nSymmRankCtIso;</a>
+<a name="ln1369">        nRet = FillTautLinearCT2( num_atoms, num_at_tg, bIsoTaut,</a>
+<a name="ln1370">                ftcn-&gt;PartitionCt.Rank, ftcn-&gt;PartitionCt.AtNumber, ftcn-&gt;nSymmRankCt,</a>
+<a name="ln1371">                ftcn-&gt;PartitionCtIso.Rank, ftcn-&gt;PartitionCtIso.AtNumber, ftcn-&gt;nSymmRankCtIso,</a>
+<a name="ln1372">                pCS-&gt;LinearCTTautomer, pCS-&gt;nMaxLenLinearCTTautomer, &amp;pCS-&gt;nLenLinearCTTautomer,</a>
+<a name="ln1373">                pCS-&gt;LinearCTIsotopicTautomer, pCS-&gt;nMaxLenLinearCTIsotopicTautomer, &amp;pCS-&gt;nLenLinearCTIsotopicTautomer,</a>
+<a name="ln1374">                t_group_info1 );</a>
+<a name="ln1375"> </a>
+<a name="ln1376">        if ( RETURNED_ERROR(nRet) ) {</a>
+<a name="ln1377">            goto exit_function;</a>
+<a name="ln1378">        }</a>
+<a name="ln1379">        if ( nRet &lt;= 0 ) {</a>
+<a name="ln1380">            nRet = CT_TAUCOUNT_ERR;</a>
+<a name="ln1381">            goto exit_function;</a>
+<a name="ln1382">        } else {</a>
+<a name="ln1383">            /* tautomeric groups: save non-isotopic symmetry &amp; t_group order */</a>
+<a name="ln1384">            int num_t_groups = t_group_info1-&gt;num_t_groups;</a>
+<a name="ln1385">            AT_NUMB *tGroupNumber      = t_group_info1-&gt;tGroupNumber;</a>
+<a name="ln1386">            AT_NUMB *tSymmRank         = tGroupNumber + TGSO_SYMM_RANK*num_t_groups;</a>
+<a name="ln1387">            if ( pCS-&gt;nSymmRankTaut ) {</a>
+<a name="ln1388">                memcpy( pCS-&gt;nSymmRankTaut, tSymmRank, num_t_groups * sizeof(pCS-&gt;nSymmRank[0]) ); /* fixed 5-23-02 */</a>
+<a name="ln1389">            }</a>
+<a name="ln1390">            if ( pCS-&gt;nCanonOrdTaut ) {</a>
+<a name="ln1391">                memcpy( pCS-&gt;nCanonOrdTaut, tGroupNumber, num_t_groups * sizeof(pCS-&gt;nCanonOrdTaut[0]) );</a>
+<a name="ln1392">                pCS-&gt;nLenCanonOrdTaut = num_t_groups;</a>
+<a name="ln1393">            }</a>
+<a name="ln1394">            if ( bCanonIsotopic /*&amp;&amp; pCS-&gt;nLenLinearCTIsotopicTautomer*/ ) {</a>
+<a name="ln1395">                /* tautomeric groups: save isotopic symmetry &amp; t_group order */</a>
+<a name="ln1396">                /*AT_NUMB ntRankOffset       = (AT_RANK)num_atoms;*/</a>
+<a name="ln1397">                AT_NUMB *tiSymmRank        = tGroupNumber + TGSO_SYMM_IRANK*num_t_groups;</a>
+<a name="ln1398">                AT_NUMB *tiGroupNumber     = tGroupNumber + TGSO_SYMM_IORDER*num_t_groups;</a>
+<a name="ln1399">                if ( pCS-&gt;nSymmRankIsotopicTaut ) {</a>
+<a name="ln1400">                    memcpy( pCS-&gt;nSymmRankIsotopicTaut, tiSymmRank, num_t_groups * sizeof(pCS-&gt;nSymmRankIsotopicTaut[0]) );</a>
+<a name="ln1401">                }</a>
+<a name="ln1402">                memcpy( pCS-&gt;nCanonOrdIsotopicTaut, tiGroupNumber,  num_t_groups * sizeof(pCS-&gt;nCanonOrdIsotopicTaut[0]) );</a>
+<a name="ln1403">                pCS-&gt;nLenCanonOrdIsotopicTaut = num_t_groups;</a>
+<a name="ln1404">            }</a>
+<a name="ln1405">        }</a>
+<a name="ln1406">    }</a>
+<a name="ln1407">    /* save connection table if requested */</a>
+<a name="ln1408">    if ( pCS-&gt;LinearCT2 ) {</a>
+<a name="ln1409">        memcpy( pCS-&gt;LinearCT2, pCS-&gt;LinearCT, sizeof(pCS-&gt;LinearCT2[0])*pCS-&gt;nLenLinearCT );</a>
+<a name="ln1410">        pCS-&gt;nLenLinearCT2        = pCS-&gt;nLenLinearCT;</a>
+<a name="ln1411">        pCS-&gt;nLenLinearCTAtOnly2  = pCS-&gt;nLenLinearCTAtOnly;</a>
+<a name="ln1412">    }</a>
+<a name="ln1413"> </a>
+<a name="ln1414">    if ( num_atoms &lt;= 1 ) {</a>
+<a name="ln1415">        bCanonStereo    = 0;  /* a sinle atom + possibly terminal hydrogen atoms */</a>
+<a name="ln1416">        if ( num_atoms &lt; 1 || !at[0].parity2 ) {</a>
+<a name="ln1417">            bCanonIsoStereo = 0;  /*  structure; for example Cl- or CH4 */</a>
+<a name="ln1418">        }</a>
+<a name="ln1419">    }</a>
+<a name="ln1420"> </a>
+<a name="ln1421">    if ( !bCanonStereo &amp;&amp; !(bCanonIsotopic &amp;&amp; bCanonIsoStereo) ) {</a>
+<a name="ln1422">        goto exit_function; /* skip stereo canonicalization */</a>
+<a name="ln1423">    }</a>
+<a name="ln1424"> </a>
+<a name="ln1425"> </a>
+<a name="ln1426"> </a>
+<a name="ln1427">    /**********************************************************</a>
+<a name="ln1428">                     Mode</a>
+<a name="ln1429">    ***********************************************************/</a>
+<a name="ln1430">    nMode = nMode &amp; CANON_MODE_MASK;</a>
+<a name="ln1431"> </a>
+<a name="ln1432">    /* memory allocation */</a>
+<a name="ln1433"> </a>
+<a name="ln1434">    nAtomNumber      = (AT_RANK *)qmalloc(num_max*sizeof(*nAtomNumber));</a>
+<a name="ln1435">    nRank            = (AT_RANK *)qmalloc(num_max*sizeof(*nRank));</a>
+<a name="ln1436">    nTempRank        = (AT_RANK *)qmalloc(num_max*sizeof(*nTempRank));</a>
+<a name="ln1437">    nSymmRank        = (AT_RANK *)qmalloc(num_max*sizeof(*nSymmRank));</a>
+<a name="ln1438">    /***********************************************</a>
+<a name="ln1439">                0.1 Initialization</a>
+<a name="ln1440">    ************************************************/</a>
+<a name="ln1441">    </a>
+<a name="ln1442"> </a>
+<a name="ln1443">    if ( !NeighList || !nAtomNumber || !nTempRank ||</a>
+<a name="ln1444">         !nRank     || !pCS-&gt;LinearCT ) {</a>
+<a name="ln1445">        nRet = CT_OUT_OF_RAM;  /* program error */  /*  &lt;BRKPT&gt; */</a>
+<a name="ln1446">        goto exit_function;</a>
+<a name="ln1447">    }</a>
+<a name="ln1448">    </a>
+<a name="ln1449">    pCS-&gt;NeighList = NeighList;</a>
+<a name="ln1450">    </a>
+<a name="ln1451">    *pCS2 = *pCS;  /* save input information and pointers to allocated memory */</a>
+<a name="ln1452"> </a>
+<a name="ln1453">    if ( !(nMode &amp; CMODE_NOEQ_STEREO) &amp;&amp; (bCanonStereo || bCanonIsoStereo ) ) {</a>
+<a name="ln1454">        /* will be used to discover vertex equivalences in stereo canonicalization */</a>
+<a name="ln1455">        memset( &amp;CurrentTree, 0, sizeof(CurrentTree) );</a>
+<a name="ln1456">        cur_tree = &amp;CurrentTree; </a>
+<a name="ln1457">    }</a>
+<a name="ln1458"> </a>
+<a name="ln1459"> </a>
+<a name="ln1460">    pCS-&gt;bCmpStereo = 0;</a>
+<a name="ln1461">    pCS-&gt;bCmpIsotopicStereo = 0;</a>
+<a name="ln1462"> </a>
+<a name="ln1463"> </a>
+<a name="ln1464">    if ( bCanonStereo || bCanonIsoStereo ) {</a>
+<a name="ln1465">        int ii, nn;</a>
+<a name="ln1466">        </a>
+<a name="ln1467">        /* stereo or isotopic canonicalization: we need a second set of ranks for mapping */</a>
+<a name="ln1468">        /* (isotopic atoms or stereo can only increase nNumCurrRanks) */</a>
+<a name="ln1469">        pRankStack2 = (AT_RANK **) inchi_calloc( nRankStackLen, sizeof(AT_RANK *) );</a>
+<a name="ln1470">        if ( pRankStack2 ) {</a>
+<a name="ln1471">            /* prepare for ranks reuse */</a>
+<a name="ln1472">            for ( nn = 2; nn &lt; nRankStackLen &amp;&amp; pRankStack1[nn]; nn ++ ) {</a>
+<a name="ln1473">                pRankStack1[nn][0] = 0; /* means ranks have to be calculated */</a>
+<a name="ln1474">            }</a>
+<a name="ln1475">            /* reuse memory to reduce number of allocations: */</a>
+<a name="ln1476">            /* move last half of pointers from pRankStack1 to pRankStack2 */</a>
+<a name="ln1477">            /* The first 2 elements will be assigned separately */</a>
+<a name="ln1478">            if ( (nn = (nn-2)/2) &gt; 0 ) {</a>
+<a name="ln1479">                for ( ii = 2+nn; ii &lt; nRankStackLen &amp;&amp; pRankStack1[ii]; ii ++ ) {</a>
+<a name="ln1480">                    pRankStack2[ii-nn] = pRankStack1[ii];</a>
+<a name="ln1481">                    pRankStack1[ii] = NULL;</a>
+<a name="ln1482">                }</a>
+<a name="ln1483">            }</a>
+<a name="ln1484">        } else {</a>
+<a name="ln1485">            nRet = CT_OUT_OF_RAM;  /*  &lt;BRKPT&gt; */</a>
+<a name="ln1486">            goto exit_function; /* program error */</a>
+<a name="ln1487">        }</a>
+<a name="ln1488">    }</a>
+<a name="ln1489">   </a>
+<a name="ln1490">    if ( bCanonStereo ) {</a>
+<a name="ln1491">        </a>
+<a name="ln1492">       /* *pCS2 = *pCS; */ /* save input information and pointers to allocated memory */</a>
+<a name="ln1493"> </a>
+<a name="ln1494">        /* initial ranking for non-isotopic mapping */</a>
+<a name="ln1495">        memcpy( nAtomNumber,      ftcn-&gt;PartitionCt.AtNumber, num_at_tg * sizeof(nAtomNumber[0]) );</a>
+<a name="ln1496">        memcpy( nRank,            ftcn-&gt;PartitionCt.Rank,     num_at_tg * sizeof(nRank[0]) );</a>
+<a name="ln1497">        memcpy( nSymmRank,        ftcn-&gt;nSymmRankCt,          num_at_tg * sizeof(nSymmRank[0]) ); </a>
+<a name="ln1498">        </a>
+<a name="ln1499">        /* nSymmRank changes if canonical numbers of constitutionally equivalent atoms are not contiguous */</a>
+<a name="ln1500">        nNumCurrRanks = FixCanonEquivalenceInfo( num_at_tg, nSymmRank /* in&amp;out*/,</a>
+<a name="ln1501">                                           nRank, nTempRank /* out */, nAtomNumber /* in&amp;out */, NULL);</a>
+<a name="ln1502">        /* atom numbers in canonical order */</a>
+<a name="ln1503">        memcpy( pCS-&gt;nPrevAtomNumber, ftcn-&gt;PartitionCt.AtNumber, num_at_tg * sizeof(nAtomNumber[0]) );</a>
+<a name="ln1504"> </a>
+<a name="ln1505">        /* fill stereo part of the connection table with initial (not optimized) parities */</a>
+<a name="ln1506">        /* input</a>
+<a name="ln1507">        pCS-&gt;LinearCTStereoDble       </a>
+<a name="ln1508">        pCS-&gt;LinearCTStereoCarb       </a>
+<a name="ln1509">        pCS-&gt;nMaxLenLinearCTStereoCarb</a>
+<a name="ln1510">        pCS-&gt;nMaxLenLinearCTStereoDble</a>
+<a name="ln1511">        */</a>
+<a name="ln1512">        nRet = FillOutStereoParities( at, num_atoms, ftcn-&gt;PartitionCt.Rank, ftcn-&gt;PartitionCt.AtNumber,</a>
+<a name="ln1513">                                      nRank, nAtomNumber, pCS, 0 /* bIsotopic */ );</a>
+<a name="ln1514">        /* output</a>
+<a name="ln1515">        pCS-&gt;LinearCTStereoDble       </a>
+<a name="ln1516">        pCS-&gt;LinearCTStereoCarb       </a>
+<a name="ln1517">        pCS2-&gt;nLenLinearCTStereoCarb</a>
+<a name="ln1518">        pCS2-&gt;nLenLinearCTStereoDble</a>
+<a name="ln1519">        */</a>
+<a name="ln1520">        if ( RETURNED_ERROR( nRet ) ) {</a>
+<a name="ln1521">            goto exit_function;</a>
+<a name="ln1522">        }</a>
+<a name="ln1523">        if ( nRet &lt; 0 ) {</a>
+<a name="ln1524">            nRet = CT_STEREOCOUNT_ERR;</a>
+<a name="ln1525">            goto exit_function;</a>
+<a name="ln1526">        }</a>
+<a name="ln1527">    </a>
+<a name="ln1528">        /***************************************************************</a>
+<a name="ln1529">         *</a>
+<a name="ln1530">         *  VI. Optimize non-isotopic stereo descriptors (optimized)</a>
+<a name="ln1531">         *</a>
+<a name="ln1532">         ***************************************************************/</a>
+<a name="ln1533">    </a>
+<a name="ln1534">        /* allocate memory for stereo canonicalization */</a>
+<a name="ln1535"> </a>
+<a name="ln1536">        if ( !nCanonRankStereo )</a>
+<a name="ln1537">            nCanonRankStereo       = (AT_RANK *)  qmalloc(num_max*sizeof(*nCanonRankStereo));</a>
+<a name="ln1538">        if ( !nSymmStereo &amp;&amp; !(nMode &amp; CMODE_NOEQ_STEREO) )</a>
+<a name="ln1539">            nSymmStereo            = (AT_RANK *)  qmalloc((num_max+1)*sizeof(*nSymmStereo));</a>
+<a name="ln1540">        if ( !(nMode &amp; CMODE_NOEQ_STEREO) &amp;&amp; 0 &gt; CurTreeAlloc( cur_tree, num_at_tg ) ) {</a>
+<a name="ln1541">            nRet = CT_OUT_OF_RAM;  /*  &lt;BRKPT&gt; */</a>
+<a name="ln1542">            goto exit_function;</a>
+<a name="ln1543">        }</a>
+<a name="ln1544">        /* check allocations and assign first 2 elements of pRankStack2 */</a>
+<a name="ln1545">        if ( pRankStack1 &amp;&amp; pRankStack2 &amp;&amp;</a>
+<a name="ln1546">             nCanonRankStereo &amp;&amp;</a>
+<a name="ln1547">             /* nCurrRankStereo  &amp;&amp; nAtomNumberCurrStereo &amp;&amp;*/</a>
+<a name="ln1548">             (nSymmStereo || (nMode &amp; CMODE_NOEQ_STEREO)) ) {</a>
+<a name="ln1549">            pRankStack1[0] = pRankStack2[0] = nRank;</a>
+<a name="ln1550">            pRankStack1[1] = pRankStack2[1] = nAtomNumber;</a>
+<a name="ln1551">        } else {</a>
+<a name="ln1552">            nRet = CT_OUT_OF_RAM;  /*  &lt;BRKPT&gt; */</a>
+<a name="ln1553">            goto exit_function;</a>
+<a name="ln1554">        }</a>
+<a name="ln1555"> </a>
+<a name="ln1556">        /****************************************************************</a>
+<a name="ln1557">         *</a>
+<a name="ln1558">         *  VI-A. Optimize non-isotopic non-inverted stereo descriptors</a>
+<a name="ln1559">         *</a>
+<a name="ln1560">         ****************************************************************/</a>
+<a name="ln1561"> </a>
+<a name="ln1562">        /* set the 1st ranks in the rest of the stack to zero: prepare for ranks reuse */</a>
+<a name="ln1563">        for ( n = 2; n &lt; nRankStackLen &amp;&amp; pRankStack1[n]; n ++ ) {</a>
+<a name="ln1564">            pRankStack1[n][0] = 0; /* means ranks have to be recalculated */</a>
+<a name="ln1565">        }</a>
+<a name="ln1566">        /* set the 1st ranks to zero: prepare for ranks reuse */</a>
+<a name="ln1567">        for ( n = 2; n &lt; nRankStackLen &amp;&amp; pRankStack2[n]; n ++ ) {</a>
+<a name="ln1568">            pRankStack2[n][0] = 0; /* means ranks have to be recalculated */</a>
+<a name="ln1569">        }</a>
+<a name="ln1570"> </a>
+<a name="ln1571">        /* for debugging or statistics */</a>
+<a name="ln1572">        pCS-&gt;lNumBreakTies    =</a>
+<a name="ln1573">        pCS-&gt;lNumNeighListIter=</a>
+<a name="ln1574">        pCS-&gt;lNumTotCT        =</a>
+<a name="ln1575">        pCS-&gt;lNumDecreasedCT  =</a>
+<a name="ln1576">        pCS-&gt;lNumRejectedCT   =</a>
+<a name="ln1577">        pCS-&gt;lNumEqualCT      = 0;</a>
+<a name="ln1578">        pCS-&gt;bKeepSymmRank    = 0;</a>
+<a name="ln1579">        pCS-&gt;bFirstCT         = 1; /* To fill out nCanonRankStereo[] in map_stero_atoms2() */</a>
+<a name="ln1580"> </a>
+<a name="ln1581">        /******************************************************************************</a>
+<a name="ln1582">             nCanonRank contains input canonical numbering</a>
+<a name="ln1583">             nCanonRankStereo will be filled with a transposition of canonical numbering</a>
+<a name="ln1584">               which (1) keeps connection table unchanged and</a>
+<a name="ln1585">                     (2) provides minimal stereo descriptors in</a>
+<a name="ln1586">                         pCS-&gt;LinearCTStereoDble (length=pCS-&gt;nLenLinearCTStereoDble)</a>
+<a name="ln1587">                         pCS-&gt;LinearCTStereoCarb (length=pCS-&gt;nLenLinearCTStereoCarb)</a>
+<a name="ln1588">         */</a>
+<a name="ln1589">        nRet =  map_stereo_bonds4</a>
+<a name="ln1590">                        ( at, num_atoms, num_at_tg, num_max, 0, ftcn-&gt;PartitionCt.Rank, ftcn-&gt;PartitionCt.AtNumber,</a>
+<a name="ln1591">                          nCanonRankStereo, nSymmRank,</a>
+<a name="ln1592">                          pRankStack1,  pRankStack2, nTempRank, nNumCurrRanks,</a>
+<a name="ln1593">                          nSymmStereo, NeighList, pCS, cur_tree, 0 /* nNumMappedBonds */, </a>
+<a name="ln1594">                          vABParityUnknown);</a>
+<a name="ln1595">        </a>
+<a name="ln1596">        if ( RETURNED_ERROR( nRet ) ) {</a>
+<a name="ln1597">            if ( nRet == CT_TIMEOUT_ERR )</a>
+<a name="ln1598">                goto exit_function;</a>
+<a name="ln1599">            else</a>
+<a name="ln1600">                goto exit_function; /* program error */</a>
+<a name="ln1601">        } else {</a>
+<a name="ln1602">            int bFailed = 0;</a>
+<a name="ln1603">            if ( !nRet ) {</a>
+<a name="ln1604">                bFailed = 1; /* progrm error */</a>
+<a name="ln1605">                pCS2-&gt;nLenLinearCTStereoCarb = </a>
+<a name="ln1606">                pCS-&gt;nLenLinearCTStereoCarb  = -abs(pCS-&gt;nLenLinearCTStereoCarb);</a>
+<a name="ln1607">                pCS2-&gt;nLenLinearCTStereoDble =</a>
+<a name="ln1608">                pCS-&gt;nLenLinearCTStereoDble  = -abs(pCS-&gt;nLenLinearCTStereoDble);</a>
+<a name="ln1609">                nRet = CT_STEREOCOUNT_ERR;  /*  &lt;BRKPT&gt; */</a>
+<a name="ln1610">                goto exit_function; /* program error */</a>
+<a name="ln1611">            } else {</a>
+<a name="ln1612">                /* save non-isotopic lengths */</a>
+<a name="ln1613">                pCS2-&gt;nLenLinearCTStereoDble = pCS-&gt;nLenLinearCTStereoDble;</a>
+<a name="ln1614">                pCS2-&gt;nLenLinearCTStereoCarb = pCS-&gt;nLenLinearCTStereoCarb;</a>
+<a name="ln1615">                nRet = 0;</a>
+<a name="ln1616">            }</a>
+<a name="ln1617">             </a>
+<a name="ln1618">            /* save stereo canonical numbering */</a>
+<a name="ln1619">            if ( pCS-&gt;nCanonOrdStereo ) {</a>
+<a name="ln1620">                for ( i = n = 0; i &lt; num_at_tg; i ++ ) {</a>
+<a name="ln1621">                    if ( nCanonRankStereo[i] &amp;&amp; (int)nCanonRankStereo[i] &lt;= num_at_tg ) {</a>
+<a name="ln1622">                        pCS-&gt;nCanonOrdStereo[ (int)nCanonRankStereo[i] - 1 ] = (AT_NUMB)i;</a>
+<a name="ln1623">                    } else {</a>
+<a name="ln1624">                        bFailed ++;</a>
+<a name="ln1625">                    }</a>
+<a name="ln1626">                }</a>
+<a name="ln1627">                pCS-&gt;nLenCanonOrdStereo = ( bFailed )? -num_atoms : num_atoms;</a>
+<a name="ln1628">            }</a>
+<a name="ln1629">            /* save stereo tautomer groups numbering */</a>
+<a name="ln1630">            if ( bTaut &amp;&amp; pCS-&gt;nCanonOrdStereoTaut ) {</a>
+<a name="ln1631">                if ( 0 &lt; (nRet = SortTautomerGroupsAndEndpoints( t_group_info1, num_atoms, num_at_tg, nCanonRankStereo ) ) ) {</a>
+<a name="ln1632">                    /*non-isotopic contains symmetry ranks */</a>
+<a name="ln1633">                    int num_t_groups = t_group_info1-&gt;num_t_groups;</a>
+<a name="ln1634">                    AT_NUMB *tGroupNumber      = t_group_info1-&gt;tGroupNumber;</a>
+<a name="ln1635">                    /*AT_NUMB *tiSymmRank        = tGroupNumber + TGSO_SYMM_IRANK*num_t_groups; */</a>
+<a name="ln1636">                    memcpy( pCS-&gt;nCanonOrdStereoTaut, tGroupNumber,  num_t_groups*sizeof(pCS-&gt;nCanonOrdStereoTaut[0]) );</a>
+<a name="ln1637">                    pCS-&gt;nLenCanonOrdStereoTaut = ( bFailed ) ?</a>
+<a name="ln1638">                                                   -num_t_groups : num_t_groups;</a>
+<a name="ln1639">                } else</a>
+<a name="ln1640">                if ( RETURNED_ERROR( nRet ) ) {</a>
+<a name="ln1641">                    goto exit_function;</a>
+<a name="ln1642">                } else {</a>
+<a name="ln1643">                    nRet = 0;</a>
+<a name="ln1644">                }</a>
+<a name="ln1645">                /*SortTautomerGroupsAndEndpoints( t_group_info1, nCanonRank ); */ /* ??? return to non-isotopic canonical numbering */</a>
+<a name="ln1646">            }</a>
+<a name="ln1647">        }</a>
+<a name="ln1648">        </a>
+<a name="ln1649">        /****************************************************</a>
+<a name="ln1650">         *</a>
+<a name="ln1651">         *  VI-B. Optimize INVERTED stereo descriptors</a>
+<a name="ln1652">         *</a>
+<a name="ln1653">         ****************************************************/</a>
+<a name="ln1654">        if ( !nCanonRankStereoInv )</a>
+<a name="ln1655">            nCanonRankStereoInv  = (AT_RANK *)  qmalloc(num_max*sizeof(*nCanonRankStereoInv));</a>
+<a name="ln1656">        if ( !nCanonRankStereoInv ) {</a>
+<a name="ln1657">            nRet = CT_OUT_OF_RAM;  /*  &lt;BRKPT&gt; */</a>
+<a name="ln1658">            goto exit_function;</a>
+<a name="ln1659">        }</a>
+<a name="ln1660">        /* copy previous non-isotopic stereo canonicalization results to Inv initial data */</a>
+<a name="ln1661">        /* assign pointers */</a>
+<a name="ln1662">        pCS-&gt;LinearCTStereoDble         = pCS2-&gt;LinearCTStereoDbleInv;</a>
+<a name="ln1663">        pCS-&gt;LinearCTStereoCarb         = pCS2-&gt;LinearCTStereoCarbInv;</a>
+<a name="ln1664">        </a>
+<a name="ln1665">        /* copy the lengths */</a>
+<a name="ln1666">        pCS2-&gt;nLenLinearCTStereoDbleInv =</a>
+<a name="ln1667">        pCS-&gt;nLenLinearCTStereoDbleInv  =</a>
+<a name="ln1668">        pCS-&gt;nLenLinearCTStereoDble     = pCS2-&gt;nLenLinearCTStereoDble;</a>
+<a name="ln1669">        </a>
+<a name="ln1670">        pCS2-&gt;nLenLinearCTStereoCarbInv =</a>
+<a name="ln1671">        pCS-&gt;nLenLinearCTStereoCarbInv  =</a>
+<a name="ln1672">        pCS-&gt;nLenLinearCTStereoCarb     = pCS2-&gt;nLenLinearCTStereoCarb;</a>
+<a name="ln1673">        </a>
+<a name="ln1674">        if ( pCS-&gt;nLenLinearCTStereoDble &gt; 0 || pCS-&gt;nLenLinearCTStereoCarb &gt; 0 ) {</a>
+<a name="ln1675">            /* copy previous results, the canonical stereo CT */</a>
+<a name="ln1676">            memcpy( pCS-&gt;LinearCTStereoDble, pCS2-&gt;LinearCTStereoDble, pCS-&gt;nLenLinearCTStereoDble*sizeof(pCS-&gt;LinearCTStereoDble[0]) );</a>
+<a name="ln1677">            memcpy( pCS-&gt;LinearCTStereoCarb, pCS2-&gt;LinearCTStereoCarb, pCS-&gt;nLenLinearCTStereoCarb*sizeof(pCS-&gt;LinearCTStereoCarb[0]) );</a>
+<a name="ln1678">        }</a>
+<a name="ln1679">        memcpy( nCanonRankStereoInv, nCanonRankStereo, num_max * sizeof(nCanonRankStereoInv[0]) );</a>
+<a name="ln1680">        if ( pCS-&gt;nCanonOrdStereoInv &amp;&amp; pCS-&gt;nCanonOrdStereo ) {</a>
+<a name="ln1681">            /* in case there is nothing to invert */</a>
+<a name="ln1682">            memcpy( pCS-&gt;nCanonOrdStereoInv, pCS-&gt;nCanonOrdStereo, num_at_tg*sizeof(pCS-&gt;nCanonOrdStereoInv[0]));</a>
+<a name="ln1683">        }</a>
+<a name="ln1684"> </a>
+<a name="ln1685">        /******************************</a>
+<a name="ln1686">         *</a>
+<a name="ln1687">         * Invert stereo</a>
+<a name="ln1688">         *</a>
+<a name="ln1689">         ******************************/</a>
+<a name="ln1690"> </a>
+<a name="ln1691">        /*********************************************************************************</a>
+<a name="ln1692">         * Create initial approximation for the minimization of the stereo descriptors:</a>
+<a name="ln1693">         *  invert stereogenic atom parities, one parity in each allene, all parities in</a>
+<a name="ln1694">         *  pCS-&gt;LinearCTStereoCarb and allene parities in pCS-&gt;nLenLinearCTStereoDble</a>
+<a name="ln1695">         */</a>
+<a name="ln1696">        nRet = InvertStereo( at, num_at_tg, nCanonRankStereo, nTempRank, pCS, 1 /* bInvertLinearCTStereo */ );</a>
+<a name="ln1697">        if ( RETURNED_ERROR( nRet ) ) {</a>
+<a name="ln1698">            goto exit_function;</a>
+<a name="ln1699">        } else</a>
+<a name="ln1700">        if ( nRet &gt; 0 ) {</a>
+<a name="ln1701">            /* InvertStereo() has done some changes */</a>
+<a name="ln1702">            nRet = 0;</a>
+<a name="ln1703">            /* FillOutStereoParities() has already been called to fill out these 2 LinearCTs */</a>
+<a name="ln1704"> </a>
+<a name="ln1705">            /* set the 1st ranks in the rest of the stack to zero: prepare for ranks reuse */</a>
+<a name="ln1706">            for ( n = 2; n &lt; nRankStackLen &amp;&amp; pRankStack1[n]; n ++ ) {</a>
+<a name="ln1707">                pRankStack1[n][0] = 0; /* means ranks have to be recalculated */</a>
+<a name="ln1708">            }</a>
+<a name="ln1709">            /* set the 1st ranks to zero: prepare for ranks reuse */</a>
+<a name="ln1710">            for ( n = 2; n &lt; nRankStackLen &amp;&amp; pRankStack2[n]; n ++ ) {</a>
+<a name="ln1711">                pRankStack2[n][0] = 0; /* means ranks have to be recalculated */</a>
+<a name="ln1712">            }</a>
+<a name="ln1713"> </a>
+<a name="ln1714">            /* for debugging or statistics */</a>
+<a name="ln1715">            pCS-&gt;lNumBreakTies    =</a>
+<a name="ln1716">            pCS-&gt;lNumNeighListIter=</a>
+<a name="ln1717">            pCS-&gt;lNumTotCT        =</a>
+<a name="ln1718">            pCS-&gt;lNumDecreasedCT  =</a>
+<a name="ln1719">            pCS-&gt;lNumRejectedCT   =</a>
+<a name="ln1720">            pCS-&gt;lNumEqualCT      = 0;</a>
+<a name="ln1721">            pCS-&gt;bKeepSymmRank    = 0;</a>
+<a name="ln1722">            pCS-&gt;bFirstCT         = 1; /* To fill out nCanonRankStereo[] in map_stero_atoms2() */</a>
+<a name="ln1723"> </a>
+<a name="ln1724">            /******************************************************************************</a>
+<a name="ln1725">                 ftcn-&gt;PartitionCt.Rank contains input canonical numbering</a>
+<a name="ln1726">                 nCanonRankStereoInv will be filled with a transposition of canonical numbering</a>
+<a name="ln1727">                   which (1) keeps connection table unchanged and</a>
+<a name="ln1728">                         (2) provides minimal stereo descriptors in</a>
+<a name="ln1729">                             pCS-&gt;LinearCTStereoDble (length=pCS-&gt;nLenLinearCTStereoDble)</a>
+<a name="ln1730">                             pCS-&gt;LinearCTStereoCarb (length=pCS-&gt;nLenLinearCTStereoCarb)</a>
+<a name="ln1731">             ******************************************************************************/</a>
+<a name="ln1732">            nRet = map_stereo_bonds4</a>
+<a name="ln1733">                            ( at, num_atoms, num_at_tg, num_max, 0, ftcn-&gt;PartitionCt.Rank, ftcn-&gt;PartitionCt.AtNumber,</a>
+<a name="ln1734">                            nCanonRankStereoInv, nSymmRank,</a>
+<a name="ln1735">                            pRankStack1,  pRankStack2, nTempRank, nNumCurrRanks, nSymmStereo,</a>
+<a name="ln1736">                            NeighList, pCS, cur_tree, 0,</a>
+<a name="ln1737">                            vABParityUnknown);</a>
+<a name="ln1738">            if ( RETURNED_ERROR( nRet ) ) {</a>
+<a name="ln1739">                if ( nRet == CT_TIMEOUT_ERR )</a>
+<a name="ln1740">                    goto exit_function;</a>
+<a name="ln1741">                else</a>
+<a name="ln1742">                    goto exit_function; /* program error */</a>
+<a name="ln1743">            } else {</a>
+<a name="ln1744">                int bFailed = 0;</a>
+<a name="ln1745">                if ( !nRet ) {</a>
+<a name="ln1746">                    bFailed = 1; /* progrm error */</a>
+<a name="ln1747">                    pCS2-&gt;nLenLinearCTStereoCarb = </a>
+<a name="ln1748">                    pCS-&gt;nLenLinearCTStereoCarb  = -abs(pCS-&gt;nLenLinearCTStereoCarb);</a>
+<a name="ln1749">                    pCS2-&gt;nLenLinearCTStereoDble =</a>
+<a name="ln1750">                    pCS-&gt;nLenLinearCTStereoDble  = -abs(pCS-&gt;nLenLinearCTStereoDble);</a>
+<a name="ln1751">                    nRet = CT_STEREOCOUNT_ERR;  /*  &lt;BRKPT&gt; */</a>
+<a name="ln1752">                    goto exit_function; /* program error */</a>
+<a name="ln1753">                }</a>
+<a name="ln1754"> </a>
+<a name="ln1755">                /* save non-isotopic pointers &amp; lengths for INVERTED stereo */</a>
+<a name="ln1756">                pCS-&gt;nLenLinearCTStereoDbleInv  =</a>
+<a name="ln1757">                pCS2-&gt;nLenLinearCTStereoDbleInv = pCS-&gt;nLenLinearCTStereoDble;</a>
+<a name="ln1758">                pCS-&gt;nLenLinearCTStereoCarbInv  =</a>
+<a name="ln1759">                pCS2-&gt;nLenLinearCTStereoCarbInv = pCS-&gt;nLenLinearCTStereoCarb;</a>
+<a name="ln1760">                </a>
+<a name="ln1761">                /* restore pointers and lengths to non-inverted stereo    */</a>
+<a name="ln1762">                /*  -- this is needed for InvertStereo() back, see below  */</a>
+<a name="ln1763">                pCS-&gt;LinearCTStereoDble = pCS2-&gt;LinearCTStereoDble;</a>
+<a name="ln1764">                pCS-&gt;LinearCTStereoCarb = pCS2-&gt;LinearCTStereoCarb;</a>
+<a name="ln1765">                pCS-&gt;nLenLinearCTStereoDble = pCS2-&gt;nLenLinearCTStereoDble;</a>
+<a name="ln1766">                pCS-&gt;nLenLinearCTStereoCarb = pCS2-&gt;nLenLinearCTStereoCarb;</a>
+<a name="ln1767">                /* consistency check */</a>
+<a name="ln1768">                if ( pCS-&gt;nLenLinearCTStereoDbleInv != pCS-&gt;nLenLinearCTStereoDble ||</a>
+<a name="ln1769">                     pCS-&gt;nLenLinearCTStereoCarbInv != pCS-&gt;nLenLinearCTStereoCarb ) {</a>
+<a name="ln1770">                    nRet = CT_CALC_STEREO_ERR;</a>
+<a name="ln1771">                    goto exit_function; /* program error */</a>
+<a name="ln1772">                }</a>
+<a name="ln1773">                /******************************</a>
+<a name="ln1774">                 *</a>
+<a name="ln1775">                 * Invert stereo back</a>
+<a name="ln1776">                 *</a>
+<a name="ln1777">                 ******************************</a>
+<a name="ln1778">                 *  (make sure that pointers</a>
+<a name="ln1779">                 *  pCS-&gt;LinearCTStereoCarb,</a>
+<a name="ln1780">                 *  pCS-&gt;LinearCTStereoDble</a>
+<a name="ln1781">                 *  and corresponding lengths</a>
+<a name="ln1782">                 *  have been restored)</a>
+<a name="ln1783">                 ******************************/</a>
+<a name="ln1784">            /*********************************************************************************</a>
+<a name="ln1785">             *  invert only stereogenic atom parities and one parity in each allene, DO NOT</a>
+<a name="ln1786">             *  change parities in pCS-&gt;LinearCTStereoCarb and pCS-&gt;nLenLinearCTStereoDble</a>
+<a name="ln1787">             */</a>
+<a name="ln1788">                nRet = InvertStereo( at, num_at_tg, nCanonRankStereo, nTempRank, pCS, 0 );</a>
+<a name="ln1789">                if ( RETURNED_ERROR( nRet ) ) {</a>
+<a name="ln1790">                    goto exit_function;</a>
+<a name="ln1791">                }</a>
+<a name="ln1792">                nRet = 0;</a>
+<a name="ln1793">                </a>
+<a name="ln1794">             </a>
+<a name="ln1795">                /* save stereo canonical numbering */</a>
+<a name="ln1796">                if ( pCS-&gt;nCanonOrdStereoInv ) {</a>
+<a name="ln1797">                    for ( i = n = 0; i &lt; num_at_tg; i ++ ) {</a>
+<a name="ln1798">                        if ( nCanonRankStereoInv[i] &amp;&amp; (int)nCanonRankStereoInv[i] &lt;= num_at_tg ) {</a>
+<a name="ln1799">                            pCS-&gt;nCanonOrdStereoInv[ (int)nCanonRankStereoInv[i] - 1 ] = (AT_NUMB)i;</a>
+<a name="ln1800">                        } else {</a>
+<a name="ln1801">                            bFailed ++;</a>
+<a name="ln1802">                        }</a>
+<a name="ln1803">                    }</a>
+<a name="ln1804">                    pCS-&gt;nLenCanonOrdStereo = ( bFailed )? -num_atoms : num_atoms;</a>
+<a name="ln1805">                }</a>
+<a name="ln1806"> </a>
+<a name="ln1807">                /* compare inverted and non-inverted stereo */</a>
+<a name="ln1808">                pCS-&gt;bCmpStereo = 2 + CompareLinCtStereo(</a>
+<a name="ln1809">                                         pCS-&gt;LinearCTStereoDbleInv, pCS-&gt;nLenLinearCTStereoDbleInv,</a>
+<a name="ln1810">                                         pCS-&gt;LinearCTStereoCarbInv, pCS-&gt;nLenLinearCTStereoCarbInv,</a>
+<a name="ln1811">                                         pCS-&gt;LinearCTStereoDble,    pCS-&gt;nLenLinearCTStereoDble,</a>
+<a name="ln1812">                                         pCS-&gt;LinearCTStereoCarb,    pCS-&gt;nLenLinearCTStereoCarb</a>
+<a name="ln1813">                                      );</a>
+<a name="ln1814"> </a>
+<a name="ln1815">            }</a>
+<a name="ln1816">        } else</a>
+<a name="ln1817">        if ( 0 == nRet ) {</a>
+<a name="ln1818">            /* nothing has been done, restore pointers and lengths for stereo */</a>
+<a name="ln1819">            pCS-&gt;LinearCTStereoDble     = pCS2-&gt;LinearCTStereoDble;</a>
+<a name="ln1820">            pCS-&gt;LinearCTStereoCarb     = pCS2-&gt;LinearCTStereoCarb;</a>
+<a name="ln1821">            pCS-&gt;nLenLinearCTStereoDble = pCS2-&gt;nLenLinearCTStereoDble;</a>
+<a name="ln1822">            pCS-&gt;nLenLinearCTStereoCarb = pCS2-&gt;nLenLinearCTStereoCarb;</a>
+<a name="ln1823">        }</a>
+<a name="ln1824">    </a>
+<a name="ln1825"> </a>
+<a name="ln1826">    }</a>
+<a name="ln1827">    /* restore &quot;ignore isotopic differences in tautomer groups&quot; */</a>
+<a name="ln1828">    if ( bTaut ) {</a>
+<a name="ln1829">        /* save request for isotopic tautomeric groups */</a>
+<a name="ln1830">        pCS-&gt;t_group_info-&gt;bIgnoreIsotopic = bIgnoreIsotopicInputGroups;</a>
+<a name="ln1831">    }</a>
+<a name="ln1832">    /* restore request for isotopic name */</a>
+<a name="ln1833">    pCS-&gt;bIgnoreIsotopic = bIgnoreIsotopicInputAtoms;</a>
+<a name="ln1834"> </a>
+<a name="ln1835">    if ( bCanonIsoStereo &amp;&amp; bCanonIsotopic ) {</a>
+<a name="ln1836"> </a>
+<a name="ln1837">        /****************************************************************</a>
+<a name="ln1838">         *</a>
+<a name="ln1839">         *   VII. Optimize isotopic stereo descriptors (optimized)</a>
+<a name="ln1840">         *</a>
+<a name="ln1841">         ****************************************************************/</a>
+<a name="ln1842">        /*</a>
+<a name="ln1843">        pCS-&gt;LinearCTIsotopic     = NULL;</a>
+<a name="ln1844">        */</a>
+<a name="ln1845"> </a>
+<a name="ln1846">        /* initial ranking for isotopic mapping */</a>
+<a name="ln1847">        memcpy( nAtomNumber,      ftcn-&gt;PartitionCtIso.AtNumber, num_at_tg * sizeof(nAtomNumber[0]) );</a>
+<a name="ln1848">        memcpy( nRank,            ftcn-&gt;PartitionCtIso.Rank,     num_at_tg * sizeof(nRank[0]) );</a>
+<a name="ln1849">        memcpy( nSymmRank,        ftcn-&gt;nSymmRankCtIso,          num_at_tg * sizeof(nSymmRank[0]) ); </a>
+<a name="ln1850">        </a>
+<a name="ln1851">        /* nSymmRank will change if canonical numbers of of constitutionally equivalent atoms are not contiguous */</a>
+<a name="ln1852">        nNumCurrRanks = FixCanonEquivalenceInfo( num_at_tg, nSymmRank /* in&amp;out*/,</a>
+<a name="ln1853">                                           nRank, nTempRank /* out */, nAtomNumber /* in&amp;out */, NULL);</a>
+<a name="ln1854"> </a>
+<a name="ln1855">        memcpy( pCS-&gt;nPrevAtomNumber, ftcn-&gt;PartitionCtIso.AtNumber, num_at_tg * sizeof(nAtomNumber[0]) );</a>
+<a name="ln1856"> </a>
+<a name="ln1857">        /* allocate memory for optimized stereo canonicalization */</a>
+<a name="ln1858">        /* for stereo canonical numbering to be found. */</a>
+<a name="ln1859">        if ( !nCanonRankIsotopicStereo )</a>
+<a name="ln1860">            nCanonRankIsotopicStereo       = (AT_RANK *)  qmalloc(num_max*sizeof(*nCanonRankIsotopicStereo));</a>
+<a name="ln1861">        if ( !nSymmStereo &amp;&amp; !(nMode &amp; CMODE_NOEQ_STEREO) )</a>
+<a name="ln1862">            nSymmStereo            = (AT_RANK *)  qmalloc((num_max+1)*sizeof(*nSymmStereo));</a>
+<a name="ln1863">        </a>
+<a name="ln1864">        if ( !(nMode &amp; CMODE_NOEQ_STEREO) &amp;&amp; CurTreeAlloc( cur_tree, num_at_tg ) ) {</a>
+<a name="ln1865">            nRet = CT_OUT_OF_RAM;  /*  &lt;BRKPT&gt; */</a>
+<a name="ln1866">            goto exit_function;</a>
+<a name="ln1867">        }</a>
+<a name="ln1868">        /* check allocations and assign first 2 elements of pRankStack2 */</a>
+<a name="ln1869">        if ( pRankStack1 &amp;&amp; pRankStack2 &amp;&amp;</a>
+<a name="ln1870">             nCanonRankIsotopicStereo &amp;&amp;</a>
+<a name="ln1871">             (nSymmStereo || (nMode &amp; CMODE_NOEQ_STEREO)) ) {</a>
+<a name="ln1872"> </a>
+<a name="ln1873">            pRankStack1[0] = pRankStack2[0] = nRank; /* pRankStack1[0,1] shall be unchanged */</a>
+<a name="ln1874">            pRankStack1[1] = pRankStack2[1] = nAtomNumber;</a>
+<a name="ln1875">        } else {</a>
+<a name="ln1876">            nRet = CT_OUT_OF_RAM;  /*  &lt;BRKPT&gt; */</a>
+<a name="ln1877">            goto exit_function;</a>
+<a name="ln1878">        }</a>
+<a name="ln1879"> </a>
+<a name="ln1880">        /******************************************************************</a>
+<a name="ln1881">           Important: fill out a list of stereo atoms and bonds including</a>
+<a name="ln1882">           those which are stereo due to isotopic atoms only and create</a>
+<a name="ln1883">           LinearCT stereo descriptors for the canonical numbering</a>
+<a name="ln1884">         ******************************************************************/</a>
+<a name="ln1885"> </a>
+<a name="ln1886">        </a>
+<a name="ln1887">        /* at[] has certain members for non-isotopic and isotopic stereo; switch them */</a>
+<a name="ln1888">        SwitchAtomStereoAndIsotopicStereo( at, num_atoms, &amp;bSwitchedAtomToIsotopic );</a>
+<a name="ln1889">        /* prepare stereo connection tables' pointers */</a>
+<a name="ln1890">        SetCtToIsotopicStereo( pCS, pCS2 );</a>
+<a name="ln1891"> </a>
+<a name="ln1892">        nRet = FillOutStereoParities( at, num_atoms, ftcn-&gt;PartitionCtIso.Rank, ftcn-&gt;PartitionCtIso.AtNumber,</a>
+<a name="ln1893">                                      nRank, nAtomNumber, pCS, 1 /* bIsotopic */);</a>
+<a name="ln1894">        if (RETURNED_ERROR(nRet)) {</a>
+<a name="ln1895">            goto exit_function;  /* program error */</a>
+<a name="ln1896">        } else</a>
+<a name="ln1897">        if ( !nRet ) {</a>
+<a name="ln1898">            /* no isotopic stereo */</a>
+<a name="ln1899">            pCS2-&gt;nLenLinearCTIsotopicStereoDble = pCS-&gt;nLenLinearCTIsotopicStereoDble = 0;</a>
+<a name="ln1900">            pCS2-&gt;nLenLinearCTIsotopicStereoCarb = pCS-&gt;nLenLinearCTIsotopicStereoCarb = 0;</a>
+<a name="ln1901">            pCS-&gt;nLenCanonOrdIsotopicStereo     = 0;   </a>
+<a name="ln1902">            pCS-&gt;nLenCanonOrdIsotopicStereoTaut = 0;</a>
+<a name="ln1903">            pCS2-&gt;nLenLinearCTIsotopicStereoDbleInv = pCS-&gt;nLenLinearCTIsotopicStereoDbleInv = 0;</a>
+<a name="ln1904">            pCS2-&gt;nLenLinearCTIsotopicStereoCarbInv = pCS-&gt;nLenLinearCTIsotopicStereoCarbInv = 0;</a>
+<a name="ln1905">            goto bypass_isotopic_stereo;</a>
+<a name="ln1906">        } else {</a>
+<a name="ln1907">            nRet = 0; /* not an error */</a>
+<a name="ln1908">        }</a>
+<a name="ln1909"> </a>
+<a name="ln1910"> </a>
+<a name="ln1911"> </a>
+<a name="ln1912">        /*************************************************************</a>
+<a name="ln1913">         *</a>
+<a name="ln1914">         *  VII-A. Optimize non-inverted isotopic stereo descriptors</a>
+<a name="ln1915">         *</a>
+<a name="ln1916">         *************************************************************/</a>
+<a name="ln1917"> </a>
+<a name="ln1918">        /* set the 1st ranks in the rest of the stack to zero: prepare for ranks reuse */</a>
+<a name="ln1919">        for ( n = 2; n &lt; nRankStackLen &amp;&amp; pRankStack1[n]; n ++ ) {</a>
+<a name="ln1920">            pRankStack1[n][0] = 0; /* means ranks have to be recalculated */</a>
+<a name="ln1921">        }</a>
+<a name="ln1922">        /* set the 1st ranks to zero: prepare for ranks reuse */</a>
+<a name="ln1923">        for ( n = 2; n &lt; nRankStackLen &amp;&amp; pRankStack2[n]; n ++ ) {</a>
+<a name="ln1924">            pRankStack2[n][0] = 0; /* means ranks have to be recalculated */</a>
+<a name="ln1925">        }</a>
+<a name="ln1926"> </a>
+<a name="ln1927">        /* for debugging or statistics */</a>
+<a name="ln1928">        pCS-&gt;lNumBreakTies    =</a>
+<a name="ln1929">        pCS-&gt;lNumNeighListIter=</a>
+<a name="ln1930">        pCS-&gt;lNumTotCT        =</a>
+<a name="ln1931">        pCS-&gt;lNumDecreasedCT  =</a>
+<a name="ln1932">        pCS-&gt;lNumRejectedCT   =</a>
+<a name="ln1933">        pCS-&gt;lNumEqualCT      = 0;</a>
+<a name="ln1934">        pCS-&gt;bKeepSymmRank    = 0;</a>
+<a name="ln1935">        pCS-&gt;bFirstCT         = 1; /* To fill out nCanonRankStereo[] in map_stero_atoms2() */</a>
+<a name="ln1936"> </a>
+<a name="ln1937">        /**************************************************************************************</a>
+<a name="ln1938">          nCanonRankIsotopic contains input canonical numbering</a>
+<a name="ln1939">          nCanonRankIsotopicStereo will be filled with a transposition of canonical numbering</a>
+<a name="ln1940">            that  (1) keeps connection table unchanged and</a>
+<a name="ln1941">                  (2) provides minimal stereo descriptors in</a>
+<a name="ln1942">                      pCS-&gt;LinearCTStereoDble (length=pCS-&gt;nLenLinearCTStereoDble)</a>
+<a name="ln1943">                      pCS-&gt;LinearCTStereoCarb (length=pCS-&gt;nLenLinearCTStereoCarb)</a>
+<a name="ln1944">        ***************************************************************************************/</a>
+<a name="ln1945">        nRet = map_stereo_bonds4</a>
+<a name="ln1946">                       ( at, num_atoms, num_at_tg, num_max, 0, ftcn-&gt;PartitionCtIso.Rank, </a>
+<a name="ln1947">                       ftcn-&gt;PartitionCtIso.AtNumber,</a>
+<a name="ln1948">                        nCanonRankIsotopicStereo, nSymmRank,</a>
+<a name="ln1949">                        pRankStack1,  pRankStack2, nTempRank, nNumCurrRanks,</a>
+<a name="ln1950">                        nSymmStereo,  NeighList, pCS, cur_tree, 0,</a>
+<a name="ln1951">                        vABParityUnknown);</a>
+<a name="ln1952">        if ( RETURNED_ERROR( nRet ) ) {</a>
+<a name="ln1953">            goto exit_function;</a>
+<a name="ln1954">        } else {</a>
+<a name="ln1955">            int bFailed = 0;</a>
+<a name="ln1956"> </a>
+<a name="ln1957">            if ( !nRet ) {</a>
+<a name="ln1958">                bFailed = 1; /* program error */</a>
+<a name="ln1959">                pCS2-&gt;nLenLinearCTIsotopicStereoDble =</a>
+<a name="ln1960">                pCS-&gt;nLenLinearCTIsotopicStereoDble  = -abs(pCS-&gt;nLenLinearCTStereoDble);</a>
+<a name="ln1961">                pCS2-&gt;nLenLinearCTIsotopicStereoCarb =</a>
+<a name="ln1962">                pCS-&gt;nLenLinearCTIsotopicStereoCarb  = -abs(pCS-&gt;nLenLinearCTStereoCarb);</a>
+<a name="ln1963">                nRet = CT_STEREOCOUNT_ERR;  /*  &lt;BRKPT&gt; */</a>
+<a name="ln1964">                goto exit_function; /* program error */</a>
+<a name="ln1965">            } else {</a>
+<a name="ln1966">                /* save isotopic lengths */</a>
+<a name="ln1967">                pCS-&gt;nLenLinearCTIsotopicStereoDble  =</a>
+<a name="ln1968">                pCS2-&gt;nLenLinearCTIsotopicStereoDble = pCS-&gt;nLenLinearCTStereoDble;</a>
+<a name="ln1969">                pCS-&gt;nLenLinearCTIsotopicStereoCarb  =</a>
+<a name="ln1970">                pCS2-&gt;nLenLinearCTIsotopicStereoCarb = pCS-&gt;nLenLinearCTStereoCarb;</a>
+<a name="ln1971">             </a>
+<a name="ln1972">                /* save stereo canonical numbering */</a>
+<a name="ln1973">                if ( pCS-&gt;nCanonOrdIsotopicStereo ) {</a>
+<a name="ln1974">                    for ( i = n = 0; i &lt; num_at_tg; i ++ ) {</a>
+<a name="ln1975">                        if ( nCanonRankIsotopicStereo[i] &amp;&amp; (int)nCanonRankIsotopicStereo[i] &lt;= num_at_tg ) {</a>
+<a name="ln1976">                            pCS-&gt;nCanonOrdIsotopicStereo[ (int)nCanonRankIsotopicStereo[i] - 1 ] = (AT_NUMB)i;</a>
+<a name="ln1977">                        } else {</a>
+<a name="ln1978">                            bFailed ++;</a>
+<a name="ln1979">                        }</a>
+<a name="ln1980">                    }</a>
+<a name="ln1981">                    pCS-&gt;nLenCanonOrdIsotopicStereo = bFailed? -num_atoms : num_atoms;</a>
+<a name="ln1982">                }</a>
+<a name="ln1983">                /* save stereo tautomer groups numbering */</a>
+<a name="ln1984">                if ( pCS-&gt;nCanonOrdIsotopicStereoTaut ) {</a>
+<a name="ln1985">                    if ( 0 &lt; (nRet=SortTautomerGroupsAndEndpoints( t_group_info1, num_atoms, num_at_tg, nCanonRankIsotopicStereo ) ) ) {</a>
+<a name="ln1986">                        /*non-isotopic contains symmetry ranks */</a>
+<a name="ln1987">                        int num_t_groups = t_group_info1-&gt;num_t_groups;</a>
+<a name="ln1988">                        AT_NUMB *tGroupNumber      = t_group_info1-&gt;tGroupNumber;</a>
+<a name="ln1989">                        /*AT_NUMB *tiSymmRank        = tGroupNumber + TGSO_SYMM_IRANK*num_t_groups; */</a>
+<a name="ln1990">                        memcpy( pCS-&gt;nCanonOrdIsotopicStereoTaut, tGroupNumber,  num_t_groups*sizeof(pCS-&gt;nCanonOrdIsotopicStereoTaut[0]) );</a>
+<a name="ln1991">                        pCS-&gt;nLenCanonOrdIsotopicStereoTaut = bFailed? -num_t_groups:num_t_groups;</a>
+<a name="ln1992"> </a>
+<a name="ln1993">                        /*SortTautomerGroupsAndEndpoints( t_group_info1, nCanonRank ); */ /* ??? return to non-isotopic canonical numbering */</a>
+<a name="ln1994">                    } else</a>
+<a name="ln1995">                    if ( RETURNED_ERROR( nRet ) ) {</a>
+<a name="ln1996">                        goto exit_function;</a>
+<a name="ln1997">                    } else {</a>
+<a name="ln1998">                        nRet = 0;</a>
+<a name="ln1999">                    }</a>
+<a name="ln2000">                }</a>
+<a name="ln2001">            }</a>
+<a name="ln2002">        }</a>
+<a name="ln2003"> </a>
+<a name="ln2004">        /**********************************************************</a>
+<a name="ln2005">         *</a>
+<a name="ln2006">         *  VII-B. Optimize INVERTED isotopic stereo descriptors</a>
+<a name="ln2007">         *</a>
+<a name="ln2008">         **********************************************************/</a>
+<a name="ln2009">        if ( !nCanonRankIsotopicStereoInv )</a>
+<a name="ln2010">            nCanonRankIsotopicStereoInv  = (AT_RANK *)  qmalloc(num_max*sizeof(*nCanonRankIsotopicStereoInv));</a>
+<a name="ln2011">        if ( !nCanonRankIsotopicStereoInv ) {</a>
+<a name="ln2012">            nRet = CT_OUT_OF_RAM;  /*  &lt;BRKPT&gt; */</a>
+<a name="ln2013">            goto exit_function;</a>
+<a name="ln2014">        }</a>
+<a name="ln2015">        /* copy previous isotopic stereo canonicalization results to Inv initial data */</a>
+<a name="ln2016">        /* assign pointers */</a>
+<a name="ln2017">        pCS-&gt;LinearCTStereoDble  = pCS2-&gt;LinearCTIsotopicStereoDbleInv; /*  enable stereo */</a>
+<a name="ln2018">        pCS-&gt;LinearCTStereoCarb  = pCS2-&gt;LinearCTIsotopicStereoCarbInv;</a>
+<a name="ln2019"> </a>
+<a name="ln2020">        </a>
+<a name="ln2021">        /* copy the lengths */</a>
+<a name="ln2022">        pCS2-&gt;nLenLinearCTIsotopicStereoDbleInv =</a>
+<a name="ln2023">        pCS-&gt;nLenLinearCTStereoDbleInv  =</a>
+<a name="ln2024">        pCS-&gt;nLenLinearCTStereoDble     = pCS2-&gt;nLenLinearCTIsotopicStereoDble;</a>
+<a name="ln2025">        </a>
+<a name="ln2026">        pCS2-&gt;nLenLinearCTIsotopicStereoCarbInv =</a>
+<a name="ln2027">        pCS-&gt;nLenLinearCTStereoCarbInv  =</a>
+<a name="ln2028">        pCS-&gt;nLenLinearCTStereoCarb     = pCS2-&gt;nLenLinearCTIsotopicStereoCarb;</a>
+<a name="ln2029"> </a>
+<a name="ln2030">        if ( pCS-&gt;nLenLinearCTStereoDble &gt; 0 || pCS-&gt;nLenLinearCTStereoCarb &gt; 0 ) {</a>
+<a name="ln2031">            /* copy previous results, the canonical stereo CT */</a>
+<a name="ln2032">            memcpy( pCS-&gt;LinearCTStereoDble, pCS2-&gt;LinearCTIsotopicStereoDble, pCS-&gt;nLenLinearCTStereoDble*sizeof(pCS-&gt;LinearCTStereoDble[0]) );</a>
+<a name="ln2033">            memcpy( pCS-&gt;LinearCTStereoCarb, pCS2-&gt;LinearCTIsotopicStereoCarb, pCS-&gt;nLenLinearCTStereoCarb*sizeof(pCS-&gt;LinearCTStereoCarb[0]) );</a>
+<a name="ln2034">        }</a>
+<a name="ln2035">        memcpy( nCanonRankIsotopicStereoInv, nCanonRankIsotopicStereo, num_max * sizeof(nCanonRankIsotopicStereoInv[0]) );</a>
+<a name="ln2036">        if ( pCS-&gt;nCanonOrdIsotopicStereoInv &amp;&amp; pCS-&gt;nCanonOrdIsotopicStereo ) {</a>
+<a name="ln2037">            /* in case there is nothing to invert */</a>
+<a name="ln2038">            memcpy( pCS-&gt;nCanonOrdIsotopicStereoInv, pCS-&gt;nCanonOrdIsotopicStereo, num_at_tg*sizeof(pCS-&gt;nCanonOrdIsotopicStereoInv[0]));</a>
+<a name="ln2039">        }</a>
+<a name="ln2040"> </a>
+<a name="ln2041">        /******************************</a>
+<a name="ln2042">         *</a>
+<a name="ln2043">         * Invert isotopic stereo</a>
+<a name="ln2044">         *</a>
+<a name="ln2045">         ******************************/</a>
+<a name="ln2046"> </a>
+<a name="ln2047">        /*********************************************************************************</a>
+<a name="ln2048">         * Create initial approximation for the minimization of the stereo descriptors:</a>
+<a name="ln2049">         *  invert stereogenic atom parities, one parity in each allene, all parities in</a>
+<a name="ln2050">         *  pCS-&gt;LinearCTStereoCarb and allene parities in pCS-&gt;nLenLinearCTStereoDble</a>
+<a name="ln2051">         */</a>
+<a name="ln2052">        nRet = InvertStereo( at, num_at_tg, nCanonRankIsotopicStereo, nTempRank, pCS, 1 );</a>
+<a name="ln2053">        if ( RETURNED_ERROR( nRet ) ) {</a>
+<a name="ln2054">            goto exit_function;</a>
+<a name="ln2055">        } else</a>
+<a name="ln2056">        if ( nRet &gt; 0 ) {</a>
+<a name="ln2057">            /* InvertStereo() has done some changes */</a>
+<a name="ln2058">            nRet = 0;</a>
+<a name="ln2059">            /* FillOutStereoParities() has already been called to fill out these 2 LinearCTs */</a>
+<a name="ln2060"> </a>
+<a name="ln2061">            /* set the 1st ranks in the rest of the stack to zero: prepare for ranks reuse */</a>
+<a name="ln2062">            for ( n = 2; n &lt; nRankStackLen &amp;&amp; pRankStack1[n]; n ++ ) {</a>
+<a name="ln2063">                pRankStack1[n][0] = 0; /* means ranks have to be recalculated */</a>
+<a name="ln2064">            }</a>
+<a name="ln2065">            /* set the 1st ranks to zero: prepare for ranks reuse */</a>
+<a name="ln2066">            for ( n = 2; n &lt; nRankStackLen &amp;&amp; pRankStack2[n]; n ++ ) {</a>
+<a name="ln2067">                pRankStack2[n][0] = 0; /* means ranks have to be recalculated */</a>
+<a name="ln2068">            }</a>
+<a name="ln2069"> </a>
+<a name="ln2070">            /* for debugging or statistics */</a>
+<a name="ln2071">            pCS-&gt;lNumBreakTies    =</a>
+<a name="ln2072">            pCS-&gt;lNumNeighListIter=</a>
+<a name="ln2073">            pCS-&gt;lNumTotCT        =</a>
+<a name="ln2074">            pCS-&gt;lNumDecreasedCT  =</a>
+<a name="ln2075">            pCS-&gt;lNumRejectedCT   =</a>
+<a name="ln2076">            pCS-&gt;lNumEqualCT      = 0;</a>
+<a name="ln2077">            pCS-&gt;bKeepSymmRank    = 0;</a>
+<a name="ln2078">            pCS-&gt;bFirstCT         = 1; /* To fill out nCanonRankStereo[] in map_stero_atoms2() */</a>
+<a name="ln2079"> </a>
+<a name="ln2080">            /**************************************************************************************</a>
+<a name="ln2081">              nCanonRankIsotopic contains input canonical numbering</a>
+<a name="ln2082">              nCanonRankIsotopicStereo will be filled with a transposition of canonical numbering</a>
+<a name="ln2083">                that  (1) keeps connection table unchanged and</a>
+<a name="ln2084">                      (2) provides minimal stereo descriptors in</a>
+<a name="ln2085">                          pCS-&gt;LinearCTStereoDble (length=pCS-&gt;nLenLinearCTStereoDble)</a>
+<a name="ln2086">                          pCS-&gt;LinearCTStereoCarb (length=pCS-&gt;nLenLinearCTStereoCarb)</a>
+<a name="ln2087">            */</a>
+<a name="ln2088">            nRet = map_stereo_bonds4</a>
+<a name="ln2089">                           ( at, num_atoms, num_at_tg, num_max, 0, ftcn-&gt;PartitionCtIso.Rank, ftcn-&gt;PartitionCtIso.AtNumber,</a>
+<a name="ln2090">                            nCanonRankIsotopicStereoInv, nSymmRank,</a>
+<a name="ln2091">                            pRankStack1,  pRankStack2, nTempRank, nNumCurrRanks,</a>
+<a name="ln2092">                            nSymmStereo,  NeighList, pCS, cur_tree, 0,</a>
+<a name="ln2093">                            vABParityUnknown);</a>
+<a name="ln2094">            if ( RETURNED_ERROR( nRet ) ) {</a>
+<a name="ln2095">                if ( nRet == CT_TIMEOUT_ERR )</a>
+<a name="ln2096">                    goto exit_function;</a>
+<a name="ln2097">                else</a>
+<a name="ln2098">                    goto exit_function; /* program error */</a>
+<a name="ln2099">            } else {</a>
+<a name="ln2100">                int bFailed = 0;</a>
+<a name="ln2101"> </a>
+<a name="ln2102">                if ( !nRet ) {</a>
+<a name="ln2103">                    bFailed = 1; /* program error */</a>
+<a name="ln2104">                    pCS2-&gt;nLenLinearCTIsotopicStereoDble =</a>
+<a name="ln2105">                    pCS-&gt;nLenLinearCTIsotopicStereoDble  = -abs(pCS-&gt;nLenLinearCTStereoDble);</a>
+<a name="ln2106">                    pCS2-&gt;nLenLinearCTIsotopicStereoCarb =</a>
+<a name="ln2107">                    pCS-&gt;nLenLinearCTIsotopicStereoCarb  = -abs(pCS-&gt;nLenLinearCTStereoCarb);</a>
+<a name="ln2108">                    nRet = CT_STEREOCOUNT_ERR;  /*  &lt;BRKPT&gt; */</a>
+<a name="ln2109">                    goto exit_function; /* program error */</a>
+<a name="ln2110">                }</a>
+<a name="ln2111">                /* save isotopic pointers &amp; lengths for INVERTED stereo */</a>
+<a name="ln2112"> </a>
+<a name="ln2113">                /* save isotopic lengths */</a>
+<a name="ln2114">                pCS-&gt;nLenLinearCTIsotopicStereoDbleInv  =</a>
+<a name="ln2115">                pCS2-&gt;nLenLinearCTIsotopicStereoDbleInv = pCS-&gt;nLenLinearCTStereoDble;</a>
+<a name="ln2116">                pCS-&gt;nLenLinearCTIsotopicStereoCarbInv  =</a>
+<a name="ln2117">                pCS2-&gt;nLenLinearCTIsotopicStereoCarbInv = pCS-&gt;nLenLinearCTStereoCarb;</a>
+<a name="ln2118">         </a>
+<a name="ln2119">                /* restore pointers and lengths to non-inverted isotopic stereo */</a>
+<a name="ln2120">                /*  -- this is needed for InvertStereo() back, see below        */</a>
+<a name="ln2121">                pCS-&gt;LinearCTStereoDble = pCS2-&gt;LinearCTIsotopicStereoDble;</a>
+<a name="ln2122">                pCS-&gt;LinearCTStereoCarb = pCS2-&gt;LinearCTIsotopicStereoCarb;</a>
+<a name="ln2123">                pCS-&gt;nLenLinearCTStereoDble = pCS2-&gt;nLenLinearCTIsotopicStereoDble;</a>
+<a name="ln2124">                pCS-&gt;nLenLinearCTStereoCarb = pCS2-&gt;nLenLinearCTIsotopicStereoCarb;</a>
+<a name="ln2125"> </a>
+<a name="ln2126">                /* consistency check */</a>
+<a name="ln2127">                if ( pCS-&gt;nLenLinearCTIsotopicStereoDbleInv != pCS-&gt;nLenLinearCTIsotopicStereoDble ||</a>
+<a name="ln2128">                     pCS-&gt;nLenLinearCTIsotopicStereoCarbInv != pCS-&gt;nLenLinearCTIsotopicStereoCarb ) {</a>
+<a name="ln2129">                    nRet = CT_CALC_STEREO_ERR;</a>
+<a name="ln2130">                    goto exit_function; /* program error */</a>
+<a name="ln2131">                }</a>
+<a name="ln2132">                /******************************</a>
+<a name="ln2133">                 *</a>
+<a name="ln2134">                 * Invert stereo back</a>
+<a name="ln2135">                 *</a>
+<a name="ln2136">                 ******************************</a>
+<a name="ln2137">                 *  (make sure that pointers</a>
+<a name="ln2138">                 *  pCS-&gt;LinearCTStereoCarb,</a>
+<a name="ln2139">                 *  pCS-&gt;LinearCTStereoDble</a>
+<a name="ln2140">                 *  and corresponding lengths</a>
+<a name="ln2141">                 *  have been restored)</a>
+<a name="ln2142">                 ******************************/</a>
+<a name="ln2143">                nRet = InvertStereo( at, num_at_tg, nCanonRankIsotopicStereo, nTempRank, pCS, 0 );</a>
+<a name="ln2144">                if ( RETURNED_ERROR( nRet ) ) {</a>
+<a name="ln2145">                    goto exit_function;</a>
+<a name="ln2146">                }</a>
+<a name="ln2147">                nRet = 0;</a>
+<a name="ln2148"> </a>
+<a name="ln2149">                /* save stereo canonical numbering */</a>
+<a name="ln2150">                if ( pCS-&gt;nCanonOrdIsotopicStereoInv ) {</a>
+<a name="ln2151">                    for ( i = n = 0; i &lt; num_at_tg; i ++ ) {</a>
+<a name="ln2152">                        if ( nCanonRankIsotopicStereoInv[i] &amp;&amp; (int)nCanonRankIsotopicStereoInv[i] &lt;= num_at_tg ) {</a>
+<a name="ln2153">                            pCS-&gt;nCanonOrdIsotopicStereoInv[ (int)nCanonRankIsotopicStereoInv[i] - 1 ] = (AT_NUMB)i;</a>
+<a name="ln2154">                        } else {</a>
+<a name="ln2155">                            bFailed ++;</a>
+<a name="ln2156">                        }</a>
+<a name="ln2157">                    }</a>
+<a name="ln2158">                    pCS-&gt;nLenCanonOrdIsotopicStereo = bFailed? -num_atoms : num_atoms;</a>
+<a name="ln2159">                }</a>
+<a name="ln2160">                /* compare inverted and non-inverted isotopic stereo */</a>
+<a name="ln2161">                pCS-&gt;bCmpIsotopicStereo = 2 + CompareLinCtStereo(</a>
+<a name="ln2162">                                         pCS-&gt;LinearCTIsotopicStereoDbleInv, pCS-&gt;nLenLinearCTIsotopicStereoDbleInv,</a>
+<a name="ln2163">                                         pCS-&gt;LinearCTIsotopicStereoCarbInv, pCS-&gt;nLenLinearCTIsotopicStereoCarbInv,</a>
+<a name="ln2164">                                         pCS-&gt;LinearCTIsotopicStereoDble,    pCS-&gt;nLenLinearCTIsotopicStereoDble,</a>
+<a name="ln2165">                                         pCS-&gt;LinearCTIsotopicStereoCarb,    pCS-&gt;nLenLinearCTIsotopicStereoCarb</a>
+<a name="ln2166">                                      );</a>
+<a name="ln2167"> </a>
+<a name="ln2168">            }</a>
+<a name="ln2169">        } else</a>
+<a name="ln2170">        if ( 0 == nRet ) {</a>
+<a name="ln2171">            /* nothing has been done, restore pointers and lengths for stereo */</a>
+<a name="ln2172">            pCS-&gt;LinearCTStereoDble = pCS2-&gt;LinearCTIsotopicStereoDble;</a>
+<a name="ln2173">            pCS-&gt;LinearCTStereoCarb = pCS2-&gt;LinearCTIsotopicStereoCarb;</a>
+<a name="ln2174">            pCS-&gt;nLenLinearCTStereoDble = pCS2-&gt;nLenLinearCTIsotopicStereoDble;</a>
+<a name="ln2175">            pCS-&gt;nLenLinearCTStereoCarb = pCS2-&gt;nLenLinearCTIsotopicStereoCarb;</a>
+<a name="ln2176">        }</a>
+<a name="ln2177"> </a>
+<a name="ln2178">bypass_isotopic_stereo:;  /* ???       */</a>
+<a name="ln2179"> </a>
+<a name="ln2180">        pCS-&gt;LinearCTIsotopic = pCS2-&gt;LinearCTIsotopic;</a>
+<a name="ln2181">    }</a>
+<a name="ln2182">        </a>
+<a name="ln2183"> </a>
+<a name="ln2184"> </a>
+<a name="ln2185">exit_function:</a>
+<a name="ln2186"> </a>
+<a name="ln2187">    if ( bSwitchedAtomToIsotopic ) {</a>
+<a name="ln2188">        SwitchAtomStereoAndIsotopicStereo( at, num_atoms, &amp;bSwitchedAtomToIsotopic );</a>
+<a name="ln2189">        SetCtToNonIsotopicStereo( pCS, pCS2 ); /* ??? */</a>
+<a name="ln2190">    }</a>
+<a name="ln2191"> </a>
+<a name="ln2192">    /* restore non-isotopic connection table */</a>
+<a name="ln2193">    if ( pCS-&gt;LinearCT2 ) {</a>
+<a name="ln2194">        inchi_swap( (char*)&amp;pCS-&gt;LinearCT, (char*)&amp;pCS-&gt;LinearCT2, sizeof(pCS-&gt;LinearCT) );</a>
+<a name="ln2195">        inchi_swap( (char*)&amp;pCS-&gt;nLenLinearCT, (char*)&amp;pCS-&gt;nLenLinearCT2, sizeof(pCS-&gt;nLenLinearCT) );</a>
+<a name="ln2196">        inchi_swap( (char*)&amp;pCS-&gt;nLenLinearCTAtOnly, (char*)&amp;pCS-&gt;nLenLinearCTAtOnly2, sizeof(pCS-&gt;nLenLinearCTAtOnly) );</a>
+<a name="ln2197">    }</a>
+<a name="ln2198">    </a>
+<a name="ln2199">    /* free memory */</a>
+<a name="ln2200">    i = 2;</a>
+<a name="ln2201">    if ( pRankStack1 ) {</a>
+<a name="ln2202">        pRankStack1[0] =</a>
+<a name="ln2203">        pRankStack1[1] = NULL; /* deallocated separately */</a>
+<a name="ln2204">        for ( ; i &lt; nRankStackLen &amp;&amp; pRankStack1[i]; i ++ )</a>
+<a name="ln2205">            ;</a>
+<a name="ln2206">    }</a>
+<a name="ln2207">    if ( pRankStack1 &amp;&amp; pRankStack2 ) {</a>
+<a name="ln2208">        for ( n = 2; n &lt; nRankStackLen &amp;&amp; pRankStack2[n]; n ++ ) {</a>
+<a name="ln2209">            if ( i &lt; nRankStackLen - 1 ) {</a>
+<a name="ln2210">                pRankStack1[i++]   = pRankStack2[n];</a>
+<a name="ln2211">            } else {</a>
+<a name="ln2212">                inchi_free( pRankStack2[n] );</a>
+<a name="ln2213">            }</a>
+<a name="ln2214">        }</a>
+<a name="ln2215">        inchi_free( pRankStack2 ); </a>
+<a name="ln2216">    }</a>
+<a name="ln2217"> </a>
+<a name="ln2218">    pCS-&gt;NeighList = NULL; /* keep the pointer in pBCN-&gt;ftcn[bTaut].NeighList for further deallocation */</a>
+<a name="ln2219">    qfree ( nAtomNumber );</a>
+<a name="ln2220">    qfree ( nTempRank );</a>
+<a name="ln2221">    qfree ( nRank );</a>
+<a name="ln2222">    qfree ( nSymmRank );</a>
+<a name="ln2223"> </a>
+<a name="ln2224">    qfree( nSymmStereo );</a>
+<a name="ln2225">    CurTreeFree( cur_tree );</a>
+<a name="ln2226">/* memory leak fix */</a>
+<a name="ln2227">/*</a>
+<a name="ln2228">    qfree ( nCurrRankIsotopicStereo );</a>
+<a name="ln2229">    qfree ( nAtomNumberCurrIsotopicStereo);</a>
+<a name="ln2230">*/</a>
+<a name="ln2231">    qfree ( nCanonRankIsotopicStereo );</a>
+<a name="ln2232">    qfree ( nCanonRankIsotopicStereoInv );</a>
+<a name="ln2233"> </a>
+<a name="ln2234">    qfree( nCanonRankStereo );</a>
+<a name="ln2235">    qfree( nCanonRankStereoInv );</a>
+<a name="ln2236"> </a>
+<a name="ln2237">    InchiTimeGet( &amp;ulEndTime );</a>
+<a name="ln2238">    pCS-&gt;lTotalTime = InchiTimeMsecDiff(&amp;ulEndTime, &amp;ulStartTime);</a>
+<a name="ln2239">    return (nRet &gt;= -1)? num_atoms : nRet; /* cannot easily get number of ranks for now */</a>
+<a name="ln2240"> </a>
+<a name="ln2241">}</a>
+<a name="ln2242"> </a>
+<a name="ln2243">/**************************************************************************************/</a>
+<a name="ln2244">int Canon_INChI(int num_atoms, int num_at_tg, sp_ATOM* at, </a>
+<a name="ln2245">                CANON_STAT* pCS, INCHI_MODE nMode, int bTautFtcn)</a>
+<a name="ln2246">{</a>
+<a name="ln2247">    if ( pCS-&gt;pBCN &amp;&amp; !pCS-&gt;NeighList ) {</a>
+<a name="ln2248">        /* new version */</a>
+<a name="ln2249">        return Canon_INChI3(  num_atoms, num_at_tg, at, pCS, nMode, bTautFtcn);</a>
+<a name="ln2250">    }</a>
+<a name="ln2251">    return CT_CANON_ERR;</a>
+<a name="ln2252">}</a>
+
+</code></pre>
+<div class="balloon" rel="388"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v595/" target="_blank">V595</a> The 't_group_info' pointer was utilized before it was verified against nullptr. Check lines: 388, 397.</p></div>
+<div class="balloon" rel="555"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1051/" target="_blank">V1051</a> Consider checking for misprints. It's possible that the 'num_err' should be checked here.</p></div>
+<div class="balloon" rel="577"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1051/" target="_blank">V1051</a> Consider checking for misprints. It's possible that the 'num_err' should be checked here.</p></div>
+<div class="balloon" rel="701"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'LinearCTIsotopic' is always true.</p></div>
+<div class="balloon" rel="840"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: j < max_num_iso.</p></div>
+<div class="balloon" rel="1024"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v778/" target="_blank">V778</a> Two similar code fragments were found. Perhaps, this is a typo and 'nLenLinearCTAtOnly' variable should be used instead of 'nLenLinearCT'.</p></div>
+<div class="balloon" rel="1007"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v595/" target="_blank">V595</a> The 'LinearCT' pointer was utilized before it was verified against nullptr. Check lines: 1007, 1015.</p></div>
+<div class="balloon" rel="1367"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: ftcn->PartitionCtIso.Rank.</p></div>
+<div class="balloon" rel="1368"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: ftcn->PartitionCtIso.AtNumber.</p></div>
+<div class="balloon" rel="1368"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: ftcn->nSymmRankCtIso.</p></div>
+<div class="balloon" rel="1497"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v575/" target="_blank">V575</a> The potential null pointer is passed into 'memcpy' function. Inspect the first argument. Check lines: 1497, 1437.</p></div>
+<div class="balloon" rel="1536"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression '!nCanonRankStereo' is always true.</p></div>
+<div class="balloon" rel="1538"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v560/" target="_blank">V560</a> A part of conditional expression is always true: !nSymmStereo.</p></div>
+<div class="balloon" rel="1654"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression '!nCanonRankStereoInv' is always true.</p></div>
+<div class="balloon" rel="1668"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'pCS->nLenLinearCTStereoDble' variable was assigned the same value.</p></div>
+<div class="balloon" rel="1672"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'pCS->nLenLinearCTStereoCarb' variable was assigned the same value.</p></div>
+<div class="balloon" rel="1732"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v519/" target="_blank">V519</a> The 'nRet' variable is assigned values twice successively. Perhaps this is a mistake. Check lines: 1702, 1732.</p></div>
+<div class="balloon" rel="1859"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression '!nCanonRankIsotopicStereo' is always true.</p></div>
+<div class="balloon" rel="2009"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression '!nCanonRankIsotopicStereoInv' is always true.</p></div>
+<div class="balloon" rel="2024"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'pCS->nLenLinearCTStereoDble' variable was assigned the same value.</p></div>
+<div class="balloon" rel="2028"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v1048/" target="_blank">V1048</a> The 'pCS->nLenLinearCTStereoCarb' variable was assigned the same value.</p></div>
+<div class="balloon" rel="2088"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v519/" target="_blank">V519</a> The 'nRet' variable is assigned values twice successively. Perhaps this is a mistake. Check lines: 2058, 2088.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

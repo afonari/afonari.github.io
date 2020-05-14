@@ -1,0 +1,305 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>obrotate.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">obrotate = rotate a tortional bond matched by a SMART pattern</a>
+<a name="ln3">Copyright (C) 2003 Fabien Fontaine</a>
+<a name="ln4">Some portions Copyright (C) 2004-2005 Geoffrey R. Hutchison</a>
+<a name="ln5">Some portions Copyright (C) 2008 Tim Vandermeersch</a>
+<a name="ln6"> </a>
+<a name="ln7">This file is part of the Open Babel project.</a>
+<a name="ln8">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln11">it under the terms of the GNU General Public License as published by</a>
+<a name="ln12">the Free Software Foundation version 2 of the License.</a>
+<a name="ln13"> </a>
+<a name="ln14">This program is distributed in the hope that it will be useful,</a>
+<a name="ln15">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln16">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln17">GNU General Public License for more details.</a>
+<a name="ln18">***********************************************************************/</a>
+<a name="ln19"> </a>
+<a name="ln20">/*</a>
+<a name="ln21">  Require a SMART pattern, a file containing molecule coordinates</a>
+<a name="ln22">  4 atoms of the SMART pattern to define the tortional, an angle value</a>
+<a name="ln23">  The angle value must be in degree</a>
+<a name="ln24">  the 2 atoms of the rotating bond must be bonded but the 2 others not</a>
+<a name="ln25">  the part of the molecule on the side of the second atom is kept fixed</a>
+<a name="ln26">  whereas the part on the side of the third atom is rotated.</a>
+<a name="ln27">  example of command line:</a>
+<a name="ln28">  obrotate &quot;[nH]ccccc[O,C][C,O]&quot; test.sdf 1 6 7 8 180.0</a>
+<a name="ln29">*/</a>
+<a name="ln30"> </a>
+<a name="ln31"> </a>
+<a name="ln32">// used to set import/export for Cygwin DLLs</a>
+<a name="ln33">#ifdef WIN32</a>
+<a name="ln34">#define USING_OBDLL</a>
+<a name="ln35">#endif</a>
+<a name="ln36"> </a>
+<a name="ln37">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln38">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln39">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln40">#include &lt;openbabel/parsmart.h&gt;</a>
+<a name="ln41">#include &lt;openbabel/rotamer.h&gt;</a>
+<a name="ln42">//#include &lt;unistd.h&gt;</a>
+<a name="ln43">#include &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln44">#include &lt;cstdlib&gt;</a>
+<a name="ln45">using namespace std;</a>
+<a name="ln46">using namespace OpenBabel;</a>
+<a name="ln47"> </a>
+<a name="ln48">///////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln49">//! \brief Set a tortional bond to a given angle</a>
+<a name="ln50">int main(int argc,char **argv)</a>
+<a name="ln51">{</a>
+<a name="ln52">  OBAtom *a1, *a2, *a3, *a4;</a>
+<a name="ln53">  unsigned int smartor[4]= {0,0,0,0};// atoms of the tortional in the SMART</a>
+<a name="ln54">  float angle =   0;      // tortional angle value to set in degree</a>
+<a name="ln55">  char *FileIn = nullptr, *Pattern = nullptr;</a>
+<a name="ln56">  unsigned int i, t, errflg = 0;</a>
+<a name="ln57">  int c;</a>
+<a name="ln58">  string err;</a>
+<a name="ln59">  bool changeAll = false; // default to only change the last matching torsion</a>
+<a name="ln60"> </a>
+<a name="ln61">  // parse the command line -- optional -a flag to change all matching torsions</a>
+<a name="ln62">  if (argc &lt; 8 || argc &gt; 9) {</a>
+<a name="ln63">    errflg++;</a>
+<a name="ln64">  } else {</a>
+<a name="ln65">    // Fetch the option and shift values after the option</a>
+<a name="ln66">    if (argc == 9) {</a>
+<a name="ln67">      int curArg = 0;</a>
+<a name="ln68">      while (curArg &lt; 9) {</a>
+<a name="ln69">        if (strcmp(argv[curArg], &quot;-a&quot;) == 0) {</a>
+<a name="ln70">          changeAll = true;</a>
+<a name="ln71">          break;</a>
+<a name="ln72">        }</a>
+<a name="ln73">        ++curArg;</a>
+<a name="ln74">      }</a>
+<a name="ln75">      // We expect -a and so changeAll should be true</a>
+<a name="ln76">      if (!changeAll)</a>
+<a name="ln77">        errflg++;</a>
+<a name="ln78"> </a>
+<a name="ln79">      // now let's shift values</a>
+<a name="ln80">      while (curArg &lt; 8) {</a>
+<a name="ln81">        argv[curArg] = argv[curArg+1];</a>
+<a name="ln82">      }</a>
+<a name="ln83">    }</a>
+<a name="ln84">    FileIn = argv[2];</a>
+<a name="ln85">    Pattern = argv[1];</a>
+<a name="ln86">    // Read the atom position</a>
+<a name="ln87">    for(i=3, t=0; i&lt;7; ++i, ++t) {</a>
+<a name="ln88">      c = sscanf(argv[i], &quot;%u&quot;, &amp;smartor[t]);</a>
+<a name="ln89">      if (c != 1) {</a>
+<a name="ln90">        errflg++;  // error in arguments, quit and warn user</a>
+<a name="ln91">        break;</a>
+<a name="ln92">      }</a>
+<a name="ln93">    }</a>
+<a name="ln94">    c = sscanf(argv[7], &quot;%f&quot;, &amp;angle);</a>
+<a name="ln95">    if (c != 1) {</a>
+<a name="ln96">      errflg++; // error in arguments, quit and warn user</a>
+<a name="ln97">    }</a>
+<a name="ln98">    if (argc == 9) {</a>
+<a name="ln99">      if (strcmp(argv[8], &quot;-a&quot;) == 0)</a>
+<a name="ln100">        changeAll = true;</a>
+<a name="ln101">      else</a>
+<a name="ln102">        errflg++; // error in arguments, quit and warn user</a>
+<a name="ln103">    }</a>
+<a name="ln104">  }</a>
+<a name="ln105"> </a>
+<a name="ln106">  if (errflg) {</a>
+<a name="ln107">    cerr &lt;&lt; &quot;Usage: obrotate \&quot;PATTERN\&quot; &lt;filename&gt; &lt;atom1&gt; &lt;atom2&gt; &lt;atom3&gt; &lt;atom4&gt; &lt;angle&gt; [-a]&quot; &lt;&lt; endl;</a>
+<a name="ln108">    exit(-1);</a>
+<a name="ln109">  }</a>
+<a name="ln110"> </a>
+<a name="ln111">  // create pattern</a>
+<a name="ln112">  OBSmartsPattern sp;</a>
+<a name="ln113">  sp.Init(Pattern);</a>
+<a name="ln114">  if (sp.NumAtoms() &lt; 4) {</a>
+<a name="ln115">    cerr &lt;&lt; &quot;obrotate: The number of atoms in the SMART pattern must be higher than 3.&quot; &lt;&lt; endl;</a>
+<a name="ln116">    exit(-1);</a>
+<a name="ln117">  }</a>
+<a name="ln118"> </a>
+<a name="ln119">  for (i=0; i&lt;4; ++i) {</a>
+<a name="ln120">    if ( smartor[i] &lt; 1 || smartor[i] &gt; sp.NumAtoms()) {</a>
+<a name="ln121">      cerr &lt;&lt; &quot;obrotate: The torsional atom values must be between 1 and &quot;</a>
+<a name="ln122">           &lt;&lt;  sp.NumAtoms()</a>
+<a name="ln123">           &lt;&lt; &quot;, which is the number of atoms in the SMART pattern.&quot; &lt;&lt; endl;</a>
+<a name="ln124">      exit(-1);</a>
+<a name="ln125">    }</a>
+<a name="ln126">  }</a>
+<a name="ln127"> </a>
+<a name="ln128">  OBConversion conv; //NF...</a>
+<a name="ln129">  OBFormat* format = conv.FormatFromExt(FileIn);</a>
+<a name="ln130">  if(!(format &amp;&amp; conv.SetInAndOutFormats(format, format))) { //in and out formats same</a>
+<a name="ln131">    cerr &lt;&lt; &quot;obrotate: cannot read and/or write this file format!&quot; &lt;&lt; endl;</a>
+<a name="ln132">    exit (-1);</a>
+<a name="ln133">  } //...NF</a>
+<a name="ln134"> </a>
+<a name="ln135">  //Open the molecule file</a>
+<a name="ln136">  ifstream ifs;</a>
+<a name="ln137"> </a>
+<a name="ln138">  // Read the file</a>
+<a name="ln139">  ifs.open(FileIn);</a>
+<a name="ln140">  if (!ifs) {</a>
+<a name="ln141">    cerr &lt;&lt; &quot;obrotate: cannot read input file!&quot; &lt;&lt; endl;</a>
+<a name="ln142">    exit (-1);</a>
+<a name="ln143">  }</a>
+<a name="ln144"> </a>
+<a name="ln145">  OBMol mol;</a>
+<a name="ln146">  vector&lt; vector &lt;int&gt; &gt; maplist;      // list of matched atoms</a>
+<a name="ln147">  vector&lt; vector &lt;int&gt; &gt;::iterator m;  // and its iterators</a>
+<a name="ln148">  //   int tindex;</a>
+<a name="ln149"> </a>
+<a name="ln150">  // Set the angles</a>
+<a name="ln151">  for (;;) {</a>
+<a name="ln152">    mol.Clear();</a>
+<a name="ln153">    //NF      ifs &gt;&gt; mol;                   // Read molecule</a>
+<a name="ln154">    conv.Read(&amp;mol,&amp;ifs); //NF</a>
+<a name="ln155">    if (mol.Empty())</a>
+<a name="ln156">      break;</a>
+<a name="ln157"> </a>
+<a name="ln158">    if (sp.Match(mol)) {</a>
+<a name="ln159">      // if match perform rotation</a>
+<a name="ln160">      maplist = sp.GetUMapList(); // get unique matches</a>
+<a name="ln161"> </a>
+<a name="ln162">      if (maplist.size() &gt; 1)</a>
+<a name="ln163">        cerr &lt;&lt; &quot;obrotate: Found &quot; &lt;&lt; maplist.size() &lt;&lt; &quot; matches. Only last one will be rotated.&quot; &lt;&lt; endl;</a>
+<a name="ln164"> </a>
+<a name="ln165">      // look at all the mapping atom but save only the last one.</a>
+<a name="ln166">      for (m = maplist.begin(); m != maplist.end(); ++m) {</a>
+<a name="ln167">        a1 = mol.GetAtom( (*m)[ smartor[0] - 1] );</a>
+<a name="ln168">        a2 = mol.GetAtom( (*m)[ smartor[1] - 1] );</a>
+<a name="ln169">        a3 = mol.GetAtom( (*m)[ smartor[2] - 1] );</a>
+<a name="ln170">        a4 = mol.GetAtom( (*m)[ smartor[3] - 1] );</a>
+<a name="ln171">        if (changeAll)</a>
+<a name="ln172">          mol.SetTorsion(a1, a2, a3, a4, angle * DEG_TO_RAD);</a>
+<a name="ln173">      }</a>
+<a name="ln174"> </a>
+<a name="ln175">      if ( !a2-&gt;IsConnected(a3) ) {</a>
+<a name="ln176">        cerr &lt;&lt; &quot;obrotate: The atoms of the rotating bond must be bonded.&quot; &lt;&lt; endl;</a>
+<a name="ln177">        exit(-1);</a>
+<a name="ln178">      }</a>
+<a name="ln179"> </a>
+<a name="ln180">      if (!changeAll)</a>
+<a name="ln181">        mol.SetTorsion(a1, a2, a3, a4, angle * DEG_TO_RAD);</a>
+<a name="ln182">    } else {</a>
+<a name="ln183">      cerr &lt;&lt; &quot;obrotate: Found 0 matches for the SMARTS pattern.&quot; &lt;&lt; endl;</a>
+<a name="ln184">      exit(-1);</a>
+<a name="ln185">    }</a>
+<a name="ln186">    //NF      cout &lt;&lt; mol;</a>
+<a name="ln187">    conv.Write(&amp;mol,&amp;cout); //NF</a>
+<a name="ln188">  }</a>
+<a name="ln189"> </a>
+<a name="ln190">  return(0);</a>
+<a name="ln191">}</a>
+<a name="ln192"> </a>
+<a name="ln193"> </a>
+<a name="ln194">/* obrotate man page*/</a>
+<a name="ln195">/** \page obrotate batch-rotate dihedral angles matching SMARTS patterns</a>
+<a name="ln196">*</a>
+<a name="ln197">* \n</a>
+<a name="ln198">* \par SYNOPSIS</a>
+<a name="ln199">*</a>
+<a name="ln200">* \b obrotate '&lt;SMARTS-pattern&gt;' \&lt;filename\&gt; \&lt;atom1\&gt; \&lt;atom2\&gt; \&lt;atom3\&gt; \&lt;atom4\&gt; \&lt;angle\&gt;</a>
+<a name="ln201">*</a>
+<a name="ln202">* \par DESCRIPTION</a>
+<a name="ln203">*</a>
+<a name="ln204">* The obrotate program rotates the torsional (dihedral) angle of a specified</a>
+<a name="ln205">* bond in molecules to that defined by the user. In other words, it does the</a>
+<a name="ln206">* same as a user setting an angle in a molecular modelling package, but much</a>
+<a name="ln207">* faster and in batch mode.</a>
+<a name="ln208">* \n\n</a>
+<a name="ln209">* The four atom IDs required are indexes into the SMARTS pattern, which starts</a>
+<a name="ln210">* at atom 1. The angle supplied is in degrees. The two atoms used to set</a>
+<a name="ln211">* the dihedral angle \&lt;atom1\&gt; and \&lt;atom4\&gt; do not need to be connected</a>
+<a name="ln212">* to the atoms of the bond \&lt;atom2\&gt; and \&lt;atom3\&gt; in any way.</a>
+<a name="ln213">*\n\n</a>
+<a name="ln214">* The order of the atoms matters -- the portion of the molecule attached to</a>
+<a name="ln215">* \&lt;atom1\&gt; and \&lt;atom2\&gt; remain fixed, but the portion bonded to \&lt;atom3\&gt; and</a>
+<a name="ln216">&amp; \&lt;atom4\&gt; moves.</a>
+<a name="ln217">*</a>
+<a name="ln218">* \par EXAMPLES</a>
+<a name="ln219">*  - Let's say that you want to define the conformation of a large number of</a>
+<a name="ln220">*  molecules with a pyridyl scaffold and substituted with an aliphatic chain</a>
+<a name="ln221">*  at the 3-position, for example for docking or 3D-QSAR purposes.</a>
+<a name="ln222">* \n\n</a>
+<a name="ln223">*    To set the value of the first dihedral angle to 90 degrees:\n</a>
+<a name="ln224">*   obrotate &quot;c1ccncc1CCC&quot; pyridines.sdf 5 6 7 8 90</a>
+<a name="ln225">* \n</a>
+<a name="ln226">* Here 6 and 7 define the bond to rotate in the SMARTS patter, i.e., c1-C and</a>
+<a name="ln227">* atoms 5 and 8 define the particular dihedral angle to rotate.</a>
+<a name="ln228">*  - Since the atoms to define the dihedral do not need to be directly</a>
+<a name="ln229">*  connected, the nitrogen in the pyridine can be used:\n</a>
+<a name="ln230">*   obrotate &quot;c1ccncc1CCC&quot; pyridines.sdf 4 6 7 8 90</a>
+<a name="ln231">*</a>
+<a name="ln232">*  - Keep the pyridyl ring fixed and moves the aliphatic chain:\n</a>
+<a name="ln233">*   obrotate &quot;c1ccncc1CCC&quot; pyridines.sdf 5 6 7 8 90</a>
+<a name="ln234">*  - Keep the aliphatic chain fixed and move the pyridyl ring:\n</a>
+<a name="ln235">*   obrotate &quot;c1ccncc1CCC&quot; pyridines.sdf 8 7 6 5 90</a>
+<a name="ln236">*</a>
+<a name="ln237">* \par AUTHORS</a>
+<a name="ln238">*</a>
+<a name="ln239">* The obrotate program was contributed by \b Fabien \b Fontaine.</a>
+<a name="ln240">*</a>
+<a name="ln241">* Open Babel is currently maintained by \b Geoff \b Hutchison, \b Chris \b Morley and \b Michael \b Banck.</a>
+<a name="ln242">*</a>
+<a name="ln243">* For more contributors to Open Babel, see http://openbabel.org/THANKS.shtml</a>
+<a name="ln244">*</a>
+<a name="ln245">* \par COPYRIGHT</a>
+<a name="ln246">*  Copyright (C) 1998-2001 by OpenEye Scientific Software, Inc.</a>
+<a name="ln247">*  Some portions Copyright (C) 2001-2005 by Geoffrey R. Hutchison \n \n</a>
+<a name="ln248">*  This program is free software; you can redistribute it and/or modify</a>
+<a name="ln249">*  it under the terms of the GNU General Public License as published by</a>
+<a name="ln250">*  the Free Software Foundation version 2 of the License.\n \n</a>
+<a name="ln251">*  This program is distributed in the hope that it will be useful,</a>
+<a name="ln252">*  but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln253">*  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln254">*  GNU General Public License for more details.</a>
+<a name="ln255">*</a>
+<a name="ln256">* \par SEE ALSO</a>
+<a name="ln257">*   The web pages for Open Babel can be found at: http://openbabel.org/ \n</a>
+<a name="ln258">*   A guide for constructing SMARTS patterns can be found at: http://www.daylight.com/dayhtml/doc/theory/theory.smarts.html</a>
+<a name="ln259">**/</a>
+
+</code></pre>
+<div class="balloon" rel="80"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v776/" target="_blank">V776</a> Potentially infinite loop. The variable in the loop exit condition 'curArg < 8' does not change its value between iterations.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

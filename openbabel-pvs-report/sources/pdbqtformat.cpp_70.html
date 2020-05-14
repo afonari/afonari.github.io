@@ -1,0 +1,1280 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>pdbqtformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Copyright (C) 1998-2001 by OpenEye Scientific Software, Inc.</a>
+<a name="ln3">Some portions Copyright (C) 2003-2006 Geoffrey R. Hutchison</a>
+<a name="ln4">Some portions Copyright (C) 2004 by Chris Morley</a>
+<a name="ln5"> </a>
+<a name="ln6">Original Copyright refers to the pdbformat.cpp file, for reading and</a>
+<a name="ln7">writing pdb format files.</a>
+<a name="ln8">Extensively modified 2010 Stuart Armstrong (Source Science/InhibOx)</a>
+<a name="ln9">for the purpose of reading and writing pdbqt format files.</a>
+<a name="ln10">Some portions Copyright (C) 2010 by Stuart Armstrong of Source Science/</a>
+<a name="ln11">InhibOx</a>
+<a name="ln12"> </a>
+<a name="ln13">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln14">it under the terms of the GNU General Public License as published by</a>
+<a name="ln15">the Free Software Foundation version 2 of the License.</a>
+<a name="ln16"> </a>
+<a name="ln17">This program is distributed in the hope that it will be useful,</a>
+<a name="ln18">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln19">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln20">GNU General Public License for more details.</a>
+<a name="ln21">***********************************************************************/</a>
+<a name="ln22"> </a>
+<a name="ln23">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln24">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln25">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln26">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln27">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln28">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln29">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln30">#include &lt;openbabel/data.h&gt;</a>
+<a name="ln31">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln32">#include &lt;openbabel/typer.h&gt;</a>
+<a name="ln33"> </a>
+<a name="ln34">#include &lt;algorithm&gt;</a>
+<a name="ln35">#include &lt;cstdlib&gt;</a>
+<a name="ln36">#include &lt;vector&gt;</a>
+<a name="ln37">#include &lt;map&gt;</a>
+<a name="ln38">#include &lt;set&gt;</a>
+<a name="ln39"> </a>
+<a name="ln40">#include &lt;sstream&gt;</a>
+<a name="ln41"> </a>
+<a name="ln42">using namespace std;</a>
+<a name="ln43">namespace OpenBabel</a>
+<a name="ln44">{</a>
+<a name="ln45">  class branch</a>
+<a name="ln46">  {</a>
+<a name="ln47">    public:</a>
+<a name="ln48">    vector &lt;int&gt; atoms;</a>
+<a name="ln49">    bool done;</a>
+<a name="ln50">    unsigned int index;</a>
+<a name="ln51">    set &lt;unsigned int&gt; children;</a>
+<a name="ln52">    vector &lt;unsigned int&gt; parents;</a>
+<a name="ln53">    unsigned int depth;</a>
+<a name="ln54">    unsigned int connecting_atom_parent;</a>
+<a name="ln55">    unsigned int connecting_atom_branch;</a>
+<a name="ln56">    unsigned int how_many_atoms_moved;</a>
+<a name="ln57"> </a>
+<a name="ln58">    set &lt;unsigned int&gt; rigid_with; //the other branches that move rigidly with this one</a>
+<a name="ln59"> </a>
+<a name="ln60">    void clear() {done=false; index=0; depth=0; connecting_atom_parent=0; connecting_atom_branch=0;</a>
+<a name="ln61">      how_many_atoms_moved=0; children.clear(); parents.clear(); atoms.clear(); rigid_with.clear(); parents.push_back(0);}</a>
+<a name="ln62">    unsigned int UpOne() {if (parents.size()&gt;=2) {return parents.at(parents.size()-2);} return 0;}</a>
+<a name="ln63">    branch() {clear();}</a>
+<a name="ln64">    void all_atoms(OBMol&amp; mol) {clear(); rigid_with.insert(0); for (unsigned int i=1; i &lt;= mol.NumAtoms(); i++) {atoms.push_back(i);}}</a>
+<a name="ln65">  };</a>
+<a name="ln66"> </a>
+<a name="ln67">  class PDBQTFormat : public OBMoleculeFormat</a>
+<a name="ln68">  {</a>
+<a name="ln69">    public:</a>
+<a name="ln70">    //Register this format type ID</a>
+<a name="ln71">    PDBQTFormat()</a>
+<a name="ln72">    {</a>
+<a name="ln73">      OBConversion::RegisterFormat(&quot;pdbqt&quot;,this, &quot;chemical/x-pdbqt&quot;);</a>
+<a name="ln74">    }</a>
+<a name="ln75"> </a>
+<a name="ln76">    virtual const char* Description() //required</a>
+<a name="ln77">    {</a>
+<a name="ln78">      return</a>
+<a name="ln79"> </a>
+<a name="ln80">      &quot;AutoDock PDBQT format\n&quot;</a>
+<a name="ln81">      &quot;Reads and writes AutoDock PDBQT (Protein Data Bank, Partial Charge (Q), &amp; Atom Type (T)) format\n&quot;</a>
+<a name="ln82">      &quot;Note that the torsion tree is by default. Use the ``r`` write option\n&quot;</a>
+<a name="ln83">      &quot;to prevent this.\n\n&quot;</a>
+<a name="ln84"> </a>
+<a name="ln85">      &quot;Read Options, e.g. -ab\n&quot;</a>
+<a name="ln86">      &quot;  b  Disable automatic bonding\n&quot;</a>
+<a name="ln87">      &quot;  d  Input file is in dlg (AutoDock docking log) format\n\n&quot;</a>
+<a name="ln88"> </a>
+<a name="ln89">      &quot;Write Options, e.g. -xr\n&quot;</a>
+<a name="ln90">      &quot;  b  Enable automatic bonding\n&quot;</a>
+<a name="ln91">      &quot;  r  Output as a rigid molecule (i.e. no branches or torsion tree)\n&quot;</a>
+<a name="ln92">      &quot;  c  Combine separate molecular pieces of input into a single rigid molecule (requires \&quot;r\&quot; option or will have no effect)\n&quot;</a>
+<a name="ln93">      &quot;  s  Output as a flexible residue\n&quot;</a>
+<a name="ln94">      &quot;  p  Preserve atom indices from input file (default is to renumber atoms sequentially)\n&quot;</a>
+<a name="ln95">      &quot;  h  Preserve hydrogens\n&quot;</a>
+<a name="ln96">			&quot;  n  Preserve atom names\n\n&quot;;</a>
+<a name="ln97">    };</a>
+<a name="ln98"> </a>
+<a name="ln99">    virtual const char* SpecificationURL()</a>
+<a name="ln100">      {return &quot;http://autodock.scripps.edu/faqs-help/faq/what-is-the-format-of-a-pdbqt-file&quot;;};</a>
+<a name="ln101"> </a>
+<a name="ln102">    virtual const char* GetMIMEType()</a>
+<a name="ln103">      {return &quot;chemical/x-pdbqt&quot;;};</a>
+<a name="ln104"> </a>
+<a name="ln105">    //*** This section identical for most OBMol conversions ***</a>
+<a name="ln106">    ////////////////////////////////////////////////////</a>
+<a name="ln107">    /// The &quot;API&quot; interface functions</a>
+<a name="ln108">    virtual int SkipObjects(int n, OBConversion* pConv);</a>
+<a name="ln109">    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln110">    virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln111"> </a>
+<a name="ln112">  };</a>
+<a name="ln113">  //***</a>
+<a name="ln114">  //Make an instance of the format class</a>
+<a name="ln115">  PDBQTFormat thePDBQTFormat;</a>
+<a name="ln116"> </a>
+<a name="ln117">  ////////////////////////////////////////////////////</a>
+<a name="ln118">  /// Utility functions</a>
+<a name="ln119">  static bool parseAtomRecord(char *buffer, OBMol &amp; mol, int chainNum);</a>
+<a name="ln120">  static bool IsRotBond_PDBQT(OBBond * the_bond);</a>
+<a name="ln121">  static bool IsIn(const vector&lt;int&gt;&amp; vec, const int num);</a>
+<a name="ln122">  static void OutputAtom(OBAtom* atom, ostream&amp; ofs, unsigned int index);</a>
+<a name="ln123">  static void OutputGroup(OBMol&amp; mol, ostream&amp; ofs, const vector &lt;int&gt;&amp; group, map &lt;unsigned int, unsigned int&gt; new_indexes, bool use_new_indexes);</a>
+<a name="ln124">  static unsigned int AtomsSoFar(const map &lt;unsigned int, branch &gt;&amp; tree, unsigned int depth);</a>
+<a name="ln125">  static bool FindBondedPiece(const vector&lt;int&gt;&amp; root, const vector&lt;int&gt;&amp; branch, unsigned int&amp; root_atom, unsigned int&amp; branch_atom,</a>
+<a name="ln126">                unsigned int&amp; root_atom_rank, unsigned int&amp; branch_atom_rank, const OBMol&amp; mol, unsigned int &amp; atoms_moved);</a>
+<a name="ln127">  static bool OutputTree(OBConversion *pConv, OBMol&amp; mol, ostream&amp; ofs, map &lt;unsigned int, branch &gt;&amp; tree, unsigned int depth, bool moves_many, bool preserve_original_index);</a>
+<a name="ln128">  static void ConstructTree (map &lt;unsigned int, branch &gt;&amp; tree, vector &lt;vector &lt;int&gt; &gt; rigid_fragments, unsigned int root_piece, const OBMol&amp; mol, bool flexible);</a>
+<a name="ln129">  static bool DeleteHydrogens(OBMol &amp; mol);</a>
+<a name="ln130">  static bool Separate_preserve_charges(OBMol &amp; mol, vector&lt;OBMol&gt; &amp; result);</a>
+<a name="ln131">  static unsigned int FindFragments(OBMol mol, vector &lt;vector &lt;int&gt; &gt;&amp; rigid_fragments);</a>
+<a name="ln132">  static unsigned int RotBond_count(OBMol &amp; mol);</a>
+<a name="ln133"> </a>
+<a name="ln134">  /////////////////////////////////////////////////////////////////</a>
+<a name="ln135">  int PDBQTFormat::SkipObjects(int n, OBConversion* pConv)</a>
+<a name="ln136">  {</a>
+<a name="ln137">    if (n == 0)</a>
+<a name="ln138">    ++ n;</a>
+<a name="ln139">    istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln140">    char buffer[BUFF_SIZE];</a>
+<a name="ln141">    while (n &amp;&amp; ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln142">    {</a>
+<a name="ln143">      if (EQn(buffer,&quot;ENDMDL&quot;,6)) {-- n;}</a>
+<a name="ln144">    }</a>
+<a name="ln145"> </a>
+<a name="ln146">    return ifs.good() ? 1 : -1;</a>
+<a name="ln147">  }</a>
+<a name="ln148">  /////////////////////////////////////////////////////////////////</a>
+<a name="ln149">  bool PDBQTFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln150">  {</a>
+<a name="ln151">    OBMol* pmol = pOb-&gt;CastAndClear&lt;OBMol&gt;();</a>
+<a name="ln152">    if (pmol == nullptr)</a>
+<a name="ln153">    return false;</a>
+<a name="ln154"> </a>
+<a name="ln155"> </a>
+<a name="ln156">    //Define some references so we can use the old parameter names</a>
+<a name="ln157">    istream &amp;ifs = *pConv-&gt;GetInStream();</a>
+<a name="ln158">    OBMol &amp;mol = *pmol;</a>
+<a name="ln159">    const char* title = pConv-&gt;GetTitle();</a>
+<a name="ln160"> </a>
+<a name="ln161">    bool dlg=false;</a>
+<a name="ln162">    if (pConv-&gt;IsOption(&quot;d&quot;,OBConversion::INOPTIONS)) {dlg=true;} //check whether we have a file in dlg format</a>
+<a name="ln163"> </a>
+<a name="ln164">    int chainNum = 1;</a>
+<a name="ln165">    char buffer[BUFF_SIZE];</a>
+<a name="ln166">    string line, key, value;</a>
+<a name="ln167">    OBPairData *dp;</a>
+<a name="ln168"> </a>
+<a name="ln169">    mol.SetTitle(title);</a>
+<a name="ln170">    mol.SetChainsPerceived(); // It's a PDBQT file, we read all chain/res info.</a>
+<a name="ln171"> </a>
+<a name="ln172">    mol.BeginModify();</a>
+<a name="ln173">    while (ifs.good() &amp;&amp; ifs.getline(buffer,BUFF_SIZE))</a>
+<a name="ln174">    {</a>
+<a name="ln175">      line = buffer;</a>
+<a name="ln176">      if (dlg) //if we have a dlg file, only care about the lines starting with &quot;DOCKED: &quot;</a>
+<a name="ln177">      {</a>
+<a name="ln178">        if (!EQn(buffer,&quot;DOCKED: &quot;,8)) {continue;}</a>
+<a name="ln179">        else</a>
+<a name="ln180">        {</a>
+<a name="ln181">          for (unsigned int i=0; i&lt;BUFF_SIZE-8; i++)</a>
+<a name="ln182">          {</a>
+<a name="ln183">            buffer[i]=buffer[i+8];</a>
+<a name="ln184">            if (buffer[i]=='\0') {break;}</a>
+<a name="ln185">          }</a>
+<a name="ln186">        }</a>
+<a name="ln187">      }</a>
+<a name="ln188">      if (line.length() == 0)</a>
+<a name="ln189">      {</a>
+<a name="ln190">        stringstream errorMsg;</a>
+<a name="ln191">        errorMsg &lt;&lt; &quot;Warning: empty line, ignoring.&quot; &lt;&lt; endl;</a>
+<a name="ln192">        obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() , obWarning);</a>
+<a name="ln193">        continue;</a>
+<a name="ln194">      }</a>
+<a name="ln195">      if (line.length() &lt; 3)</a>
+<a name="ln196">      {</a>
+<a name="ln197">        stringstream errorMsg;</a>
+<a name="ln198">        errorMsg &lt;&lt; &quot;ERROR: not a valid PDBQT file&quot; &lt;&lt; endl;</a>
+<a name="ln199">        obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() , obError);</a>
+<a name="ln200">        return false;</a>
+<a name="ln201">      }</a>
+<a name="ln202">      if (EQn(buffer,&quot;ROOT&quot;,4)) {continue;}</a>
+<a name="ln203">      if (EQn(buffer,&quot;ENDROOT&quot;,7)) {continue;}</a>
+<a name="ln204">      if (EQn(buffer,&quot;BRANCH&quot;,6)) {continue;}</a>
+<a name="ln205">      if (EQn(buffer,&quot;ENDBRANCH&quot;,9)) {continue;}</a>
+<a name="ln206"> </a>
+<a name="ln207">      if (EQn(buffer,&quot;ENDMDL&quot;,6)) {break;}</a>
+<a name="ln208">      if (EQn(buffer,&quot;END_RES&quot;,7)) {break;}</a>
+<a name="ln209"> </a>
+<a name="ln210">      if (EQn(buffer,&quot;END&quot;,3))</a>
+<a name="ln211">      {</a>
+<a name="ln212">        // eat anything until the next ENDMDL</a>
+<a name="ln213">        while (ifs.getline(buffer,BUFF_SIZE) &amp;&amp; !EQn(buffer,&quot;ENDMDL&quot;,6));</a>
+<a name="ln214">        break;</a>
+<a name="ln215">      }</a>
+<a name="ln216"> </a>
+<a name="ln217">      if (EQn(buffer,&quot;ATOM&quot;,4) || EQn(buffer,&quot;HETATM&quot;,6))</a>
+<a name="ln218">      {</a>
+<a name="ln219">        if( ! parseAtomRecord(buffer,mol,chainNum))</a>
+<a name="ln220">        {</a>
+<a name="ln221">          stringstream errorMsg;</a>
+<a name="ln222">          errorMsg &lt;&lt; &quot;WARNING: Problems reading a PDBQT file\n&quot;</a>
+<a name="ln223">            &lt;&lt; &quot;  Problems reading a ATOM/HETATM record.\n&quot;</a>
+<a name="ln224">            &lt;&lt; endl &lt;&lt; buffer &lt;&lt; endl;</a>
+<a name="ln225">          obErrorLog.ThrowError(__FUNCTION__, errorMsg.str() , obError);</a>
+<a name="ln226">        }</a>
+<a name="ln227">        continue;</a>
+<a name="ln228">      }</a>
+<a name="ln229">      if ((EQn(buffer,&quot;REMARK&quot;,6)) || (EQn(buffer,&quot;USER&quot;,4)))</a>
+<a name="ln230">      {</a>
+<a name="ln231">        stringstream sst;</a>
+<a name="ln232">        string buffstring=buffer;</a>
+<a name="ln233">        sst.str(buffstring);</a>
+<a name="ln234">        sst &gt;&gt; buffstring;</a>
+<a name="ln235">        sst &gt;&gt; buffstring;</a>
+<a name="ln236">        if (buffstring == &quot;Name&quot;)</a>
+<a name="ln237">        {</a>
+<a name="ln238">          sst &gt;&gt; buffstring;</a>
+<a name="ln239">          if (sst.good())</a>
+<a name="ln240">          {</a>
+<a name="ln241">            sst &gt;&gt; buffstring;</a>
+<a name="ln242">            mol.SetTitle(buffstring);</a>
+<a name="ln243">          }</a>
+<a name="ln244">        }</a>
+<a name="ln245">        else if (buffstring == &quot;NEWDPF&quot;)</a>
+<a name="ln246">        {</a>
+<a name="ln247">          sst &gt;&gt; buffstring;</a>
+<a name="ln248">          if (buffstring == &quot;move&quot;)</a>
+<a name="ln249">          {</a>
+<a name="ln250">            if (sst.good())</a>
+<a name="ln251">                                          {</a>
+<a name="ln252">                                                  sst &gt;&gt; buffstring;</a>
+<a name="ln253">                                                  mol.SetTitle(buffstring);</a>
+<a name="ln254">                                          }</a>
+<a name="ln255">          }</a>
+<a name="ln256">        }</a>
+<a name="ln257">      }</a>
+<a name="ln258"> </a>
+<a name="ln259">      if (line.length() &lt;= 6)</a>
+<a name="ln260">      {</a>
+<a name="ln261">        continue;</a>
+<a name="ln262">      }</a>
+<a name="ln263"> </a>
+<a name="ln264"> </a>
+<a name="ln265">      key = line.substr(0,6); // the first 6 characters are the record name</a>
+<a name="ln266">      Trim(key);</a>
+<a name="ln267">      value = line.substr(6);</a>
+<a name="ln268"> </a>
+<a name="ln269">      // We haven't found this record yet</a>
+<a name="ln270">      if (!mol.HasData(key))</a>
+<a name="ln271">      {</a>
+<a name="ln272">        dp = new OBPairData;</a>
+<a name="ln273">        dp-&gt;SetAttribute(key);</a>
+<a name="ln274">        dp-&gt;SetValue(value);</a>
+<a name="ln275">        dp-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln276">        mol.SetData(dp);</a>
+<a name="ln277">      }</a>
+<a name="ln278">      // Add on additional lines</a>
+<a name="ln279">      else</a>
+<a name="ln280">      {</a>
+<a name="ln281">        dp = static_cast&lt;OBPairData*&gt;(mol.GetData(key));</a>
+<a name="ln282">        line = dp-&gt;GetValue();</a>
+<a name="ln283">        line += '\n';</a>
+<a name="ln284">        line += value;</a>
+<a name="ln285">        dp-&gt;SetValue(line);</a>
+<a name="ln286">      }</a>
+<a name="ln287">    }</a>
+<a name="ln288"> </a>
+<a name="ln289">    if (!mol.NumAtoms())</a>
+<a name="ln290">    { // skip the rest of this processing</a>
+<a name="ln291">      mol.EndModify();</a>
+<a name="ln292">      return(false);</a>
+<a name="ln293">    }</a>
+<a name="ln294"> </a>
+<a name="ln295">    resdat.AssignBonds(mol);</a>
+<a name="ln296">    /*assign hetatm bonds based on distance*/</a>
+<a name="ln297"> </a>
+<a name="ln298">    mol.EndModify();</a>
+<a name="ln299">    // Clear all virtual bond data</a>
+<a name="ln300">    vector&lt;OBGenericData*&gt; vbonds = mol.GetAllData(OBGenericDataType::VirtualBondData);</a>
+<a name="ln301">    mol.DeleteData(vbonds);</a>
+<a name="ln302"> </a>
+<a name="ln303">    if (!pConv-&gt;IsOption(&quot;b&quot;,OBConversion::INOPTIONS)) {mol.ConnectTheDots(); mol.PerceiveBondOrders();}</a>
+<a name="ln304"> </a>
+<a name="ln305">    mol.SetChainsPerceived();</a>
+<a name="ln306"> </a>
+<a name="ln307">    // clean out remaining blank lines</a>
+<a name="ln308">    std::streampos ipos;</a>
+<a name="ln309">    do</a>
+<a name="ln310">    {</a>
+<a name="ln311">      ipos = ifs.tellg();</a>
+<a name="ln312">      ifs.getline(buffer,BUFF_SIZE);</a>
+<a name="ln313">    }</a>
+<a name="ln314">    while(strlen(buffer) == 0 &amp;&amp; !ifs.eof() );</a>
+<a name="ln315">    ifs.seekg(ipos);</a>
+<a name="ln316"> </a>
+<a name="ln317">    mol.SetPartialChargesPerceived();</a>
+<a name="ln318">    return(true);</a>
+<a name="ln319">  }</a>
+<a name="ln320"> </a>
+<a name="ln321">  /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln322">  void OutputAtom(OBAtom* atom, ostream&amp; ofs, const unsigned int index)</a>
+<a name="ln323">  {</a>
+<a name="ln324">    char buffer[BUFF_SIZE];</a>
+<a name="ln325">    char type_name[10], padded_name[10];</a>
+<a name="ln326">    char the_res[10];</a>
+<a name="ln327">    char the_chain = ' ';</a>
+<a name="ln328">    char the_icode = ' ';</a>
+<a name="ln329">    const char *element_name;</a>
+<a name="ln330">    string element_name_string;</a>
+<a name="ln331">    int res_num;</a>
+<a name="ln332">    bool het=false;</a>
+<a name="ln333"> </a>
+<a name="ln334">    OBResidue *res;</a>
+<a name="ln335">    strncpy(type_name, OBElements::GetSymbol(atom-&gt;GetAtomicNum()), sizeof(type_name));</a>
+<a name="ln336">    type_name[sizeof(type_name) - 1] = '\0';</a>
+<a name="ln337">    //two char. elements are on position 13 and 14 one char. start at 14</a>
+<a name="ln338"> </a>
+<a name="ln339">    if (strlen(type_name) &gt; 1)</a>
+<a name="ln340">      type_name[1] = toupper(type_name[1]);</a>
+<a name="ln341">    else</a>
+<a name="ln342">    {</a>
+<a name="ln343">      char tmp[10];</a>
+<a name="ln344">      strncpy(tmp, type_name, 9); // Make sure to null-terminate</a>
+<a name="ln345">      snprintf(type_name, sizeof(type_name), &quot; %-3s&quot;, tmp);</a>
+<a name="ln346">    }</a>
+<a name="ln347"> </a>
+<a name="ln348">    if ((res = atom-&gt;GetResidue()) != nullptr)</a>
+<a name="ln349">    {</a>
+<a name="ln350">      snprintf(the_res,4,&quot;%s&quot;,(char*)res-&gt;GetName().c_str());</a>
+<a name="ln351">      snprintf(type_name,5,&quot;%s&quot;,(char*)res-&gt;GetAtomID(atom).c_str());</a>
+<a name="ln352">      the_chain = res-&gt;GetChain();</a>
+<a name="ln353">      the_icode = res-&gt;GetInsertionCode();</a>
+<a name="ln354">      if(the_icode == 0) the_icode = ' ';</a>
+<a name="ln355"> </a>
+<a name="ln356">      //two char. elements are on position 13 and 14 one char. start at 14</a>
+<a name="ln357">      if (strlen(OBElements::GetSymbol(atom-&gt;GetAtomicNum())) == 1)</a>
+<a name="ln358">      {</a>
+<a name="ln359">        if (strlen(type_name) &lt; 4)</a>
+<a name="ln360">        {</a>
+<a name="ln361">          char tmp[10];</a>
+<a name="ln362">          strncpy(tmp, type_name, 9); // make sure to null-terminate</a>
+<a name="ln363">          snprintf(padded_name, sizeof(padded_name), &quot; %-3s&quot;, tmp);</a>
+<a name="ln364">          strncpy(type_name,padded_name,4);</a>
+<a name="ln365">          type_name[4] = '\0';</a>
+<a name="ln366">        }</a>
+<a name="ln367">        else</a>
+<a name="ln368">        {</a>
+<a name="ln369">          type_name[4] = '\0';</a>
+<a name="ln370">        }</a>
+<a name="ln371">      }</a>
+<a name="ln372">      res_num = res-&gt;GetNum();</a>
+<a name="ln373">    }</a>
+<a name="ln374">    else</a>
+<a name="ln375">    {</a>
+<a name="ln376">      strcpy(the_res,&quot;UNK&quot;);</a>
+<a name="ln377">      snprintf(padded_name,sizeof(padded_name), &quot;%s&quot;,type_name);</a>
+<a name="ln378">      strncpy(type_name,padded_name,4);</a>
+<a name="ln379">      type_name[4] = '\0';</a>
+<a name="ln380">      res_num = 1;</a>
+<a name="ln381">    }</a>
+<a name="ln382"> </a>
+<a name="ln383">    element_name = OBElements::GetSymbol(atom-&gt;GetAtomicNum());</a>
+<a name="ln384">    char element_name_final[3];</a>
+<a name="ln385">    element_name_final[2] = '\0';</a>
+<a name="ln386"> </a>
+<a name="ln387">    if (atom-&gt;GetAtomicNum() == OBElements::Hydrogen) {element_name_final[0]='H'; element_name_final[1]='D';}</a>
+<a name="ln388">    else if ((atom-&gt;GetAtomicNum() == OBElements::Carbon) &amp;&amp; (atom-&gt;IsAromatic())) {element_name_final[0]='A'; element_name_final[1]=' ';}</a>
+<a name="ln389">    else if (atom-&gt;GetAtomicNum() == OBElements::Oxygen)  {element_name_final[0]='O'; element_name_final[1]='A';}</a>
+<a name="ln390">    else if ((atom-&gt;GetAtomicNum() == OBElements::Nitrogen) &amp;&amp; (atom-&gt;IsHbondAcceptor())) {element_name_final[0]='N'; element_name_final[1]='A';}</a>
+<a name="ln391">    else if ((atom-&gt;GetAtomicNum() == OBElements::Sulfur) &amp;&amp; (atom-&gt;IsHbondAcceptor())) {element_name_final[0]='S'; element_name_final[1]='A';}</a>
+<a name="ln392">    else</a>
+<a name="ln393">    {</a>
+<a name="ln394">      if (!isalnum(element_name[0])) {element_name_final[0]=' ';}</a>
+<a name="ln395">      else element_name_final[0]=element_name[0];</a>
+<a name="ln396">      if (!isalnum(element_name[1])) {element_name_final[1]=' ';}</a>
+<a name="ln397">      else element_name_final[1]=element_name[1];</a>
+<a name="ln398">    }</a>
+<a name="ln399"> </a>
+<a name="ln400">    double charge = atom-&gt;GetPartialCharge();</a>
+<a name="ln401">    snprintf(buffer, BUFF_SIZE, &quot;%s%5d %-4s %-3s %c%4d%c   %8.3f%8.3f%8.3f  0.00  0.00    %+5.3f %.2s&quot;,</a>
+<a name="ln402">      het?&quot;HETATM&quot;:&quot;ATOM  &quot;,</a>
+<a name="ln403">      index,</a>
+<a name="ln404">      type_name,</a>
+<a name="ln405">      the_res,</a>
+<a name="ln406">      the_chain,</a>
+<a name="ln407">      res_num,</a>
+<a name="ln408">      the_icode,</a>
+<a name="ln409">      atom-&gt;GetX(),</a>
+<a name="ln410">      atom-&gt;GetY(),</a>
+<a name="ln411">      atom-&gt;GetZ(),</a>
+<a name="ln412">      charge,</a>
+<a name="ln413">      element_name_final);</a>
+<a name="ln414">    ofs &lt;&lt; buffer;</a>
+<a name="ln415">    ofs &lt;&lt; endl;</a>
+<a name="ln416">  }</a>
+<a name="ln417"> </a>
+<a name="ln418">  void OutputGroup(OBMol&amp; mol, ostream&amp; ofs, const vector &lt;int&gt;&amp; group, map &lt;unsigned int, unsigned int&gt; new_indexes, bool use_new_indexes)</a>
+<a name="ln419">  {</a>
+<a name="ln420">    for (vector &lt;int&gt;::const_iterator it = group.begin(); it != group.end(); ++it)</a>
+<a name="ln421">    {</a>
+<a name="ln422">      if (use_new_indexes) {OutputAtom(mol.GetAtom((*it)), ofs, new_indexes.find(*it)-&gt;second);}</a>
+<a name="ln423">      else {OutputAtom(mol.GetAtom((*it)), ofs, (*it));}</a>
+<a name="ln424">    }</a>
+<a name="ln425">  }</a>
+<a name="ln426"> </a>
+<a name="ln427"> </a>
+<a name="ln428">  unsigned int FindFragments(OBMol mol, vector &lt;vector &lt;int&gt; &gt;&amp; rigid_fragments)</a>
+<a name="ln429">  {</a>
+<a name="ln430">    unsigned int best_root_atom=1;</a>
+<a name="ln431">    unsigned int shortest_maximal_remaining_subgraph=mol.NumAtoms();</a>
+<a name="ln432">    for (unsigned int i=1; i &lt;= mol.NumAtoms(); i++)</a>
+<a name="ln433">    //finds the root atom by copying the molecule, deleting each atom in turn, and finding the sizes of the resulting pieces</a>
+<a name="ln434">    {</a>
+<a name="ln435">      OBMol mol_pieces = mol;</a>
+<a name="ln436">      OBAtom * atom_to_del = mol_pieces.GetAtom(i);</a>
+<a name="ln437">      vector &lt;vector &lt;int&gt; &gt; frag_list;</a>
+<a name="ln438"> </a>
+<a name="ln439">      mol_pieces.DeleteAtom(atom_to_del, true);</a>
+<a name="ln440">      mol_pieces.ContigFragList(frag_list);</a>
+<a name="ln441">      unsigned int smrsi=0;</a>
+<a name="ln442">      for (unsigned int j = 0; j &lt; frag_list.size(); j++)</a>
+<a name="ln443">      {</a>
+<a name="ln444">        smrsi= smrsi &gt; frag_list.at(j).size() ? smrsi : frag_list.at(j).size();</a>
+<a name="ln445">      }</a>
+<a name="ln446">      if (smrsi &lt; shortest_maximal_remaining_subgraph)</a>
+<a name="ln447">      {</a>
+<a name="ln448">        shortest_maximal_remaining_subgraph=smrsi;</a>
+<a name="ln449">        best_root_atom=i;</a>
+<a name="ln450">      }</a>
+<a name="ln451">    }</a>
+<a name="ln452"> </a>
+<a name="ln453">    vector &lt;OBBond*&gt; bonds_to_delete;</a>
+<a name="ln454">    OBMol mol_pieces = mol;</a>
+<a name="ln455">    for (OBBondIterator it=mol_pieces.BeginBonds(); it != mol_pieces.EndBonds(); it++)</a>
+<a name="ln456">    {</a>
+<a name="ln457">      if (IsRotBond_PDBQT((*it)))</a>
+<a name="ln458">      {</a>
+<a name="ln459">        bonds_to_delete.push_back(*it);</a>
+<a name="ln460">      }</a>
+<a name="ln461">    }</a>
+<a name="ln462">    for (vector&lt;OBBond*&gt;::iterator bit = bonds_to_delete.begin(); bit != bonds_to_delete.end(); ++bit)</a>
+<a name="ln463">    {</a>
+<a name="ln464">      mol_pieces.DeleteBond(*bit, true);</a>
+<a name="ln465">    }</a>
+<a name="ln466">    mol_pieces.ContigFragList(rigid_fragments);</a>
+<a name="ln467"> </a>
+<a name="ln468">    return best_root_atom;</a>
+<a name="ln469">  }</a>
+<a name="ln470"> </a>
+<a name="ln471">  bool DeleteHydrogens(OBMol &amp; mol)</a>
+<a name="ln472">  {</a>
+<a name="ln473">    for (OBAtomIterator it=mol.BeginAtoms(); it != mol.EndAtoms(); it++)</a>
+<a name="ln474">    {</a>
+<a name="ln475">      if ( (*it)-&gt;IsNonPolarHydrogen() )</a>
+<a name="ln476">      {</a>
+<a name="ln477">        OBBondIterator voider;</a>
+<a name="ln478">        double charger = (*it)-&gt;GetPartialCharge();</a>
+<a name="ln479">        charger += ((*it)-&gt;BeginNbrAtom(voider))-&gt;GetPartialCharge();</a>
+<a name="ln480">        ((*it)-&gt;BeginNbrAtom(voider))-&gt;SetPartialCharge(charger);</a>
+<a name="ln481">      }</a>
+<a name="ln482">    }</a>
+<a name="ln483">    return mol.DeleteNonPolarHydrogens();</a>
+<a name="ln484">  }</a>
+<a name="ln485"> </a>
+<a name="ln486">  bool OutputTree(OBConversion* pConv, OBMol&amp; mol, ostream&amp; ofs, map &lt;unsigned int, branch&gt; &amp; tree, unsigned int depth, bool moves_many, bool preserve_original_index)</a>
+<a name="ln487">  {</a>
+<a name="ln488">    if (tree.empty()) {return false;}</a>
+<a name="ln489">    if (depth&gt;= tree.size()-1) {depth=tree.size()-1;}</a>
+<a name="ln490"> </a>
+<a name="ln491">    set &lt;unsigned int&gt; free_bonds; //this section is to allow the code to be generalised when using obabel rather than babel, which accepts numerical arguments as to how many bonds to fix. As laid out, it will prioritise those bonds that move the fewest atoms, unless moves_many is true, where it will prioritise those that move the most. This is moot for the moment, as either all rotatable bonds are free, or they are all rigid.</a>
+<a name="ln492"> </a>
+<a name="ln493">    free_bonds.insert(0);</a>
+<a name="ln494">    multimap &lt;unsigned int, unsigned int&gt; how_many_atoms_move;</a>
+<a name="ln495">    for (unsigned int i=1; i&lt;tree.size(); i++)</a>
+<a name="ln496">    {</a>
+<a name="ln497">      how_many_atoms_move.insert(pair&lt;unsigned int, unsigned int&gt;( (*tree.find(i)).second.how_many_atoms_moved,i));</a>
+<a name="ln498">    }</a>
+<a name="ln499"> </a>
+<a name="ln500">    multimap &lt;unsigned int, unsigned int&gt;::iterator it=how_many_atoms_move.begin();</a>
+<a name="ln501">    if ((!moves_many) &amp;&amp; !how_many_atoms_move.empty()) {</a>
+<a name="ln502">      it=how_many_atoms_move.end();</a>
+<a name="ln503">      if (it!=how_many_atoms_move.begin()) // don't move past begin</a>
+<a name="ln504">        --it;</a>
+<a name="ln505">    }</a>
+<a name="ln506">    for (unsigned int i = 1; i &lt;= depth; i++)</a>
+<a name="ln507">    {</a>
+<a name="ln508">      free_bonds.insert((*it).second);</a>
+<a name="ln509">      if (!moves_many) {</a>
+<a name="ln510">        if (it!=how_many_atoms_move.begin())</a>
+<a name="ln511">          --it;</a>
+<a name="ln512">      }</a>
+<a name="ln513">      else{</a>
+<a name="ln514">        ++it;</a>
+<a name="ln515">      }</a>
+<a name="ln516">    }</a>
+<a name="ln517"> </a>
+<a name="ln518"> </a>
+<a name="ln519">    for (unsigned int i=tree.size()-1; i &gt; 0; i--)</a>
+<a name="ln520">    {</a>
+<a name="ln521">      if (!free_bonds.count(i)) //adds the index of any branch with rigid rotations to its parent</a>
+<a name="ln522">      {</a>
+<a name="ln523">        unsigned int parent=(*tree.find(i)).second.UpOne();</a>
+<a name="ln524">        (*tree.find(parent)).second.rigid_with.insert(</a>
+<a name="ln525">          (*tree.find(i)).second.rigid_with.begin(),(*tree.find(i)).second.rigid_with.end() );</a>
+<a name="ln526">      }</a>
+<a name="ln527">    }</a>
+<a name="ln528"> </a>
+<a name="ln529">    map &lt;unsigned int, unsigned int&gt; new_order; //gives the new ordering of the indexes of atoms, so that they are in increasing order from 1 in the output</a>
+<a name="ln530"> </a>
+<a name="ln531"> </a>
+<a name="ln532">    if (!preserve_original_index) //generates the new ordering</a>
+<a name="ln533">    {</a>
+<a name="ln534">      unsigned int current_atom_index=1; //the index of the current atom</a>
+<a name="ln535">      for (unsigned int i=0; i &lt; tree.size(); i++)</a>
+<a name="ln536">      {</a>
+<a name="ln537">        if (free_bonds.count(i))</a>
+<a name="ln538">        {</a>
+<a name="ln539">          for (set &lt;unsigned int&gt;::iterator it= (*tree.find(i)).second.rigid_with.begin() ; it != (*tree.find(i)).second.rigid_with.end(); ++it)</a>
+<a name="ln540">                                  {</a>
+<a name="ln541">            vector &lt;int&gt; atoms=(*tree.find(*it)).second.atoms;</a>
+<a name="ln542">            for (unsigned int j=0; j &lt; atoms.size(); j++)</a>
+<a name="ln543">            {</a>
+<a name="ln544">              new_order.insert(pair&lt;unsigned int, unsigned int&gt; (atoms.at(j), current_atom_index));</a>
+<a name="ln545">              current_atom_index++;</a>
+<a name="ln546">            }</a>
+<a name="ln547">          }</a>
+<a name="ln548">        }</a>
+<a name="ln549">      }</a>
+<a name="ln550">    }</a>
+<a name="ln551"> </a>
+<a name="ln552">    if (!(pConv-&gt;IsOption(&quot;r&quot;,OBConversion::OUTOPTIONS)))</a>
+<a name="ln553">      ofs &lt;&lt; &quot;ROOT&quot; &lt;&lt; endl;</a>
+<a name="ln554">    for (set &lt;unsigned int&gt;::iterator it= (*tree.find(0)).second.rigid_with.begin() ; it != (*tree.find(0)).second.rigid_with.end(); ++it)</a>
+<a name="ln555">    {</a>
+<a name="ln556">      OutputGroup(mol, ofs, (*tree.find(*it)).second.atoms, new_order, !preserve_original_index);</a>
+<a name="ln557">    }</a>
+<a name="ln558"> </a>
+<a name="ln559">   if (!(pConv-&gt;IsOption(&quot;r&quot;,OBConversion::OUTOPTIONS)))</a>
+<a name="ln560">     ofs &lt;&lt; &quot;ENDROOT&quot; &lt;&lt; endl;</a>
+<a name="ln561"> </a>
+<a name="ln562">    for (unsigned int i=1; i &lt; tree.size(); i++)</a>
+<a name="ln563">    {</a>
+<a name="ln564">      if (free_bonds.count(i))</a>
+<a name="ln565">      {</a>
+<a name="ln566">        ofs &lt;&lt; &quot;BRANCH&quot;;</a>
+<a name="ln567">        ofs.width(4);</a>
+<a name="ln568">        unsigned int parent_atom=(*tree.find(i)).second.connecting_atom_parent;</a>
+<a name="ln569">        unsigned int child_atom=(*tree.find(i)).second.connecting_atom_branch;</a>
+<a name="ln570">        if (!preserve_original_index) { ofs &lt;&lt; (new_order.find(parent_atom))-&gt; second;}</a>
+<a name="ln571">        else {ofs &lt;&lt; parent_atom;}</a>
+<a name="ln572">        ofs.width(4);</a>
+<a name="ln573">        if (!preserve_original_index) {ofs &lt;&lt; (new_order.find(child_atom))-&gt; second;}</a>
+<a name="ln574">        else {ofs &lt;&lt; child_atom;}</a>
+<a name="ln575">        ofs &lt;&lt; endl;</a>
+<a name="ln576">        for (set &lt;unsigned int&gt;::iterator it= (*tree.find(i)).second.rigid_with.begin() ; it != (*tree.find(i)).second.rigid_with.end(); ++it)</a>
+<a name="ln577">        {</a>
+<a name="ln578">          OutputGroup(mol, ofs, (*tree.find(*it)).second.atoms, new_order, !preserve_original_index);</a>
+<a name="ln579">        }</a>
+<a name="ln580">      }</a>
+<a name="ln581">      unsigned int child=i;</a>
+<a name="ln582">      for (vector &lt;unsigned int&gt;::iterator it=(*tree.find(i)).second.parents.end(); it != (*tree.find(i)).second.parents.begin(); )</a>
+<a name="ln583">      {</a>
+<a name="ln584">        --it;</a>
+<a name="ln585">        if ((*it)==0) {break;} //do not close the main root; that is closed separately</a>
+<a name="ln586">        vector &lt;unsigned int&gt;::iterator it_parent=it;</a>
+<a name="ln587">        --it_parent;</a>
+<a name="ln588">        if ((*tree.find(*it)).second.children.size() == 0)</a>
+<a name="ln589">        {</a>
+<a name="ln590">          if (free_bonds.count(*it))</a>
+<a name="ln591">          {</a>
+<a name="ln592">            ofs &lt;&lt; &quot;ENDBRANCH&quot;;</a>
+<a name="ln593">            ofs.width(4);</a>
+<a name="ln594">            unsigned int parent_atom=(*tree.find(*it)).second.connecting_atom_parent;</a>
+<a name="ln595">            unsigned int child_atom=(*tree.find(*it)).second.connecting_atom_branch;</a>
+<a name="ln596">            if (!preserve_original_index) { ofs &lt;&lt; (new_order.find(parent_atom))-&gt; second;}</a>
+<a name="ln597">                                    else {ofs &lt;&lt; parent_atom;}</a>
+<a name="ln598">            ofs.width(4);</a>
+<a name="ln599">            if (!preserve_original_index) {ofs &lt;&lt; (new_order.find(child_atom))-&gt; second;}</a>
+<a name="ln600">                                    else {ofs &lt;&lt; child_atom;}</a>
+<a name="ln601">            ofs &lt;&lt; endl;</a>
+<a name="ln602">          }</a>
+<a name="ln603">          (*tree.find(*it_parent)).second.children.erase(*it);</a>
+<a name="ln604">        }</a>
+<a name="ln605">      }</a>
+<a name="ln606">    }</a>
+<a name="ln607">    return true;</a>
+<a name="ln608">  }</a>
+<a name="ln609"> </a>
+<a name="ln610">  void ConstructTree (map &lt;unsigned int, branch&gt;&amp; tree, vector &lt;vector &lt;int&gt; &gt; rigid_fragments, unsigned int root_piece, const OBMol&amp; mol, bool flexible)</a>
+<a name="ln611">  {</a>
+<a name="ln612">    unsigned int first_atom = 0;</a>
+<a name="ln613">    unsigned int second_atom = 0;</a>
+<a name="ln614">    unsigned int first_atom_rank = 0;</a>
+<a name="ln615">    unsigned int second_atom_rank = 0;</a>
+<a name="ln616"> </a>
+<a name="ln617"> </a>
+<a name="ln618">    branch sprog;</a>
+<a name="ln619"> </a>
+<a name="ln620">    sprog.atoms=rigid_fragments.at(root_piece);</a>
+<a name="ln621">    sprog.rigid_with.insert(0);</a>
+<a name="ln622"> </a>
+<a name="ln623">    tree.insert(pair&lt;unsigned int, branch&gt; (0, sprog));</a>
+<a name="ln624"> </a>
+<a name="ln625">    rigid_fragments.erase(rigid_fragments.begin() + root_piece);</a>
+<a name="ln626"> </a>
+<a name="ln627">    unsigned int position=0;</a>
+<a name="ln628">    unsigned int atoms_moved=0;</a>
+<a name="ln629">    bool fecund;</a>
+<a name="ln630">    while (!((*tree.find(0)).second.done))</a>
+<a name="ln631">    {</a>
+<a name="ln632">      fecund=!((*tree.find(position)).second.done);</a>
+<a name="ln633">      if (fecund)</a>
+<a name="ln634">      {</a>
+<a name="ln635">        bool sterile=true;</a>
+<a name="ln636">        for (unsigned int i = 0; i &lt; rigid_fragments.size(); i++)</a>
+<a name="ln637">        {</a>
+<a name="ln638">          if (FindBondedPiece( (*tree.find(position)).second.atoms, rigid_fragments.at(i),</a>
+<a name="ln639">            first_atom, second_atom, first_atom_rank, second_atom_rank, mol, atoms_moved))</a>
+<a name="ln640">          {</a>
+<a name="ln641">            sprog.connecting_atom_parent = first_atom;</a>
+<a name="ln642">            sprog.connecting_atom_branch = second_atom;</a>
+<a name="ln643">            sprog.how_many_atoms_moved = atoms_moved;</a>
+<a name="ln644">            sprog.atoms = rigid_fragments.at(i);</a>
+<a name="ln645"> </a>
+<a name="ln646">            sprog.depth=(*tree.find(position)).second.depth+1;</a>
+<a name="ln647">            sprog.parents=(*tree.find(position)).second.parents; //all parents of the parent are parents too</a>
+<a name="ln648">            sprog.parents.push_back(tree.size()); //a branch is its own parent</a>
+<a name="ln649">            sprog.index=tree.size(); //the index is simply the number of precursors</a>
+<a name="ln650">            sprog.rigid_with.clear();</a>
+<a name="ln651">            sprog.rigid_with.insert(sprog.index);</a>
+<a name="ln652"> </a>
+<a name="ln653">            (*tree.find(position)).second.children.insert(tree.size()); //tells the current parent it has an extra child</a>
+<a name="ln654">                        tree.insert(pair&lt;unsigned int, branch&gt; (tree.size(), sprog)); //adds the current branch to the tree</a>
+<a name="ln655"> </a>
+<a name="ln656">            rigid_fragments.erase(rigid_fragments.begin() + i);</a>
+<a name="ln657">            sterile=false;</a>
+<a name="ln658">            position = tree.size()-1;</a>
+<a name="ln659">            break;</a>
+<a name="ln660">          }</a>
+<a name="ln661">        }</a>
+<a name="ln662">        if (sterile)</a>
+<a name="ln663">        {</a>
+<a name="ln664">          (*tree.find(position)).second.done=true;</a>
+<a name="ln665">        }</a>
+<a name="ln666">      }</a>
+<a name="ln667">      else {position--;}</a>
+<a name="ln668">    }</a>
+<a name="ln669">  }</a>
+<a name="ln670">  unsigned int RotBond_count(OBMol &amp; mol)</a>
+<a name="ln671">  {</a>
+<a name="ln672">    unsigned int count=0;</a>
+<a name="ln673">    for (OBBondIterator it=mol.BeginBonds(); it!=mol.EndBonds(); it++)</a>
+<a name="ln674">    {</a>
+<a name="ln675">      if (IsRotBond_PDBQT((*it))) {count++;}</a>
+<a name="ln676">    }</a>
+<a name="ln677">    return count;</a>
+<a name="ln678">  }</a>
+<a name="ln679"> </a>
+<a name="ln680">  static bool IsImide(OBBond* querybond)</a>
+<a name="ln681">  {</a>
+<a name="ln682">    if (querybond-&gt;GetBondOrder() != 2)</a>
+<a name="ln683">      return(false);</a>
+<a name="ln684"> </a>
+<a name="ln685">    OBAtom* bgn = querybond-&gt;GetBeginAtom();</a>
+<a name="ln686">    OBAtom* end = querybond-&gt;GetEndAtom();</a>
+<a name="ln687">    if ((bgn-&gt;GetAtomicNum() == 6 &amp;&amp; end-&gt;GetAtomicNum() == 7) ||</a>
+<a name="ln688">      (bgn-&gt;GetAtomicNum() == 7 &amp;&amp; end-&gt;GetAtomicNum() == 6))</a>
+<a name="ln689">      return(true);</a>
+<a name="ln690"> </a>
+<a name="ln691">    return(false);</a>
+<a name="ln692">  }</a>
+<a name="ln693"> </a>
+<a name="ln694">  static bool IsAmidine(OBBond* querybond)</a>
+<a name="ln695">  {</a>
+<a name="ln696">    OBAtom *c, *n;</a>
+<a name="ln697">    c = n = nullptr;</a>
+<a name="ln698"> </a>
+<a name="ln699">    // Look for C-N bond</a>
+<a name="ln700">    OBAtom* bgn = querybond-&gt;GetBeginAtom();</a>
+<a name="ln701">    OBAtom* end = querybond-&gt;GetEndAtom();</a>
+<a name="ln702">    if (bgn-&gt;GetAtomicNum() == 6 &amp;&amp; end-&gt;GetAtomicNum() == 7)</a>
+<a name="ln703">    {</a>
+<a name="ln704">      c = bgn;</a>
+<a name="ln705">      n = end;</a>
+<a name="ln706">    }</a>
+<a name="ln707">    if (bgn-&gt;GetAtomicNum() == 7 &amp;&amp; end-&gt;GetAtomicNum() == 6)</a>
+<a name="ln708">    {</a>
+<a name="ln709">      c = end;</a>
+<a name="ln710">      n =bgn;</a>
+<a name="ln711">    }</a>
+<a name="ln712">    if (!c || !n) return(false);</a>
+<a name="ln713">    if (querybond-&gt;GetBondOrder() != 1) return(false);</a>
+<a name="ln714">    if (n-&gt;GetTotalDegree() != 3) return false; // must be a degree 3 nitrogen</a>
+<a name="ln715"> </a>
+<a name="ln716">    // Make sure C is attached to =N</a>
+<a name="ln717">    OBBond *bond;</a>
+<a name="ln718">    vector&lt;OBBond*&gt;::iterator i;</a>
+<a name="ln719">    for (bond = c-&gt;BeginBond(i); bond; bond = c-&gt;NextBond(i))</a>
+<a name="ln720">    {</a>
+<a name="ln721">      if (IsImide(bond)) return(true);</a>
+<a name="ln722">    }</a>
+<a name="ln723"> </a>
+<a name="ln724">    // Return</a>
+<a name="ln725">    return(false);</a>
+<a name="ln726">  }</a>
+<a name="ln727"> </a>
+<a name="ln728"> </a>
+<a name="ln729">  /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln730">  bool IsRotBond_PDBQT(OBBond * the_bond)</a>
+<a name="ln731">  //identifies a bond as rotatable if it is a single bond, not amide, not in a ring,</a>
+<a name="ln732">  //and if both atoms it connects have at least one other atom bounded to them</a>
+<a name="ln733">  {</a>
+<a name="ln734">    if ( the_bond-&gt;GetBondOrder() != 1 || the_bond-&gt;IsAromatic() || </a>
+<a name="ln735">         the_bond-&gt;IsAmide() || IsAmidine(the_bond) || the_bond-&gt;IsInRing() )</a>
+<a name="ln736">      return false;</a>
+<a name="ln737">    if ( ((the_bond-&gt;GetBeginAtom())-&gt;GetExplicitDegree() == 1) || ((the_bond-&gt;GetEndAtom())-&gt;GetExplicitDegree() == 1) ) {return false;}</a>
+<a name="ln738">    return true;</a>
+<a name="ln739">  }</a>
+<a name="ln740"> </a>
+<a name="ln741">  bool IsIn(const vector&lt;int&gt;&amp; vec, const int num) //checks whether a vector of int contains a specific int</a>
+<a name="ln742">  {</a>
+<a name="ln743">    for (vector&lt;int&gt;::const_iterator itv=vec.begin(); itv != vec.end(); ++itv)</a>
+<a name="ln744">    {</a>
+<a name="ln745">      if ((*itv) == num ) {return true;}</a>
+<a name="ln746">    }</a>
+<a name="ln747">    return false;</a>
+<a name="ln748">  }</a>
+<a name="ln749"> </a>
+<a name="ln750">  unsigned int AtomsSoFar(const map &lt;unsigned int, branch&gt; &amp; tree, unsigned int depth)</a>
+<a name="ln751">  {</a>
+<a name="ln752">    if (depth &gt; tree.size()) {return 0;}</a>
+<a name="ln753">    unsigned int numberAtoms=0;</a>
+<a name="ln754">//		for (unsigned int i = 0; i &lt; depth; i++) {numberAtoms+= tree.at(i).second.first.size();}</a>
+<a name="ln755">    return numberAtoms;</a>
+<a name="ln756">  }</a>
+<a name="ln757"> </a>
+<a name="ln758">  bool FindBondedPiece(const vector&lt;int&gt;&amp; root, const vector&lt;int&gt;&amp; branched, unsigned int&amp; root_atom, unsigned int&amp; branch_atom,</a>
+<a name="ln759">    unsigned int&amp; root_atom_rank, unsigned int&amp; branch_atom_rank, const OBMol&amp; mol, unsigned int &amp; atoms_moved)</a>
+<a name="ln760">  {</a>
+<a name="ln761">    OBBond* the_bond;</a>
+<a name="ln762">    for (unsigned int i=0; i &lt; root.size(); i++)</a>
+<a name="ln763">    {</a>
+<a name="ln764">      for (unsigned int j=0; j &lt; branched.size(); j++)</a>
+<a name="ln765">      {</a>
+<a name="ln766">        the_bond=mol.GetBond(mol.GetAtom(root.at(i)), mol.GetAtom(branched.at(j)));</a>
+<a name="ln767">        if (the_bond != nullptr)</a>
+<a name="ln768">        {</a>
+<a name="ln769">          root_atom=root.at(i);</a>
+<a name="ln770">          branch_atom=branched.at(j);</a>
+<a name="ln771">          root_atom_rank=i;</a>
+<a name="ln772">          branch_atom_rank=j;</a>
+<a name="ln773">          OBMol mol_copy=mol;</a>
+<a name="ln774">          the_bond=mol_copy.GetBond(mol_copy.GetAtom(root.at(i)), mol_copy.GetAtom(branched.at(j)));</a>
+<a name="ln775">          mol_copy.DeleteBond(the_bond, true);</a>
+<a name="ln776"> </a>
+<a name="ln777">          vector &lt;vector &lt;int&gt; &gt; two_pieces;</a>
+<a name="ln778">          mol_copy.ContigFragList(two_pieces);</a>
+<a name="ln779">          atoms_moved = two_pieces.at(1).size();</a>
+<a name="ln780">          return true;</a>
+<a name="ln781">        }</a>
+<a name="ln782">      }</a>
+<a name="ln783">    }</a>
+<a name="ln784">    return false;</a>
+<a name="ln785">  }</a>
+<a name="ln786">  /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln787"> </a>
+<a name="ln788">  bool Separate_preserve_charges(OBMol &amp; mol, vector &lt;OBMol&gt; &amp; result)</a>
+<a name="ln789">  {</a>
+<a name="ln790">//    vector&lt;OBMol&gt; result;</a>
+<a name="ln791">    if( mol.NumAtoms() == 0 )</a>
+<a name="ln792">      return false; // nothing to do, but let's prevent a crash</a>
+<a name="ln793"> </a>
+<a name="ln794">    OBMolAtomDFSIter iter( mol, 1);</a>
+<a name="ln795">    OBMol newMol;</a>
+<a name="ln796">    newMol.SetAutomaticPartialCharge(false);</a>
+<a name="ln797">    int fragments = 0;</a>
+<a name="ln798">    while( mol.GetNextFragment( iter, newMol ) )</a>
+<a name="ln799">    {</a>
+<a name="ln800">      result.push_back( newMol );</a>
+<a name="ln801">      newMol.Clear();</a>
+<a name="ln802">      newMol.SetAutomaticPartialCharge(false);</a>
+<a name="ln803">    }</a>
+<a name="ln804"> </a>
+<a name="ln805">    return true;</a>
+<a name="ln806">  }</a>
+<a name="ln807">  /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln808">  int CompareBondAtoms(const void *a, const void *b)</a>
+<a name="ln809">  {</a>
+<a name="ln810">    const OBAtom **da = (const OBAtom **)a;</a>
+<a name="ln811">    const OBAtom **db = (const OBAtom **)b;</a>
+<a name="ln812">    unsigned int aIdx = (*da)-&gt;GetIdx();</a>
+<a name="ln813">    unsigned int bIdx = (*db)-&gt;GetIdx();</a>
+<a name="ln814"> </a>
+<a name="ln815">    return ((aIdx &gt; bIdx) - (aIdx &lt; bIdx));</a>
+<a name="ln816">  }</a>
+<a name="ln817">  /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln818">  int CompareBonds(const void *a, const void *b)</a>
+<a name="ln819">  {</a>
+<a name="ln820">    const OBAtom ***da = (const OBAtom ***)a;</a>
+<a name="ln821">    const OBAtom ***db = (const OBAtom ***)b;</a>
+<a name="ln822">    unsigned int aIdx[2] = { (*da)[0]-&gt;GetIdx(), (*da)[1]-&gt;GetIdx() };</a>
+<a name="ln823">    unsigned int bIdx[2] = { (*db)[0]-&gt;GetIdx(), (*db)[1]-&gt;GetIdx() };</a>
+<a name="ln824">    int cmp1;</a>
+<a name="ln825"> </a>
+<a name="ln826"> </a>
+<a name="ln827">    cmp1 = ((aIdx[0] &gt; bIdx[0]) - (aIdx[0] &lt; bIdx[0]));</a>
+<a name="ln828">    return (cmp1 ? cmp1 : ((aIdx[1] &gt; bIdx[1]) - (aIdx[1] &lt; bIdx[1])));</a>
+<a name="ln829">  }</a>
+<a name="ln830">  /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln831">  bool PDBQTFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln832">  {</a>
+<a name="ln833">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln834">    if (pmol == nullptr)</a>
+<a name="ln835">      return false;</a>
+<a name="ln836"> </a>
+<a name="ln837">    //Define some references so we can use the old parameter names</a>
+<a name="ln838">    ostream &amp;ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln839">    OBMol &amp; mol = *pmol;</a>
+<a name="ln840"> </a>
+<a name="ln841">    if(!mol.HasAromaticPerceived()) { //need aromaticity for correct atom typing</a>
+<a name="ln842">      aromtyper.AssignAromaticFlags(mol);</a>
+<a name="ln843">    }</a>
+<a name="ln844"> </a>
+<a name="ln845">    if (pConv-&gt;IsOption(&quot;b&quot;,OBConversion::OUTOPTIONS)) {mol.ConnectTheDots(); mol.PerceiveBondOrders();}</a>
+<a name="ln846">    vector &lt;OBMol&gt; all_pieces;</a>
+<a name="ln847">    if ((pConv-&gt;IsOption(&quot;c&quot;, OBConversion::OUTOPTIONS) != nullptr &amp;&amp; pConv-&gt;IsOption(&quot;r&quot;, OBConversion::OUTOPTIONS) != nullptr)</a>
+<a name="ln848">      || (pConv-&gt;IsOption(&quot;n&quot;,OBConversion::OUTOPTIONS))</a>
+<a name="ln849">    )</a>
+<a name="ln850">    {</a>
+<a name="ln851">      mol.SetAutomaticPartialCharge(false);</a>
+<a name="ln852">      all_pieces.push_back(mol);</a>
+<a name="ln853">    }</a>
+<a name="ln854">    else</a>
+<a name="ln855">    {</a>
+<a name="ln856">      Separate_preserve_charges(mol, all_pieces);</a>
+<a name="ln857">    }</a>
+<a name="ln858"> </a>
+<a name="ln859">    for (unsigned int i = 0; i &lt; all_pieces.size(); i++)</a>
+<a name="ln860">    {</a>
+<a name="ln861">      bool residue=false;</a>
+<a name="ln862">      string res_name=&quot;&quot;;</a>
+<a name="ln863">      string res_chain=&quot;&quot;;</a>
+<a name="ln864">      int res_num=1;</a>
+<a name="ln865">      if (pConv-&gt;IsOption(&quot;s&quot;,OBConversion::OUTOPTIONS))</a>
+<a name="ln866">      {</a>
+<a name="ln867">        residue=true;</a>
+<a name="ln868">        OBResidue* res=mol.GetResidue(0);</a>
+<a name="ln869">        res_name=res-&gt;GetName();</a>
+<a name="ln870">        res_name.resize(3);</a>
+<a name="ln871">        res_chain=res-&gt;GetChain();</a>
+<a name="ln872">        res_num=res-&gt;GetNum();</a>
+<a name="ln873">      }</a>
+<a name="ln874"> </a>
+<a name="ln875">      all_pieces.at(i).SetAutomaticPartialCharge(false);</a>
+<a name="ln876">      all_pieces.at(i).SetAromaticPerceived(); //retain aromatic flags in fragments</a>
+<a name="ln877">      if (!(pConv-&gt;IsOption(&quot;h&quot;,OBConversion::OUTOPTIONS))) {</a>
+<a name="ln878">        DeleteHydrogens(all_pieces.at(i));</a>
+<a name="ln879">      }</a>
+<a name="ln880"> </a>
+<a name="ln881">      int model_num = 0;</a>
+<a name="ln882">      char buffer[BUFF_SIZE];</a>
+<a name="ln883">      if (!residue)</a>
+<a name="ln884">      {</a>
+<a name="ln885">        if (!pConv-&gt;IsLast() || pConv-&gt;GetOutputIndex() &gt; 1)</a>
+<a name="ln886">        { // More than one molecule record</a>
+<a name="ln887">          model_num = pConv-&gt;GetOutputIndex(); // MODEL 1-based index</a>
+<a name="ln888">          snprintf(buffer, BUFF_SIZE, &quot;MODEL %8d&quot;, model_num);</a>
+<a name="ln889">          ofs &lt;&lt; buffer &lt;&lt; endl;</a>
+<a name="ln890">        }</a>
+<a name="ln891">        ofs &lt;&lt; &quot;REMARK  Name = &quot; &lt;&lt; mol.GetTitle(true) &lt;&lt; endl;</a>
+<a name="ln892">//        ofs &lt;&lt; &quot;USER    Name = &quot; &lt;&lt; mol.GetTitle(true) &lt;&lt; endl;</a>
+<a name="ln893">        if (!(pConv-&gt;IsOption(&quot;r&quot;,OBConversion::OUTOPTIONS)))</a>
+<a name="ln894">        {</a>
+<a name="ln895">          char type_name[10];</a>
+<a name="ln896">          int nRotBond=RotBond_count(mol);</a>
+<a name="ln897">          OBAtom ***rotBondTable = new OBAtom **[nRotBond];</a>
+<a name="ln898">          int rotBondId=0;</a>
+<a name="ln899">          int bondAtomNum;</a>
+<a name="ln900">          unsigned int end;</a>
+<a name="ln901">          OBResidue *res;</a>
+<a name="ln902">          for (OBBondIterator it=mol.BeginBonds(); it != mol.EndBonds(); it++)</a>
+<a name="ln903">          {</a>
+<a name="ln904">            if (IsRotBond_PDBQT((*it)))</a>
+<a name="ln905">            {</a>
+<a name="ln906">              rotBondTable[rotBondId] = new OBAtom *[2];</a>
+<a name="ln907">              rotBondTable[rotBondId][0] = (*it)-&gt;GetBeginAtom();</a>
+<a name="ln908">              rotBondTable[rotBondId][1] = (*it)-&gt;GetEndAtom();</a>
+<a name="ln909">              qsort(rotBondTable[rotBondId], 2, sizeof(OBAtom *), CompareBondAtoms);</a>
+<a name="ln910">              rotBondId++;</a>
+<a name="ln911">            }</a>
+<a name="ln912">          }</a>
+<a name="ln913">          qsort(rotBondTable, nRotBond, sizeof(OBAtom **), CompareBonds);</a>
+<a name="ln914">          ofs &lt;&lt; &quot;REMARK  &quot; &lt;&lt; nRotBond &lt;&lt; &quot; active torsions:&quot; &lt;&lt; endl;</a>
+<a name="ln915">          ofs &lt;&lt; &quot;REMARK  status: ('A' for Active; 'I' for Inactive)&quot; &lt;&lt; endl;</a>
+<a name="ln916">          for (rotBondId=0; rotBondId &lt; nRotBond; rotBondId++)</a>
+<a name="ln917">          {</a>
+<a name="ln918">            snprintf(buffer, BUFF_SIZE, &quot;REMARK  %3d  A    between atoms: &quot;, rotBondId + 1);</a>
+<a name="ln919">            ofs &lt;&lt; buffer;</a>
+<a name="ln920">            for (bondAtomNum=0; bondAtomNum &lt; 2; bondAtomNum++)</a>
+<a name="ln921">            {</a>
+<a name="ln922">              memset(type_name, 0, sizeof(type_name));</a>
+<a name="ln923">              strncpy(type_name, OBElements::GetSymbol(rotBondTable[rotBondId][bondAtomNum]-&gt;GetAtomicNum()), sizeof(type_name));</a>
+<a name="ln924">              if (strlen(type_name) &gt; 1)</a>
+<a name="ln925">                type_name[1] = toupper(type_name[1]);</a>
+<a name="ln926">              if ((res = rotBondTable[rotBondId][bondAtomNum]-&gt;GetResidue()) != nullptr)</a>
+<a name="ln927">              {</a>
+<a name="ln928">                snprintf(type_name,5,&quot;%s&quot;,(char*)res-&gt;GetAtomID(rotBondTable[rotBondId][bondAtomNum]).c_str());</a>
+<a name="ln929">                // AtomIDs may start with space if read from a PDB file (rather than perceived)</a>
+<a name="ln930">                end = isspace(type_name[0]) ? 1 : 0;</a>
+<a name="ln931">                // Use sizeof() - 1 to ensure there's room for the NULL termination!</a>
+<a name="ln932">                while (end &lt; sizeof(type_name) - 1 &amp;&amp; type_name[end] &amp;&amp; !isspace(type_name[end]))</a>
+<a name="ln933">                  end++;</a>
+<a name="ln934">                type_name[end] = '\0';</a>
+<a name="ln935">              }</a>
+<a name="ln936">              snprintf(buffer, BUFF_SIZE, &quot;%s_%d&quot;, type_name + (isspace(type_name[0]) ? 1 : 0),</a>
+<a name="ln937">                rotBondTable[rotBondId][bondAtomNum]-&gt;GetIdx());</a>
+<a name="ln938">              ofs &lt;&lt; buffer;</a>
+<a name="ln939">              if (bondAtomNum == 0)</a>
+<a name="ln940">                ofs &lt;&lt; &quot;  and  &quot;;</a>
+<a name="ln941">            }</a>
+<a name="ln942">            delete [] rotBondTable[rotBondId];</a>
+<a name="ln943">            ofs &lt;&lt; endl;</a>
+<a name="ln944">          }</a>
+<a name="ln945">          delete [] rotBondTable;</a>
+<a name="ln946">        }</a>
+<a name="ln947">        ofs &lt;&lt; &quot;REMARK                            x       y       z     vdW  Elec       q    Type&quot; &lt;&lt; endl;</a>
+<a name="ln948">//        ofs &lt;&lt; &quot;USER                              x       y       z     vdW  Elec       q    Type&quot; &lt;&lt; endl;</a>
+<a name="ln949">        ofs &lt;&lt; &quot;REMARK                         _______ _______ _______ _____ _____    ______ ____&quot; &lt;&lt; endl;</a>
+<a name="ln950">//        ofs &lt;&lt; &quot;USER                           _______ _______ _______ _____ _____    ______ ____&quot; &lt;&lt; endl;</a>
+<a name="ln951">      }</a>
+<a name="ln952">      else</a>
+<a name="ln953">      {</a>
+<a name="ln954">        ofs &lt;&lt; &quot;BEGIN_RES&quot; &lt;&lt; &quot; &quot; &lt;&lt; res_name &lt;&lt; &quot; &quot; &lt;&lt; res_chain &lt;&lt; &quot; &quot;;</a>
+<a name="ln955">        ofs.width(3);</a>
+<a name="ln956">        ofs &lt;&lt; right &lt;&lt; res_num &lt;&lt; endl;</a>
+<a name="ln957">      }</a>
+<a name="ln958"> </a>
+<a name="ln959">      // before we write any records, we should check to see if any coord &lt; -1000</a>
+<a name="ln960">      // which will cause errors in the formatting</a>
+<a name="ln961">      double minX, minY, minZ;</a>
+<a name="ln962">      minX = minY = minZ = -999.0f;</a>
+<a name="ln963">      FOR_ATOMS_OF_MOL(a, all_pieces.at(i))</a>
+<a name="ln964">      {</a>
+<a name="ln965">        if (a-&gt;GetX() &lt; minX)</a>
+<a name="ln966">          minX = a-&gt;GetX();</a>
+<a name="ln967">        if (a-&gt;GetY() &lt; minY)</a>
+<a name="ln968">          minY = a-&gt;GetY();</a>
+<a name="ln969">        if (a-&gt;GetZ() &lt; minZ)</a>
+<a name="ln970">          minZ = a-&gt;GetZ();</a>
+<a name="ln971">      }</a>
+<a name="ln972">      vector3 transV = VZero;</a>
+<a name="ln973">      if (minX &lt; -999.0)</a>
+<a name="ln974">        transV.SetX(-1.0*minX - 900.0);</a>
+<a name="ln975">      if (minY &lt; -999.0)</a>
+<a name="ln976">        transV.SetY(-1.0*minY - 900.0);</a>
+<a name="ln977">      if (minZ &lt; -999.0)</a>
+<a name="ln978">        transV.SetZ(-1.0*minZ - 900.0);</a>
+<a name="ln979"> </a>
+<a name="ln980">      // if minX, minY, or minZ was never changed, shift will be 0.0f</a>
+<a name="ln981">      // otherwise, move enough so that smallest coord is &gt; -999.0f</a>
+<a name="ln982">      all_pieces.at(i).Translate(transV);</a>
+<a name="ln983"> </a>
+<a name="ln984">      bool flexible=!pConv-&gt;IsOption(&quot;r&quot;,OBConversion::OUTOPTIONS);</a>
+<a name="ln985"> </a>
+<a name="ln986">      vector &lt;vector &lt;int&gt; &gt; rigid_fragments; //the vector of all the rigid molecule fragments, using atom indexes</a>
+<a name="ln987">      unsigned int best_root_atom=1;</a>
+<a name="ln988">      map &lt;unsigned int, branch&gt; tree;</a>
+<a name="ln989">      unsigned int torsdof=0;</a>
+<a name="ln990">      unsigned int root_piece=0;</a>
+<a name="ln991">      unsigned int rotatable_bonds=0;</a>
+<a name="ln992"> </a>
+<a name="ln993">      if (flexible)</a>
+<a name="ln994">      {</a>
+<a name="ln995"> </a>
+<a name="ln996">        best_root_atom=FindFragments(all_pieces.at(i), rigid_fragments); //the return value is the root atom index</a>
+<a name="ln997"> </a>
+<a name="ln998">        if (residue) {best_root_atom=1;} //if this is a residue, uses the first atom as the root</a>
+<a name="ln999"> </a>
+<a name="ln1000">        torsdof=rigid_fragments.size()-1;</a>
+<a name="ln1001"> </a>
+<a name="ln1002">        for (unsigned int j = 0; j &lt; rigid_fragments.size(); j++)</a>
+<a name="ln1003">        {</a>
+<a name="ln1004">          if (IsIn((rigid_fragments.at(j)), best_root_atom)) {root_piece=j; break;} //this is the root rigid molecule fragment</a>
+<a name="ln1005">        }</a>
+<a name="ln1006">        ConstructTree(tree, rigid_fragments, root_piece, all_pieces.at(i), true);</a>
+<a name="ln1007">        rotatable_bonds=torsdof;</a>
+<a name="ln1008">      }</a>
+<a name="ln1009">      else //if no rotatable bonds are selected, then won't construct a tree, instead get a whole branch directly from the OBMol</a>
+<a name="ln1010">      {</a>
+<a name="ln1011">        branch all_molecule_branch;</a>
+<a name="ln1012">        all_molecule_branch.all_atoms(all_pieces.at(i));</a>
+<a name="ln1013">        tree.insert(pair&lt;unsigned int, branch&gt; (0, all_molecule_branch));</a>
+<a name="ln1014">        torsdof=RotBond_count(all_pieces.at(i));</a>
+<a name="ln1015">      }</a>
+<a name="ln1016"> </a>
+<a name="ln1017">      bool preserve_original_index = (pConv-&gt;IsOption(&quot;p&quot;,OBConversion::OUTOPTIONS));</a>
+<a name="ln1018">      if (!flexible) {preserve_original_index=false;} //no need to relabel if we are preserving the original order anyway</a>
+<a name="ln1019"> </a>
+<a name="ln1020">      if (!OutputTree(pConv, all_pieces.at(i), ofs, tree, rotatable_bonds, false, preserve_original_index) )</a>
+<a name="ln1021">      {</a>
+<a name="ln1022">        stringstream errorMsg;</a>
+<a name="ln1023">        errorMsg &lt;&lt; &quot;WARNING: Problems writing a PDBQT file\n&quot;</a>
+<a name="ln1024">          &lt;&lt;  &quot;  The torsion tree is wrong.\n&quot;;</a>
+<a name="ln1025">        obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obError);</a>
+<a name="ln1026">        return false;</a>
+<a name="ln1027">      }</a>
+<a name="ln1028"> </a>
+<a name="ln1029"> </a>
+<a name="ln1030">      if (!residue)</a>
+<a name="ln1031">      {</a>
+<a name="ln1032">        if (!(pConv-&gt;IsOption(&quot;r&quot;,OBConversion::OUTOPTIONS)))</a>
+<a name="ln1033">          ofs &lt;&lt; &quot;TORSDOF &quot; &lt;&lt; torsdof &lt;&lt; endl;</a>
+<a name="ln1034">        else</a>
+<a name="ln1035">          ofs &lt;&lt; &quot;TER &quot; &lt;&lt; endl;</a>
+<a name="ln1036">//        ofs &lt;&lt; &quot;TER&quot; &lt;&lt; endl;</a>
+<a name="ln1037">        if (model_num)</a>
+<a name="ln1038">        {</a>
+<a name="ln1039">          ofs &lt;&lt; &quot;ENDMDL&quot; &lt;&lt; endl;</a>
+<a name="ln1040">        }</a>
+<a name="ln1041">      }</a>
+<a name="ln1042">      else</a>
+<a name="ln1043">      {</a>
+<a name="ln1044">        ofs &lt;&lt; &quot;END_RES&quot; &lt;&lt; &quot; &quot; &lt;&lt; res_name &lt;&lt; &quot; &quot; &lt;&lt; res_chain &lt;&lt; &quot; &quot;;</a>
+<a name="ln1045">        ofs.width(3);</a>
+<a name="ln1046">        ofs &lt;&lt; right &lt;&lt; res_num &lt;&lt; endl;</a>
+<a name="ln1047">      }</a>
+<a name="ln1048">    }</a>
+<a name="ln1049">    return true;</a>
+<a name="ln1050">  }</a>
+<a name="ln1051"> </a>
+<a name="ln1052">  /////////////////////////////////////////////////////////////////////////</a>
+<a name="ln1053"> </a>
+<a name="ln1054">  static bool parseAtomRecord(char *buffer, OBMol &amp;mol,int chainNum)</a>
+<a name="ln1055">  /* ATOMFORMAT &quot;(i5,1x,a4,a1,a3,1x,a1,i4,a1,3x,3f8.3,2f6.2,a2,a2)&quot; */</a>
+<a name="ln1056">  {</a>
+<a name="ln1057">    string sbuf = &amp;buffer[6];</a>
+<a name="ln1058">    if (sbuf.size() &lt; 48)</a>
+<a name="ln1059">      return(false);</a>
+<a name="ln1060"> </a>
+<a name="ln1061">    bool hetatm = (EQn(buffer,&quot;HETATM&quot;,6)) ? true : false;</a>
+<a name="ln1062">    bool elementFound = false; // true if correct element found in col 77-78</a>
+<a name="ln1063"> </a>
+<a name="ln1064">    /* serial number */</a>
+<a name="ln1065">    string serno = sbuf.substr(0,5);</a>
+<a name="ln1066"> </a>
+<a name="ln1067">    /* atom name */</a>
+<a name="ln1068">    string atmid = sbuf.substr(6,4);</a>
+<a name="ln1069"> </a>
+<a name="ln1070">    /* chain */</a>
+<a name="ln1071">    char chain = sbuf.substr(15,1)[0];</a>
+<a name="ln1072"> </a>
+<a name="ln1073">    /* element */</a>
+<a name="ln1074">    string element = &quot;  &quot;;</a>
+<a name="ln1075">    string pdbqt_element = &quot;  &quot;; //the literal pdbqt element</a>
+<a name="ln1076">    if (sbuf.size() == 72) {sbuf+=&quot; &quot;;}</a>
+<a name="ln1077">    if (sbuf.size() &gt; 72)</a>
+<a name="ln1078">    {</a>
+<a name="ln1079">      pdbqt_element = sbuf.substr(71,2);</a>
+<a name="ln1080">      if ( (pdbqt_element == &quot;A &quot;) || (pdbqt_element == &quot; A&quot;) || (pdbqt_element == &quot;Z &quot;) || (pdbqt_element == &quot; Z&quot;) ||</a>
+<a name="ln1081">        (pdbqt_element == &quot;G &quot;) || (pdbqt_element == &quot; G&quot;) || (pdbqt_element == &quot;GA&quot;) || (pdbqt_element == &quot;J &quot;) ||</a>
+<a name="ln1082">        (pdbqt_element == &quot; J&quot;) || (pdbqt_element == &quot;Q &quot;) || (pdbqt_element == &quot; Q&quot;) )</a>
+<a name="ln1083">        {element = &quot;C&quot;; element += &quot; &quot;;} //all these are carbons</a>
+<a name="ln1084">      else if (pdbqt_element == &quot;HD&quot;) {element = &quot;H&quot;; element += &quot; &quot;;} //HD are hydrogens</a>
+<a name="ln1085">      else if (pdbqt_element == &quot;HS&quot;) {element = &quot;H&quot;; element += &quot; &quot;;} //HS are hydrogens</a>
+<a name="ln1086">      else if (pdbqt_element == &quot;NA&quot;) {element = &quot;N&quot;; element += &quot; &quot;;} //NA are nitrogens</a>
+<a name="ln1087">      else if (pdbqt_element == &quot;NS&quot;) {element = &quot;N&quot;; element += &quot; &quot;;} //NS are nitrogens</a>
+<a name="ln1088">      else if (pdbqt_element == &quot;OA&quot;) {element = &quot;O&quot;; element += &quot; &quot;;} //OA are oxygens</a>
+<a name="ln1089">      else if (pdbqt_element == &quot;OS&quot;) {element = &quot;O&quot;; element += &quot; &quot;;} //OS are oxygens</a>
+<a name="ln1090">      else if (pdbqt_element == &quot;SA&quot;) {element = &quot;S&quot;; element += &quot; &quot;;} //SA are sulphurs</a>
+<a name="ln1091">      else {element = pdbqt_element;}</a>
+<a name="ln1092"> </a>
+<a name="ln1093">      if (isalpha(element[0])) //trims the name if needed</a>
+<a name="ln1094">      {</a>
+<a name="ln1095">        if (element[1] == ' ')</a>
+<a name="ln1096">        {</a>
+<a name="ln1097">          element.erase(1, 1);</a>
+<a name="ln1098">          elementFound = true;</a>
+<a name="ln1099">        }</a>
+<a name="ln1100">        else if (isalpha(element[1]))</a>
+<a name="ln1101">        {</a>
+<a name="ln1102">          elementFound = true;</a>
+<a name="ln1103">        }</a>
+<a name="ln1104">      }</a>
+<a name="ln1105">      else if (isalpha(element[1]))</a>
+<a name="ln1106">      {</a>
+<a name="ln1107">        element.erase(0,1);</a>
+<a name="ln1108">        elementFound = true;</a>
+<a name="ln1109">      }</a>
+<a name="ln1110">    }</a>
+<a name="ln1111"> </a>
+<a name="ln1112">    if (!elementFound)</a>
+<a name="ln1113">    {</a>
+<a name="ln1114">      stringstream errorMsg;</a>
+<a name="ln1115">      errorMsg &lt;&lt; &quot;WARNING: Problems reading a PDBQT file\n&quot;</a>
+<a name="ln1116">        &lt;&lt; &quot;  Problems reading a HETATM or ATOM record.\n&quot;</a>
+<a name="ln1117">        &lt;&lt; &quot;  According to the PDBQT specification,\n&quot;</a>
+<a name="ln1118">        &lt;&lt; &quot;  columns 78-79 should contain the element symbol of an atom.\n&quot;</a>
+<a name="ln1119">        &lt;&lt; &quot;  but OpenBabel found '&quot; &lt;&lt; element &lt;&lt; &quot;' (atom &quot; &lt;&lt; mol.NumAtoms()+1 &lt;&lt; &quot;)&quot;;</a>
+<a name="ln1120">      obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obError);</a>
+<a name="ln1121">      return false;</a>
+<a name="ln1122">    }</a>
+<a name="ln1123"> </a>
+<a name="ln1124">    // charge - optional</a>
+<a name="ln1125">    string scharge;</a>
+<a name="ln1126">    if (sbuf.size() &gt; 69)</a>
+<a name="ln1127">    {</a>
+<a name="ln1128">      scharge = sbuf.substr(64,6);</a>
+<a name="ln1129">    }</a>
+<a name="ln1130"> </a>
+<a name="ln1131">    //trim spaces on the right and left sides</a>
+<a name="ln1132">    while (!atmid.empty() &amp;&amp; atmid[0] == ' ')</a>
+<a name="ln1133">      atmid = atmid.erase(0, 1);</a>
+<a name="ln1134"> </a>
+<a name="ln1135">    while (!atmid.empty() &amp;&amp; atmid[atmid.size()-1] == ' ')</a>
+<a name="ln1136">      atmid = atmid.substr(0,atmid.size()-1);</a>
+<a name="ln1137"> </a>
+<a name="ln1138">    /* residue name */</a>
+<a name="ln1139">    string resname = sbuf.substr(11,3);</a>
+<a name="ln1140">    if (resname == &quot;   &quot;) resname = &quot;UNK&quot;;</a>
+<a name="ln1141">    else</a>
+<a name="ln1142">    {</a>
+<a name="ln1143">      while (!resname.empty() &amp;&amp; resname[0] == ' ')</a>
+<a name="ln1144">        resname = resname.substr(1,resname.size()-1);</a>
+<a name="ln1145">      while (!resname.empty() &amp;&amp; resname[resname.size()-1] == ' ')</a>
+<a name="ln1146">        resname = resname.substr(0,resname.size()-1);</a>
+<a name="ln1147">    }</a>
+<a name="ln1148"> </a>
+<a name="ln1149">    OBAtom atom;</a>
+<a name="ln1150">    /* X, Y, Z */</a>
+<a name="ln1151">    string xstr = sbuf.substr(24,8);</a>
+<a name="ln1152">    string ystr = sbuf.substr(32,8);</a>
+<a name="ln1153">    string zstr = sbuf.substr(40,8);</a>
+<a name="ln1154">    vector3 v(atof(xstr.c_str()),atof(ystr.c_str()),atof(zstr.c_str()));</a>
+<a name="ln1155">    atom.SetVector(v);</a>
+<a name="ln1156"> </a>
+<a name="ln1157">    // useful for debugging unknown atom types (e.g., PR#1577238)</a>
+<a name="ln1158">    //    cout &lt;&lt; mol.NumAtoms() + 1  &lt;&lt; &quot; : '&quot; &lt;&lt; element &lt;&lt; &quot;'&quot; &lt;&lt; &quot; &quot; &lt;&lt; OBElements::GetAtomicNum(element.c_str()) &lt;&lt; endl;</a>
+<a name="ln1159"> </a>
+<a name="ln1160"> </a>
+<a name="ln1161">    atom.SetAtomicNum(OBElements::GetAtomicNum(element.c_str()));</a>
+<a name="ln1162"> </a>
+<a name="ln1163">    if ( (! scharge.empty()) &amp;&amp; &quot;     &quot; != scharge )</a>
+<a name="ln1164">    {</a>
+<a name="ln1165">      stringstream sst;</a>
+<a name="ln1166">      sst.str(scharge);</a>
+<a name="ln1167">      double charge;</a>
+<a name="ln1168">      sst &gt;&gt; charge;</a>
+<a name="ln1169">      if ( !sst.fail() )</a>
+<a name="ln1170">      {</a>
+<a name="ln1171">        atom.SetPartialCharge(charge);</a>
+<a name="ln1172">      }</a>
+<a name="ln1173">      else</a>
+<a name="ln1174">      {</a>
+<a name="ln1175">        stringstream errorMsg;</a>
+<a name="ln1176">        errorMsg &lt;&lt; &quot;WARNING: Problems reading a PDBQT file\n&quot;</a>
+<a name="ln1177">          &lt;&lt; &quot;  Problems reading a HETATM or ATOM record.\n&quot;</a>
+<a name="ln1178">          &lt;&lt; &quot;  According to the PDBQT specification,\n&quot;</a>
+<a name="ln1179">          &lt;&lt; &quot;  columns 72-76 should contain charge of the atom\n&quot;</a>
+<a name="ln1180">          &lt;&lt; &quot;  but OpenBabel found '&quot; &lt;&lt; scharge &lt;&lt; &quot;' (atom &quot; &lt;&lt; mol.NumAtoms()+1 &lt;&lt; &quot;).&quot;;</a>
+<a name="ln1181">        obErrorLog.ThrowError(__FUNCTION__, errorMsg.str(), obWarning);</a>
+<a name="ln1182">      }</a>
+<a name="ln1183">    }</a>
+<a name="ln1184">    else</a>
+<a name="ln1185">    {</a>
+<a name="ln1186">      atom.SetPartialCharge(0.);</a>
+<a name="ln1187">    }</a>
+<a name="ln1188"> </a>
+<a name="ln1189">    /* residue sequence number */</a>
+<a name="ln1190">    string resnum = sbuf.substr(16,4);</a>
+<a name="ln1191">    char icode = sbuf[20];</a>
+<a name="ln1192">    if(icode == ' ') icode = 0;</a>
+<a name="ln1193"> </a>
+<a name="ln1194">    OBResidue *res = mol.NumResidues() &gt; 0 ? mol.GetResidue(mol.NumResidues()-1) : nullptr;</a>
+<a name="ln1195">    if (res == nullptr || res-&gt;GetName() != resname</a>
+<a name="ln1196">      || res-&gt;GetNumString() != resnum || res-&gt;GetInsertionCode() != icode)</a>
+<a name="ln1197">    {</a>
+<a name="ln1198">      vector&lt;OBResidue*&gt;::iterator ri;</a>
+<a name="ln1199">      for (res = mol.BeginResidue(ri) ; res ; res = mol.NextResidue(ri))</a>
+<a name="ln1200">      if (res-&gt;GetName() == resname</a>
+<a name="ln1201">        &amp;&amp; res-&gt;GetNumString() == resnum</a>
+<a name="ln1202">        &amp;&amp; res-&gt;GetInsertionCode() == icode</a>
+<a name="ln1203">        &amp;&amp; static_cast&lt;int&gt;(res-&gt;GetChain()) == chain)</a>
+<a name="ln1204">        break;</a>
+<a name="ln1205"> </a>
+<a name="ln1206">      if (res == nullptr)</a>
+<a name="ln1207">      {</a>
+<a name="ln1208">        res = mol.NewResidue();</a>
+<a name="ln1209">        res-&gt;SetChain(chain);</a>
+<a name="ln1210">        res-&gt;SetName(resname);</a>
+<a name="ln1211">        res-&gt;SetNum(resnum);</a>
+<a name="ln1212">        res-&gt;SetInsertionCode(icode);</a>
+<a name="ln1213">      }</a>
+<a name="ln1214">    }</a>
+<a name="ln1215"> </a>
+<a name="ln1216">    if (!mol.AddAtom(atom))</a>
+<a name="ln1217">      return(false);</a>
+<a name="ln1218">    else</a>
+<a name="ln1219">    {</a>
+<a name="ln1220">      OBAtom *atom = mol.GetAtom(mol.NumAtoms());</a>
+<a name="ln1221"> </a>
+<a name="ln1222">      res-&gt;AddAtom(atom);</a>
+<a name="ln1223">      res-&gt;SetSerialNum(atom, atoi(serno.c_str()));</a>
+<a name="ln1224">      res-&gt;SetAtomID(atom, sbuf.substr(6,4));</a>
+<a name="ln1225">      res-&gt;SetHetAtom(atom, hetatm);</a>
+<a name="ln1226">      return(true);</a>
+<a name="ln1227">    }</a>
+<a name="ln1228">  } // end reading atom records</a>
+<a name="ln1229"> </a>
+<a name="ln1230">} //namespace OpenBabel</a>
+
+</code></pre>
+<div class="balloon" rel="309"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v663/" target="_blank">V663</a> Infinite loop is possible. The 'cin.eof()' condition is insufficient to break from the loop. Consider adding the 'cin.fail()' function call to the conditional expression.</p></div>
+<div class="balloon" rel="402"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v547/" target="_blank">V547</a> Expression 'het' is always false.</p></div>
+<div class="balloon" rel="750"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v657/" target="_blank">V657</a> It's odd that this function always returns one and the same value.</p></div>
+<div class="balloon" rel="162"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v666/" target="_blank">V666</a> Consider inspecting second argument of the function 'IsOption'. It is possible that the value does not correspond with the length of a string which was passed with the first argument.</p></div>
+<div class="balloon" rel="303"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v666/" target="_blank">V666</a> Consider inspecting second argument of the function 'IsOption'. It is possible that the value does not correspond with the length of a string which was passed with the first argument.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

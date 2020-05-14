@@ -1,0 +1,918 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>chemdrawcdx.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">Copyright (C) 2006 by Fredrik Wallner</a>
+<a name="ln3">Some portions Copyright (C) 2006-2007 by Geoffrey Hutchsion</a>
+<a name="ln4">Some portions Copyright (C) 2011 by Chris Morley</a>
+<a name="ln5"> </a>
+<a name="ln6">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln7">it under the terms of the GNU General Public License as published by</a>
+<a name="ln8">the Free Software Foundation version 2 of the License.</a>
+<a name="ln9"> </a>
+<a name="ln10">This program is distributed in the hope that it will be useful,</a>
+<a name="ln11">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln12">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln13">GNU General Public License for more details.</a>
+<a name="ln14">***********************************************************************/</a>
+<a name="ln15"> </a>
+<a name="ln16">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln17">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln18">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/bond.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/elements.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/reactionfacade.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/stereo/stereo.h&gt;</a>
+<a name="ln24">#include &lt;openbabel/obfunctions.h&gt;</a>
+<a name="ln25">#include &lt;openbabel/reaction.h&gt;</a>
+<a name="ln26">#include &lt;openbabel/tokenst.h&gt;</a>
+<a name="ln27">#include &lt;openbabel/alias.h&gt;</a>
+<a name="ln28">#include &lt;openbabel/text.h&gt;</a>
+<a name="ln29">#include &quot;chemdrawcdx.h&quot;</a>
+<a name="ln30"> </a>
+<a name="ln31">#include &lt;iostream&gt;</a>
+<a name="ln32">#include &lt;fstream&gt;</a>
+<a name="ln33">#include &lt;sstream&gt;</a>
+<a name="ln34">#include &lt;map&gt;</a>
+<a name="ln35">#include &lt;list&gt;</a>
+<a name="ln36"> </a>
+<a name="ln37"> </a>
+<a name="ln38">#if !defined(__CYGWIN__)</a>
+<a name="ln39">static inline unsigned short bswap_16(unsigned short x) {</a>
+<a name="ln40">  return (x&gt;&gt;8) | (x&lt;&lt;8);</a>
+<a name="ln41">}</a>
+<a name="ln42"> </a>
+<a name="ln43">static inline unsigned int bswap_32(unsigned int x) {</a>
+<a name="ln44">  return (bswap_16(x&amp;0xffff)&lt;&lt;16) | (bswap_16(x&gt;&gt;16));</a>
+<a name="ln45">}</a>
+<a name="ln46"> </a>
+<a name="ln47">static inline unsigned long long bswap_64(unsigned long long x) {</a>
+<a name="ln48">  return (((unsigned long long)bswap_32(x&amp;0xffffffffull))&lt;&lt;32) | (bswap_32(x&gt;&gt;32));</a>
+<a name="ln49">}</a>
+<a name="ln50">#endif</a>
+<a name="ln51"> </a>
+<a name="ln52">// Macs -- need to use Apple macros to deal with Universal binaries correctly</a>
+<a name="ln53">#ifdef __APPLE__</a>
+<a name="ln54">#include &lt;machine/endian.h&gt;</a>
+<a name="ln55">#if BYTE_ORDER == BIG_ENDIAN</a>
+<a name="ln56">#    define READ_INT16(stream,data) \</a>
+<a name="ln57">(stream).read ((char*)&amp;data, sizeof(data)); \</a>
+<a name="ln58">data = bswap_16 (data);</a>
+<a name="ln59">#    define READ_INT32(stream,data) \</a>
+<a name="ln60">(stream).read ((char*)&amp;data, sizeof(data)); \</a>
+<a name="ln61">data = bswap_32 (data);</a>
+<a name="ln62">#else BYTE_ORDER == LITTLE_ENDIAN</a>
+<a name="ln63">#    define READ_INT16(stream,data) \</a>
+<a name="ln64">(stream).read ((char*)&amp;data, sizeof(data));</a>
+<a name="ln65">#    define READ_INT32(stream,data) \</a>
+<a name="ln66">(stream).read ((char*)&amp;data, sizeof(data));</a>
+<a name="ln67">#endif</a>
+<a name="ln68">#else</a>
+<a name="ln69"> </a>
+<a name="ln70">// Non-Apple systems</a>
+<a name="ln71">// defined in babelconfig.h by autoconf (portable to Solaris, BSD, Linux)</a>
+<a name="ln72">#ifdef WORDS_BIGENDIAN</a>
+<a name="ln73">#    define READ_INT16(stream,data) \</a>
+<a name="ln74">(stream).read ((char*)&amp;data, sizeof(data)); \</a>
+<a name="ln75">data = bswap_16 (data);</a>
+<a name="ln76">#    define READ_INT32(stream,data) \</a>
+<a name="ln77">(stream).read ((char*)&amp;data, sizeof(data)); \</a>
+<a name="ln78">data = bswap_32 (data);</a>
+<a name="ln79">#else</a>
+<a name="ln80">#    define READ_INT16(stream,data) \</a>
+<a name="ln81">(stream).read ((char*)&amp;data, sizeof(data));</a>
+<a name="ln82">#    define READ_INT32(stream,data) \</a>
+<a name="ln83">(stream).read ((char*)&amp;data, sizeof(data));</a>
+<a name="ln84">#endif</a>
+<a name="ln85">// end endian / bigendian issues (on non-Mac systems)</a>
+<a name="ln86">#endif</a>
+<a name="ln87">// end Apple/non-Apple systems</a>
+<a name="ln88"> </a>
+<a name="ln89">using namespace std;</a>
+<a name="ln90">namespace OpenBabel</a>
+<a name="ln91">{</a>
+<a name="ln92"> </a>
+<a name="ln93">//Class which traverse the tree in CDX binary files </a>
+<a name="ln94">class CDXReader</a>
+<a name="ln95">{</a>
+<a name="ln96">public:</a>
+<a name="ln97">  CDXReader(std::istream&amp; is);</a>
+<a name="ln98">  CDXTag ReadNext(bool objectsOnly=false, int targetDepth=-2);</a>
+<a name="ln99">  void IgnoreObject()          { ReadNext(true, GetDepth()-1); }</a>
+<a name="ln100">  operator bool ()const        { return (bool)ifs; }</a>
+<a name="ln101">  int GetDepth()const          { return depth; }</a>
+<a name="ln102">  int GetLen()const            { return _len;} //length of current property data</a>
+<a name="ln103">  CDXObjectID CurrentID()const { return ids.back(); }</a>
+<a name="ln104">  stringstream&amp; data(); //call this only once for each set of property data</a>
+<a name="ln105"> </a>
+<a name="ln106">  //Routines to display the structure of a cdx binary file</a>
+<a name="ln107">  OBText* WriteTree(const std::string&amp; filename, unsigned wtoptions);</a>
+<a name="ln108">private:</a>
+<a name="ln109">  bool ParseEnums(std::map&lt;CDXTag, std::string&gt;&amp; enummap, const std::string&amp; filename);</a>
+<a name="ln110">  std::string TagName(std::map&lt;CDXTag, std::string&gt;&amp; enummap, CDXTag tag);</a>
+<a name="ln111"> </a>
+<a name="ln112">private:</a>
+<a name="ln113">  std::istream&amp; ifs;</a>
+<a name="ln114">  int depth;</a>
+<a name="ln115">  std::vector&lt;CDXObjectID&gt; ids;</a>
+<a name="ln116">  CDXObjectID _tempback;</a>
+<a name="ln117">  std::string _buf;</a>
+<a name="ln118">  UINT16 _len;</a>
+<a name="ln119">  std::stringstream _ss;</a>
+<a name="ln120">};</a>
+<a name="ln121"> </a>
+<a name="ln122">//**************************************************************</a>
+<a name="ln123">class ChemDrawBinaryXFormat : OBMoleculeFormat</a>
+<a name="ln124">{</a>
+<a name="ln125">public:</a>
+<a name="ln126">  //Register this format type ID in the constructor</a>
+<a name="ln127">  ChemDrawBinaryXFormat()</a>
+<a name="ln128">  {</a>
+<a name="ln129">    OBConversion::RegisterFormat(&quot;cdx&quot;,this);</a>
+<a name="ln130">  }</a>
+<a name="ln131"> </a>
+<a name="ln132">  virtual const char* Description() //required</a>
+<a name="ln133">  {</a>
+<a name="ln134">    return</a>
+<a name="ln135">      &quot;ChemDraw binary format\n&quot;</a>
+<a name="ln136">      &quot;Read only\n&quot;</a>
+<a name="ln137">      &quot;The whole file is read in one call.\n&quot;</a>
+<a name="ln138">      &quot;Note that a file may contain a mixture of reactions and\n&quot;</a>
+<a name="ln139">      &quot;molecules.\n&quot;</a>
+<a name="ln140"> </a>
+<a name="ln141">      &quot;With the -ad option, a human-readable representation of the CDX tree\n&quot;</a>
+<a name="ln142">      &quot;structure is output as an OBText object. Use textformat to view it::\n\n&quot;</a>
+<a name="ln143"> </a>
+<a name="ln144">      &quot;    obabel input.cdx -otext -ad\n\n&quot;</a>
+<a name="ln145"> </a>
+<a name="ln146">      &quot;Many reactions in CDX files are not fully specified with reaction data\n&quot;</a>
+<a name="ln147">      &quot;structures, and may not be completely interpreted by this parser.\n\n&quot;</a>
+<a name="ln148"> </a>
+<a name="ln149">      &quot;Read Options, e.g. -am\n&quot;</a>
+<a name="ln150">      &quot; m read molecules only; no reactions\n&quot;</a>
+<a name="ln151">      &quot; d output CDX tree to OBText object\n&quot;</a>
+<a name="ln152">      &quot; o display only objects in tree output\n&quot;;</a>
+<a name="ln153">  }</a>
+<a name="ln154"> </a>
+<a name="ln155">  virtual const char* SpecificationURL()</a>
+<a name="ln156">  {return &quot;http://www.cambridgesoft.com/services/documentation/sdk/chemdraw/cdx/IntroCDX.htm&quot;;}</a>
+<a name="ln157"> </a>
+<a name="ln158">  virtual const char* GetMIMEType()</a>
+<a name="ln159">  { return &quot;chemical/x-cdx&quot;; };</a>
+<a name="ln160"> </a>
+<a name="ln161">  virtual unsigned int Flags()</a>
+<a name="ln162">  {</a>
+<a name="ln163">    return READBINARY|NOTWRITABLE;</a>
+<a name="ln164">  }</a>
+<a name="ln165"> </a>
+<a name="ln166">  ////////////////////////////////////////////////////</a>
+<a name="ln167">  virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln168"> </a>
+<a name="ln169">private:</a>
+<a name="ln170">  enum graphicType {none, equilArrow};</a>
+<a name="ln171">  bool        TopLevelParse(CDXReader&amp; cdxr, OBConversion* pConv,CDXObjectID ContainingGroup);</a>
+<a name="ln172">  bool        DoFragment(CDXReader&amp; cdxr, OBMol* pmol);</a>
+<a name="ln173">  bool        DoFragmentImpl(CDXReader&amp; cdxr, OBMol* pmol,</a>
+<a name="ln174">         map&lt;CDXObjectID, unsigned&gt;&amp; atommap, map&lt;OBBond*, OBStereo::BondDirection&gt;&amp; updown);</a>
+<a name="ln175">  bool        DoReaction(CDXReader&amp; cdxr, OBMol* pReact);</a>
+<a name="ln176">  std::string DoText(CDXReader&amp; cdxr);</a>
+<a name="ln177"> </a>
+<a name="ln178">  std::vector&lt;OBMol*&gt; LookupMol(CDXObjectID id);</a>
+<a name="ln179">  graphicType         LookupGraphic(CDXObjectID id);</a>
+<a name="ln180">  OBMol*              LookupInMolMap(CDXObjectID id);</a>
+<a name="ln181"> </a>
+<a name="ln182">private:</a>
+<a name="ln183">  bool readReactions;</a>
+<a name="ln184">  static const bool objectsOnly = true;</a>
+<a name="ln185">  std::map&lt;CDXObjectID, graphicType&gt; _graphicmap;</a>
+<a name="ln186">  std::map&lt;CDXObjectID, OBMol*&gt; _molmap;</a>
+<a name="ln187">  std::map&lt;CDXObjectID, std::vector&lt;CDXObjectID&gt; &gt; _groupmap;</a>
+<a name="ln188">  // In case of chain A -&gt; B -&gt; C, B is both reactant and product</a>
+<a name="ln189">  CDXObjectID _lastProdId;</a>
+<a name="ln190">  typedef std::map&lt;CDXObjectID, std::vector&lt;CDXObjectID&gt; &gt;::iterator GroupMapIterator;</a>
+<a name="ln191">  static const unsigned usedFlag = 1&lt;&lt;30;</a>
+<a name="ln192">};</a>
+<a name="ln193"> </a>
+<a name="ln194">//******************************************************************</a>
+<a name="ln195">  //Global instance of the format</a>
+<a name="ln196"> ChemDrawBinaryXFormat theChemDrawBinaryXFormat;</a>
+<a name="ln197">//******************************************************************</a>
+<a name="ln198"> </a>
+<a name="ln199"> /*New CDXformat</a>
+<a name="ln200">Each fragment goes into a new OBMol on the heap.</a>
+<a name="ln201">The CDX id and OBMol* are added to _molmap.</a>
+<a name="ln202">When a reaction is found, the reactant/product/agent CDX ids are looked up in molmap,</a>
+<a name="ln203">and added to an OBReaction (made by deleting pOb if it is a OBMol</a>
+<a name="ln204">and assigning pOb to a new OBReaction. The OBMol is marked as Used.</a>
+<a name="ln205">When the reaction is complete it is output via AddChemObject().</a>
+<a name="ln206">At the end, any OBMol in the map not marked as Used is output as an OBMol.</a>
+<a name="ln207">*/</a>
+<a name="ln208"> </a>
+<a name="ln209"> </a>
+<a name="ln210">bool ChemDrawBinaryXFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln211">{</a>
+<a name="ln212">  _molmap.clear();</a>
+<a name="ln213">  _graphicmap.clear();</a>
+<a name="ln214">  _groupmap.clear();</a>
+<a name="ln215">  OBMol* pmol=nullptr;</a>
+<a name="ln216">  bool ok = true;</a>
+<a name="ln217"> </a>
+<a name="ln218">  CDXReader cdxr(*pConv-&gt;GetInStream());</a>
+<a name="ln219">  readReactions = pConv-&gt;IsOption(&quot;m&quot;, OBConversion::INOPTIONS) == nullptr;</a>
+<a name="ln220"> </a>
+<a name="ln221">  // Write CDX tree only if requested</a>
+<a name="ln222">  if(pConv-&gt;IsOption(&quot;d&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln223">  {</a>
+<a name="ln224">    unsigned wtoptions=0;</a>
+<a name="ln225">    if(pConv-&gt;IsOption(&quot;o&quot;,OBConversion::INOPTIONS))</a>
+<a name="ln226">      wtoptions |= 1; //display objects only</a>
+<a name="ln227">    OBText* pText  = cdxr.WriteTree(&quot;chemdrawcdx.h&quot;, wtoptions);</a>
+<a name="ln228">    if(pText)</a>
+<a name="ln229">    {</a>
+<a name="ln230">      pConv-&gt;AddChemObject(pText);</a>
+<a name="ln231">      return true;</a>
+<a name="ln232">    }</a>
+<a name="ln233">    return false;</a>
+<a name="ln234">  }</a>
+<a name="ln235"> </a>
+<a name="ln236">  // Normal reading of molecules and reactions</a>
+<a name="ln237">  //Top level parse </a>
+<a name="ln238">  while(cdxr)</a>
+<a name="ln239">  {</a>
+<a name="ln240">    if(!TopLevelParse(cdxr, pConv, 0))</a>
+<a name="ln241">      return false;</a>
+<a name="ln242">  }</a>
+<a name="ln243"> </a>
+<a name="ln244">  //At the end, output molecules that have not been used in a reaction</a>
+<a name="ln245">  map&lt;CDXObjectID, OBMol*&gt;::iterator mapiter = _molmap.begin();</a>
+<a name="ln246">  for(; mapiter!=_molmap.end(); ++mapiter)</a>
+<a name="ln247">  {</a>
+<a name="ln248">    pmol = mapiter-&gt;second;</a>
+<a name="ln249">    if(!(pmol-&gt;GetFlags() &amp; usedFlag) &amp;&amp; strcmp(pmol-&gt;GetTitle(),&quot;justplus&quot;))</a>
+<a name="ln250">    {</a>
+<a name="ln251">      OBMol* ptmol = static_cast&lt;OBMol*&gt;(pmol-&gt;DoTransformations(</a>
+<a name="ln252">                    pConv-&gt;GetOptions(OBConversion::GENOPTIONS),pConv));</a>
+<a name="ln253">      if(!ptmol)</a>
+<a name="ln254">        delete pmol;</a>
+<a name="ln255">      else</a>
+<a name="ln256">        if(!pConv-&gt;AddChemObject(ptmol))</a>
+<a name="ln257">          return false; //error during writing</a>
+<a name="ln258">    }</a>
+<a name="ln259">  }</a>
+<a name="ln260"> </a>
+<a name="ln261">  return ok;</a>
+<a name="ln262">}</a>
+<a name="ln263">///////////////////////////////////////////////////////////////////////</a>
+<a name="ln264">bool ChemDrawBinaryXFormat::TopLevelParse</a>
+<a name="ln265">        (CDXReader&amp; cdxr, OBConversion* pConv, CDXObjectID ContainingGroup)</a>
+<a name="ln266">{</a>
+<a name="ln267">  bool ok = true;</a>
+<a name="ln268">  CDXTag tag;</a>
+<a name="ln269">  while((tag = cdxr.ReadNext(objectsOnly)))</a>
+<a name="ln270">  {</a>
+<a name="ln271">    if(tag == kCDXObj_Group)</a>
+<a name="ln272">    {</a>
+<a name="ln273">      CDXObjectID cid = cdxr.CurrentID();</a>
+<a name="ln274">      vector&lt;CDXObjectID&gt; v;</a>
+<a name="ln275">      _groupmap.insert(make_pair(cid,v)); //empty vector as yet</a>
+<a name="ln276">      TopLevelParse(cdxr, pConv, cid );</a>
+<a name="ln277">    }</a>
+<a name="ln278"> </a>
+<a name="ln279">    else if(tag==kCDXObj_Fragment)</a>
+<a name="ln280">    {</a>
+<a name="ln281">      OBMol* pmol = new OBMol;</a>
+<a name="ln282">      //Save all molecules to the end</a>
+<a name="ln283">      _molmap[cdxr.CurrentID()] = pmol;</a>
+<a name="ln284"> </a>
+<a name="ln285">      if(ContainingGroup)</a>
+<a name="ln286">      {</a>
+<a name="ln287">        // Add the id of this mol to the group's entry in _groupmap </a>
+<a name="ln288">        GroupMapIterator gmapiter = _groupmap.find(ContainingGroup);</a>
+<a name="ln289">        if(gmapiter!=_groupmap.end())</a>
+<a name="ln290">          gmapiter-&gt;second.push_back(cdxr.CurrentID());</a>
+<a name="ln291">      }</a>
+<a name="ln292">      ok = DoFragment(cdxr, pmol);</a>
+<a name="ln293">    }</a>
+<a name="ln294"> </a>
+<a name="ln295">    else if(tag == kCDXObj_ReactionStep &amp;&amp; readReactions)</a>
+<a name="ln296">    {</a>
+<a name="ln297">      OBMol* pReact = new OBMol;</a>
+<a name="ln298">      pReact-&gt;SetIsReaction();</a>
+<a name="ln299">      ok = DoReaction(cdxr, pReact);</a>
+<a name="ln300">      // Output OBReaction and continue </a>
+<a name="ln301">      if(pReact)</a>
+<a name="ln302">        if(!pConv-&gt;AddChemObject(pReact))</a>
+<a name="ln303">          return false; //error during writing</a>
+<a name="ln304">    }</a>
+<a name="ln305"> </a>
+<a name="ln306">    else if(ok &amp;&amp; tag==kCDXObj_Graphic)</a>
+<a name="ln307">    {</a>
+<a name="ln308">      while( (tag = cdxr.ReadNext()) )</a>
+<a name="ln309">      {</a>
+<a name="ln310">        stringstream&amp; ss = cdxr.data();</a>
+<a name="ln311">        if(tag == kCDXProp_Arrow_Type)</a>
+<a name="ln312">        {</a>
+<a name="ln313">          char type1=0;</a>
+<a name="ln314">          UINT16 type2=0;</a>
+<a name="ln315">          if(cdxr.GetLen()==1)</a>
+<a name="ln316">            ss.get(type1);</a>
+<a name="ln317">          else</a>
+<a name="ln318">            READ_INT16(ss,type2);</a>
+<a name="ln319">          if(type1==kCDXArrowType_Equilibrium || type2==kCDXArrowType_Equilibrium)</a>
+<a name="ln320">            _graphicmap[type1+type2] = equilArrow; //save in graphicmap</a>
+<a name="ln321">        }</a>
+<a name="ln322">      }</a>
+<a name="ln323">    }</a>
+<a name="ln324">  }</a>
+<a name="ln325">  return true;</a>
+<a name="ln326">}</a>
+<a name="ln327">///////////////////////////////////////////////////////////////////////</a>
+<a name="ln328">bool ChemDrawBinaryXFormat::DoReaction(CDXReader&amp; cdxr, OBMol* pReact)</a>
+<a name="ln329">{</a>
+<a name="ln330">  CDXTag tag;</a>
+<a name="ln331">  CDXObjectID id;</a>
+<a name="ln332">  OBReactionFacade facade(pReact);</a>
+<a name="ln333">  while( (tag = cdxr.ReadNext()) )</a>
+<a name="ln334">  {</a>
+<a name="ln335">    if(tag ==	kCDXProp_ReactionStep_Reactants)</a>
+<a name="ln336">    {</a>
+<a name="ln337">      stringstream&amp; ss = cdxr.data();</a>
+<a name="ln338">      for(unsigned i=0;i&lt;cdxr.GetLen()/4;++i)//for each reactant id</a>
+<a name="ln339">      {</a>
+<a name="ln340">        READ_INT32(ss,id);</a>
+<a name="ln341">        vector&lt;OBMol*&gt; molvec = LookupMol(id); //id could be a group with several mols</a>
+<a name="ln342">        for(unsigned i=0;i&lt;molvec.size();++i)</a>
+<a name="ln343">          if(strcmp(molvec[i]-&gt;GetTitle(),&quot;justplus&quot;))</a>
+<a name="ln344">          {</a>
+<a name="ln345">            facade.AddComponent(molvec[i], REACTANT);</a>
+<a name="ln346">          }</a>
+<a name="ln347">      }</a>
+<a name="ln348">    }</a>
+<a name="ln349">    else if(tag == kCDXProp_ReactionStep_Products)</a>
+<a name="ln350">    {</a>
+<a name="ln351">      stringstream&amp; ss = cdxr.data();</a>
+<a name="ln352">      for(unsigned i=0;i&lt;cdxr.GetLen()/4;++i)//for each product id</a>
+<a name="ln353">      {</a>
+<a name="ln354">        READ_INT32(ss,id);</a>
+<a name="ln355">        vector&lt;OBMol*&gt; molvec = LookupMol(id); //id could be a group with several mols</a>
+<a name="ln356">        for(unsigned i=0;i&lt;molvec.size();++i)</a>
+<a name="ln357">          if(strcmp(molvec[i]-&gt;GetTitle(),&quot;justplus&quot;))</a>
+<a name="ln358">          {</a>
+<a name="ln359">            facade.AddComponent(molvec[i], PRODUCT);</a>
+<a name="ln360">            _lastProdId = id;</a>
+<a name="ln361">          }</a>
+<a name="ln362">      }</a>
+<a name="ln363">    }</a>
+<a name="ln364">    else if(tag==kCDXProp_ReactionStep_Arrows)</a>
+<a name="ln365">    {</a>
+<a name="ln366">      READ_INT32(cdxr.data(),id);</a>
+<a name="ln367">      //if(LookupGraphic(id)==equilArrow) // TODO? Store reversibility somehow?</a>
+<a name="ln368">      //  pReact-&gt;SetReversible();</a>
+<a name="ln369">    }</a>
+<a name="ln370">  }</a>
+<a name="ln371">  return true;</a>
+<a name="ln372">}</a>
+<a name="ln373">///////////////////////////////////////////////////////////////////////</a>
+<a name="ln374">vector&lt;OBMol*&gt; ChemDrawBinaryXFormat::LookupMol(CDXObjectID id)</a>
+<a name="ln375">{</a>
+<a name="ln376">  vector&lt;OBMol*&gt; molvec;</a>
+<a name="ln377">  //Check whether the id is that of a kCDXObj_Group</a>
+<a name="ln378">  GroupMapIterator gmapiter;</a>
+<a name="ln379">  gmapiter = _groupmap.find(id);</a>
+<a name="ln380">  if(gmapiter != _groupmap.end())</a>
+<a name="ln381">  {</a>
+<a name="ln382">    for(unsigned i=0;i&lt;gmapiter-&gt;second.size();++i)</a>
+<a name="ln383">    {</a>
+<a name="ln384">      OBMol* pmmol = LookupInMolMap(gmapiter-&gt;second[i]);</a>
+<a name="ln385">      if(pmmol)</a>
+<a name="ln386">        molvec.push_back(pmmol);</a>
+<a name="ln387">    }</a>
+<a name="ln388">  }</a>
+<a name="ln389">  else</a>
+<a name="ln390">  {</a>
+<a name="ln391">    //id is not a group; it must be a fragment</a>
+<a name="ln392">    OBMol* pmmol = LookupInMolMap(id);</a>
+<a name="ln393">    if(pmmol)</a>
+<a name="ln394">      molvec.push_back(pmmol);</a>
+<a name="ln395">  }</a>
+<a name="ln396">  return molvec; </a>
+<a name="ln397">}</a>
+<a name="ln398"> </a>
+<a name="ln399">OBMol* ChemDrawBinaryXFormat::LookupInMolMap(CDXObjectID id)</a>
+<a name="ln400">{</a>
+<a name="ln401">  std::map&lt;CDXObjectID, OBMol*&gt;::iterator mapiter;</a>
+<a name="ln402">  mapiter = _molmap.find(id);</a>
+<a name="ln403">  if(mapiter!=_molmap.end())</a>
+<a name="ln404">  {</a>
+<a name="ln405">    //Mark mol as used in a reaction, so that it will not be output independently</a>
+<a name="ln406">    mapiter-&gt;second-&gt;SetFlags(mapiter-&gt;second-&gt;GetFlags() | usedFlag);</a>
+<a name="ln407">    return mapiter-&gt;second;</a>
+<a name="ln408">  }</a>
+<a name="ln409">  else</a>
+<a name="ln410">  {</a>
+<a name="ln411">    stringstream ss;</a>
+<a name="ln412">    ss &lt;&lt; &quot;Reactant or product mol not found id = &quot; &lt;&lt; hex &lt;&lt; showbase &lt;&lt; id; </a>
+<a name="ln413">    obErrorLog.ThrowError(__FUNCTION__, ss.str(), obError);</a>
+<a name="ln414">    return nullptr;</a>
+<a name="ln415">  }</a>
+<a name="ln416">}</a>
+<a name="ln417"> </a>
+<a name="ln418">////////////////////////////////////////////////////////////////////////</a>
+<a name="ln419">ChemDrawBinaryXFormat::graphicType ChemDrawBinaryXFormat::LookupGraphic(CDXObjectID id)</a>
+<a name="ln420">{</a>
+<a name="ln421">  std::map&lt;CDXObjectID, graphicType&gt;::iterator mapiter;</a>
+<a name="ln422">  mapiter = _graphicmap.find(id);</a>
+<a name="ln423">  if(mapiter != _graphicmap.end())</a>
+<a name="ln424">    return mapiter-&gt;second;</a>
+<a name="ln425">  else</a>
+<a name="ln426">    return none;</a>
+<a name="ln427">}</a>
+<a name="ln428"> </a>
+<a name="ln429">////////////////////////////////////////////////////////////////////////</a>
+<a name="ln430">bool ChemDrawBinaryXFormat::DoFragment(CDXReader&amp; cdxr, OBMol* pmol)</a>
+<a name="ln431">{</a>
+<a name="ln432">  map&lt;OBBond*, OBStereo::BondDirection&gt; updown;</a>
+<a name="ln433">  pmol-&gt;SetDimension(2);</a>
+<a name="ln434">  pmol-&gt;BeginModify();</a>
+<a name="ln435"> </a>
+<a name="ln436">  map&lt;CDXObjectID, unsigned&gt; atommap; //key = CDX id; value = OB atom idx</a>
+<a name="ln437"> </a>
+<a name="ln438">  //The inner workings of DoFragment,since Fragment elements can be nested</a>
+<a name="ln439">  DoFragmentImpl(cdxr, pmol, atommap, updown);</a>
+<a name="ln440"> </a>
+<a name="ln441">  // use 2D coordinates + hash/wedge to determine stereochemistry</a>
+<a name="ln442">  StereoFrom2D(pmol, &amp;updown);</a>
+<a name="ln443"> </a>
+<a name="ln444">  pmol-&gt;EndModify();</a>
+<a name="ln445"> </a>
+<a name="ln446">  //Expand any aliases after molecule constructed</a>
+<a name="ln447">  //Need to save aliases in list first and expand later</a>
+<a name="ln448">  vector&lt;OBAtom*&gt; aliasatoms;</a>
+<a name="ln449">  for(int idx=1; idx&lt;=pmol-&gt;NumAtoms();++idx)</a>
+<a name="ln450">  {</a>
+<a name="ln451">    OBAtom* pAtom = pmol-&gt;GetAtom(idx);</a>
+<a name="ln452">    AliasData* ad = dynamic_cast&lt;AliasData*&gt;(pAtom-&gt;GetData(AliasDataType));</a>
+<a name="ln453">    if(ad &amp;&amp; !ad-&gt;IsExpanded())</a>
+<a name="ln454">      aliasatoms.push_back(pAtom);</a>
+<a name="ln455">  }</a>
+<a name="ln456">  for(vector&lt;OBAtom*&gt;::iterator vit=aliasatoms.begin();</a>
+<a name="ln457">      vit!=aliasatoms.end(); ++vit)</a>
+<a name="ln458">  {</a>
+<a name="ln459">    int idx = (*vit)-&gt;GetIdx();</a>
+<a name="ln460">    AliasData* ad = dynamic_cast&lt;AliasData*&gt;((*vit)-&gt;GetData(AliasDataType));</a>
+<a name="ln461">    if(ad &amp;&amp; !ad-&gt;IsExpanded())</a>
+<a name="ln462">      ad-&gt;Expand(*pmol, idx); //Make chemically meaningful, if possible.</a>
+<a name="ln463">  }</a>
+<a name="ln464">  return true;</a>
+<a name="ln465">}</a>
+<a name="ln466"> </a>
+<a name="ln467">bool ChemDrawBinaryXFormat::DoFragmentImpl(CDXReader&amp; cdxr, OBMol* pmol, </a>
+<a name="ln468">       map&lt;CDXObjectID, unsigned&gt;&amp; atommap, map&lt;OBBond*, OBStereo::BondDirection&gt;&amp; updown)</a>
+<a name="ln469">{</a>
+<a name="ln470">  CDXTag tag;</a>
+<a name="ln471">  std::vector&lt;OBAtom*&gt; handleImplicitCarbons;</a>
+<a name="ln472">  while((tag = cdxr.ReadNext(objectsOnly)))</a>
+<a name="ln473">  {</a>
+<a name="ln474">    if(tag==kCDXObj_Node)</a>
+<a name="ln475">    {</a>
+<a name="ln476">      unsigned nodeID = cdxr.CurrentID();</a>
+<a name="ln477">      bool isAlias=false, hasElement=false;</a>
+<a name="ln478">      bool hasNumHs = false;</a>
+<a name="ln479">      UINT16 atnum=-1, spin=0, numHs=0;</a>
+<a name="ln480">      int x, y, charge=0, iso=0;</a>
+<a name="ln481">      string aliastext;</a>
+<a name="ln482"> </a>
+<a name="ln483">      //Read all node properties</a>
+<a name="ln484">      while( (tag = cdxr.ReadNext()) )</a>
+<a name="ln485">      {</a>
+<a name="ln486">        switch(tag)</a>
+<a name="ln487">        {</a>
+<a name="ln488">        case kCDXProp_Node_Type:</a>
+<a name="ln489">          UINT16 type;</a>
+<a name="ln490">          READ_INT16(cdxr.data(), type);</a>
+<a name="ln491">          if(type==4 || type==5) //Nickname or fragment</a>
+<a name="ln492">            isAlias = true;</a>
+<a name="ln493">          break;</a>
+<a name="ln494">        case kCDXProp_Node_Element:</a>
+<a name="ln495">          READ_INT16(cdxr.data(), atnum);</a>
+<a name="ln496">          hasElement = true;</a>
+<a name="ln497">          break;</a>
+<a name="ln498">        case kCDXProp_2DPosition:</a>
+<a name="ln499">          {</a>
+<a name="ln500">            stringstream&amp; ss = cdxr.data();</a>
+<a name="ln501">            READ_INT32(ss, y); //yes, this way round</a>
+<a name="ln502">            READ_INT32(ss, x);</a>
+<a name="ln503">          }</a>
+<a name="ln504">            break;</a>
+<a name="ln505">        case kCDXProp_Atom_Charge:</a>
+<a name="ln506">          if(cdxr.GetLen()==1)</a>
+<a name="ln507">            charge = cdxr.data().get();</a>
+<a name="ln508">          else</a>
+<a name="ln509">            READ_INT32(cdxr.data(), charge);</a>
+<a name="ln510">          break;</a>
+<a name="ln511">        case kCDXProp_Atom_Radical:</a>
+<a name="ln512">          READ_INT16(cdxr.data(),spin);</a>
+<a name="ln513">          break;</a>
+<a name="ln514">        case kCDXProp_Atom_Isotope:</a>
+<a name="ln515">          READ_INT16(cdxr.data(),iso);</a>
+<a name="ln516">          break;</a>
+<a name="ln517">        case kCDXProp_Atom_NumHydrogens:</a>
+<a name="ln518">          READ_INT16(cdxr.data(), numHs);</a>
+<a name="ln519">          hasNumHs = true;</a>
+<a name="ln520">          break;</a>
+<a name="ln521">        case kCDXProp_Atom_CIPStereochemistry:</a>
+<a name="ln522">          break;</a>
+<a name="ln523">        case kCDXObj_Text:</a>
+<a name="ln524">          aliastext = DoText(cdxr);</a>
+<a name="ln525">          if(aliastext==&quot;+&quot;)</a>
+<a name="ln526">          {</a>
+<a name="ln527">            //This node is not an atom, but dangerous to delete</a>
+<a name="ln528">            pmol-&gt;SetTitle(&quot;justplus&quot;);</a>
+<a name="ln529">          }</a>
+<a name="ln530">          break;</a>
+<a name="ln531">        case kCDXObj_Fragment:</a>
+<a name="ln532">        /* ignore fragment contained in node</a>
+<a name="ln533">        if(isAlias)</a>
+<a name="ln534">          {</a>
+<a name="ln535">            unsigned Idxbefore = pmol-&gt;NumAtoms();</a>
+<a name="ln536">            if(DoFragmentImpl(cdxr, pmol, atommap, updown))</a>
+<a name="ln537">              return false;</a>
+<a name="ln538">          }</a>
+<a name="ln539">         */</a>
+<a name="ln540">          //ignore the contents of this node</a>
+<a name="ln541">          cdxr.IgnoreObject();</a>
+<a name="ln542">          //cdxr.ReadNext(objectsOnly, cdxr.GetDepth()-1);</a>
+<a name="ln543">          break;</a>
+<a name="ln544">        default:</a>
+<a name="ln545">          if(tag &amp; kCDXTag_Object) //unhandled object</a>
+<a name="ln546">            while(cdxr.ReadNext());</a>
+<a name="ln547">        }</a>
+<a name="ln548">      }</a>
+<a name="ln549">      //All properties of Node have now been read</a>
+<a name="ln550">      OBAtom* pAtom = pmol-&gt;NewAtom();</a>
+<a name="ln551">      pAtom-&gt;SetVector(x*1.0e-6, -y*1.0e-6, 0); //inv y axis</a>
+<a name="ln552">      atommap[nodeID] = pmol-&gt;NumAtoms();</a>
+<a name="ln553">      if(isAlias || (!aliastext.empty() &amp;&amp; atnum==0xffff))</a>
+<a name="ln554">      {</a>
+<a name="ln555">        //Treat text as an alias </a>
+<a name="ln556">        pAtom-&gt;SetAtomicNum(0);</a>
+<a name="ln557">        AliasData* ad = new AliasData();</a>
+<a name="ln558">        ad-&gt;SetAlias(aliastext);</a>
+<a name="ln559">        ad-&gt;SetOrigin(fileformatInput);</a>
+<a name="ln560">        pAtom-&gt;SetData(ad);</a>
+<a name="ln561">      } </a>
+<a name="ln562">      else</a>
+<a name="ln563">      {</a>
+<a name="ln564">        if(atnum==0xffff)</a>
+<a name="ln565">          atnum = 6; //atoms are C by default</a>
+<a name="ln566">        pAtom-&gt;SetAtomicNum(atnum);</a>
+<a name="ln567">        if (hasNumHs)</a>
+<a name="ln568">          pAtom-&gt;SetImplicitHCount(numHs);</a>
+<a name="ln569">        else if (atnum==6)</a>
+<a name="ln570">          handleImplicitCarbons.push_back(pAtom);</a>
+<a name="ln571">        pAtom-&gt;SetFormalCharge(charge);</a>
+<a name="ln572">        pAtom-&gt;SetIsotope(iso);</a>
+<a name="ln573">        pAtom-&gt;SetSpinMultiplicity(spin);</a>
+<a name="ln574">      }</a>
+<a name="ln575">    }</a>
+<a name="ln576"> </a>
+<a name="ln577">    else if(tag==kCDXObj_Bond)</a>
+<a name="ln578">    {</a>
+<a name="ln579">      CDXObjectID bgnID, endID;</a>
+<a name="ln580">      int order=1, bgnIdx, endIdx ;</a>
+<a name="ln581">      UINT16 stereo=0;</a>
+<a name="ln582"> </a>
+<a name="ln583">      while( (tag = cdxr.ReadNext()) )</a>
+<a name="ln584">      {</a>
+<a name="ln585">        switch(tag)</a>
+<a name="ln586">        {</a>
+<a name="ln587">        case kCDXProp_Bond_Begin:</a>
+<a name="ln588">          READ_INT32(cdxr.data(), bgnID);</a>
+<a name="ln589">          bgnIdx = atommap[bgnID];</a>
+<a name="ln590">          break;</a>
+<a name="ln591">        case kCDXProp_Bond_End:</a>
+<a name="ln592">          READ_INT32(cdxr.data(), endID);</a>
+<a name="ln593">          endIdx = atommap[endID];</a>
+<a name="ln594">          break;</a>
+<a name="ln595">        case kCDXProp_Bond_Order:</a>
+<a name="ln596">          READ_INT16(cdxr.data(), order);</a>
+<a name="ln597">          switch (order)</a>
+<a name="ln598">          {</a>
+<a name="ln599">          case 0xFFFF: // undefined, keep 1 for now</a>
+<a name="ln600">            order = 1;</a>
+<a name="ln601">          case 0x0001:</a>
+<a name="ln602">          case 0x0002:</a>
+<a name="ln603">            break;</a>
+<a name="ln604">          case 0x0004:</a>
+<a name="ln605">            order = 3;</a>
+<a name="ln606">            break;</a>
+<a name="ln607">          case 0x0080: // aromatic bond</a>
+<a name="ln608">            order = 5;</a>
+<a name="ln609">            break;</a>
+<a name="ln610">          default: // other cases are just not supported, keep 1</a>
+<a name="ln611">            order = 1;</a>
+<a name="ln612">            break;</a>
+<a name="ln613">          }</a>
+<a name="ln614">          break;</a>
+<a name="ln615">        case kCDXProp_Bond_Display:</a>
+<a name="ln616">          READ_INT16(cdxr.data(), stereo);</a>
+<a name="ln617">        break;</a>
+<a name="ln618">        }</a>
+<a name="ln619">      }</a>
+<a name="ln620"> </a>
+<a name="ln621">      if(!order || !bgnIdx || !endIdx)</a>
+<a name="ln622">      {</a>
+<a name="ln623">        obErrorLog.ThrowError(__FUNCTION__,&quot;Incorrect bond&quot;, obError);</a>
+<a name="ln624">        return false;</a>
+<a name="ln625">      }</a>
+<a name="ln626">      if(stereo==4 || stereo==7 || stereo==10 || stereo==12)</a>
+<a name="ln627">        swap(bgnIdx, endIdx);</a>
+<a name="ln628">      pmol-&gt;AddBond(bgnIdx, endIdx, order);</a>
+<a name="ln629">      if(stereo)</a>
+<a name="ln630">      {</a>
+<a name="ln631">        OBBond* pBond = pmol-&gt;GetBond(pmol-&gt;NumBonds()-1);</a>
+<a name="ln632">        if(stereo==3 || stereo==4)</a>
+<a name="ln633">          pBond-&gt;SetHash();</a>
+<a name="ln634">        else if(stereo==6 || stereo==7)</a>
+<a name="ln635">          pBond-&gt;SetWedge();</a>
+<a name="ln636">      }</a>
+<a name="ln637">    }</a>
+<a name="ln638">  }</a>
+<a name="ln639">  // Handle 'implicit carbons' by adjusting their valence with</a>
+<a name="ln640">  // implicit hydrognes</a>
+<a name="ln641">  for(vector&lt;OBAtom*&gt;::iterator vit=handleImplicitCarbons.begin();</a>
+<a name="ln642">      vit!=handleImplicitCarbons.end(); ++vit)</a>
+<a name="ln643">    OBAtomAssignTypicalImplicitHydrogens(*vit);</a>
+<a name="ln644"> </a>
+<a name="ln645">  return true;</a>
+<a name="ln646">}</a>
+<a name="ln647"> </a>
+<a name="ln648">string ChemDrawBinaryXFormat::DoText(CDXReader&amp; cdxr)</a>
+<a name="ln649">{</a>
+<a name="ln650">  CDXTag tag;</a>
+<a name="ln651">  string text;</a>
+<a name="ln652">  while( (tag=cdxr.ReadNext()) )</a>
+<a name="ln653">  {</a>
+<a name="ln654">    stringstream&amp; ss = cdxr.data();</a>
+<a name="ln655">    switch(tag)</a>
+<a name="ln656">    {</a>
+<a name="ln657">    case kCDXProp_Text:</a>
+<a name="ln658">      UINT16 nStyleRuns;</a>
+<a name="ln659">      READ_INT16(ss,nStyleRuns);</a>
+<a name="ln660">      ss.ignore(nStyleRuns*10);</a>
+<a name="ln661">      ss &gt;&gt; text;</a>
+<a name="ln662">    default:</a>
+<a name="ln663">      if(tag &amp; kCDXTag_Object) //unhandled object</a>
+<a name="ln664">        while(cdxr.ReadNext());      </a>
+<a name="ln665">    }</a>
+<a name="ln666">  }</a>
+<a name="ln667">  return text;</a>
+<a name="ln668">}</a>
+<a name="ln669"> </a>
+<a name="ln670">//****************************************************************</a>
+<a name="ln671">CDXTag CDXReader::ReadNext(bool objectsOnly, int targetDepth)</a>
+<a name="ln672">{</a>
+<a name="ln673">  //ostringstream treestream;</a>
+<a name="ln674">  CDXTag tag;</a>
+<a name="ln675">  CDXObjectID id;</a>
+<a name="ln676"> </a>
+<a name="ln677">  while(ifs) </a>
+<a name="ln678">  {</a>
+<a name="ln679">    READ_INT16(ifs, tag);</a>
+<a name="ln680">    if(tag==0)</a>
+<a name="ln681">    {</a>
+<a name="ln682">      if(depth==0)</a>
+<a name="ln683">      {</a>
+<a name="ln684">        ifs.setstate(ios::eofbit); //ignore everything after end of document</a>
+<a name="ln685">        return 0; //end of document</a>
+<a name="ln686">      }</a>
+<a name="ln687">      --depth;</a>
+<a name="ln688">      _tempback = ids.back(); //needed for WriteTree</a>
+<a name="ln689">      ids.pop_back();</a>
+<a name="ln690">      if(targetDepth&lt;0 || depth == targetDepth)</a>
+<a name="ln691">        return 0; //end of object</a>
+<a name="ln692">    }</a>
+<a name="ln693">    else if(tag &amp; kCDXTag_Object)</a>
+<a name="ln694">    {</a>
+<a name="ln695">      READ_INT32(ifs, id);</a>
+<a name="ln696">      ids.push_back(id);</a>
+<a name="ln697">      ++depth;</a>
+<a name="ln698">      if(targetDepth&lt;0 || depth-1 == targetDepth)</a>
+<a name="ln699">        return tag; //object</a>
+<a name="ln700">    }</a>
+<a name="ln701">    else</a>
+<a name="ln702">    {</a>
+<a name="ln703">      //property</a>
+<a name="ln704">      READ_INT16(ifs, _len);</a>
+<a name="ln705"> </a>
+<a name="ln706">      if(objectsOnly)</a>
+<a name="ln707">        ifs.ignore(_len);</a>
+<a name="ln708">      else</a>
+<a name="ln709">      {</a>
+<a name="ln710">        //copy property data to buffer</a>
+<a name="ln711">        char* p = new char[_len+1];</a>
+<a name="ln712">        ifs.read(p, _len);</a>
+<a name="ln713">        _buf.assign(p, _len);</a>
+<a name="ln714">        delete[] p;</a>
+<a name="ln715">        return tag; //property</a>
+<a name="ln716">      }</a>
+<a name="ln717">    }</a>
+<a name="ln718">  }</a>
+<a name="ln719">  return 0;</a>
+<a name="ln720">}</a>
+<a name="ln721">/////////////////////////////////////////////////////////////////////</a>
+<a name="ln722"> </a>
+<a name="ln723">stringstream&amp; CDXReader::data()</a>
+<a name="ln724">{</a>
+<a name="ln725">  _ss.clear();</a>
+<a name="ln726">  _ss.str(_buf);</a>
+<a name="ln727">  return _ss;</a>
+<a name="ln728">}</a>
+<a name="ln729">/////////////////////////////////////////////////////////////////////</a>
+<a name="ln730"> </a>
+<a name="ln731">CDXReader::CDXReader(std::istream&amp; is) : ifs(is), depth(0)</a>
+<a name="ln732">{</a>
+<a name="ln733">  //ReadHeader</a>
+<a name="ln734">  char buffer[kCDX_HeaderStringLen+1];</a>
+<a name="ln735">  ifs.read(buffer,kCDX_HeaderStringLen);</a>
+<a name="ln736">  buffer[kCDX_HeaderStringLen] = '\0';</a>
+<a name="ln737">  if(strncmp(buffer, kCDX_HeaderString, kCDX_HeaderStringLen) == 0)</a>
+<a name="ln738">    ifs.ignore(kCDX_HeaderLength - kCDX_HeaderStringLen);	// Discard rest of header.</a>
+<a name="ln739">  else</a>
+<a name="ln740">  {</a>
+<a name="ln741">    obErrorLog.ThrowError(__FUNCTION__,&quot;Invalid file, no ChemDraw Header&quot;,obError);</a>
+<a name="ln742">    ifs.setstate(ios::eofbit);</a>
+<a name="ln743">    throw;</a>
+<a name="ln744">  }</a>
+<a name="ln745">}</a>
+<a name="ln746">//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++</a>
+<a name="ln747">//Routines to display the structure of a cdx binary file</a>
+<a name="ln748"> </a>
+<a name="ln749">OBText* CDXReader::WriteTree(const string&amp; filename, unsigned wtoptions)</a>
+<a name="ln750">{  </a>
+<a name="ln751">  const char indentchar = '\t';</a>
+<a name="ln752">  std::map&lt;CDXTag, std::string&gt; enummap;</a>
+<a name="ln753">  ParseEnums(enummap, filename);</a>
+<a name="ln754"> </a>
+<a name="ln755">  stringstream tss;</a>
+<a name="ln756">  tss &lt;&lt; hex &lt;&lt; showbase;</a>
+<a name="ln757"> </a>
+<a name="ln758">  while(*this)</a>
+<a name="ln759">  {</a>
+<a name="ln760">    CDXTag tag = ReadNext();</a>
+<a name="ln761">    if(ifs.eof())</a>
+<a name="ln762">      return new OBText(tss.str()); //normal exit</a>
+<a name="ln763">    if(tag==0 &amp;&amp; !(wtoptions &amp;1))</a>
+<a name="ln764">    {</a>
+<a name="ln765">      //Object end</a>
+<a name="ln766">      tss &lt;&lt; string(depth,indentchar) &lt;&lt; &quot;ObjectEnd &quot; &lt;&lt; _tempback &lt;&lt; endl;</a>
+<a name="ln767">    } </a>
+<a name="ln768">    else if(tag &amp; kCDXTag_Object)</a>
+<a name="ln769">    {</a>
+<a name="ln770">      //Object</a>
+<a name="ln771">      tss&lt;&lt;string(depth-1,indentchar) &lt;&lt; &quot;Object &quot; &lt;&lt; tag</a>
+<a name="ln772">                   &lt;&lt; TagName(enummap,tag) &lt;&lt; &quot; id=&quot; &lt;&lt; ids.back() &lt;&lt; endl; </a>
+<a name="ln773">    }</a>
+<a name="ln774">    else</a>
+<a name="ln775">    {</a>
+<a name="ln776">      //Property</a>
+<a name="ln777">      if(!(wtoptions &amp;1))</a>
+<a name="ln778">      {</a>
+<a name="ln779">        stringstream ss;</a>
+<a name="ln780">        ss &lt;&lt; _len;</a>
+<a name="ln781">        tss&lt;&lt;string(depth,indentchar) &lt;&lt; &quot;Property  &quot;&lt;&lt; tag &lt;&lt; TagName(enummap,tag)</a>
+<a name="ln782">                     &lt;&lt; &quot; [&quot; &lt;&lt; ss.str() &lt;&lt; &quot; bytes] &quot;;</a>
+<a name="ln783">        for(unsigned i=0;i&lt;_len;++i)</a>
+<a name="ln784">        {</a>
+<a name="ln785">          ss.str(&quot;&quot;);</a>
+<a name="ln786">          ss.fill('0');</a>
+<a name="ln787">          ss.width(8);</a>
+<a name="ln788">          ss &lt;&lt; hex &lt;&lt; static_cast&lt;unsigned&gt;(_buf[i]) &lt;&lt; dec;</a>
+<a name="ln789">          tss &lt;&lt; ss.str()[6] &lt;&lt; ss.str()[7] &lt;&lt; ' ';</a>
+<a name="ln790">        }</a>
+<a name="ln791"> </a>
+<a name="ln792">        if(tag==0x700 || tag==kCDXProp_CreationProgram || tag==kCDXProp_CreationDate</a>
+<a name="ln793">          || tag==kCDXProp_Name)</a>
+<a name="ln794">        {</a>
+<a name="ln795">          stringstream ss(_buf);</a>
+<a name="ln796">          UINT16 nStyleRuns;</a>
+<a name="ln797">          READ_INT16(ss, nStyleRuns);</a>
+<a name="ln798">          tss &lt;&lt; '\&quot;';</a>
+<a name="ln799">          for(unsigned i=2+nStyleRuns*10; i&lt;_len; ++i)</a>
+<a name="ln800">            tss &lt;&lt; _buf[i];</a>
+<a name="ln801">          tss &lt;&lt; '\&quot;';</a>
+<a name="ln802">        }</a>
+<a name="ln803">        tss &lt;&lt; endl;</a>
+<a name="ln804">      }</a>
+<a name="ln805">    }</a>
+<a name="ln806">  }</a>
+<a name="ln807">  return nullptr; //error exit</a>
+<a name="ln808">}</a>
+<a name="ln809"> </a>
+<a name="ln810">///////////////////////////////////////////////////////////////////////</a>
+<a name="ln811">bool CDXReader::ParseEnums(map&lt;CDXTag, string&gt;&amp; enummap, const string&amp; filename)</a>
+<a name="ln812">{</a>
+<a name="ln813">  ifstream ihs;</a>
+<a name="ln814">  if(OpenDatafile(ihs, filename).empty())</a>
+<a name="ln815">  {</a>
+<a name="ln816">    obErrorLog.ThrowError(__FUNCTION__, </a>
+<a name="ln817">      filename + &quot; needs to be in the *data* directory when displaying the tree.\n&quot; , obError);</a>
+<a name="ln818">    return false;</a>
+<a name="ln819">  }</a>
+<a name="ln820">  ignore(ihs, &quot;enum CDXDatumID&quot;);</a>
+<a name="ln821">  string ln;</a>
+<a name="ln822">  vector&lt;string&gt; vec;</a>
+<a name="ln823">  stringstream ss;</a>
+<a name="ln824">  CDXTag tag;</a>
+<a name="ln825">  while(ihs)</a>
+<a name="ln826">  {</a>
+<a name="ln827">    getline(ihs, ln);</a>
+<a name="ln828">    tokenize(vec, ln, &quot; \t,{}&quot;);</a>
+<a name="ln829">    if(vec.size()==0 || vec[0]==&quot;//&quot;)</a>
+<a name="ln830">      continue; //blank and comment lines</a>
+<a name="ln831">    if(vec[0]==&quot;;&quot;) //line is }; end of enum</a>
+<a name="ln832">      return true;</a>
+<a name="ln833">    if(vec[0][0]!='k') //only collect enums starting with kCDX</a>
+<a name="ln834">      continue;</a>
+<a name="ln835">    int tagpos = (vec[1]==&quot;=&quot; &amp;&amp; vec.size()&gt;4) ? 4 : 2;</a>
+<a name="ln836">    ss.str(vec[tagpos]);</a>
+<a name="ln837">    ss.clear();</a>
+<a name="ln838">    ss &gt;&gt; hex &gt;&gt; tag;</a>
+<a name="ln839">    if(ss)</a>
+<a name="ln840">    {</a>
+<a name="ln841">      if(tag==0x0400 &amp;&amp; vec[0]==&quot;kCDXUser_TemporaryEnd&quot;)//special case</a>
+<a name="ln842">        continue;</a>
+<a name="ln843">      enummap[tag] = vec[0];</a>
+<a name="ln844">    }</a>
+<a name="ln845">  }</a>
+<a name="ln846">  return false;</a>
+<a name="ln847">}</a>
+<a name="ln848">/////////////////////////////////////////////////////////////////////////</a>
+<a name="ln849"> </a>
+<a name="ln850">string CDXReader::TagName(map&lt;CDXTag, string&gt;&amp; enummap, CDXTag tag)</a>
+<a name="ln851">{</a>
+<a name="ln852">  string tagname;</a>
+<a name="ln853">  if(!enummap.empty())</a>
+<a name="ln854">  {</a>
+<a name="ln855">    map&lt;CDXTag, std::string&gt;::iterator iter = enummap.find(tag);</a>
+<a name="ln856">    if(iter!=enummap.end())</a>
+<a name="ln857">    {</a>
+<a name="ln858">      tagname=iter-&gt;second;</a>
+<a name="ln859">      //Remove prefix, e.g. kCDXProp_</a>
+<a name="ln860">      string::size_type pos = tagname.find('_');</a>
+<a name="ln861">      if(pos!=string::npos)</a>
+<a name="ln862">      {</a>
+<a name="ln863">        tagname.erase(0,pos);</a>
+<a name="ln864">        tagname[0] = ' ';</a>
+<a name="ln865">      }</a>
+<a name="ln866">    }</a>
+<a name="ln867">  }</a>
+<a name="ln868">  return tagname;</a>
+<a name="ln869">}</a>
+<a name="ln870"> </a>
+<a name="ln871">} //namespace</a>
+
+</code></pre>
+<div class="balloon" rel="301"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v668/" target="_blank">V668</a> There is no sense in testing the 'pReact' pointer against null, as the memory was allocated using the 'new' operator. The exception will be generated in the case of memory allocation error.</p></div>
+<div class="balloon" rel="731"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v730/" target="_blank">V730</a> Not all members of a class are initialized inside the constructor. Consider inspecting: _tempback, _len.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

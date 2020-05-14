@@ -1,0 +1,652 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>svgformat.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/*</a>
+<a name="ln2">svgformat.cpp  Format for rendering multiple molecules by SVG</a>
+<a name="ln3">Copyright (C) 2009 by Chris Morley</a>
+<a name="ln4"> </a>
+<a name="ln5">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln6">it under the terms of the GNU General Public License as published by</a>
+<a name="ln7">the Free Software Foundation version 2 of the License.</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is distributed in the hope that it will be useful,</a>
+<a name="ln10">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln11">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln12">GNU General Public License for more details.</a>
+<a name="ln13">***********************************************************************/</a>
+<a name="ln14">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln15">#include &lt;openbabel/obmolecformat.h&gt;</a>
+<a name="ln16">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln17">#include &lt;openbabel/descriptor.h&gt;</a>
+<a name="ln18">#include &lt;openbabel/op.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/text.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/depict/svgpainter.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/depict/depict.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/alias.h&gt;</a>
+<a name="ln23">#include &lt;cstdlib&gt;</a>
+<a name="ln24"> </a>
+<a name="ln25">using namespace std;</a>
+<a name="ln26">namespace OpenBabel</a>
+<a name="ln27">{</a>
+<a name="ln28"> </a>
+<a name="ln29">class SVGFormat : public OBFormat</a>
+<a name="ln30">{</a>
+<a name="ln31">public:</a>
+<a name="ln32">  SVGFormat() : _ncols(0), _nrows(0), _nmax(0)</a>
+<a name="ln33">  {</a>
+<a name="ln34">    OBConversion::RegisterFormat(&quot;svg&quot;,this);</a>
+<a name="ln35">    OBConversion::RegisterOptionParam(&quot;N&quot;, this, 1, OBConversion::OUTOPTIONS);</a>
+<a name="ln36">    OBConversion::RegisterOptionParam(&quot;rows&quot;, this, 1, OBConversion::GENOPTIONS);</a>
+<a name="ln37">    OBConversion::RegisterOptionParam(&quot;cols&quot;, this, 1, OBConversion::GENOPTIONS);</a>
+<a name="ln38">    OBConversion::RegisterOptionParam(&quot;px&quot;, this, 1, OBConversion::GENOPTIONS);</a>
+<a name="ln39"> }</a>
+<a name="ln40"> </a>
+<a name="ln41">  virtual const char* NamespaceURI()const{return &quot;http://www.w3.org/2000/svg&quot;;}</a>
+<a name="ln42">  virtual const char* Description()</a>
+<a name="ln43">  {</a>
+<a name="ln44">    return</a>
+<a name="ln45">      &quot;SVG 2D depiction\n&quot;</a>
+<a name="ln46">      &quot;Scalable Vector Graphics 2D rendering of molecular structure.\n\n&quot;</a>
+<a name="ln47"> </a>
+<a name="ln48">      &quot;When called from commandline or GUI or otherwise via Convert(),\n&quot;</a>
+<a name="ln49">      &quot;single molecules are displayed at a fixed scale, as in normal diagrams,\n&quot;</a>
+<a name="ln50">      &quot;but multiple molecules are displayed in a table which expands to fill\n&quot;</a>
+<a name="ln51">      &quot;the containing element, such as a browser window.\n&quot;</a>
+<a name="ln52">      &quot;When WriteMolecule() is called directly, without going through\n&quot;</a>
+<a name="ln53">      &quot;WriteChemObject, e.g. via OBConversion::Write(), a fixed size image by\n&quot;</a>
+<a name="ln54">      &quot;default 200 x 200px containing a single molecule is written. The size\n&quot;</a>
+<a name="ln55">      &quot;can be specified by the P output option.\n\n&quot;</a>
+<a name="ln56"> </a>
+<a name="ln57">      &quot;Multiple molecules are displayed in a grid of dimensions specified by\n&quot;</a>
+<a name="ln58">      &quot;the ``-xr`` and ``-xc`` options (number of rows and columns respectively\n&quot;</a>
+<a name="ln59">      &quot;and ``--rows``, ``--cols`` with babel).\n&quot;</a>
+<a name="ln60">      &quot;When displayed in most modern browsers, like Firefox, there is\n&quot;</a>
+<a name="ln61">      &quot;javascript support for zooming (with the mouse wheel)\n&quot;</a>
+<a name="ln62">      &quot;and panning (by dragging with the left mouse button).\n\n&quot;</a>
+<a name="ln63"> </a>
+<a name="ln64">      &quot;If both ``-xr`` and ``-xc`` are specified, they define the maximum number of\n&quot;</a>
+<a name="ln65">      &quot;molecules that are displayed.\n&quot;</a>
+<a name="ln66">      &quot;If only one of them is displayed, then the other is calculated so that\n&quot;</a>
+<a name="ln67">      &quot;ALL the molecules are displayed.\n&quot;</a>
+<a name="ln68">      &quot;If neither are specified, all the molecules are output in an\n&quot;</a>
+<a name="ln69">      &quot;approximately square table.\n\n&quot;</a>
+<a name="ln70"> </a>
+<a name="ln71">      &quot;By default, 2D atom coordinates are generated (using gen2D) unless they\n&quot;</a>
+<a name="ln72">      &quot;are already present. This can be slow with a large number of molecules.\n&quot;</a>
+<a name="ln73">      &quot;(3D coordinates are ignored.) Include ``--gen2D`` explicitly if you wish\n&quot;</a>
+<a name="ln74">      &quot;any existing 2D coordinates to be recalculated.\n\n&quot;</a>
+<a name="ln75"> </a>
+<a name="ln76">      &quot;Write Options e.g. -xu\n&quot;</a>
+<a name="ln77">      &quot; u no element-specific atom coloring\n&quot;</a>
+<a name="ln78">      &quot;    Use this option to produce a black and white diagram\n&quot;</a>
+<a name="ln79">      &quot; U do not use internally-specified color\n&quot;</a>
+<a name="ln80">      &quot;    e.g. atom color read from cml or generated by internal code\n&quot;</a>
+<a name="ln81">      &quot; b &lt;color&gt; background color, default white\n&quot;</a>
+<a name="ln82">      &quot;    e.g ``-xb yellow`` or ``-xb #88ff00`` ``-xb none`` is transparent.\n&quot;</a>
+<a name="ln83">      &quot;    Just ``-xb`` is black with white bonds.\n&quot;</a>
+<a name="ln84">      &quot;    The atom symbol colors work with black and white backgrounds,\n&quot;</a>
+<a name="ln85">      &quot;    but may not with other colors.\n&quot;</a>
+<a name="ln86">      &quot; B &lt;color&gt; bond color, default black\n&quot;</a>
+<a name="ln87">      &quot;    e.g ``-xB`` yellow or ``-xB #88ff00``\n&quot;</a>
+<a name="ln88">      &quot; C do not draw terminal C (and attached H) explicitly\n&quot;</a>
+<a name="ln89">      &quot;    The default is to draw all hetero atoms and terminal C explicitly,\n&quot;</a>
+<a name="ln90">      &quot;    together with their attched hydrogens.\n&quot;</a>
+<a name="ln91">      &quot; a draw all carbon atoms\n&quot;</a>
+<a name="ln92">      &quot;    So propane would display as H3C-CH2-CH3\n&quot;</a>
+<a name="ln93">      &quot; d do not display molecule name\n&quot;</a>
+<a name="ln94">      &quot; s use asymmetric double bonds\n&quot;</a>
+<a name="ln95">      &quot; t use thicker lines\n&quot;</a>
+<a name="ln96">      &quot; e embed molecule as CML\n&quot;</a>
+<a name="ln97">      &quot;    OpenBabel can read the resulting svg file as a cml file.\n&quot;</a>
+<a name="ln98">      &quot; p# px Scale to bond length(single mol only)\n&quot;</a>
+<a name="ln99">      &quot; P# px Single mol in defined size image\n&quot;</a>
+<a name="ln100">      &quot;    The General option --px # is an alternative to the above.\n&quot;</a>
+<a name="ln101">      &quot; c# number of columns in table\n&quot;</a>
+<a name="ln102">      &quot; cols# number of columns in table(not displayed in GUI)\n&quot;</a>
+<a name="ln103">      &quot; r# number of rows in table\n&quot;</a>
+<a name="ln104">      &quot; rows# number of rows in table(not displayed in GUI)\n&quot;</a>
+<a name="ln105">      &quot; N# max number objects to be output\n&quot;</a>
+<a name="ln106">      &quot; l draw grid lines\n&quot;</a>
+<a name="ln107">      &quot; h &lt;condition&gt; highlight mol if condition is met\n&quot;</a>
+<a name="ln108">      &quot;    The condition can use descriptors and properties,\n&quot;</a>
+<a name="ln109">      &quot;    See documentation on ``--filter`` option for details.\n&quot;</a>
+<a name="ln110">      &quot;    To highlight in a particular color, follow the condition\n&quot;</a>
+<a name="ln111">      &quot;    by a color.\n&quot;</a>
+<a name="ln112">      &quot; i add index to each atom\n&quot;</a>
+<a name="ln113">      &quot;    These indices are those in sd or mol files and correspond to the\n&quot;</a>
+<a name="ln114">      &quot;    order of atoms in a SMILES string.\n&quot;</a>
+<a name="ln115">      &quot; j do not embed javascript\n&quot;</a>
+<a name="ln116">      &quot;    Javascript is not usually embedded if there is only one molecule,\n&quot;</a>
+<a name="ln117">      &quot;    but it is if the rows and columns have been specified as 1: ``-xr1 -xc1``\n&quot;</a>
+<a name="ln118">      &quot; x omit XML declaration (not displayed in GUI)\n&quot;</a>
+<a name="ln119">      &quot;    Useful if the output is to be embedded in another xml file.\n&quot;</a>
+<a name="ln120">      &quot; X All atoms are explicitly declared \n&quot;</a>
+<a name="ln121">      &quot;    Useful if we don't want any extra hydrogens drawn to fill the valence.\n&quot;</a>
+<a name="ln122">      &quot; A display aliases, if present\n&quot;</a>
+<a name="ln123">      &quot;    This applies to structures which have an alternative, usually\n&quot;</a>
+<a name="ln124">      &quot;    shorter, representation already present. This might have been input\n&quot;</a>
+<a name="ln125">      &quot;    from an A or S superatom entry in an sd or mol file, or can be\n&quot;</a>
+<a name="ln126">      &quot;    generated using the --genalias option. For example::\n \n&quot;</a>
+<a name="ln127"> </a>
+<a name="ln128">      &quot;      obabel -:\&quot;c1cc(C=O)ccc1C(=O)O\&quot; -O out.svg\n&quot;</a>
+<a name="ln129">      &quot;             --genalias -xA\n \n&quot;</a>
+<a name="ln130"> </a>
+<a name="ln131">      &quot;    would add a aliases COOH and CHO to represent the carboxyl and\n&quot;</a>
+<a name="ln132">      &quot;    aldehyde groups and would display them as such in the svg diagram.\n&quot;</a>
+<a name="ln133">      &quot;    The aliases which are recognized are in data/superatom.txt, which\n&quot;</a>
+<a name="ln134">      &quot;    can be edited.\n&quot;</a>
+<a name="ln135">      &quot; S Ball and stick depiction of molecules\n&quot;</a>
+<a name="ln136">      &quot;    Depicts the molecules as balls and sticks instead of the\n&quot;</a>
+<a name="ln137">      &quot;    normal line style.\n\n&quot;</a>
+<a name="ln138"> </a>
+<a name="ln139"> </a>
+<a name="ln140">      &quot;If the input molecule(s) contain explicit hydrogen, you could consider\n&quot;</a>
+<a name="ln141">      &quot;improving the appearance of the diagram by adding an option ``-d`` to make\n&quot;</a>
+<a name="ln142">      &quot;it implicit. Hydrogen on hetero atoms and on explicitly drawn C is\n&quot;</a>
+<a name="ln143">      &quot;always shown.\n&quot;</a>
+<a name="ln144"> </a>
+<a name="ln145">      &quot;For example, if input.smi had 10 molecules::\n\n&quot;</a>
+<a name="ln146"> </a>
+<a name="ln147">      &quot;      obabel input.smi -O out.svg -xb -xC -xe\n\n&quot;</a>
+<a name="ln148"> </a>
+<a name="ln149">      &quot;would produce a svg file with a black background, with no explicit\n&quot;</a>
+<a name="ln150">      &quot;terminal carbon, and with an embedded cml representation of each\n&quot;</a>
+<a name="ln151">      &quot;molecule. The structures would be in two rows of four and one row\n&quot;</a>
+<a name="ln152">      &quot;of two.\n\n&quot;</a>
+<a name="ln153">    ;</a>
+<a name="ln154">  }</a>
+<a name="ln155"> </a>
+<a name="ln156">  virtual unsigned int Flags()</a>
+<a name="ln157">  {</a>
+<a name="ln158">      return NOTREADABLE | ZEROATOMSOK | DEPICTION2D;</a>
+<a name="ln159">  }</a>
+<a name="ln160"> </a>
+<a name="ln161">  bool WriteChemObject(OBConversion* pConv);</a>
+<a name="ln162">  bool WriteMolecule(OBBase* pOb, OBConversion* pConv);</a>
+<a name="ln163"> </a>
+<a name="ln164">private:</a>
+<a name="ln165">  bool EmbedCML(OBMol* pmol, OBConversion* pConv, ostream* ofs);</a>
+<a name="ln166">  bool EmbedScript(ostream&amp; ofs);</a>
+<a name="ln167">  bool WriteSVG(OBConversion* pConv, vector&lt;OBBase*&gt;&amp; molecules);</a>
+<a name="ln168">private:</a>
+<a name="ln169">  int _ncols, _nrows, _nmax;</a>
+<a name="ln170">  vector&lt;OBBase*&gt; _objects;</a>
+<a name="ln171">  OBText* _ptext;</a>
+<a name="ln172">  string::size_type _textpos;</a>
+<a name="ln173">};</a>
+<a name="ln174">/////////////////////////////////////////////////////////////////</a>
+<a name="ln175">SVGFormat theSVGFormat;</a>
+<a name="ln176"> </a>
+<a name="ln177">/////////////////////////////////////////////////////////////////</a>
+<a name="ln178">bool SVGFormat::WriteChemObject(OBConversion* pConv)</a>
+<a name="ln179">{</a>
+<a name="ln180">  //Molecules are stored here as pointers to OBBase objects, which are not deleted as usual.</a>
+<a name="ln181">  //When there are no more they are sent to WriteMolecule.</a>
+<a name="ln182">  //This allows their number to be determined whatever their source</a>
+<a name="ln183">  //(they may also have been filtered), so that the table can be properly dimensioned.</a>
+<a name="ln184"> </a>
+<a name="ln185">  //NOT CURRENTLY IMPLEMENTED</a>
+<a name="ln186">  //If the first object is OBText, the part of it before each insertion point (if it exists)</a>
+<a name="ln187">  //is output before every molecule. This allows molecule structures to be displayed</a>
+<a name="ln188">  //in a template. The x option to omit the XML header is set</a>
+<a name="ln189"> </a>
+<a name="ln190">  OBBase* pOb = pConv-&gt;GetChemObject();</a>
+<a name="ln191"> </a>
+<a name="ln192">  if(pConv-&gt;GetOutputIndex()&lt;=1)</a>
+<a name="ln193">  {</a>
+<a name="ln194">    _objects.clear();</a>
+<a name="ln195">    _nmax=0;</a>
+<a name="ln196"> </a>
+<a name="ln197">    pConv-&gt;AddOption(&quot;svgbswritechemobject&quot;); // to show WriteMolecule that this function has been called</a>
+<a name="ln198">    const char* pc = pConv-&gt;IsOption(&quot;c&quot;);</a>
+<a name="ln199">    //alternative for babel because -xc cannot take a parameter, because some other format uses it</a>
+<a name="ln200">    //similarly for -xr -xp</a>
+<a name="ln201">    if(!pc)</a>
+<a name="ln202">      pc = pConv-&gt;IsOption(&quot;cols&quot;, OBConversion::GENOPTIONS);</a>
+<a name="ln203">    const char* pr = pConv-&gt;IsOption(&quot;r&quot;);</a>
+<a name="ln204">    if(!pr)</a>
+<a name="ln205">      pr = pConv-&gt;IsOption(&quot;rows&quot;, OBConversion::GENOPTIONS);</a>
+<a name="ln206">    if(pr)</a>
+<a name="ln207">      _nrows = atoi(pr);</a>
+<a name="ln208">    if(pc)</a>
+<a name="ln209">      _ncols = atoi(pc);</a>
+<a name="ln210">    if(pr &amp;&amp; pc) // both specified: fixes maximum number objects to be output</a>
+<a name="ln211">      _nmax = _nrows * _ncols;</a>
+<a name="ln212"> </a>
+<a name="ln213">    //explicit max number of objects</a>
+<a name="ln214">    const char* pmax =pConv-&gt;IsOption(&quot;N&quot;);</a>
+<a name="ln215">    if(pmax)</a>
+<a name="ln216">      _nmax = atoi(pmax);</a>
+<a name="ln217">  }</a>
+<a name="ln218"> </a>
+<a name="ln219">  OBMoleculeFormat::DoOutputOptions(pOb, pConv);</a>
+<a name="ln220"> </a>
+<a name="ln221">  //save molecule</a>
+<a name="ln222">  _objects.push_back(pOb);</a>
+<a name="ln223"> </a>
+<a name="ln224">  bool ret=true;</a>
+<a name="ln225">  //Finish if no more input or if the number of molecules has reached the allowed maximum(if specified)</a>
+<a name="ln226">  bool nomore = _nmax &amp;&amp; (_objects.size()==_nmax);</a>
+<a name="ln227">  if((pConv-&gt;IsLast() || nomore))</a>
+<a name="ln228">  {</a>
+<a name="ln229">    int nmols = _objects.size();</a>
+<a name="ln230">    //Set table properties according to the options and the number of molecules to be output</a>
+<a name="ln231">    if (!(nmols==0 ||                      //ignore this block if there is no input or</a>
+<a name="ln232">         (_nrows &amp;&amp; _ncols) ||             //if the user has specified both rows and columns or</a>
+<a name="ln233">         (!_nrows &amp;&amp; !_ncols &amp;&amp; nmols==1)))//if neither is specified and there is one output molecule</a>
+<a name="ln234">    {</a>
+<a name="ln235">      if(!_nrows &amp;&amp; !_ncols ) //neither specified</a>
+<a name="ln236">      {</a>
+<a name="ln237">        //assign cols/rows in square</a>
+<a name="ln238">        _ncols = (int)ceil(sqrt(((double)nmols)));</a>
+<a name="ln239">      }</a>
+<a name="ln240"> </a>
+<a name="ln241">      if(_nrows)</a>
+<a name="ln242">        _ncols = (nmols-1) / _nrows + 1; //rounds up</a>
+<a name="ln243">      else if(_ncols)</a>
+<a name="ln244">        _nrows = (nmols-1) / _ncols + 1;</a>
+<a name="ln245">    }</a>
+<a name="ln246"> </a>
+<a name="ln247">    //output all collected molecules</a>
+<a name="ln248">    unsigned int n=0;</a>
+<a name="ln249"> </a>
+<a name="ln250">    ret = WriteSVG(pConv, _objects);</a>
+<a name="ln251"> </a>
+<a name="ln252">    //delete all the molecules</a>
+<a name="ln253">    vector&lt;OBBase*&gt;::iterator iter;</a>
+<a name="ln254">    for(iter=_objects.begin();iter!=_objects.end(); ++iter)</a>
+<a name="ln255">      delete *iter;</a>
+<a name="ln256">    delete _ptext;//delete text, NULL or not</a>
+<a name="ln257"> </a>
+<a name="ln258">    _objects.clear();</a>
+<a name="ln259">    _ptext = nullptr;</a>
+<a name="ln260">    _nmax = _ncols = _nrows = 0;</a>
+<a name="ln261">  }</a>
+<a name="ln262">  return ret &amp;&amp; !nomore;</a>
+<a name="ln263">}</a>
+<a name="ln264">////////////////////////////////////////////////////////////////</a>
+<a name="ln265">bool SVGFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)</a>
+<a name="ln266">{</a>
+<a name="ln267">  OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln268">  if(!pmol)</a>
+<a name="ln269">    return false;</a>
+<a name="ln270">  _objects.clear();</a>
+<a name="ln271">  _nmax =_nrows = _ncols = 1;</a>
+<a name="ln272">  _objects.push_back(pOb);</a>
+<a name="ln273">  bool ret = WriteSVG(pConv,_objects);</a>
+<a name="ln274">  _objects.clear();</a>
+<a name="ln275">  return true;</a>
+<a name="ln276">}</a>
+<a name="ln277"> </a>
+<a name="ln278">bool SVGFormat::WriteSVG(OBConversion* pConv, vector&lt;OBBase*&gt;&amp; molecules)</a>
+<a name="ln279">{</a>
+<a name="ln280"> </a>
+<a name="ln281">  bool ret=true;</a>
+<a name="ln282"> </a>
+<a name="ln283">  //Check for option for single mol in fixed size image</a>
+<a name="ln284">  const char* fixedpx = pConv-&gt;IsOption(&quot;P&quot;);</a>
+<a name="ln285">  if(!fixedpx)</a>
+<a name="ln286">    fixedpx= pConv-&gt;IsOption(&quot;px&quot;, OBConversion::GENOPTIONS);</a>
+<a name="ln287">  //If WriteMolecule called directly, e.g. from OBConversion::Write()</a>
+<a name="ln288">  //the default mode is a fixed image size of 200px square</a>
+<a name="ln289">  if(!fixedpx &amp;&amp; molecules.size()==1)</a>
+<a name="ln290">    fixedpx = &quot;200&quot;;</a>
+<a name="ln291">  if(fixedpx)</a>
+<a name="ln292">  {</a>
+<a name="ln293">    _nmax = _nrows = _ncols = 1;</a>
+<a name="ln294">    pConv-&gt;AddOption(&quot;j&quot;);</a>
+<a name="ln295">  }</a>
+<a name="ln296"> </a>
+<a name="ln297">  ostream &amp;ofs = *pConv-&gt;GetOutStream();</a>
+<a name="ln298"> </a>
+<a name="ln299">  bool hasTable = (_nrows&gt;1) || (_ncols&gt;1);</a>
+<a name="ln300"> </a>
+<a name="ln301">  bool transparent=false;</a>
+<a name="ln302">  string background, bondcolor;</a>
+<a name="ln303">  const char* bg = pConv-&gt;IsOption(&quot;b&quot;);</a>
+<a name="ln304">  background = bg ? &quot;black&quot; : &quot;white&quot;;</a>
+<a name="ln305">  bondcolor  = bg ? &quot;white&quot; : &quot;black&quot;;</a>
+<a name="ln306">  if(bg &amp;&amp; (!strcmp(bg, &quot;none&quot;) || bg[0]=='0'))</a>
+<a name="ln307">  {</a>
+<a name="ln308">    transparent = true;</a>
+<a name="ln309">    bondcolor = &quot;gray&quot;;</a>
+<a name="ln310">  }</a>
+<a name="ln311">  const char* bcol = pConv-&gt;IsOption(&quot;B&quot;);</a>
+<a name="ln312">  if(bcol &amp;&amp; *bcol)</a>
+<a name="ln313">    bondcolor = bcol;</a>
+<a name="ln314">  if(bg &amp;&amp; *bg)</a>
+<a name="ln315">    background = bg;</a>
+<a name="ln316"> </a>
+<a name="ln317">  if(!pConv-&gt;IsOption(&quot;x&quot;))</a>
+<a name="ln318">  ofs &lt;&lt; &quot;&lt;?xml version=\&quot;1.0\&quot;?&gt;\n&quot;;</a>
+<a name="ln319"> </a>
+<a name="ln320">  ofs &lt;&lt; &quot;&lt;svg version=\&quot;1.1\&quot; id=\&quot;topsvg\&quot;\n&quot;</a>
+<a name="ln321">         &quot;xmlns=\&quot;http://www.w3.org/2000/svg\&quot; xmlns:xlink=\&quot;http://www.w3.org/1999/xlink\&quot;\n&quot;</a>
+<a name="ln322">         &quot;xmlns:cml=\&quot;http://www.xml-cml.org/schema\&quot; &quot;;</a>
+<a name="ln323">  double vbwidth=100, vbheight=100;</a>
+<a name="ln324">  if (_nrows&gt;_ncols)</a>
+<a name="ln325">    vbwidth = (100*_ncols)/_nrows;</a>
+<a name="ln326">  else if(_ncols&gt;_nrows)</a>
+<a name="ln327">    vbheight = (100*_nrows)/_ncols;</a>
+<a name="ln328"> </a>
+<a name="ln329">  if(fixedpx)//fixed size image</a>
+<a name="ln330">    ofs &lt;&lt; &quot;x=\&quot;0\&quot; y=\&quot;0\&quot; width=\&quot;&quot; &lt;&lt; fixedpx &lt;&lt; &quot;px\&quot; height=\&quot;&quot; &lt;&lt; fixedpx &lt;&lt;&quot;px\&quot; &quot;;</a>
+<a name="ln331">  else</a>
+<a name="ln332">    ofs &lt;&lt; &quot;x=\&quot;0\&quot; y=\&quot;0\&quot; width=\&quot;100%\&quot; height=\&quot;100%\&quot; &quot;;</a>
+<a name="ln333"> </a>
+<a name="ln334">  ofs &lt;&lt; &quot;viewBox=\&quot;0 0 &quot; &lt;&lt; vbwidth &lt;&lt; ' ' &lt;&lt; vbheight &lt;&lt; &quot;\&quot;&gt;\n&quot;;</a>
+<a name="ln335"> </a>
+<a name="ln336">  if (hasTable)</a>
+<a name="ln337">    ofs &lt;&lt; &quot;&lt;title&gt;Multiple Molecules - Open Babel Depiction&lt;/title&gt;\n&quot;;</a>
+<a name="ln338">  else if(molecules.size() == 1)</a>
+<a name="ln339">    ofs &lt;&lt; &quot;&lt;title&gt;&quot; &lt;&lt; molecules[0]-&gt;GetTitle() &lt;&lt; &quot; - Open Babel Depiction&lt;/title&gt;\n&quot;;</a>
+<a name="ln340"> </a>
+<a name="ln341">  // Draw the background unless transparent</a>
+<a name="ln342">  if(!transparent)</a>
+<a name="ln343">    ofs &lt;&lt; &quot;&lt;rect x=\&quot;0\&quot; y=\&quot;0\&quot; width=\&quot;&quot; &lt;&lt; vbwidth &lt;&lt; &quot;\&quot; height=\&quot;&quot; &lt;&lt; vbheight</a>
+<a name="ln344">        &lt;&lt; &quot;\&quot; fill=\&quot;&quot; &lt;&lt; background &lt;&lt; &quot;\&quot;/&gt;\n&quot;;</a>
+<a name="ln345"> </a>
+<a name="ln346">  unsigned opts = 0;</a>
+<a name="ln347">  if(pConv-&gt;IsOption(&quot;u&quot;))</a>
+<a name="ln348">    opts |= OBDepict::bwAtoms;</a>
+<a name="ln349">  if(!pConv-&gt;IsOption(&quot;U&quot;))</a>
+<a name="ln350">   opts |= OBDepict::internalColor;</a>
+<a name="ln351">  if(!pConv-&gt;IsOption(&quot;C&quot;))</a>
+<a name="ln352">    opts |= OBDepict::drawTermC;// on by default</a>
+<a name="ln353">  if(pConv-&gt;IsOption(&quot;a&quot;))</a>
+<a name="ln354">    opts |= OBDepict::drawAllC;</a>
+<a name="ln355">  if(pConv-&gt;IsOption(&quot;W&quot;))</a>
+<a name="ln356">    opts |= OBDepict::noWedgeHashGen;</a>
+<a name="ln357">  if(pConv-&gt;IsOption(&quot;s&quot;))</a>
+<a name="ln358">   opts |= OBDepict::asymmetricDoubleBond;</a>
+<a name="ln359">  if(pConv-&gt;IsOption(&quot;X&quot;))</a>
+<a name="ln360">    opts |= OBDepict::allExplicit;</a>
+<a name="ln361"> </a>
+<a name="ln362">  bool balldepict = false;</a>
+<a name="ln363">  if(pConv-&gt;IsOption(&quot;S&quot;)) {</a>
+<a name="ln364">    balldepict = true;</a>
+<a name="ln365">  }</a>
+<a name="ln366"> </a>
+<a name="ln367">  double factor = 1.0;</a>
+<a name="ln368">  int nc = _ncols ? _ncols : 1;</a>
+<a name="ln369">  int nr = (_nrows ? _nrows : 1);</a>
+<a name="ln370">  double cellsize = 100. / std::max(nc, nr);</a>
+<a name="ln371"> </a>
+<a name="ln372">  stringstream molfs;</a>
+<a name="ln373">  std::set&lt;ColorGradient&gt; gradients;</a>
+<a name="ln374"> </a>
+<a name="ln375">  OBOp* pOp = OBOp::FindType(&quot;gen2D&quot;);</a>
+<a name="ln376">  if(!balldepict &amp;&amp; !pOp)</a>
+<a name="ln377">  {</a>
+<a name="ln378">    obErrorLog.ThrowError(&quot;SVGFormat&quot;, &quot;gen2D not found&quot;, obError, onceOnly);</a>
+<a name="ln379">    return false;</a>
+<a name="ln380">  }</a>
+<a name="ln381"> </a>
+<a name="ln382">  vector&lt;OBBase*&gt;::iterator iter;</a>
+<a name="ln383">  int indx = 0;</a>
+<a name="ln384">  for(iter=_objects.begin(); ret &amp;&amp; iter!=_objects.end(); ++iter,++indx)</a>
+<a name="ln385">  {</a>
+<a name="ln386">    OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(*iter);</a>
+<a name="ln387"> </a>
+<a name="ln388">    if (!pmol)</a>
+<a name="ln389">      continue;</a>
+<a name="ln390">    //*** Coordinate generation ***</a>
+<a name="ln391">    //Generate coordinates only if no existing 2D coordinates and we're not doing ball-and-stick style</a>
+<a name="ln392">    if( (pConv-&gt;IsOption(&quot;y&quot;) || !pmol-&gt;Has2D(true)) &amp;&amp; (!pConv-&gt;IsOption(&quot;n&quot;) &amp;&amp; !balldepict))</a>
+<a name="ln393">    {</a>
+<a name="ln394">      if(!pOp-&gt;Do(pmol))</a>
+<a name="ln395">      {</a>
+<a name="ln396">        obErrorLog.ThrowError(&quot;SVGFormat&quot;, string(pmol-&gt;GetTitle()) + &quot;- Coordinate generation unsuccessful&quot;, obError);</a>
+<a name="ln397">        return false;</a>
+<a name="ln398">      }</a>
+<a name="ln399">    }</a>
+<a name="ln400">    if(!pmol-&gt;Has2D() &amp;&amp; pmol-&gt;NumAtoms()&gt;1)//allows 3D coordinates (if passed by -xn above)</a>
+<a name="ln401">    {</a>
+<a name="ln402">      string mes(&quot;Molecule &quot;);</a>
+<a name="ln403">      mes += pmol-&gt;GetTitle();</a>
+<a name="ln404">      mes += &quot; needs 2D coordinates to display in SVGformat&quot;;</a>
+<a name="ln405">      obErrorLog.ThrowError(&quot;SVGFormat&quot;, mes, obError);</a>
+<a name="ln406">      return false;</a>
+<a name="ln407">    }</a>
+<a name="ln408">    double innerX = 0.0;</a>
+<a name="ln409">    double innerY = 0.0;</a>
+<a name="ln410">    if(hasTable)</a>
+<a name="ln411">    {</a>
+<a name="ln412">      //*** Parameter for inner svg ***</a>
+<a name="ln413">      innerX  = (indx % nc) * cellsize;</a>
+<a name="ln414">      innerY  = (indx / nc) * cellsize;</a>
+<a name="ln415"> </a>
+<a name="ln416">      // Change the background in this cell if the condition in the first</a>
+<a name="ln417">      // parameter of  the -xh option is met. Use a default color if</a>
+<a name="ln418">      // the highlight color is not specified in the second parameter.</a>
+<a name="ln419">      const char* htxt = pConv-&gt;IsOption(&quot;h&quot;);</a>
+<a name="ln420">      if(htxt)</a>
+<a name="ln421">      {</a>
+<a name="ln422">        vector&lt;string&gt; vec;</a>
+<a name="ln423">        tokenize(vec, htxt);</a>
+<a name="ln424">        string highlight(vec.size()&gt;1 ? vec[1] : &quot;#f4f0ff&quot;);</a>
+<a name="ln425">        std::istringstream conditionText(vec[0]);</a>
+<a name="ln426">        if(OBDescriptor::FilterCompare(*iter, conditionText, false))</a>
+<a name="ln427">          //Still in outer &lt;svg&gt;, unfortunately</a>
+<a name="ln428">          molfs &lt;&lt; &quot;&lt;rect x=\&quot;&quot; &lt;&lt; innerX &lt;&lt; &quot;\&quot; y=\&quot;&quot; &lt;&lt; innerY</a>
+<a name="ln429">              &lt;&lt; &quot;\&quot; width=\&quot;&quot; &lt;&lt; cellsize &lt;&lt; &quot;\&quot; height=\&quot;&quot; &lt;&lt; cellsize</a>
+<a name="ln430">              &lt;&lt; &quot;\&quot; fill=\&quot;&quot; &lt;&lt; highlight &lt;&lt; &quot;\&quot;/&gt;\n&quot;;</a>
+<a name="ln431">      }</a>
+<a name="ln432">    }</a>
+<a name="ln433"> </a>
+<a name="ln434">    SVGPainter painter(molfs, &amp;gradients, true, cellsize, cellsize);</a>
+<a name="ln435">    OBDepict depictor(&amp;painter, balldepict);</a>
+<a name="ln436"> </a>
+<a name="ln437">    depictor.SetOption(opts);</a>
+<a name="ln438"> </a>
+<a name="ln439">    if(pConv-&gt;IsOption(&quot;A&quot;))</a>
+<a name="ln440">    {</a>
+<a name="ln441">      AliasData::RevertToAliasForm(*pmol);</a>
+<a name="ln442">      depictor.SetAliasMode();</a>
+<a name="ln443">    }</a>
+<a name="ln444">    painter.SetFontFamily(&quot;sans-serif&quot;);</a>
+<a name="ln445">    painter.SetPenColor(OBColor(bondcolor));</a>
+<a name="ln446">    depictor.SetBondColor(bondcolor);</a>
+<a name="ln447">    if(pConv-&gt;IsOption(&quot;t&quot;))</a>
+<a name="ln448">      painter.SetPenWidth(4);</a>
+<a name="ln449">    else</a>
+<a name="ln450">      painter.SetPenWidth(2);</a>
+<a name="ln451"> </a>
+<a name="ln452">    molfs &lt;&lt; &quot;&lt;g transform=\&quot;translate(&quot; &lt;&lt; innerX &lt;&lt; &quot;,&quot; &lt;&lt; innerY &lt;&lt; &quot;)\&quot;&gt;\n&quot;;</a>
+<a name="ln453"> </a>
+<a name="ln454">    ret = depictor.DrawMolecule(pmol);</a>
+<a name="ln455"> </a>
+<a name="ln456"> </a>
+<a name="ln457">    //Draw atom indices if requested</a>
+<a name="ln458">    if(pConv-&gt;IsOption(&quot;i&quot;))</a>
+<a name="ln459">      depictor.AddAtomLabels(OBDepict::AtomIndex);</a>
+<a name="ln460"> </a>
+<a name="ln461">    painter.EndCanvas();</a>
+<a name="ln462"> </a>
+<a name="ln463"> </a>
+<a name="ln464">    //Embed CML of molecule if requested</a>
+<a name="ln465">    if(pConv-&gt;IsOption(&quot;e&quot;))</a>
+<a name="ln466">      EmbedCML(pmol, pConv, &amp;molfs);</a>
+<a name="ln467"> </a>
+<a name="ln468">    molfs &lt;&lt;&quot;&lt;/g&gt;\n&quot;;</a>
+<a name="ln469"> </a>
+<a name="ln470">    //*** Write molecule name ***</a>
+<a name="ln471">    if(!pConv-&gt;IsOption(&quot;d&quot;)) {</a>
+<a name="ln472">      if(hasTable) {</a>
+<a name="ln473">        molfs &lt;&lt; &quot;&lt;text text-anchor=\&quot;middle\&quot; font-size=\&quot;&quot; &lt;&lt; 0.06*cellsize &lt;&lt; &quot;\&quot;&quot;</a>
+<a name="ln474">        &lt;&lt; &quot; fill =\&quot;&quot; &lt;&lt; bondcolor &lt;&lt; &quot;\&quot; font-family=\&quot;sans-serif\&quot;\n&quot;</a>
+<a name="ln475">        &lt;&lt; &quot;x=\&quot;&quot; &lt;&lt; innerX + cellsize * 0.5 &lt;&lt; &quot;\&quot; y=\&quot;&quot; &lt;&lt; innerY + cellsize - 2.0/nr &lt;&lt; &quot;\&quot; &gt;&quot;</a>
+<a name="ln476">        &lt;&lt; pmol-&gt;GetTitle() &lt;&lt; &quot;&lt;/text&gt;\n&quot;;</a>
+<a name="ln477">      } else {</a>
+<a name="ln478">        molfs &lt;&lt; &quot;&lt;text font-size=\&quot;&quot; &lt;&lt; 18 * factor  &lt;&lt; &quot;\&quot;&quot;</a>
+<a name="ln479">        &lt;&lt; &quot; fill =\&quot;&quot; &lt;&lt; bondcolor &lt;&lt; &quot;\&quot; font-family=\&quot;sans-serif\&quot;\n&quot;</a>
+<a name="ln480">        &lt;&lt; &quot;x=\&quot;&quot; &lt;&lt; 10 * factor &lt;&lt; &quot;\&quot; y=\&quot;&quot; &lt;&lt; 20 * factor &lt;&lt; &quot;\&quot; &gt;&quot;</a>
+<a name="ln481">        &lt;&lt; pmol-&gt;GetTitle() &lt;&lt; &quot;&lt;/text&gt;\n&quot;;</a>
+<a name="ln482">      }</a>
+<a name="ln483">    }</a>
+<a name="ln484">  }</a>
+<a name="ln485"> </a>
+<a name="ln486">  // finally write svg defs</a>
+<a name="ln487">  SVGPainter painter(ofs, &amp;gradients, true, cellsize,cellsize);</a>
+<a name="ln488">  painter.WriteDefs();</a>
+<a name="ln489"> </a>
+<a name="ln490">  // and stream back all molecule data</a>
+<a name="ln491">  ofs &lt;&lt; molfs.str();</a>
+<a name="ln492"> </a>
+<a name="ln493">  //Draw grid lines</a>
+<a name="ln494">  if(hasTable &amp;&amp; pConv-&gt;IsOption(&quot;l&quot;))</a>
+<a name="ln495">  {</a>
+<a name="ln496">    for(int i=1; i&lt;_nrows; ++i)</a>
+<a name="ln497">      ofs &lt;&lt; &quot; &lt;line  stroke=\&quot;gray\&quot; stroke-width=\&quot;0.1\&quot; x1=\&quot;0\&quot; x2=\&quot;100\&quot;&quot;</a>
+<a name="ln498">          &lt;&lt; &quot; y1=\&quot;&quot;  &lt;&lt; i*cellsize &lt;&lt; &quot;\&quot; y2=\&quot;&quot;  &lt;&lt; i*cellsize &lt;&lt; &quot;\&quot;/&gt;\n&quot;;</a>
+<a name="ln499">    for(int i=1; i&lt;_ncols; ++i)</a>
+<a name="ln500">      ofs &lt;&lt; &quot; &lt;line  stroke=\&quot;gray\&quot; stroke-width=\&quot;0.1\&quot; y1=\&quot;0\&quot; y2=\&quot;100\&quot;&quot;</a>
+<a name="ln501">          &lt;&lt; &quot; x1=\&quot;&quot;  &lt;&lt; i*cellsize &lt;&lt; &quot;\&quot; x2=\&quot;&quot;  &lt;&lt; i*cellsize &lt;&lt; &quot;\&quot;/&gt;\n&quot;;</a>
+<a name="ln502">  }</a>
+<a name="ln503"> </a>
+<a name="ln504">  //Insert javascript for zooming and panning</a>
+<a name="ln505">  if(!pConv-&gt;IsOption(&quot;j&quot;))</a>
+<a name="ln506">    EmbedScript(ofs);</a>
+<a name="ln507"> </a>
+<a name="ln508">  ofs &lt;&lt; &quot;&lt;/svg&gt;\n&quot;;</a>
+<a name="ln509">return ret;</a>
+<a name="ln510">}</a>
+<a name="ln511"> </a>
+<a name="ln512">/////////////////////////////////////////////////////////////</a>
+<a name="ln513">//returns true if the file &quot;svgformat.script&quot; was inserted into the output</a>
+<a name="ln514">bool SVGFormat::EmbedScript(ostream&amp; ofs)</a>
+<a name="ln515">{</a>
+<a name="ln516">  ifstream ifs;</a>
+<a name="ln517">  if(!ifs || OpenDatafile(ifs, &quot;svgformat.script&quot;).empty())</a>
+<a name="ln518">    return false;</a>
+<a name="ln519">  ofs &lt;&lt; ifs.rdbuf(); //copy whole file</a>
+<a name="ln520">  return true;</a>
+<a name="ln521">}</a>
+<a name="ln522"> </a>
+<a name="ln523">///////////////////////////////////////////////////////////////////////////////////</a>
+<a name="ln524">bool SVGFormat::EmbedCML(OBMol* pmol, OBConversion* pConv, ostream* ofs)</a>
+<a name="ln525">{</a>
+<a name="ln526">  OBConversion CMLConv(*pConv);</a>
+<a name="ln527">  if(!CMLConv.SetOutFormat(&quot;cml&quot;))</a>
+<a name="ln528">  {</a>
+<a name="ln529">    obErrorLog.ThrowError(__FUNCTION__, &quot;CML format was not found\n&quot;,obError);</a>
+<a name="ln530">    return false;</a>
+<a name="ln531">  }</a>
+<a name="ln532">  CMLConv.AddOption(&quot;MolsNotStandalone&quot;,OBConversion::OUTOPTIONS);</a>
+<a name="ln533">  CMLConv.AddOption(&quot;N&quot;,OBConversion::OUTOPTIONS,&quot;cml&quot;);</a>
+<a name="ln534">  CMLConv.AddOption(&quot;p&quot;,OBConversion::OUTOPTIONS); //include properties</a>
+<a name="ln535">//  CMLConv.AddOption(&quot;x&quot;,OBConversion::OUTOPTIONS);</a>
+<a name="ln536">  return CMLConv.Write(pmol, ofs);</a>
+<a name="ln537">}</a>
+<a name="ln538"> </a>
+<a name="ln539">/*</a>
+<a name="ln540">The script below was originally (and still could be) in data/svgformat.script,</a>
+<a name="ln541">the whole of which is embedded into the output.</a>
+<a name="ln542">It works adequately in modern versions of Firefox, Chrome, Opera and</a>
+<a name="ln543">Internet Explorer 9, to zoom with the mouse wheel and pan by dragging.</a>
+<a name="ln544"> </a>
+<a name="ln545">&lt;script type=&quot;text/ecmascript&quot;&gt;</a>
+<a name="ln546">  &lt;![CDATA[</a>
+<a name="ln547">    var svgEl = document.getElementById(&quot;topsvg&quot;);</a>
+<a name="ln548">    svgEl.addEventListener('DOMMouseScroll', wheel, false);</a>
+<a name="ln549">    svgEl.addEventListener('mousewheel', wheel, false);</a>
+<a name="ln550">    var startx=0;</a>
+<a name="ln551">    var starty=0;</a>
+<a name="ln552">    function wheel(evt){</a>
+<a name="ln553">      evt = evt ? evt : window.event;</a>
+<a name="ln554">      var normal = evt.detail ? evt.detail * -1 : evt.wheelDelta / 40;</a>
+<a name="ln555">      var vb = new Array(4);</a>
+<a name="ln556">      var vbtext = svgEl.getAttributeNS(null,&quot;viewBox&quot;);</a>
+<a name="ln557">      vb = vbtext.split(&quot; &quot;);</a>
+<a name="ln558">      var zoom = (normal&lt;0)? 1.41 : 0.71;</a>
+<a name="ln559">      //var dwidth = parseFloat(Math.max(vb[2],vb[3])) * (1-zoom);</a>
+<a name="ln560">      vb[0] = parseFloat(vb[0]) + parseFloat(vb[2])*(1-zoom) * evt.clientX/innerWidth;</a>
+<a name="ln561">      vb[1] = parseFloat(vb[1]) + parseFloat(vb[3])*(1-zoom) * evt.clientY/innerHeight;</a>
+<a name="ln562">      vb[2] = parseFloat(vb[2]) * zoom;</a>
+<a name="ln563">      vb[3] = parseFloat(vb[3]) * zoom;</a>
+<a name="ln564">      svgEl.setAttributeNS(null, &quot;viewBox&quot;, vb.join(&quot; &quot;));</a>
+<a name="ln565">      if (evt.preventDefault)</a>
+<a name="ln566">        evt.preventDefault(); // Don't scroll the page when zooming</a>
+<a name="ln567">    }</a>
+<a name="ln568">   svgEl.onmousedown = function(evt) {</a>
+<a name="ln569">      startx = evt.clientX;</a>
+<a name="ln570">      starty = evt.clientY;</a>
+<a name="ln571">    }</a>
+<a name="ln572">    svgEl.onmousemove=function(evt) {</a>
+<a name="ln573">      if(startx!=0 &amp;&amp; starty!=0</a>
+<a name="ln574">        &amp;&amp; ((evt.clientX - startx)*(evt.clientX - startx)+(evt.clientY - starty)*(evt.clientY - starty)&gt;100))</a>
+<a name="ln575">      {</a>
+<a name="ln576">        var vbtext = svgEl.getAttributeNS(null,&quot;viewBox&quot;);</a>
+<a name="ln577">        vb = vbtext.split(&quot; &quot;);</a>
+<a name="ln578">        var maxwh = Math.max(parseFloat(vb[2]),parseFloat(vb[3]));</a>
+<a name="ln579">        vb[0] = parseFloat(vb[0]) - (evt.clientX - startx)*maxwh/innerWidth;</a>
+<a name="ln580">        vb[1] = parseFloat(vb[1]) - (evt.clientY - starty)*maxwh/innerHeight;</a>
+<a name="ln581">        svgEl.setAttributeNS(null, &quot;viewBox&quot;, vb.join(&quot; &quot;));</a>
+<a name="ln582">        startx = evt.clientX;</a>
+<a name="ln583">        starty = evt.clientY;</a>
+<a name="ln584">      }</a>
+<a name="ln585">    }</a>
+<a name="ln586">    svgEl.onmouseup=function() {</a>
+<a name="ln587">      startx=0;</a>
+<a name="ln588">      starty=0;</a>
+<a name="ln589">    }</a>
+<a name="ln590">    svgEl.ondblclick=function() {</a>
+<a name="ln591">      location.reload();</a>
+<a name="ln592">    }</a>
+<a name="ln593">  ]]&gt;</a>
+<a name="ln594">&lt;/script&gt;</a>
+<a name="ln595"> </a>
+<a name="ln596">Alternatively, svgformat.script could contain:</a>
+<a name="ln597"> </a>
+<a name="ln598">&lt;script type=&quot;text/ecmascript&quot; xlink:href=&quot;morescript.js&quot; /&gt;</a>
+<a name="ln599"> </a>
+<a name="ln600">with the real script in morescript.js.</a>
+<a name="ln601">*/</a>
+<a name="ln602"> </a>
+<a name="ln603">}//namespace</a>
+
+</code></pre>
+<div class="balloon" rel="325"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v636/" target="_blank">V636</a> The '(100 * _ncols) / _nrows' expression was implicitly cast from 'int' type to 'double' type. Consider utilizing an explicit type cast to avoid the loss of a fractional part. An example: double A = (double)(X) / Y;.</p></div>
+<div class="balloon" rel="327"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v636/" target="_blank">V636</a> The '(100 * _nrows) / _ncols' expression was implicitly cast from 'int' type to 'double' type. Consider utilizing an explicit type cast to avoid the loss of a fractional part. An example: double A = (double)(X) / Y;.</p></div>
+<div class="balloon" rel="414"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v636/" target="_blank">V636</a> The 'indx / nc' expression was implicitly cast from 'int' type to 'double' type. Consider utilizing an explicit type cast to avoid the loss of a fractional part. An example: double A = (double)(X) / Y;.</p></div>
+<div class="balloon" rel="532"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v666/" target="_blank">V666</a> Consider inspecting second argument of the function 'AddOption'. It is possible that the value does not correspond with the length of a string which was passed with the first argument.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

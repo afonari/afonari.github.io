@@ -1,0 +1,219 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>changecell.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">ChangeCell.cpp - The option --changecell  Change unutcell.</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright(C) 2014 by Okhotnikov Kirill</a>
+<a name="ln5"> </a>
+<a name="ln6">This file is part of the Open Babel project.</a>
+<a name="ln7">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln10">it under the terms of the GNU General Public License as published by</a>
+<a name="ln11">the Free Software Foundation version 2 of the License.</a>
+<a name="ln12"> </a>
+<a name="ln13">This program is distributed in the hope that it will be useful,</a>
+<a name="ln14">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln15">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln16">GNU General Public License for more details.</a>
+<a name="ln17">***********************************************************************/</a>
+<a name="ln18">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln19">#include &lt;iostream&gt;</a>
+<a name="ln20">#include&lt;openbabel/op.h&gt;</a>
+<a name="ln21">#include&lt;openbabel/mol.h&gt;</a>
+<a name="ln22">#include &lt;openbabel/oberror.h&gt;</a>
+<a name="ln23">#include &lt;openbabel/generic.h&gt;</a>
+<a name="ln24">#include &lt;openbabel/obiter.h&gt;</a>
+<a name="ln25">#include &lt;openbabel/atom.h&gt;</a>
+<a name="ln26">#include &lt;cstdlib&gt;</a>
+<a name="ln27"> </a>
+<a name="ln28">namespace OpenBabel</a>
+<a name="ln29">{</a>
+<a name="ln30"> </a>
+<a name="ln31">class OpChangeCell : public OBOp</a>
+<a name="ln32">{</a>
+<a name="ln33">protected:</a>
+<a name="ln34">  class vc_val</a>
+<a name="ln35">  {</a>
+<a name="ln36">  public:  </a>
+<a name="ln37">    bool mult;</a>
+<a name="ln38">    double value;</a>
+<a name="ln39">    vc_val(): mult(false), value(0.0) {};</a>
+<a name="ln40">  };</a>
+<a name="ln41">  </a>
+<a name="ln42">public:</a>
+<a name="ln43">  OpChangeCell(const char* ID) : OBOp(ID, false){};</a>
+<a name="ln44">  const char* Description(){ return &quot;Change cell size:\n&quot;</a>
+<a name="ln45">                                    &quot;     [keepfract];[*]a;[*]b;[*]c\n&quot;</a>
+<a name="ln46">                                    &quot;     Original cell dimensions can be changed to value a, b or c or multiplied with key '*' &quot; ; }</a>
+<a name="ln47"> </a>
+<a name="ln48">  virtual bool WorksWith(OBBase* pOb) const { return dynamic_cast&lt;OBMol*&gt;(pOb) != nullptr; }</a>
+<a name="ln49">  virtual bool Do(OBBase* pOb, const char* OptionText=nullptr, OpMap* pOptions=nullptr, OBConversion* pConv=nullptr);</a>
+<a name="ln50">};</a>
+<a name="ln51"> </a>
+<a name="ln52">/////////////////////////////////////////////////////////////////</a>
+<a name="ln53">OpChangeCell theOpChangeCell(&quot;ChangeCell&quot;); //Global instance</a>
+<a name="ln54"> </a>
+<a name="ln55">/////////////////////////////////////////////////////////////////</a>
+<a name="ln56">bool OpChangeCell::Do(OBBase* pOb, const char* OptionText, OpMap* pOptions, OBConversion* pConv)</a>
+<a name="ln57">{</a>
+<a name="ln58">  std::vector&lt;std::string&gt; vcr;</a>
+<a name="ln59">  tokenize(vcr, OptionText, &quot;;&quot;);</a>
+<a name="ln60"> </a>
+<a name="ln61">  if( (vcr.size() != 3) &amp;&amp; (vcr.size() != 4) )</a>
+<a name="ln62">  {  </a>
+<a name="ln63">    obErrorLog.ThrowError(__FUNCTION__, &quot;Invalid number of arguments!&quot; , obWarning);</a>
+<a name="ln64">    return false;</a>
+<a name="ln65">  }  </a>
+<a name="ln66"> </a>
+<a name="ln67">  OBMol* pmol = dynamic_cast&lt;OBMol*&gt;(pOb);</a>
+<a name="ln68">  if(!pmol)</a>
+<a name="ln69">    return false;</a>
+<a name="ln70">  </a>
+<a name="ln71">  bool keep_fract = false;</a>
+<a name="ln72">  if( vcr[0][0] == 'k' )</a>
+<a name="ln73">  {  </a>
+<a name="ln74">    keep_fract = true;</a>
+<a name="ln75">    vcr.erase(vcr.begin());</a>
+<a name="ln76">  }</a>
+<a name="ln77">  </a>
+<a name="ln78">  if( vcr.size() != 3 )</a>
+<a name="ln79">  {  </a>
+<a name="ln80">    obErrorLog.ThrowError(__FUNCTION__, &quot;Invalid input. Check first argument!&quot; , obWarning);</a>
+<a name="ln81">    return false;</a>
+<a name="ln82">  }  </a>
+<a name="ln83">  </a>
+<a name="ln84">  std::vector&lt;vc_val&gt; vcvs;</a>
+<a name="ln85">  </a>
+<a name="ln86">  vcvs.resize(3);</a>
+<a name="ln87">  </a>
+<a name="ln88">  for(int i = 0; i &lt; vcvs.size(); i++)</a>
+<a name="ln89">  {</a>
+<a name="ln90">    std::string str = vcr[i];</a>
+<a name="ln91">    Trim(str);</a>
+<a name="ln92">    vcvs[i].mult = false;</a>
+<a name="ln93">    if( str[0] == '*' )</a>
+<a name="ln94">    {</a>
+<a name="ln95">      vcvs[i].mult = true;</a>
+<a name="ln96">      str = str.substr(1);</a>
+<a name="ln97">    }</a>
+<a name="ln98">    vcvs[i].value = atof(str.c_str());</a>
+<a name="ln99">    if(  vcvs[i].value == 0 )</a>
+<a name="ln100">    {  </a>
+<a name="ln101">      obErrorLog.ThrowError(__FUNCTION__, &quot;Wrong value \&quot;&quot; + str +&quot;\&quot;&quot; , obWarning);</a>
+<a name="ln102">      return false;</a>
+<a name="ln103">    }</a>
+<a name="ln104">  }  </a>
+<a name="ln105">  </a>
+<a name="ln106">  OBUnitCell * old_cell;</a>
+<a name="ln107">  if ( ! pmol-&gt;HasData(OBGenericDataType::UnitCell) )</a>
+<a name="ln108">    old_cell = nullptr;</a>
+<a name="ln109">  else         </a>
+<a name="ln110">    old_cell = (OBUnitCell*)pmol-&gt;GetData(OBGenericDataType::UnitCell);</a>
+<a name="ln111">  </a>
+<a name="ln112">  if (old_cell == nullptr)</a>
+<a name="ln113">  {</a>
+<a name="ln114">    if(  keep_fract )</a>
+<a name="ln115">    {  </a>
+<a name="ln116">      obErrorLog.ThrowError(__FUNCTION__, &quot;Cannot keep fractional coordinates without unit cell!&quot; , obWarning);</a>
+<a name="ln117">      return false;</a>
+<a name="ln118">    }</a>
+<a name="ln119">    for(int i = 0; i &lt; vcvs.size(); i++)</a>
+<a name="ln120">    {</a>
+<a name="ln121">      if( vcvs[i].mult )</a>
+<a name="ln122">      {</a>
+<a name="ln123">        obErrorLog.ThrowError(__FUNCTION__, &quot;Cannot multiply sizes without unit cell!&quot; , obWarning);</a>
+<a name="ln124">        return false;</a>
+<a name="ln125">      }</a>
+<a name="ln126">    }</a>
+<a name="ln127">  }  </a>
+<a name="ln128">  double a, b, c, alpha, beta, gamma;</a>
+<a name="ln129">  if (old_cell != nullptr)</a>
+<a name="ln130">  {</a>
+<a name="ln131">    a = old_cell-&gt;GetA(); b = old_cell-&gt;GetB(); c = old_cell-&gt;GetC(); </a>
+<a name="ln132">    alpha = old_cell-&gt;GetAlpha(); beta = old_cell-&gt;GetBeta(); gamma = old_cell-&gt;GetGamma();     </a>
+<a name="ln133">  }  </a>
+<a name="ln134">  else</a>
+<a name="ln135">  {</a>
+<a name="ln136">    a = 0.0; b = 0.0; c = 0.0;</a>
+<a name="ln137">    alpha = 90.0; beta = 90.0; gamma = 90.0;</a>
+<a name="ln138">  }</a>
+<a name="ln139">  </a>
+<a name="ln140">  OBUnitCell * new_cell = new OBUnitCell();</a>
+<a name="ln141">  new_cell-&gt;SetData( (vcvs[0].mult ? a : 1.0) * vcvs[0].value,  </a>
+<a name="ln142">                     (vcvs[1].mult ? b : 1.0) * vcvs[1].value, </a>
+<a name="ln143">                     (vcvs[2].mult ? c : 1.0) * vcvs[2].value,</a>
+<a name="ln144">                     alpha, beta, gamma );</a>
+<a name="ln145">  if (old_cell == nullptr)</a>
+<a name="ln146">    new_cell-&gt;SetSpaceGroup(1);</a>
+<a name="ln147">  else</a>
+<a name="ln148">    new_cell-&gt;SetSpaceGroup(old_cell-&gt;GetSpaceGroupNumber());</a>
+<a name="ln149">  </a>
+<a name="ln150">  if( keep_fract )</a>
+<a name="ln151">  {</a>
+<a name="ln152">    pmol-&gt;BeginModify();</a>
+<a name="ln153">    </a>
+<a name="ln154">    FOR_ATOMS_OF_MOL(a, pmol)</a>
+<a name="ln155">    {</a>
+<a name="ln156">      vector3 old_fract = old_cell-&gt;CartesianToFractional(a-&gt;GetVector());</a>
+<a name="ln157">      vector3 new_cart = new_cell-&gt;FractionalToCartesian(old_fract);</a>
+<a name="ln158">      a-&gt;SetVector(new_cart);</a>
+<a name="ln159">    }        </a>
+<a name="ln160">    </a>
+<a name="ln161">    pmol-&gt;EndModify();</a>
+<a name="ln162">  }  </a>
+<a name="ln163">  </a>
+<a name="ln164">  if (old_cell != nullptr)</a>
+<a name="ln165">    pmol-&gt;DeleteData(old_cell);</a>
+<a name="ln166">  </a>
+<a name="ln167">  pmol-&gt;SetData(new_cell);</a>
+<a name="ln168">    </a>
+<a name="ln169">  return true;</a>
+<a name="ln170">}</a>
+<a name="ln171">}//namespace</a>
+<a name="ln172"> </a>
+<a name="ln173"> </a>
+
+</code></pre>
+<div class="balloon" rel="156"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v595/" target="_blank">V595</a> The 'old_cell' pointer was utilized before it was verified against nullptr. Check lines: 156, 164.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>

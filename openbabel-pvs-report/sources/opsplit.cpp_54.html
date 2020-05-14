@@ -1,0 +1,243 @@
+
+<html>
+<head>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=US-ASCII" />
+  <title>opsplit.cpp</title>
+
+  <link rel="stylesheet" href="../style.css"/>
+  <script src="../jquery-3.2.1.min.js"></script>
+</head>
+<body>
+
+<pre><code class = "cpp">
+<a name="ln1">/**********************************************************************</a>
+<a name="ln2">opsplit.cpp - A OBOp to write each molecule to a file with a name from the molecule, usually thetitle.</a>
+<a name="ln3"> </a>
+<a name="ln4">Copyright(C) 2011 by Chris Morley</a>
+<a name="ln5"> </a>
+<a name="ln6">This file is part of the Open Babel project.</a>
+<a name="ln7">For more information, see &lt;http://openbabel.org/&gt;</a>
+<a name="ln8"> </a>
+<a name="ln9">This program is free software; you can redistribute it and/or modify</a>
+<a name="ln10">it under the terms of the GNU General Public License as published by</a>
+<a name="ln11">the Free Software Foundation version 2 of the License.</a>
+<a name="ln12"> </a>
+<a name="ln13">This program is distributed in the hope that it will be useful,</a>
+<a name="ln14">but WITHOUT ANY WARRANTY; without even the implied warranty of</a>
+<a name="ln15">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</a>
+<a name="ln16">GNU General Public License for more details.</a>
+<a name="ln17">***********************************************************************/</a>
+<a name="ln18">#include &lt;openbabel/babelconfig.h&gt;</a>
+<a name="ln19">#include &lt;openbabel/obconversion.h&gt;</a>
+<a name="ln20">#include &lt;openbabel/op.h&gt;</a>
+<a name="ln21">#include &lt;openbabel/mol.h&gt;</a>
+<a name="ln22">#include &lt;fstream&gt;</a>
+<a name="ln23">#include &quot;deferred.h&quot;</a>
+<a name="ln24">#include &lt;openbabel/descriptor.h&gt;</a>
+<a name="ln25"> </a>
+<a name="ln26">namespace OpenBabel</a>
+<a name="ln27">{</a>
+<a name="ln28"> </a>
+<a name="ln29">class OpSplit : public OBOp</a>
+<a name="ln30">{</a>
+<a name="ln31">public:</a>
+<a name="ln32">  OpSplit(const char* ID) : OBOp(ID, false){};</a>
+<a name="ln33">  const char* Description()</a>
+<a name="ln34">  { </a>
+<a name="ln35">    return &quot;[param] split, each filename from param;default title\n&quot;</a>
+<a name="ln36">           &quot;param is an optional property or descriptor.\n&quot;</a>
+<a name="ln37">           &quot;    obabel  in.sdf  -omol2  --split\n&quot;</a>
+<a name="ln38">           &quot;will output each molecule in a file named ``&lt;title&gt;.mol2``\n&quot;</a>
+<a name="ln39">           &quot;in the current directory.\n&quot;</a>
+<a name="ln40">           &quot;If an output filename is specified it is used to define the format\n&quot;</a>
+<a name="ln41">           &quot;and the path of the output files, but its name is ignored.\n&quot;</a>
+<a name="ln42">           &quot;If the molecule has no title or if it contains illegal characters,\n&quot;</a>
+<a name="ln43">           &quot;the input count (starting at 1) is used as the filename.\n&quot;</a>
+<a name="ln44">           &quot;The existing command:\n&quot;</a>
+<a name="ln45">           &quot;    obabel  in.sdf  -O .mol2  -m\n&quot;</a>
+<a name="ln46">           &quot;will give the same output as this, whatever the molecule titles.\n \n&quot;</a>
+<a name="ln47"> </a>
+<a name="ln48">           &quot;A descriptor or property, if present as a parameter, can be used\n&quot;</a>
+<a name="ln49">           &quot;to define the filename, e.g.\n&quot;</a>
+<a name="ln50">           &quot;    obabel  chembl_02.sdf.gz  -omol  --split chebi_id  -l8\n&quot;</a>
+<a name="ln51">           &quot;will produce a file for each of the first 8 molecules with filename\n&quot;</a>
+<a name="ln52">           &quot;the same as its sdf property ``chebi_id``.\n \n&quot;</a>
+<a name="ln53"> </a>
+<a name="ln54">           &quot;Filtering of the molecules or minor manipulation (e.g. make H explicit)\n&quot;</a>
+<a name="ln55">           &quot;can be done at the same time as splitting by adding further options\n&quot;</a>
+<a name="ln56">           &quot;to the command line.\n \n&quot;</a>
+<a name="ln57"> </a>
+<a name="ln58">           &quot;For files with Unix line-endings, copy format can be used to avoid\n&quot;</a>
+<a name="ln59">           &quot;uncertainties of interpretation. With SDF files, it can also be much\n&quot;</a>
+<a name="ln60">           &quot;faster if the -aT or -aP options are used when the title or\n&quot;</a>
+<a name="ln61">           &quot;properties respectively are used to derive the filename or in filtering.\n&quot;</a>
+<a name="ln62">           &quot;The following produces (in a subdirectory) an sdf file for each molecule,\n&quot;</a>
+<a name="ln63">           &quot;with a filename derived from its title:\n&quot;</a>
+<a name="ln64">           &quot;    obabel  in.sdf  -O sub/out.sdf  --split  -aT  -ocopy\n \n&quot;</a>
+<a name="ln65"> </a>
+<a name="ln66">           &quot;If a format specification like -osdf is used without a filename, the\n&quot;</a>
+<a name="ln67">           &quot;extension is chosen by OpenBabel from the alternatives for the format, and\n&quot;</a>
+<a name="ln68">           &quot;cannot be changed. So if you don't like .smiles, use a dummy filename.\n\n&quot;</a>
+<a name="ln69">           ;</a>
+<a name="ln70">  }</a>
+<a name="ln71">  virtual bool WorksWith(OBBase* pOb)const { return true; } //all OBBase objects</a>
+<a name="ln72">  virtual bool Do(OBBase* pOb, const char* OptionText=nullptr, OpMap* pOptions=nullptr, OBConversion* pConv=nullptr);</a>
+<a name="ln73">private:</a>
+<a name="ln74">  int _inputCount;</a>
+<a name="ln75">  OBFormat* _realOutFormat;</a>
+<a name="ln76">  std::string _optionText, _outExt, _outPath;</a>
+<a name="ln77">  OBDescriptor* _pDesc;</a>
+<a name="ln78">};</a>
+<a name="ln79"> </a>
+<a name="ln80">/////////////////////////////////////////////////////////////////</a>
+<a name="ln81">OpSplit theOpSplit(&quot;split&quot;); //Global instance</a>
+<a name="ln82"> </a>
+<a name="ln83">/////////////////////////////////////////////////////////////////</a>
+<a name="ln84">bool OpSplit::Do(OBBase* pOb, const char* OptionText, OpMap* pOptions, OBConversion* pConv)</a>
+<a name="ln85">{</a>
+<a name="ln86">  if(!strcmp(OptionText, &quot;inactive&quot;))</a>
+<a name="ln87">  {</a>
+<a name="ln88">    ++_inputCount;</a>
+<a name="ln89">    return true;</a>
+<a name="ln90">  }</a>
+<a name="ln91"> </a>
+<a name="ln92">  if(!pConv)</a>
+<a name="ln93">    return false;</a>
+<a name="ln94">  </a>
+<a name="ln95">    if(pConv-&gt;IsFirstInput())</a>
+<a name="ln96">  {</a>
+<a name="ln97">    _inputCount=0;</a>
+<a name="ln98">    _optionText = OptionText; //because gets overwritten by &quot;inactive&quot;</a>
+<a name="ln99">    _pDesc = *OptionText ? OBDescriptor::FindType(OptionText) : nullptr;</a>
+<a name="ln100">    _realOutFormat = pConv-&gt;GetOutFormat();</a>
+<a name="ln101"> </a>
+<a name="ln102">    // If there is an output file specified, delete the file,close and invalidate the outstream so OBConversion is not confused.</a>
+<a name="ln103">    std::ofstream* oldfs = dynamic_cast&lt;std::ofstream*&gt;(pConv-&gt;GetOutStream());</a>
+<a name="ln104">    if(oldfs &amp;&amp; oldfs-&gt;is_open())</a>
+<a name="ln105">    {</a>
+<a name="ln106">      oldfs-&gt;close();</a>
+<a name="ln107">      oldfs-&gt;setstate(std::ios::failbit);</a>
+<a name="ln108">      remove(pConv-&gt;GetOutFilename().c_str());</a>
+<a name="ln109">    }</a>
+<a name="ln110"> </a>
+<a name="ln111">    // If there is an output file name, use its path and its extension for the output files.</a>
+<a name="ln112">    // Otherwise use current directory and the ID of the output format.</a>
+<a name="ln113">    _outExt = _outPath = pConv-&gt;GetOutFilename(); //This may not be present yet in OBConversion</a>
+<a name="ln114">    std::string::size_type pos = _outPath.find_last_of(&quot;\\/&quot;);</a>
+<a name="ln115">    if(pos!=std::string::npos)</a>
+<a name="ln116">      _outPath.erase(pos+1);</a>
+<a name="ln117">    else</a>
+<a name="ln118">      _outPath.clear();</a>
+<a name="ln119">    pos = _outExt.rfind('.');</a>
+<a name="ln120">    if(pos!=std::string::npos)</a>
+<a name="ln121">      _outExt.erase(0, pos+1);</a>
+<a name="ln122">    else</a>
+<a name="ln123">      _outExt = _realOutFormat-&gt;GetID();</a>
+<a name="ln124"> </a>
+<a name="ln125">    /* Need to call this op after all other options because it outputs directly</a>
+<a name="ln126">       rather than letting OBConversion do the writing. Use the trick of</a>
+<a name="ln127">       the op deactivating itself and setting output to DeferredFormat. When this</a>
+<a name="ln128">       is written to, it immediately calls back this function, which writes to</a>
+<a name="ln129">       an individual file of the real output format.</a>
+<a name="ln130">    */</a>
+<a name="ln131">    pConv-&gt;AddOption(GetID(),OBConversion::GENOPTIONS,&quot;inactive&quot;);//removing messes up DoOps()</a>
+<a name="ln132">    new DeferredFormat(pConv, this, true); //it will delete itself</a>
+<a name="ln133">    return true;</a>
+<a name="ln134">  }</a>
+<a name="ln135"> </a>
+<a name="ln136">  //The following is called from Deferred Format</a>
+<a name="ln137"> </a>
+<a name="ln138">  std::ofstream ofs;</a>
+<a name="ln139">  std::stringstream filename;</a>
+<a name="ln140">  filename.str(&quot;&quot;);</a>
+<a name="ln141">  filename &lt;&lt; _outPath;</a>
+<a name="ln142">  std::string name;</a>
+<a name="ln143"> </a>
+<a name="ln144">  if(!_pDesc &amp;&amp; _optionText.empty()) //no param, use title</a>
+<a name="ln145">  {</a>
+<a name="ln146">    const char* pFilename = pOb-&gt;GetTitle();</a>
+<a name="ln147">    name = pFilename;</a>
+<a name="ln148">  }</a>
+<a name="ln149">  else if(_pDesc) //use descriptor</a>
+<a name="ln150">  {</a>
+<a name="ln151">    std::string s;</a>
+<a name="ln152">    _pDesc-&gt;GetStringValue(pOb, s);</a>
+<a name="ln153">    name = s;</a>
+<a name="ln154">  }</a>
+<a name="ln155">  else //use OBPairData property</a>
+<a name="ln156">  {</a>
+<a name="ln157">    if(pOb-&gt;HasData(_optionText))</a>
+<a name="ln158">      name = pOb-&gt;GetData(_optionText)-&gt;GetValue();</a>
+<a name="ln159">  }</a>
+<a name="ln160"> </a>
+<a name="ln161">  bool filenameok = !name.empty() &amp;&amp; name.find_first_of(&quot;/\\:*|?\&quot;&quot;) == std::string::npos;</a>
+<a name="ln162">  if(filenameok)</a>
+<a name="ln163">  {</a>
+<a name="ln164">    filename &lt;&lt; name &lt;&lt; '.' &lt;&lt; _outExt;</a>
+<a name="ln165">    std::string fname(filename.str()); //DEBUG</a>
+<a name="ln166">    ofs.open(fname.c_str());</a>
+<a name="ln167">  }</a>
+<a name="ln168">  if(!filenameok || !ofs)</a>
+<a name="ln169">  {</a>
+<a name="ln170">    //filename is empty or contain an illegal character or failed to open. Use &quot;n.xxx&quot;</a>
+<a name="ln171">    obErrorLog.ThrowError(__FUNCTION__,</a>
+<a name="ln172">      &quot;The fallback filename, based on input index, has been used for at least one object.&quot;, obWarning, onceOnly);</a>
+<a name="ln173">    std::stringstream ss;</a>
+<a name="ln174">    ss &lt;&lt; _outPath &lt;&lt; _inputCount &lt;&lt; '.' &lt;&lt; _outExt;</a>
+<a name="ln175">    ofs.clear();</a>
+<a name="ln176">    if(ofs.is_open())</a>
+<a name="ln177">      ofs.close();</a>
+<a name="ln178">    ofs.open(ss.str().c_str());</a>
+<a name="ln179">    if(!ofs)</a>
+<a name="ln180">    {</a>
+<a name="ln181">      obErrorLog.ThrowError(__FUNCTION__, &quot;Cannot open file &quot; + ss.str(), obError);</a>
+<a name="ln182">       pConv-&gt;SetOneObjectOnly(); //stop all conversion</a>
+<a name="ln183">      return false;</a>
+<a name="ln184">    }</a>
+<a name="ln185">  }</a>
+<a name="ln186">  pConv-&gt;SetOutStream(&amp;ofs);</a>
+<a name="ln187">  //Output the object now - do not use the normal queue of two.</a>
+<a name="ln188">  _realOutFormat-&gt;WriteChemObject(pConv);</a>
+<a name="ln189">  //Correct for second call to GetChemObject(), which increments index, in above.</a>
+<a name="ln190">  //GetChemObject() already called in DeferredFormat</a>
+<a name="ln191">  pConv-&gt;SetOutputIndex(pConv-&gt;GetOutputIndex()-1);</a>
+<a name="ln192"> </a>
+<a name="ln193">  ofs.close();</a>
+<a name="ln194">  return false; //do not store anything in DeferredFormat</a>
+<a name="ln195">}</a>
+<a name="ln196"> </a>
+<a name="ln197">}//namespace</a>
+
+</code></pre>
+<div class="balloon" rel="32"><p><span style="font-size:18px">&uarr;</span> <a href="https://www.viva64.com/en/w/v730/" target="_blank">V730</a> Not all members of a class are initialized inside the constructor. Consider inspecting: _inputCount, _realOutFormat, _pDesc.</p></div>
+
+<link rel="stylesheet" href="highlight.css">
+<script src="highlight.pack.js"></script>
+<script src="highlightjs-line-numbers.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<script>hljs.initLineNumbersOnLoad();</script>
+<script>
+  $(document).ready(function() {
+      $('.balloon').each(function () {
+          var bl = $(this);
+          var line = bl.attr('rel');
+          var text = $('a[name="ln'+line+'"]').text();
+
+          var space_count = 0;
+          for(var i = 0; i<text.length; i++){
+              var char = text[i];
+              if((char !== ' ')&&(char !== '\t'))break;
+              if(char === '\t')space_count++;
+              space_count++;
+          }
+
+          bl.css('margin-left', space_count*8);
+          $('a[name="ln'+line+'"]').after(bl);
+      });
+
+      window.location = window.location;
+  });
+</script>
+</body>
+</html>
